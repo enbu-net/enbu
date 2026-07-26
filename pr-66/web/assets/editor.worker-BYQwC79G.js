@@ -1,0 +1,1 @@
+function e(e){return new Worker(`/enbu/pr-66/web/assets/editor.worker-DQJwLooG.js`,{name:e?.name})}export{e as default};
