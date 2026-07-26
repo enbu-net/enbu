@@ -3,7 +3,7 @@ name = "scripts"
 version = "0.1.0"
 description = "Release automation for enbu"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = []
 
 [dependency-groups]
