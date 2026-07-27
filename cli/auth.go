@@ -21,10 +21,18 @@ type authLoginDeps struct {
 	openBrowser  auth.BrowserOpener
 }
 
+type authStatusDeps struct {
+	loadToken   func() (*auth.StoredToken, error)
+	newKeyStore func() (app.KeyStore, error)
+}
+
 func newAuthCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage authentication with GitHub",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return renderHelp(cmd)
+		},
 	}
 
 	cmd.AddCommand(
@@ -50,9 +58,13 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 		Use:   "login",
 		Short: "Authenticate with GitHub",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonEnabled(cmd) && deviceFlow {
+				return fmt.Errorf("--device cannot be used with --json")
+			}
+
 			ctx := cmd.Context()
 
-			cmd.Println("Initiating GitHub authentication...")
+			humanPrintf(cmd, "Initiating GitHub authentication...\n")
 			var token *auth.StoredToken
 			var err error
 			if deviceFlow {
@@ -61,14 +73,14 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 					clientID = defaultDeviceClientID
 				}
 				token, err = deps.deviceLogin(ctx, clientID, func(device auth.DeviceAuthorization) error {
-					cmd.Printf("Code: %s\n", device.UserCode)
-					cmd.Printf("Verification URL: %s\n", device.VerificationURI)
+					humanPrintf(cmd, "Code: %s\n", device.UserCode)
+					humanPrintf(cmd, "Verification URL: %s\n", device.VerificationURI)
 					if err := deps.openBrowser(device.VerificationURI); err != nil {
-						cmd.PrintErrln("Could not open the browser automatically; open the URL above manually.")
+						humanErrorf(cmd, "Could not open the browser automatically; open the URL above manually.\n")
 					} else {
-						cmd.Println("→ Opened in your browser.")
+						humanPrintf(cmd, "→ Opened in your browser.\n")
 					}
-					cmd.Println("Waiting for authorization...")
+					humanPrintf(cmd, "Waiting for authorization...\n")
 					return nil
 				})
 			} else {
@@ -76,8 +88,8 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 					if err := deps.openBrowser(authorizeURL); err != nil {
 						return err
 					}
-					cmd.Println("→ Opened GitHub in your browser.")
-					cmd.Println("Waiting for authorization...")
+					humanPrintf(cmd, "→ Opened GitHub in your browser.\n")
+					humanPrintf(cmd, "Waiting for authorization...\n")
 					return nil
 				})
 			}
@@ -85,6 +97,12 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 				return err
 			}
 
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"authenticated": true,
+					"username":      token.Username,
+				})
+			}
 			cmd.Printf("✓ Authenticated as: %s\n", token.Username)
 			return nil
 		},
@@ -95,63 +113,129 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 }
 
 func newAuthLogoutCommand() *cobra.Command {
+	return newAuthLogoutCommandWithDelete(auth.DeleteToken)
+}
+
+func newAuthLogoutCommandWithDelete(deleteToken func() error) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
 		Short: "Remove stored authentication token",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := auth.DeleteToken(); err != nil {
+			if err := deleteToken(); err != nil {
 				return err
 			}
 
-			fmt.Println("✓ Logged out successfully.")
-			fmt.Println("  Note: Your age private key remains in the system keystore.")
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"logged_out":            true,
+					"private_key_preserved": true,
+				})
+			}
+			cmd.Println("✓ Logged out successfully.")
+			cmd.Println("  Note: Your age private key remains in the system keystore.")
 			return nil
 		},
 	}
 }
 
 func newAuthStatusCommand(a *app.App) *cobra.Command {
+	return newAuthStatusCommandWithDeps(a, authStatusDeps{
+		loadToken: auth.LoadToken,
+		newKeyStore: func() (app.KeyStore, error) {
+			return keystore.New()
+		},
+	})
+}
+
+func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show authentication and environment status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := auth.LoadToken()
+			token, err := deps.loadToken()
 			if err != nil {
-				fmt.Println("Auth: not logged in")
-				fmt.Println("  Run 'enbu auth login' to authenticate with GitHub")
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"authenticated":      false,
+						"username":           nil,
+						"repository":         nil,
+						"public_key":         nil,
+						"config_initialized": nil,
+					})
+				}
+				cmd.Println("Auth: not logged in")
+				cmd.Println("  Run 'enbu auth login' to authenticate with GitHub")
 				return nil
 			}
-			fmt.Printf("Auth: logged in as %s\n", token.Username)
+			humanPrintf(cmd, "Auth: logged in as %s\n", token.Username)
 
 			owner, repo, err := a.RepoDetector.LoadRepo()
 			if err != nil {
-				fmt.Println("Repo: not in a git repository")
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"authenticated":      true,
+						"username":           token.Username,
+						"repository":         nil,
+						"public_key":         nil,
+						"config_initialized": nil,
+					})
+				}
+				cmd.Println("Repo: not in a git repository")
 				return nil
 			}
-			fmt.Printf("Repo: %s/%s\n", owner, repo)
+			humanPrintf(cmd, "Repo: %s/%s\n", owner, repo)
 
-			backend, err := keystore.New()
+			backend, err := deps.newKeyStore()
 			if err != nil {
-				fmt.Printf("Keystore: error (%v)\n", err)
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"authenticated": true,
+						"username":      token.Username,
+						"repository": map[string]string{
+							"owner": owner,
+							"name":  repo,
+						},
+						"public_key":         nil,
+						"config_initialized": nil,
+					}, fmt.Sprintf("keystore: %v", err))
+				}
+				cmd.Printf("Keystore: error (%v)\n", err)
 				return nil
 			}
 
 			repoKey := app.RepoKeystoreKey(owner, repo)
 			privBytes, err := backend.Load(app.KeystoreService, repoKey)
+			var publicKey any
 			if err == nil && len(privBytes) > 0 {
 				id, err := agecrypto.ParseX25519Identity(string(privBytes))
 				if err == nil {
-					fmt.Printf("Key: %s\n", id.Recipient().String())
+					publicKey = id.Recipient().String()
+					humanPrintf(cmd, "Key: %s\n", publicKey)
 				}
 			} else {
-				fmt.Println("Key: not initialized")
-				fmt.Println("  Run 'enbu init' to generate a key pair")
+				humanPrintf(cmd, "Key: not initialized\n")
+				humanPrintf(cmd, "  Run 'enbu init' to generate a key pair\n")
 			}
 
+			configInitialized := false
 			if _, err := config.LoadProject(); err == nil {
-				fmt.Println("Config: enbu.toml found")
+				configInitialized = true
+				humanPrintf(cmd, "Config: enbu.toml found\n")
 			} else {
-				fmt.Println("Config: not initialized")
+				humanPrintf(cmd, "Config: not initialized\n")
+			}
+
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"authenticated": true,
+					"username":      token.Username,
+					"repository": map[string]string{
+						"owner": owner,
+						"name":  repo,
+					},
+					"public_key":         publicKey,
+					"config_initialized": configInitialized,
+				})
 			}
 
 			return nil

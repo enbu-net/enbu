@@ -16,13 +16,28 @@ func newPullCommand(a *app.App) *cobra.Command {
 		Use:   "pull",
 		Short: "Pull and decrypt secrets into .env",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonEnabled(cmd) {
+				if toStdout {
+					return fmt.Errorf("--stdout cannot be used with --json")
+				}
+				result, err := a.PullSecretsData(cmd.Context(), envName)
+				if err != nil {
+					return err
+				}
+				return writeJSON(cmd, map[string]any{
+					"environment": result.Environment,
+					"count":       len(result.Secrets),
+					"secrets":     result.Secrets,
+				})
+			}
+
 			dotenv, output, count, err := a.PullSecrets(cmd.Context(), envName)
 			if err != nil {
 				return err
 			}
 
 			if toStdout {
-				_, _ = os.Stdout.Write(dotenv)
+				_, _ = cmd.OutOrStdout().Write(dotenv)
 				return nil
 			}
 
@@ -30,7 +45,7 @@ func newPullCommand(a *app.App) *cobra.Command {
 				return fmt.Errorf("writing %s: %w", output, err)
 			}
 
-			fmt.Fprintf(os.Stderr, "✓ Written %s (%d secrets)\n", output, count)
+			cmd.PrintErrf("✓ Written %s (%d secrets)\n", output, count)
 			return nil
 		},
 	}

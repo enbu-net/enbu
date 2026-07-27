@@ -19,6 +19,7 @@ func main() {
 	app := enbucli.New(getVersion())
 	if err := app.ExecuteContext(ctx); err != nil {
 		log.SetFlags(0)
+		enbucli.RenderExecutionError(app, err, os.Args[1:])
 		os.Exit(1)
 	}
 }

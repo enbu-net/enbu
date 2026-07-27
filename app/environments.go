@@ -8,8 +8,8 @@ import (
 )
 
 type EnvInfo struct {
-	Name      string
-	IsCurrent bool
+	Name      string `json:"name"`
+	IsCurrent bool   `json:"current"`
 }
 
 func (a *App) ListEnvironments() ([]EnvInfo, error) {

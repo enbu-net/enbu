@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +15,13 @@ func newSyncCommand(a *app.App) *cobra.Command {
 			if err := a.SyncSecrets(cmd.Context(), envName); err != nil {
 				return err
 			}
-			fmt.Println("✓ Sync complete")
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"action":      "sync",
+					"environment": resolvedEnvironmentName(a, envName),
+				})
+			}
+			cmd.Println("✓ Sync complete")
 			return nil
 		},
 	}

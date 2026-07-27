@@ -15,15 +15,15 @@ import (
 )
 
 type HistoryEntry struct {
-	Index     int
-	Timestamp time.Time
-	Tag       string
+	Index     int       `json:"index"`
+	Timestamp time.Time `json:"timestamp"`
+	Tag       string    `json:"tag"`
 }
 
 type Diff struct {
-	Added    []string
-	Removed  []string
-	Modified []string
+	Added    []string `json:"added"`
+	Removed  []string `json:"removed"`
+	Modified []string `json:"modified"`
 }
 
 func (a *App) ListHistory(ctx context.Context, env string) ([]HistoryEntry, error) {
