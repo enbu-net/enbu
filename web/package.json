@@ -29,7 +29,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "smol-toml": "^1.7.0",
-    "xterm-pty": "0.9.4"
+    "xterm-pty": "0.12.0"
   },
   "devDependencies": {
     "@pandacss/dev": "1.11.4",
