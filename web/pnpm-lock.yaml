@@ -386,8 +386,8 @@ importers:
         specifier: ^5.37.2
         version: 5.37.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@bjorn3/browser_wasi_shim':
-        specifier: 0.2.9
-        version: 0.2.9
+        specifier: 0.4.2
+        version: 0.4.2
       '@icons-pack/react-simple-icons':
         specifier: ^13.13.0
         version: 13.13.0(react@19.2.8)
@@ -566,8 +566,8 @@ packages:
   '@better-fetch/fetch@1.1.18':
     resolution: {integrity: sha512-rEFOE1MYIsBmoMJtQbl32PGHHXuG2hDxvEd7rUHE0vCBoFQVSDqaVs9hkZEtHCxRoY+CljXKFCOuJ8uxqw1LcA==}
 
-  '@bjorn3/browser_wasi_shim@0.2.9':
-    resolution: {integrity: sha512-EyLP/p2l7gz40kllHupJpCZb5DccfcUQzSeLRCNXtp33PahHRSsFVQo+1Qmba7GsHVonNk6FJmlr0IY8fG7hzQ==}
+  '@bjorn3/browser_wasi_shim@0.4.2':
+    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@blazediff/core@1.9.1':
     resolution: {integrity: sha512-ehg3jIkYKulZh+8om/O25vkvSsXXwC+skXmyA87FFx6A/45eqOkZsBltMw/TVteb0mloiGT8oGRTcjRAz66zaA==}
@@ -4247,7 +4247,7 @@ snapshots:
 
   '@better-fetch/fetch@1.1.18': {}
 
-  '@bjorn3/browser_wasi_shim@0.2.9': {}
+  '@bjorn3/browser_wasi_shim@0.4.2': {}
 
   '@blazediff/core@1.9.1': {}
 

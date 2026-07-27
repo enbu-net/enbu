@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",
-    "@bjorn3/browser_wasi_shim": "0.2.9",
+    "@bjorn3/browser_wasi_shim": "0.4.2",
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@park-ui/panda-preset": "^0.43.1",
     "@tanstack/react-router": "^1.170.17",
