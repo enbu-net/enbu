@@ -80,6 +80,7 @@ tasks:
       - |
         go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build \
           -nosyncgomod -m \
+          -tags webkit2_41 \
           {{if .PLATFORM}}-platform "{{.PLATFORM}}"{{end}} \
           {{.EXTRA_FLAGS}} \
           -ldflags "-X main.Version={{.VERSION}}"
@@ -91,7 +92,7 @@ tasks:
       VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
     cmds:
-      - go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
+      - go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_41 -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
 
   all/check:
     desc: Format and lint all code

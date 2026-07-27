@@ -105,11 +105,11 @@ jobs:
             platform: darwin/arm64
             suffix: darwin_arm64
             package: dmg
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             platform: linux/amd64
             suffix: linux_amd64
             package: tar.gz
-          - os: ubuntu-22.04-arm
+          - os: ubuntu-24.04-arm
             platform: linux/arm64
             suffix: linux_arm64
             package: tar.gz
@@ -149,7 +149,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Build Wails app
         shell: bash
