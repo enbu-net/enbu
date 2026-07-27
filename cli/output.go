@@ -147,16 +147,49 @@ func resolvedEnvironmentName(a *app.App, requested string) string {
 	return current
 }
 
-func requestedJSON(args []string) bool {
+func requestedJSON(cmd *cobra.Command, args []string) bool {
+	// Find the target subcommand to know which flags consume a value.
+	target, _, _ := cmd.Find(args)
+	if target == nil {
+		target = cmd
+	}
+	nonBoolFlags := make(map[string]bool)
+	addNonBool := func(fs *pflag.FlagSet) {
+		fs.VisitAll(func(f *pflag.Flag) {
+			if f.Value.Type() != "bool" {
+				nonBoolFlags[f.Name] = true
+				if f.Shorthand != "" {
+					nonBoolFlags[f.Shorthand] = true
+				}
+			}
+		})
+	}
+	addNonBool(target.Flags())
+	addNonBool(target.InheritedFlags())
+
+	skipNext := false
 	for _, arg := range args {
 		if arg == "--" {
 			break
+		}
+		if skipNext {
+			skipNext = false
+			continue
 		}
 		switch {
 		case arg == "--json":
 			return true
 		case strings.HasPrefix(arg, "--json="):
 			return strings.TrimPrefix(arg, "--json=") != "false"
+		case strings.HasPrefix(arg, "--") && !strings.Contains(arg, "="):
+			name := strings.TrimPrefix(arg, "--")
+			if nonBoolFlags[name] {
+				skipNext = true
+			}
+		case strings.HasPrefix(arg, "-") && len(arg) == 2:
+			if nonBoolFlags[arg[1:]] {
+				skipNext = true
+			}
 		}
 	}
 	return false
@@ -165,7 +198,7 @@ func requestedJSON(args []string) bool {
 // RenderExecutionError writes one command execution error using the selected
 // output format. JSON errors intentionally go to stdout for process consumers.
 func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
-	if requestedJSON(args) || jsonEnabled(cmd) {
+	if requestedJSON(cmd, args) || jsonEnabled(cmd) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
 		return
 	}

@@ -84,6 +84,23 @@ func TestRenderExecutionErrorHonorsOptionTerminator(t *testing.T) {
 	}
 }
 
+func TestRenderExecutionErrorSkipsOptionValues(t *testing.T) {
+	cmd := NewWithApp("test", &app.App{})
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	// --env consumes the next argument as its value; --json is that value, not a flag
+	RenderExecutionError(cmd, errors.New("failed"), []string{"add", "KEY", "VALUE", "--env", "--json"})
+
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty (--json was a value for --env, not a flag)", stdout.String())
+	}
+	if got := stderr.String(); got != "Error: failed\n" {
+		t.Fatalf("stderr = %q", got)
+	}
+}
+
 func TestCompletionNoDescriptions(t *testing.T) {
 	generate := func(t *testing.T, shell string, noDescriptions bool) string {
 		t.Helper()
