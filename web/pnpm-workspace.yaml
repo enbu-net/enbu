@@ -23,7 +23,7 @@ minimumReleaseAgeExclude:
   - "@typescript/typescript-win32-x64@7.0.2"
   - typescript@7.0.2
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.2.4
+  vite: npm:@voidzero-dev/vite-plus-core@0.2.6
   vite-plus: 0.2.6
 overrides:
   vite: "catalog:"
