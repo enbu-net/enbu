@@ -149,6 +149,9 @@ func resolvedEnvironmentName(a *app.App, requested string) string {
 
 func requestedJSON(args []string) bool {
 	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
 		switch {
 		case arg == "--json":
 			return true

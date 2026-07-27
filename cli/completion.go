@@ -8,7 +8,8 @@ import (
 )
 
 func newCompletionCommand(root *cobra.Command) *cobra.Command {
-	return &cobra.Command{
+	var noDescriptions bool
+	cmd := &cobra.Command{
 		Use:       "completion [bash|zsh|fish|powershell]",
 		Short:     "Generate the autocompletion script for the specified shell",
 		Args:      cobra.ExactArgs(1),
@@ -18,13 +19,21 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 			var err error
 			switch args[0] {
 			case "bash":
-				err = root.GenBashCompletion(&output)
+				err = root.GenBashCompletionV2(&output, !noDescriptions)
 			case "zsh":
-				err = root.GenZshCompletion(&output)
+				if noDescriptions {
+					err = root.GenZshCompletionNoDesc(&output)
+				} else {
+					err = root.GenZshCompletion(&output)
+				}
 			case "fish":
-				err = root.GenFishCompletion(&output, true)
+				err = root.GenFishCompletion(&output, !noDescriptions)
 			case "powershell":
-				err = root.GenPowerShellCompletion(&output)
+				if noDescriptions {
+					err = root.GenPowerShellCompletion(&output)
+				} else {
+					err = root.GenPowerShellCompletionWithDesc(&output)
+				}
 			default:
 				return fmt.Errorf("unsupported shell %q", args[0])
 			}
@@ -41,4 +50,6 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&noDescriptions, "no-descriptions", false, "disable completion descriptions")
+	return cmd
 }

@@ -68,6 +68,57 @@ func TestJSONExecutionErrorsUseOneStdoutObject(t *testing.T) {
 	}
 }
 
+func TestRenderExecutionErrorHonorsOptionTerminator(t *testing.T) {
+	cmd := NewWithApp("test", &app.App{})
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+
+	RenderExecutionError(cmd, errors.New("failed"), []string{"add", "KEY", "--", "--json"})
+
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if got := stderr.String(); got != "Error: failed\n" {
+		t.Fatalf("stderr = %q", got)
+	}
+}
+
+func TestCompletionNoDescriptions(t *testing.T) {
+	generate := func(t *testing.T, shell string, noDescriptions bool) string {
+		t.Helper()
+		cmd := NewWithApp("test", &app.App{})
+		var stdout, stderr bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		args := []string{"completion", shell}
+		if noDescriptions {
+			args = append(args, "--no-descriptions")
+		}
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("completion %s: %v", shell, err)
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("completion %s stderr = %q", shell, stderr.String())
+		}
+		if stdout.Len() == 0 {
+			t.Fatalf("completion %s produced no output", shell)
+		}
+		return stdout.String()
+	}
+
+	for _, shell := range []string{"bash", "zsh", "fish", "powershell"} {
+		t.Run(shell, func(t *testing.T) {
+			withDescriptions := generate(t, shell, false)
+			withoutDescriptions := generate(t, shell, true)
+			if withDescriptions == withoutDescriptions {
+				t.Fatalf("completion %s ignored --no-descriptions", shell)
+			}
+		})
+	}
+}
+
 func TestJSONAuthLoginEmitsOnlyFinalResult(t *testing.T) {
 	login := newAuthLoginCommandWithDeps(authLoginDeps{
 		browserLogin: func(_ context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
