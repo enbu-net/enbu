@@ -2,9 +2,21 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/utils/oci"
 )
+
+type listTagsErrorRegistry struct {
+	*memRegistry
+	err error
+}
+
+func (r *listTagsErrorRegistry) ListTags(context.Context, string, string) ([]string, error) {
+	return nil, r.err
+}
 
 func TestListHistory_Empty(t *testing.T) {
 	kp := mustKeyPair(t)
@@ -16,6 +28,34 @@ func TestListHistory_Empty(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("expected empty history, got %d entries", len(entries))
+	}
+}
+
+func TestListHistory_MissingPackageIsEmpty(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	a.Registry = &listTagsErrorRegistry{
+		memRegistry: a.Registry.(*memRegistry),
+		err:         fmt.Errorf("listing history: %w", oci.ErrNotFound),
+	}
+
+	entries, err := a.ListHistory(context.Background(), "default")
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries = %v, want empty", entries)
+	}
+}
+
+func TestListHistory_RegistryFailureIsNotHidden(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	a.Registry = &listTagsErrorRegistry{
+		memRegistry: a.Registry.(*memRegistry),
+		err:         fmt.Errorf("unauthorized"),
+	}
+
+	if _, err := a.ListHistory(context.Background(), "default"); err == nil {
+		t.Fatal("expected registry error")
 	}
 }
 

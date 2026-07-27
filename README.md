@@ -22,7 +22,7 @@ Development requires sensitive information like API keys and database passwords,
 
 - **GitHub-only** — No dependency on external platforms
 - **E2E encrypted** — Only each member's local private key can decrypt
-- **Simple CLI** — After setup, just `enbu add` and `enbu pull`
+- **Simple CLI** — Pull encrypted secrets once, then export them wherever they are needed
 <!-- Planned -->
 <!--- **Secret leak prevention** — Prevent committing .env files or hardcoded secrets -->
 <!--- **Tamper detection** — Sigstore-based signing and verification to detect tampering -->
@@ -82,11 +82,13 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 enbu delete API_KEY
 ```
 
-### 5. Pull secrets
+### 5. Pull and export secrets
 
 ```bash
-enbu pull  # Writes to .env file
-enbu pull --env dev  # Writes to the configured output for dev
+enbu pull                    # Updates the local encrypted cache
+enbu export                  # Writes the cache to the configured dotenv file
+enbu export --env dev        # Writes the dev cache to its configured output
+enbu export dotenv --stdout  # Writes dotenv to stdout
 ```
 
 ### 6. Add a team member
@@ -121,7 +123,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — access control is handled by OPA/Rego policy at sync time. Without `-e`, enbu uses the environment set by `switch`.
+Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, `export`, and `sync` to override the current environment. Recipients are shared across all environments. Per-environment access control is not currently enforced; OPA/Rego policy evaluation at sync time is planned. Without `-e`, enbu uses the environment set by `switch`.
 
 ## Key Storage
 
@@ -139,6 +141,8 @@ For environments without a keychain (containers, headless servers), specify a fa
 export ENBU_BACKEND=text  # Plaintext file (0600 permissions)
 ```
 
+Pulled secret bundles are not stored in the keychain. They remain age-encrypted at rest in the OS user cache directory. Pull transiently decrypts them in memory to validate the bundle, and listing or export decrypts them in memory when needed.
+
 ## How It Works
 
 ```
@@ -151,8 +155,9 @@ GHCR (ghcr.io/{owner}/{repo}-enbu)
 1. `enbu add` — Creates a new secret, encrypts for all recipients' public keys, and pushes as an OCI image artifact
 2. `enbu edit` — Updates an existing secret in the encrypted bundle and pushes the updated artifact
 3. `enbu delete` — Removes a secret from the encrypted bundle and pushes the updated artifact
-4. `enbu pull` — Pulls ciphertext, decrypts with your private key, writes to `.env`
-5. `enbu sync` — Re-encrypts with the current recipient list when members are added or removed
+4. `enbu pull` — Pulls ciphertext, validates it with your private key, and updates the local encrypted cache
+5. `enbu export` — Decrypts the cache and sends it to an exporter; dotenv is the default exporter
+6. `enbu sync` — Re-encrypts with the current recipient list when members are added or removed
 
 ### Authentication & Initialization Flow
 
@@ -227,6 +232,8 @@ sequenceDiagram
     New->>CLI: enbu pull
     CLI->>GHCR: Pull secrets-default
     GHCR-->>CLI: Ciphertext
-    CLI->>CLI: Decrypt with private key
+    CLI->>CLI: Validate and cache ciphertext
+    New->>CLI: enbu export
+    CLI->>CLI: Decrypt cached ciphertext
     CLI-->>New: Write .env
 ```

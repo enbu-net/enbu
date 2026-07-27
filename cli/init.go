@@ -59,7 +59,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 			repoRoot := repository.Root
 
 			existingTags, err := a.Registry.ListTags(ctx, registryRef, accessToken)
-			if err != nil && !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "NAME_UNKNOWN") {
+			if err != nil && !app.IsNotFoundError(err) {
 				return fmt.Errorf("checking existing setup: %w", err)
 			}
 			hasRecipients := false

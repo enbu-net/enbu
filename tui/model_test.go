@@ -26,6 +26,15 @@ func keyMsg(value string) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: []rune(value)[0], Text: value}
 }
 
+func TestPullResultMessage(t *testing.T) {
+	if got := pullResultMessage(false); got != "No secrets have been uploaded for this environment." {
+		t.Fatalf("missing bundle message = %q", got)
+	}
+	if got := pullResultMessage(true); got != "Pulled secrets" {
+		t.Fatalf("pull success message = %q", got)
+	}
+}
+
 func findHit(t *testing.T, m *model, kind hitKind, index int) hitRegion {
 	t.Helper()
 	for _, hit := range m.hits {

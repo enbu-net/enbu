@@ -23,7 +23,7 @@ GitHubだけで完結する `.env` 管理ツール
 
 - **GitHubだけで完結** ほかのプラットフォームに依存することなく完結
 - **E2E暗号化** 復号できるのは各メンバーのローカル秘密鍵のみ  
-- **使いやすいCLI** セットアップを済ませれば `enbu add` と `enbu pull` だけすればいい  
+- **使いやすいCLI** 暗号文をローカルへ取得し、必要な出力先へ書き出せる  
 <!-- 実装中-->
 <!--- **機密情報の流出検知・防止** .env等の機密ファイルのcommitやべた書きを防止-->
 <!--- **改ざん検知** Sigstoreによる署名と検証により改ざんを検知  -->
@@ -84,11 +84,13 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 enbu delete API_KEY
 ```
 
-### 5. シークレットの取得
+### 5. シークレットの取得と書き出し
 
 ```bash
-enbu pull # .env ファイルに書き出し
-enbu pull --env dev # dev の設定済み出力先に書き出し
+enbu pull                    # ローカルの暗号文キャッシュを更新
+enbu export                  # キャッシュを設定済みdotenvファイルへ書き出し
+enbu export --env dev        # devのキャッシュを設定済み出力先へ書き出し
+enbu export dotenv --stdout  # dotenvを標準出力へ書き出し
 ```
 
 ### 6. メンバーの追加
@@ -123,7 +125,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-`add`、`edit`、`delete`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有され、アクセス制御は sync 時の OPA/Rego ポリシーで行います。`-e` を省略すると `switch` で設定した環境が使われます。
+`add`、`edit`、`delete`、`pull`、`export`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有されます。現在は環境単位のアクセス制御を強制しておらず、sync 時の OPA/Rego ポリシー評価は今後実装する予定です。`-e` を省略すると `switch` で設定した環境が使われます。
 
 ## 鍵の保管
 
@@ -141,6 +143,8 @@ output = ".env.prod"
 export ENBU_BACKEND=text  # 平文ファイル (0600) で保存
 ```
 
+pullしたシークレット本体はキーチェーンへ保存されず、OSのユーザーキャッシュ上ではage暗号文のままです。pull時は検証のため一時的にメモリ上で復号し、一覧表示やexport時も必要な間だけメモリ上で復号します。
+
 ## 仕組み
 
 ```
@@ -153,8 +157,9 @@ GHCR (ghcr.io/{owner}/{repo}-enbu)
 1. `enbu add`  - 新規シークレットを全受信者の公開鍵で暗号化し、OCI Imageアーティファクトとしてプッシュ  
 2. `enbu edit` - 暗号化された bundle 内の既存シークレットを更新し、更新したアーティファクトをプッシュ  
 3. `enbu delete` - 暗号化された bundle からシークレットを削除し、更新したアーティファクトをプッシュ  
-4. `enbu pull` - 暗号文をプルし、自分の秘密鍵で復号して `.env` に書き出し  
-5. `enbu sync` - メンバー追加・削除時に最新の受信者リストで再暗号化  
+4. `enbu pull` - 暗号文をプルし、自分の秘密鍵で検証してローカルの暗号文キャッシュを更新  
+5. `enbu export` - キャッシュを復号し、exporterへ渡す。既定のexporterはdotenv  
+6. `enbu sync` - メンバー追加・削除時に最新の受信者リストで再暗号化  
 
 ### 認証・初期化フロー
 
@@ -229,6 +234,8 @@ sequenceDiagram
     New->>CLI: enbu pull
     CLI->>GHCR: secrets-default をプル
     GHCR-->>CLI: 暗号文
-    CLI->>CLI: 自分の秘密鍵で復号
+    CLI->>CLI: 復号可能か検証して暗号文をキャッシュ
+    New->>CLI: enbu export
+    CLI->>CLI: キャッシュした暗号文を復号
     CLI-->>New: .env に書き出し
 ```

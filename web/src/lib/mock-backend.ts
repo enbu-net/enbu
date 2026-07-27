@@ -192,6 +192,10 @@ export const mockBackend = {
     // no-op in mock
   },
 
+  async exportSecrets(_env = ""): Promise<void> {
+    // no-op in mock
+  },
+
   async syncSecrets(_env = ""): Promise<void> {
     // no-op in mock
   },

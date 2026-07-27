@@ -37,7 +37,7 @@ func (e *envRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, err
 	defer e.mu.RUnlock()
 	data, ok := e.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	return append([]byte(nil), data...), nil
 }
@@ -60,7 +60,7 @@ func (e *envRegistry) GetDigest(_ context.Context, ref string, _ string) (string
 	defer e.mu.RUnlock()
 	data, ok := e.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("sha256:%x", sum), nil
@@ -120,11 +120,22 @@ output = ".env.prod"
 		t.Fatalf("add prod: %v", err)
 	}
 
+	for _, env := range []string{"dev", "prod"} {
+		cmd := NewWithApp("test", a)
+		cmd.SetArgs([]string{"pull", "--env", env})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("pull %s: %v", env, err)
+		}
+	}
+	if _, err := os.Stat(".env.dev"); !os.IsNotExist(err) {
+		t.Fatalf("pull created .env.dev: stat error = %v", err)
+	}
+
 	devOut := captureCommandStdout(t, func() {
 		cmd := NewWithApp("test", a)
-		cmd.SetArgs([]string{"pull", "--env", "dev", "--stdout"})
+		cmd.SetArgs([]string{"export", "--env", "dev", "--stdout"})
 		if err := cmd.Execute(); err != nil {
-			t.Fatalf("pull dev: %v", err)
+			t.Fatalf("export dev: %v", err)
 		}
 	})
 	if !strings.Contains(devOut, "dev-secret") || strings.Contains(devOut, "prod-secret") {
@@ -133,9 +144,9 @@ output = ".env.prod"
 
 	prodOut := captureCommandStdout(t, func() {
 		cmd := NewWithApp("test", a)
-		cmd.SetArgs([]string{"pull", "--env", "prod", "--stdout"})
+		cmd.SetArgs([]string{"export", "dotenv", "--env", "prod", "--stdout"})
 		if err := cmd.Execute(); err != nil {
-			t.Fatalf("pull prod: %v", err)
+			t.Fatalf("export prod: %v", err)
 		}
 	})
 	if !strings.Contains(prodOut, "prod-secret") || strings.Contains(prodOut, "dev-secret") {
@@ -143,9 +154,9 @@ output = ".env.prod"
 	}
 
 	fileCmd := NewWithApp("test", a)
-	fileCmd.SetArgs([]string{"pull", "--env", "dev"})
+	fileCmd.SetArgs([]string{"export", "--env", "dev"})
 	if err := fileCmd.Execute(); err != nil {
-		t.Fatalf("pull dev file: %v", err)
+		t.Fatalf("export dev file: %v", err)
 	}
 	data, err := os.ReadFile(".env.dev")
 	if err != nil {

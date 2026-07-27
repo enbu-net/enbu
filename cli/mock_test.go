@@ -34,7 +34,7 @@ func (m *mockRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, er
 	defer m.mu.RUnlock()
 	d, ok := m.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	return append([]byte(nil), d...), nil
 }
@@ -57,7 +57,7 @@ func (m *mockRegistry) GetDigest(_ context.Context, ref string, _ string) (strin
 	defer m.mu.RUnlock()
 	d, ok := m.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	sum := sha256.Sum256(d)
 	return fmt.Sprintf("sha256:%x", sum), nil

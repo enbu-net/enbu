@@ -131,7 +131,21 @@ func (a *App) DeleteEnvironment(name string) error {
 		return err
 	}
 
-	return a.saveProject(cfg)
+	if err := a.saveProject(cfg); err != nil {
+		return err
+	}
+	if a.RepoDetector != nil {
+		owner, repo, err := a.RepoDetector.LoadRepo()
+		if err != nil {
+			a.emit(fmt.Sprintf("Warning: environment was deleted, but its local secret cache could not be removed: %v", err))
+			return nil
+		}
+		ref := a.secretsRef(owner, repo, name)
+		if err := a.secretCache().Delete(ref); err != nil {
+			a.emit(fmt.Sprintf("Warning: environment was deleted, but its local secret cache could not be removed: %v", err))
+		}
+	}
+	return nil
 }
 
 func (a *App) RenameEnvironment(oldName, newName string) error {
@@ -144,5 +158,19 @@ func (a *App) RenameEnvironment(oldName, newName string) error {
 		return err
 	}
 
-	return a.saveProject(cfg)
+	if err := a.saveProject(cfg); err != nil {
+		return err
+	}
+	if a.RepoDetector != nil {
+		owner, repo, err := a.RepoDetector.LoadRepo()
+		if err != nil {
+			a.emit(fmt.Sprintf("Warning: environment was renamed, but its old local secret cache could not be removed: %v", err))
+			return nil
+		}
+		ref := a.secretsRef(owner, repo, oldName)
+		if err := a.secretCache().Delete(ref); err != nil {
+			a.emit(fmt.Sprintf("Warning: environment was renamed, but its old local secret cache could not be removed: %v", err))
+		}
+	}
+	return nil
 }

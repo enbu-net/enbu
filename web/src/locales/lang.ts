@@ -31,6 +31,7 @@ export interface Messages {
     secrets: string;
     environments: string;
     empty: string;
+    cacheEmpty: string;
     key: string;
     value: string;
     add: string;
@@ -39,8 +40,10 @@ export interface Messages {
     deleteSecretConfirm: string;
     duplicateKey: string;
     pull: string;
+    export: string;
     sync: string;
     pullDescription: string;
+    exportDescription: string;
     syncDescription: string;
     newEnvironment: string;
     createEnvironment: string;
@@ -117,6 +120,7 @@ export interface Messages {
   transfer: {
     addTitle: string;
     pullTitle: string;
+    exportTitle: string;
     syncTitle: string;
     deleteTitle: string;
     steps: {
@@ -126,6 +130,11 @@ export interface Messages {
       push: string;
       decrypt: string;
       write: string;
+      download: string;
+      validate: string;
+      cache: string;
+      load: string;
+      export: string;
       reencrypt: string;
     };
     done: string;

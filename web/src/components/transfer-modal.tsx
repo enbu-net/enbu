@@ -6,21 +6,22 @@ import { useI18n } from "../lib/i18n";
 import { useFocusTrap } from "../lib/use-focus-trap";
 
 export interface ProgressStep {
-  op: "add" | "pull" | "sync" | "delete";
+  op: "add" | "pull" | "export" | "sync" | "delete";
   step: string;
   status: "start" | "done";
 }
 
 interface TransferModalProps {
   open: boolean;
-  operation: "add" | "pull" | "sync" | "delete" | null;
+  operation: "add" | "pull" | "export" | "sync" | "delete" | null;
   error?: string | null;
   onClose: () => void;
 }
 
-const DEFAULT_STEPS: Record<"add" | "pull" | "sync" | "delete", string[]> = {
+const DEFAULT_STEPS: Record<"add" | "pull" | "export" | "sync" | "delete", string[]> = {
   add: ["pull_recipients", "pull_secrets", "encrypt", "push"],
-  pull: ["pull_secrets", "decrypt", "write"],
+  pull: ["download", "validate", "cache"],
+  export: ["load", "decrypt", "export"],
   sync: ["pull_secrets", "pull_recipients", "reencrypt", "push"],
   delete: ["pull_recipients", "pull_secrets", "encrypt", "push"],
 };
@@ -45,15 +46,22 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
     }
 
     let hasRealEvents = false;
+    const fallbackSteps = DEFAULT_STEPS[operation];
+    const terminalStep = fallbackSteps[fallbackSteps.length - 1];
+
+    const handleProgress = (step: ProgressStep) => {
+      if (step.op !== operation) return;
+      hasRealEvents = true;
+      setCurrentStep(step);
+      if (step.status === "done" && step.step === terminalStep) {
+        setIsDone(true);
+      }
+    };
 
     const handleCustomEvent = (e: Event) => {
       const customEvent = e as CustomEvent<ProgressStep>;
       if (customEvent.detail) {
-        hasRealEvents = true;
-        setCurrentStep(customEvent.detail);
-        if (customEvent.detail.status === "done") {
-          setIsDone(true);
-        }
+        handleProgress(customEvent.detail);
       }
     };
     window.addEventListener("enbu:progress", handleCustomEvent);
@@ -63,16 +71,11 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
 
     if (wailsRuntime?.EventsOn) {
       unsubscribeWails = wailsRuntime.EventsOn("enbu:progress", (step: ProgressStep) => {
-        hasRealEvents = true;
-        setCurrentStep(step);
-        if (step.status === "done") {
-          setIsDone(true);
-        }
+        handleProgress(step);
       });
     }
 
     // Fallback simulation timer for mock environment
-    const fallbackSteps = DEFAULT_STEPS[operation];
     let stepIdx = 0;
 
     const timer = setInterval(() => {
@@ -118,14 +121,16 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
 
   const stepType = currentStep?.step;
   const isLeftToRight = stepType === "push" || stepType === "reencrypt";
-  const isRightToLeft = stepType === "pull_secrets" || stepType === "pull_recipients";
-  const isLocal = stepType === "encrypt" || stepType === "decrypt" || stepType === "write";
+  const isRightToLeft = stepType === "pull_secrets" || stepType === "pull_recipients" || stepType === "download";
+  const isLocal = stepType === "encrypt" || stepType === "decrypt" || stepType === "write" || stepType === "validate" || stepType === "cache" || stepType === "load" || stepType === "export";
 
   const modalTitle =
     operation === "add"
       ? t("transfer.addTitle")
       : operation === "pull"
       ? t("transfer.pullTitle")
+      : operation === "export"
+      ? t("transfer.exportTitle")
       : operation === "delete"
       ? t("transfer.deleteTitle")
       : t("transfer.syncTitle");

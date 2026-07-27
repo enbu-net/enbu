@@ -91,7 +91,7 @@ func TestScenario_DeleteBeforeFirstSecretIsNoop(t *testing.T) {
 		Users("alice"),
 		Register("alice"),
 		Delete("alice", "MISSING_KEY"),
-		PullFails("alice"),
+		PullEmpty("alice"),
 	)
 }
 
@@ -153,7 +153,7 @@ func TestScenario_PullNoSecrets(t *testing.T) {
 	RunScenario(t,
 		Users("alice"),
 		Register("alice"),
-		PullFails("alice"),
+		PullEmpty("alice"),
 	)
 }
 
@@ -557,7 +557,7 @@ output = ".env.prod"
 		Register("alice"),
 		Add("alice", "DEFAULT_KEY", "goes-to-dev"),
 		PullEnvContainsAll("alice", "dev", "DEFAULT_KEY", "goes-to-dev"),
-		PullFailsEnv("alice", "prod"),
+		PullEmptyEnv("alice", "prod"),
 	)
 }
 
@@ -642,7 +642,7 @@ output = ".env.empty"
 		AddEnv("alice", "dev", "KEY", "value"),
 		SyncEnv("alice", "empty"),
 		PullEnvContainsAll("alice", "dev", "KEY", "value"),
-		PullFailsEnv("alice", "empty"),
+		PullEmptyEnv("alice", "empty"),
 	)
 }
 

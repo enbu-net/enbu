@@ -45,6 +45,9 @@ func (a *App) ListHistory(ctx context.Context, env string) ([]HistoryEntry, erro
 	ref := a.registryRef(owner, repo)
 	tags, err := a.Registry.ListTags(ctx, ref, accessToken)
 	if err != nil {
+		if IsNotFoundError(err) {
+			return []HistoryEntry{}, nil
+		}
 		return nil, fmt.Errorf("listing tags: %w", err)
 	}
 
@@ -202,6 +205,7 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) error {
 		snapshotPushRef := fmt.Sprintf("%s:%s", ref, snapshotTag(resolved.Name))
 		_ = a.Registry.Push(ctx, snapshotPushRef, "application/vnd.enbu.secrets.age.v1", ciphertext, accessToken, &oci.PushOptions{SourceRepo: a.sourceRepoURL(owner, repo)})
 
+		a.cacheAfterRemoteUpdate(secretsRef, ciphertext)
 		a.emit(fmt.Sprintf("Restored secrets--%s to version %d (%s)", resolved.Name, idx, entries[idx-1].Timestamp.Format("2006-01-02 15:04:05")))
 		return nil
 	}

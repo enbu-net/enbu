@@ -144,6 +144,7 @@ type Environment struct {
 
 type SecretsResponse struct {
 	Environment string       `json:"environment"`
+	Cached      bool         `json:"cached"`
 	Secrets     []SecretItem `json:"secrets"`
 }
 
@@ -544,7 +545,7 @@ func (s *Service) DeleteEnvironment(name string) error {
 
 func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
 	return withRepoResult(s, func() (SecretsResponse, error) {
-		secrets, err := s.app.ListSecrets(s.context(), env)
+		secrets, cached, err := s.app.ListSecretsWithCacheState(s.context(), env)
 		if err != nil {
 			return SecretsResponse{}, err
 		}
@@ -561,7 +562,7 @@ func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
 		for _, key := range keys {
 			items = append(items, SecretItem{Key: key, Value: secrets[key]})
 		}
-		return SecretsResponse{Environment: env, Secrets: items}, nil
+		return SecretsResponse{Environment: env, Cached: cached, Secrets: items}, nil
 	})
 }
 
@@ -578,7 +579,17 @@ func (s *Service) DeleteSecret(env, key string) error {
 }
 
 func (s *Service) PullSecrets(env string) error {
-	return s.withRepo(func() error { return s.app.PullSecretsToFile(s.context(), env) })
+	return s.withRepo(func() error {
+		_, _, err := s.app.PullSecrets(s.context(), env)
+		return err
+	})
+}
+
+func (s *Service) ExportSecrets(env string) error {
+	return s.withRepo(func() error {
+		_, err := s.app.ExportSecretsToFile(s.context(), env)
+		return err
+	})
 }
 
 func (s *Service) SyncSecrets(env string) error {

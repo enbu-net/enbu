@@ -42,6 +42,7 @@ vi.mock("../lib/backend", () => ({
     editSecret: vi.fn(),
     deleteSecret: vi.fn(),
     pullSecrets: vi.fn(),
+    exportSecrets: vi.fn(),
     syncSecrets: vi.fn(),
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(),
@@ -729,16 +730,102 @@ describe("dashboard review regressions", () => {
   });
 
   beforeEach(() => {
+    oauthMocks.repoStatus.mockReset();
+    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
     backendMock.listEnvironments.mockResolvedValue([{ name: "default", current: true }]);
     backendMock.listSecrets.mockResolvedValue({
       environment: "default",
       secrets: [{ key: "KEY", value: "value" }],
     });
+    backendMock.listRecipients.mockReset();
+    backendMock.listRecipients.mockResolvedValue([]);
+    backendMock.pullSecrets.mockReset();
+    backendMock.pullSecrets.mockResolvedValue();
+    backendMock.exportSecrets.mockReset();
+    backendMock.exportSecrets.mockResolvedValue();
+  });
+
+  it("prompts for pull when the environment has no local cache", async () => {
+    backendMock.listSecrets.mockResolvedValue({
+      environment: "default",
+      cached: false,
+      secrets: [],
+    });
+
+    renderAuthenticatedHome();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(
+      "No cached secrets. Pull to download this environment.",
+    );
+  });
+
+  it("exports the current environment and blocks pull until export finishes", async () => {
+    vi.useFakeTimers();
+    let resolveExport!: () => void;
+    backendMock.exportSecrets.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
+
+    renderAuthenticatedHome();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      queryButton("Export")?.click();
+      await Promise.resolve();
+    });
+
+    expect(backendMock.exportSecrets.mock.calls).toEqual([["default"]]);
+    expect(queryButton("Pull")?.disabled).toBe(true);
+    act(() => queryButton("Pull")?.click());
+    expect(backendMock.pullSecrets.mock.calls).toHaveLength(0);
+
+    await act(async () => {
+      resolveExport();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+      await Promise.resolve();
+    });
+    expect(queryButton("Pull")?.disabled).toBe(false);
+  });
+
+  it("clears export loading and displays an export error", async () => {
+    vi.useFakeTimers();
+    backendMock.exportSecrets.mockRejectedValueOnce(new Error("export failed"));
+
+    renderAuthenticatedHome();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      queryButton("Export")?.click();
+      await Promise.resolve();
+    });
+    expect(queryButton("Export")?.disabled).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(2200);
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("export failed");
+    expect(queryButton("Export")?.disabled).toBe(false);
   });
 
   it("trims duplicate keys before validation and does not call the backend", async () => {
-    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
-    backendMock.listRecipients.mockResolvedValue([]);
     backendMock.addSecret.mockClear();
     renderAuthenticatedHome();
     await act(async () => {

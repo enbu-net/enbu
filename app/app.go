@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/config"
@@ -16,12 +17,15 @@ type App struct {
 	Registry      Registry
 	TokenProvider TokenProvider
 	KeyStore      KeyStore
+	SecretCache   SecretCache
 	RepoDetector  RepoDetector
 	Git           gitprovider.Client
 	Platform      PlatformClient
 	Events        EventHandler
 	RegistryHost  string
 	RepositoryDir string
+	fallbackCache SecretCache
+	fallbackOnce  sync.Once
 }
 
 func (a *App) SetRepositoryDir(dir string) {
@@ -97,6 +101,7 @@ func New() *App {
 		Registry:      &defaultRegistry{},
 		TokenProvider: &defaultTokenProvider{},
 		KeyStore:      keystoreImpl,
+		SecretCache:   newFileSecretCache(),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
 		Git:           gitClient,
 	}

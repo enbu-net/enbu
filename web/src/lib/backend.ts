@@ -49,6 +49,7 @@ type DesktopService = {
   EditSecret: (env: string, key: string, value: string) => Promise<void>;
   DeleteSecret: (env: string, key: string) => Promise<void>;
   PullSecrets: (env: string) => Promise<void>;
+  ExportSecrets: (env: string) => Promise<void>;
   SyncSecrets: (env: string) => Promise<void>;
   ListRepositories: () => Promise<
     Array<{ path: string; owner: string; repo: string; initialized: boolean }>
@@ -258,6 +259,14 @@ const realBackend = {
       return;
     }
     await svc.PullSecrets(env);
+  },
+  async exportSecrets(env = ""): Promise<void> {
+    const svc = service();
+    if (!svc) {
+      await api.secrets.export(env || undefined);
+      return;
+    }
+    await svc.ExportSecrets(env);
   },
   async syncSecrets(env = ""): Promise<void> {
     const svc = service();

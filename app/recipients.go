@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -26,6 +27,9 @@ func (a *App) ListRecipients(ctx context.Context) ([]RecipientInfo, error) {
 	ref := a.registryRef(owner, repo)
 	tags, err := a.Registry.ListTags(ctx, ref, accessToken)
 	if err != nil {
+		if IsNotFoundError(err) {
+			return []RecipientInfo{}, nil
+		}
 		return nil, err
 	}
 
@@ -49,7 +53,10 @@ func (a *App) ListRecipients(ctx context.Context) ([]RecipientInfo, error) {
 			tagRef := ref + ":" + tag
 			data, err := a.Registry.Pull(ctx, tagRef, accessToken)
 			if err != nil {
-				return nil
+				if IsNotFoundError(err) {
+					return nil
+				}
+				return fmt.Errorf("pulling recipient %s: %w", tag, err)
 			}
 			// tag format: recipient-{username}-{fingerprint}
 			without := strings.TrimPrefix(tag, RecipientTagPrefix())
@@ -65,7 +72,9 @@ func (a *App) ListRecipients(ctx context.Context) ([]RecipientInfo, error) {
 			return nil
 		})
 	}
-	_ = group.Wait()
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
 
 	results := make([]RecipientInfo, 0, len(pulled))
 	for _, result := range pulled {

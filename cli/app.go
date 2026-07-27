@@ -30,6 +30,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		newEditCommand(a),
 		newDeleteCommand(a),
 		newPullCommand(a),
+		newExportCommand(a),
 		newSyncCommand(a),
 		newHistoryCommand(a),
 	)

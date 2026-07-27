@@ -158,6 +158,22 @@ func PullFailsEnv(user, env string) Step {
 	})
 }
 
+func PullEmpty(user string) Step {
+	return StepFunc(fmt.Sprintf("%s pulls empty environment", user), func(t *testing.T, s *ScenarioState) {
+		if err := executeCommand(s.ctx, s.user(t, user).svc, "pull"); err != nil {
+			t.Fatalf("%s pull: %v", user, err)
+		}
+	})
+}
+
+func PullEmptyEnv(user, env string) Step {
+	return StepFunc(fmt.Sprintf("%s pulls empty environment %s", user, env), func(t *testing.T, s *ScenarioState) {
+		if err := executeCommand(s.ctx, s.user(t, user).svc, "pull", "--env", env); err != nil {
+			t.Fatalf("%s pull %s: %v", user, env, err)
+		}
+	})
+}
+
 func PullContains(user, expected string) Step {
 	return PullContainsAll(user, expected)
 }
@@ -379,18 +395,24 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func pullStdout(t *testing.T, ctx context.Context, user *testUser) string {
 	t.Helper()
+	if err := executeCommand(ctx, user.svc, "pull"); err != nil {
+		t.Fatalf("%s pull: %v", user.name, err)
+	}
 	return captureStdout(t, func() {
-		if err := executeCommand(ctx, user.svc, "pull", "--stdout"); err != nil {
-			t.Fatalf("%s pull: %v", user.name, err)
+		if err := executeCommand(ctx, user.svc, "export", "--stdout"); err != nil {
+			t.Fatalf("%s export: %v", user.name, err)
 		}
 	})
 }
 
 func pullStdoutEnv(t *testing.T, ctx context.Context, user *testUser, env string) string {
 	t.Helper()
+	if err := executeCommand(ctx, user.svc, "pull", "--env", env); err != nil {
+		t.Fatalf("%s pull %s: %v", user.name, env, err)
+	}
 	return captureStdout(t, func() {
-		if err := executeCommand(ctx, user.svc, "pull", "--env", env, "--stdout"); err != nil {
-			t.Fatalf("%s pull %s: %v", user.name, env, err)
+		if err := executeCommand(ctx, user.svc, "export", "--env", env, "--stdout"); err != nil {
+			t.Fatalf("%s export %s: %v", user.name, env, err)
 		}
 	})
 }
@@ -409,7 +431,7 @@ func pullExpectFail(t *testing.T, ctx context.Context, user *testUser) error {
 		os.Stdout = origStdout
 	}()
 
-	return executeCommand(ctx, user.svc, "pull", "--stdout")
+	return executeCommand(ctx, user.svc, "pull")
 }
 
 func pullExpectFailEnv(t *testing.T, ctx context.Context, user *testUser, env string) error {
@@ -426,7 +448,7 @@ func pullExpectFailEnv(t *testing.T, ctx context.Context, user *testUser, env st
 		os.Stdout = origStdout
 	}()
 
-	return executeCommand(ctx, user.svc, "pull", "--env", env, "--stdout")
+	return executeCommand(ctx, user.svc, "pull", "--env", env)
 }
 
 func addSecret(t *testing.T, ctx context.Context, user *testUser, key, value string) {

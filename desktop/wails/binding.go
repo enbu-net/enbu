@@ -86,6 +86,10 @@ func (s *DesktopService) PullSecrets(env string) error {
 	return s.service.PullSecrets(env)
 }
 
+func (s *DesktopService) ExportSecrets(env string) error {
+	return s.service.ExportSecrets(env)
+}
+
 func (s *DesktopService) SyncSecrets(env string) error {
 	return s.service.SyncSecrets(env)
 }

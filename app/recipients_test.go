@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/utils/oci"
 )
 
 func TestListRecipients(t *testing.T) {
@@ -51,6 +53,75 @@ func TestListRecipients(t *testing.T) {
 	}
 	if !aliceFound {
 		t.Fatal("alice not found in recipients")
+	}
+}
+
+func TestListRecipients_MissingPackageIsEmpty(t *testing.T) {
+	a := &App{
+		Registry: &listTagsErrorRegistry{
+			memRegistry: newMemRegistry(),
+			err:         fmt.Errorf("listing recipients: %w", oci.ErrNotFound),
+		},
+		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
+		RepoDetector:  &staticRepoDetector{owner: "alice", repo: "myrepo"},
+	}
+
+	recipients, err := a.ListRecipients(context.Background())
+	if err != nil {
+		t.Fatalf("ListRecipients: %v", err)
+	}
+	if len(recipients) != 0 {
+		t.Fatalf("recipients = %v, want empty", recipients)
+	}
+}
+
+type pullErrorRegistry struct {
+	*memRegistry
+	err error
+}
+
+func (r *pullErrorRegistry) Pull(context.Context, string, string) ([]byte, error) {
+	return nil, r.err
+}
+
+func TestListRecipients_RegistryFailureIsNotHidden(t *testing.T) {
+	base := newMemRegistry()
+	ref := "ghcr.io/alice/myrepo-enbu"
+	if err := base.Push(context.Background(), ref+":recipient-alice-aabbccdd", "", nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{
+		Registry:      &pullErrorRegistry{memRegistry: base, err: fmt.Errorf("unauthorized")},
+		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
+		RepoDetector:  &staticRepoDetector{owner: "alice", repo: "myrepo"},
+	}
+
+	if _, err := a.ListRecipients(context.Background()); err == nil {
+		t.Fatal("expected registry error")
+	}
+}
+
+func TestListRecipients_SkipsRecipientRemovedAfterListing(t *testing.T) {
+	base := newMemRegistry()
+	ref := "ghcr.io/alice/myrepo-enbu"
+	if err := base.Push(context.Background(), ref+":recipient-alice-aabbccdd", "", nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{
+		Registry: &pullErrorRegistry{
+			memRegistry: base,
+			err:         fmt.Errorf("pulling recipient: %w", oci.ErrNotFound),
+		},
+		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
+		RepoDetector:  &staticRepoDetector{owner: "alice", repo: "myrepo"},
+	}
+
+	recipients, err := a.ListRecipients(context.Background())
+	if err != nil {
+		t.Fatalf("ListRecipients: %v", err)
+	}
+	if len(recipients) != 0 {
+		t.Fatalf("recipients = %v, want empty", recipients)
 	}
 }
 

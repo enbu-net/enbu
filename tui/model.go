@@ -42,6 +42,7 @@ const (
 	hitEnvironmentOption
 	hitCreateEnvironment
 	hitPull
+	hitExport
 	hitSecretRow
 	hitEdit
 	hitReveal
@@ -337,6 +338,9 @@ func (m *model) handleSecretsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Pull):
 		m.loading = true
 		return m, m.pullSecrets()
+	case key.Matches(msg, keys.Export):
+		m.loading = true
+		return m, m.exportSecrets()
 	case key.Matches(msg, keys.Reveal):
 		m.toggleReveal(m.cursor)
 	case key.Matches(msg, keys.CopyValue):
@@ -464,6 +468,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case hitPull:
 			m.loading = true
 			return m, m.pullSecrets()
+		case hitExport:
+			m.loading = true
+			return m, m.exportSecrets()
 		case hitSecretRow:
 			m.cursor = hit.index
 		case hitEdit:
@@ -618,9 +625,11 @@ func (m *model) renderSecrets(startY int) []string {
 	lines := []string{}
 	envLabel := fmt.Sprintf(" Environment: %s ▾ ", fallback(m.current, "default"))
 	pullLabel := " ⇩ Pull "
-	lines = append(lines, sectionStyle.Render(envLabel)+"  "+buttonStyle.Render(pullLabel))
+	exportLabel := " ⇧ Export "
+	lines = append(lines, sectionStyle.Render(envLabel)+"  "+buttonStyle.Render(pullLabel)+"  "+buttonStyle.Render(exportLabel))
 	m.addHit(hitEnvironment, 0, startY, lipgloss.Width(envLabel), 1, 0, "")
 	m.addHit(hitPull, lipgloss.Width(envLabel)+2, startY, lipgloss.Width(pullLabel), 1, 0, "")
+	m.addHit(hitExport, lipgloss.Width(envLabel)+2+lipgloss.Width(pullLabel)+2, startY, lipgloss.Width(exportLabel), 1, 0, "")
 
 	if m.environmentOpen() {
 		for i, env := range m.envs {
@@ -674,7 +683,7 @@ func (m *model) renderSecrets(startY int) []string {
 	}
 	lines = append(lines, "", buttonPrimaryStyle.Render(" + Add secret "))
 	m.addHit(hitAdd, 0, startY+len(lines)-1, 14, 1, 0, "")
-	lines = append(lines, helpStyle.Render("j/k move  space reveal  y/Y copy value/key  a add  e edit  d delete  s environment  p pull  q quit"))
+	lines = append(lines, helpStyle.Render("j/k move  space reveal  y/Y copy value/key  a add  e edit  d delete  s environment  p pull  x export  q quit"))
 	return lines
 }
 
@@ -1110,12 +1119,32 @@ func (m *model) createEnvironment(name string) tea.Cmd {
 func (m *model) pullSecrets() tea.Cmd {
 	return func() tea.Msg {
 		if m.app == nil {
-			return operationDoneMsg{message: "Wrote environment file"}
+			return operationDoneMsg{message: "Pulled secrets"}
 		}
-		if err := m.app.PullSecretsToFile(context.Background(), m.current); err != nil {
+		_, found, err := m.app.PullSecrets(context.Background(), m.current)
+		if err != nil {
 			return errMsg{err}
 		}
-		return operationDoneMsg{message: "Wrote environment file"}
+		return operationDoneMsg{message: pullResultMessage(found)}
+	}
+}
+
+func pullResultMessage(found bool) string {
+	if !found {
+		return "No secrets have been uploaded for this environment."
+	}
+	return "Pulled secrets"
+}
+
+func (m *model) exportSecrets() tea.Cmd {
+	return func() tea.Msg {
+		if m.app == nil {
+			return operationDoneMsg{message: "Exported environment file"}
+		}
+		if _, err := m.app.ExportSecretsToFile(context.Background(), m.current); err != nil {
+			return errMsg{err}
+		}
+		return operationDoneMsg{message: "Exported environment file"}
 	}
 }
 

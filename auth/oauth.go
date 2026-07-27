@@ -296,6 +296,8 @@ func validateToken(token exchangeResponse) error {
 	}) {
 		got[scope] = true
 	}
+	// Do not require read:packages separately. GitHub normalizes it into
+	// write:packages, so the token response may omit read:packages.
 	for _, required := range []string{"repo", "read:org", "write:packages"} {
 		if !got[required] {
 			return fmt.Errorf("missing required scope %q", required)

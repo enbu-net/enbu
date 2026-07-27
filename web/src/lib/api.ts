@@ -70,6 +70,7 @@ export const api = {
     delete: (key: string, env?: string) =>
       request<{ deleted: string }>("DELETE", `/api/secrets/${key}${env ? `?env=${env}` : ""}`),
     pull: (env?: string) => request<{ status: string }>("POST", "/api/secrets/pull", { env }),
+    export: (env?: string) => request<{ status: string }>("POST", "/api/secrets/export", { env }),
     sync: (env?: string) => request<{ status: string }>("POST", "/api/secrets/sync", { env }),
   },
   history: {
@@ -131,6 +132,7 @@ export interface Environment {
 
 export interface SecretsResponse {
   environment: string;
+  cached?: boolean;
   secrets: { key: string; value: string }[];
 }
 

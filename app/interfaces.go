@@ -23,6 +23,12 @@ type KeyStore interface {
 	Load(service, key string) ([]byte, error)
 }
 
+type SecretCache interface {
+	Load(ref string) ([]byte, error)
+	Store(ref string, ciphertext []byte) error
+	Delete(ref string) error
+}
+
 type RepoDetector interface {
 	LoadRepo() (owner, repo string, err error)
 }
@@ -34,8 +40,8 @@ type PlatformClient interface {
 }
 
 type ProgressStep struct {
-	Op     string `json:"op"`     // "add" | "pull" | "sync" | "delete"
-	Step   string `json:"step"`   // "encrypt" | "push" | "pull_secrets" | "pull_recipients" | "reencrypt" | "decrypt" | "write"
+	Op     string `json:"op"`     // "add" | "pull" | "export" | "sync" | "delete"
+	Step   string `json:"step"`   // "download" | "validate" | "cache" | "load" | "decrypt" | "export" | ...
 	Status string `json:"status"` // "start" | "done"
 }
 

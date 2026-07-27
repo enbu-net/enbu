@@ -36,7 +36,7 @@ func (a *addEditRegistry) Pull(_ context.Context, ref string, _ string) ([]byte,
 		return []byte(a.publicKey), nil
 	}
 	if a.ciphertext == nil {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	return append([]byte(nil), a.ciphertext...), nil
 }
@@ -47,7 +47,7 @@ func (a *addEditRegistry) ListTags(context.Context, string, string) ([]string, e
 
 func (a *addEditRegistry) GetDigest(_ context.Context, ref string, _ string) (string, error) {
 	if a.ciphertext == nil {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", fmt.Errorf("%w: %s", oci.ErrNotFound, ref)
 	}
 	return a.expectedDigest, nil
 }

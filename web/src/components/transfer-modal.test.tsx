@@ -58,6 +58,26 @@ describe("TransferModal", () => {
     act(() => {
       window.dispatchEvent(
         new CustomEvent<ProgressStep>("enbu:progress", {
+          detail: { op: "export", step: "export", status: "done" },
+        }),
+      );
+    });
+    expect(container.textContent).not.toContain("Done ✓");
+    expect(container.textContent).toContain("Fetching recipient public keys");
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent<ProgressStep>("enbu:progress", {
+          detail: { op: "add", step: "encrypt", status: "done" },
+        }),
+      );
+    });
+    expect(container.textContent).not.toContain("Done ✓");
+    expect(container.textContent).toContain("Encrypting with age X25519");
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent<ProgressStep>("enbu:progress", {
           detail: { op: "add", step: "push", status: "start" },
         }),
       );
