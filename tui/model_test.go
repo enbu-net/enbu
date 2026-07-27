@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func testModel() *model {
@@ -22,8 +22,8 @@ func testModel() *model {
 	return m
 }
 
-func keyMsg(value string) tea.KeyMsg {
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(value)}
+func keyMsg(value string) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: []rune(value)[0], Text: value}
 }
 
 func findHit(t *testing.T, m *model, kind hitKind, index int) hitRegion {
@@ -37,30 +37,39 @@ func findHit(t *testing.T, m *model, kind hitKind, index int) hitRegion {
 	return hitRegion{}
 }
 
-func click(hit hitRegion) tea.MouseMsg {
-	return tea.MouseMsg{
+func TestViewDeclaresTerminalModes(t *testing.T) {
+	view := testModel().View()
+	if !view.AltScreen {
+		t.Fatal("alternate screen is disabled")
+	}
+	if view.MouseMode != tea.MouseModeAllMotion {
+		t.Fatalf("mouse mode = %v, want %v", view.MouseMode, tea.MouseModeAllMotion)
+	}
+}
+
+func click(hit hitRegion) tea.MouseClickMsg {
+	return tea.MouseClickMsg{
 		X:      hit.x,
 		Y:      hit.y,
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionPress,
+		Button: tea.MouseLeft,
 	}
 }
 
 func TestSecretsAreMaskedAndCanBeRevealed(t *testing.T) {
 	m := testModel()
-	view := m.View()
+	view := m.View().Content
 	if strings.Contains(view, "super-secret") {
 		t.Fatal("secret is visible before reveal")
 	}
 
 	_, _ = m.Update(keyMsg(" "))
-	if view = m.View(); !strings.Contains(view, "super-secret") {
+	if view = m.View().Content; !strings.Contains(view, "super-secret") {
 		t.Fatal("secret is not visible after reveal")
 	}
 
 	reveal := findHit(t, m, hitReveal, 0)
 	_, _ = m.Update(click(reveal))
-	if view = m.View(); strings.Contains(view, "super-secret") {
+	if view = m.View().Content; strings.Contains(view, "super-secret") {
 		t.Fatal("secret remains visible after mouse toggle")
 	}
 }
@@ -89,7 +98,7 @@ func TestMouseWheelScrollsLongSecretList(t *testing.T) {
 		m.secrets[i] = secretEntry{key: "KEY", value: "VALUE"}
 	}
 	_ = m.View()
-	_, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	_, _ = m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelDown})
 	if m.offset != 3 {
 		t.Fatalf("offset = %d, want 3", m.offset)
 	}
@@ -121,11 +130,11 @@ func TestAddOverlayEnterAdvancesToValueAndRejectsEmptyValue(t *testing.T) {
 	m := testModel()
 	m.openAdd()
 	m.keyInput.SetValue("API_TOKEN")
-	if view := m.View(); !strings.Contains(view, "enter value") {
+	if view := m.View().Content; !strings.Contains(view, "enter value") {
 		t.Fatalf("key step help is missing: %q", view)
 	}
 
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil || m.loading || m.focusKey || !m.valueInput.Focused() || m.overlay != overlayAdd {
 		t.Fatalf(
 			"key enter state: cmd=%v loading=%v focusKey=%v valueFocused=%v overlay=%d",
@@ -137,13 +146,13 @@ func TestAddOverlayEnterAdvancesToValueAndRejectsEmptyValue(t *testing.T) {
 		)
 	}
 
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil || m.loading || m.err == nil || m.err.Error() != "value cannot be empty" {
 		t.Fatalf("empty value state: cmd=%v loading=%v err=%v", cmd != nil, m.loading, m.err)
 	}
 
 	m.valueInput.SetValue("secret")
-	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil || !m.loading {
 		t.Fatalf("value submit state: cmd=%v loading=%v", cmd != nil, m.loading)
 	}
@@ -172,7 +181,7 @@ func TestSettingsEditorRejectsInvalidOutput(t *testing.T) {
 	m.configContent = "version = \"v1alpha1\"\n"
 	_, _ = m.startConfigEdit()
 	m.configInput.SetValue("version = \"v1alpha1\"\n[env.default]\noutput = \"../outside\"\n")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	_, cmd := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if cmd != nil || m.err == nil || !m.configEditing {
 		t.Fatalf("invalid config state: cmd=%v err=%v editing=%v", cmd != nil, m.err, m.configEditing)
 	}
@@ -195,7 +204,7 @@ func TestWorkspaceLoadRemasksReplacedSecrets(t *testing.T) {
 		envs:    m.envs,
 		current: "development",
 	})
-	if m.revealed["API_KEY"] || strings.Contains(m.View(), "replacement") {
+	if m.revealed["API_KEY"] || strings.Contains(m.View().Content, "replacement") {
 		t.Fatal("replacement workspace data remained revealed")
 	}
 }
@@ -230,7 +239,7 @@ func TestConfigCancelClearsValidationError(t *testing.T) {
 		m.configContent = "version = \"v1alpha1\"\n"
 		_, _ = m.startConfigEdit()
 		m.err = errors.New("invalid config")
-		_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+		_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 		if m.configEditing || m.err != nil {
 			t.Fatalf("keyboard cancel: editing=%v err=%v", m.configEditing, m.err)
 		}

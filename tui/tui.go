@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/config"
 )
@@ -22,7 +22,7 @@ func Run(a *app.App) error {
 		return fmt.Errorf("tui: %w", err)
 	}
 	m := newModel(a)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}
