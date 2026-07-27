@@ -1,6 +1,6 @@
 services:
   registry:
-    image: ghcr.io/project-zot/zot:v2.1.18@sha256:484127d7c7903cf02f7843df550e8b14225f536ee7dbf3a5e2e96182c496323d
+    image: ghcr.io/project-zot/zot:v2.1.18@sha256:6f7bf2b8e43437c7c3a121bc80214845c85f27321e66f2ff4be6bf4220775fd7
     ports:
       - "5000:5000"
     environment:
