@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/enbu-net/enbu/app"
 )
 
@@ -51,7 +51,7 @@ func RunDemo() error {
 	m.repository = "enbu-net/enbu"
 	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
 	m.envs = append([]envItem(nil), demoEnvs...)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseAllMotion())
+	p := tea.NewProgram(m)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui demo: %w", err)
 	}

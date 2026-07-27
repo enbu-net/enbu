@@ -32,8 +32,8 @@ export function TomlCodeEditor({
     let cleanup = () => {};
 
     void Promise.all([
-      import("monaco-editor/esm/vs/editor/editor.api.js"),
-      import("monaco-editor/esm/vs/editor/editor.worker?worker"),
+      import("monaco-editor"),
+      import("monaco-editor/editor/editor.worker?worker"),
       import("../lib/toml-language-client"),
     ])
       .then(async ([monaco, workerModule, language]) => {

@@ -1,6 +1,6 @@
 package tui
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
 	Up, Down, Add, Edit, Delete, Switch, Refresh, Pull key.Binding
@@ -17,6 +17,6 @@ var keys = keyMap{
 	Refresh: binding("r"), Pull: binding("p"), Enter: binding("enter"), Escape: binding("esc"),
 	Quit: binding("q", "ctrl+c"), Tab: binding("tab"), TabNext: binding("right", "l"), TabPrev: binding("left", "h"),
 	SecretsTab: binding("1"), MembersTab: binding("2"), SettingsTab: binding("3"),
-	Reveal: binding(" ", "v"), CopyValue: binding("y"), CopyKey: binding("Y"), ToggleView: binding("v"),
+	Reveal: binding("space", "v"), CopyValue: binding("y"), CopyKey: binding("Y"), ToggleView: binding("v"),
 	Save: binding("ctrl+s"),
 }

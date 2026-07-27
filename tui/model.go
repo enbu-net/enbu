@@ -6,12 +6,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/config"
 )
@@ -121,17 +121,17 @@ func newModel(a *app.App) *model {
 	ki := textinput.New()
 	ki.Placeholder = "KEY"
 	ki.CharLimit = 256
-	ki.Width = 28
+	ki.SetWidth(28)
 
 	vi := textinput.New()
 	vi.Placeholder = "VALUE"
 	vi.CharLimit = 4096
-	vi.Width = 38
+	vi.SetWidth(38)
 
 	ei := textinput.New()
 	ei.Placeholder = "environment-name"
 	ei.CharLimit = 100
-	ei.Width = 32
+	ei.SetWidth(32)
 
 	ci := textarea.New()
 	ci.Placeholder = "enbu.toml"
@@ -220,7 +220,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.handleMouse(msg)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.loading {
 			if key.Matches(msg, keys.Quit) {
 				return m, tea.Quit
@@ -243,14 +243,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) resizeInputs() {
 	inputWidth := max(18, min(48, m.width-22))
-	m.keyInput.Width = inputWidth
-	m.valueInput.Width = inputWidth
-	m.envInput.Width = inputWidth
+	m.keyInput.SetWidth(inputWidth)
+	m.valueInput.SetWidth(inputWidth)
+	m.envInput.SetWidth(inputWidth)
 	m.configInput.SetWidth(max(30, m.width-10))
 	m.configInput.SetHeight(max(6, m.height-13))
 }
 
-func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.overlay != overlayNone {
 		return m.handleOverlayKey(msg)
 	}
@@ -295,7 +295,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleSecretsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleSecretsKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.environmentOpen() {
 		switch {
 		case key.Matches(msg, keys.Escape):
@@ -347,7 +347,7 @@ func (m *model) handleSecretsKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleOverlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleOverlayKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, keys.Escape) {
 		m.closeOverlay()
 		return m, nil
@@ -382,7 +382,7 @@ func (m *model) handleOverlayKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m.updateInputs(msg)
 }
 
-func (m *model) handleConfigEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleConfigEditorKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, keys.Escape):
 		m.configEditing = false
@@ -422,10 +422,11 @@ func (m *model) updateInputs(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+	mouse := msg.Mouse()
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
 		if m.tab == tabSecrets && m.overlay == overlayNone {
 			delta := 3
-			if msg.Button == tea.MouseButtonWheelUp {
+			if mouse.Button == tea.MouseWheelUp {
 				delta = -3
 			}
 			m.offset = max(0, min(m.maxOffset(), m.offset+delta))
@@ -433,21 +434,21 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if msg.Action == tea.MouseActionMotion {
+	if _, ok := msg.(tea.MouseMotionMsg); ok {
 		for _, hit := range m.hits {
-			if hit.kind == hitSecretRow && hit.contains(msg.X, msg.Y) {
+			if hit.kind == hitSecretRow && hit.contains(mouse.X, mouse.Y) {
 				m.cursor = hit.index
 				break
 			}
 		}
 		return m, nil
 	}
-	if msg.Button != tea.MouseButtonLeft || msg.Action != tea.MouseActionPress {
+	if _, ok := msg.(tea.MouseClickMsg); !ok || mouse.Button != tea.MouseLeft {
 		return m, nil
 	}
 	for i := len(m.hits) - 1; i >= 0; i-- {
 		hit := m.hits[i]
-		if !hit.contains(msg.X, msg.Y) {
+		if !hit.contains(mouse.X, mouse.Y) {
 			continue
 		}
 		switch hit.kind {
@@ -549,10 +550,10 @@ func (m *model) activateTab(tab tabState) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
 	m.hits = m.hits[:0]
 	if m.width > 0 && m.width < 58 || m.height > 0 && m.height < 16 {
-		return errorStyle.Render("enbu needs a terminal of at least 58×16")
+		return terminalView(errorStyle.Render("enbu needs a terminal of at least 58×16"))
 	}
 
 	lines := []string{headerStyle.Render("💃 enbu")}
@@ -570,7 +571,7 @@ func (m *model) View() string {
 	}
 	if m.loading {
 		lines = append(lines, "", "  "+m.spinner.View()+" Loading…")
-		return strings.Join(lines, "\n")
+		return terminalView(strings.Join(lines, "\n"))
 	}
 
 	switch m.tab {
@@ -584,7 +585,14 @@ func (m *model) View() string {
 	if m.overlay != overlayNone {
 		lines = append(lines, m.renderOverlay(len(lines))...)
 	}
-	return strings.Join(lines, "\n")
+	return terminalView(strings.Join(lines, "\n"))
+}
+
+func terminalView(content string) tea.View {
+	view := tea.NewView(content)
+	view.AltScreen = true
+	view.MouseMode = tea.MouseModeAllMotion
+	return view
 }
 
 func (m *model) renderTabs(y int) string {
@@ -742,16 +750,16 @@ func (m *model) renderOverlay(startY int) []string {
 	switch m.overlay {
 	case overlayAdd:
 		lines = append(lines, "  Key    "+m.keyInput.View(), "  Value  "+m.valueInput.View())
-		m.addHit(hitInputKey, 9, baseY, max(1, m.keyInput.Width), 1, 0, "")
-		m.addHit(hitInputValue, 9, baseY+1, max(1, m.valueInput.Width), 1, 0, "")
+		m.addHit(hitInputKey, 9, baseY, max(1, m.keyInput.Width()), 1, 0, "")
+		m.addHit(hitInputValue, 9, baseY+1, max(1, m.valueInput.Width()), 1, 0, "")
 	case overlayEdit:
 		lines = append(lines, "  Value  "+m.valueInput.View())
-		m.addHit(hitInputValue, 9, baseY, max(1, m.valueInput.Width), 1, 0, "")
+		m.addHit(hitInputValue, 9, baseY, max(1, m.valueInput.Width()), 1, 0, "")
 	case overlayDelete:
 		lines = append(lines, fmt.Sprintf("  Delete %s? This cannot be undone.", selectedStyle.Render(m.secrets[m.cursor].key)))
 	case overlayCreateEnvironment:
 		lines = append(lines, "  Name   "+m.envInput.View())
-		m.addHit(hitInputKey, 9, baseY, max(1, m.envInput.Width), 1, 0, "")
+		m.addHit(hitInputKey, 9, baseY, max(1, m.envInput.Width()), 1, 0, "")
 	}
 	lines = append(lines, "", buttonPrimaryStyle.Render(" Confirm ")+"  "+buttonStyle.Render(" Cancel "))
 	actionY := startY + len(lines) - 1

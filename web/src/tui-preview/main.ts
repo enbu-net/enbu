@@ -1,24 +1,30 @@
 import { FitAddon, Terminal, init } from "ghostty-web";
-import {
-  ECHO,
-  ECHONL,
-  ICANON,
-  ICRNL,
-  IEXTEN,
-  IGNCR,
-  INLCR,
-  ISIG,
-  ISTRIP,
-  IXON,
-  OPOST,
-  Termios,
-  TtyServer,
-  openpty,
-} from "xterm-pty";
+import * as xtermPty from "xterm-pty";
 import { attachMouseReporting } from "./mouse-adapter";
 import { type RegisterCleanup, SessionController } from "./session-controller";
 import { createPtyTerminal, resolveRuntimeURL } from "./terminal-adapter";
+import { TtyServer } from "./tty-server";
 import "./style.css";
+
+const { Termios, openpty } = xtermPty;
+const terminalFlags = (
+  xtermPty as unknown as {
+    Flags: Record<
+      | "ECHO"
+      | "ECHONL"
+      | "ICANON"
+      | "ICRNL"
+      | "IEXTEN"
+      | "IGNCR"
+      | "INLCR"
+      | "ISIG"
+      | "ISTRIP"
+      | "IXON"
+      | "OPOST",
+      number
+    >;
+  }
+).Flags;
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -88,14 +94,32 @@ async function startSession(register: RegisterCleanup): Promise<void> {
   slave.ioctl(
     "TCSETS",
     new Termios(
-      settings.iflag & ~(ISTRIP | INLCR | IGNCR | ICRNL | IXON),
-      settings.oflag & ~OPOST,
+      settings.iflag &
+        ~(
+          terminalFlags.ISTRIP |
+          terminalFlags.INLCR |
+          terminalFlags.IGNCR |
+          terminalFlags.ICRNL |
+          terminalFlags.IXON
+        ),
+      settings.oflag & ~terminalFlags.OPOST,
       settings.cflag,
-      settings.lflag & ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN),
+      settings.lflag &
+        ~(
+          terminalFlags.ECHO |
+          terminalFlags.ECHONL |
+          terminalFlags.ICANON |
+          terminalFlags.ISIG |
+          terminalFlags.IEXTEN
+        ),
       settings.cc,
     ),
   );
-  master.activate(createPtyTerminal(terminal));
+  (
+    master as unknown as {
+      activate(terminal: ReturnType<typeof createPtyTerminal>): void;
+    }
+  ).activate(createPtyTerminal(terminal));
 
   statusElement.textContent = "Booting enbu…";
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
