@@ -63,6 +63,15 @@ func newInitCommand(a *app.App) *cobra.Command {
 				return fmt.Errorf("finding repository root: not in a git repository")
 			}
 			repoRoot := repository.Root
+			updateGitignore := func() {
+				if err := ensureProjectGitignore(repoRoot, projectCfg); err != nil {
+					warnings = append(warnings, fmt.Sprintf("failed to update .gitignore: %v", err))
+					humanErrorf(cmd, "Warning: failed to update .gitignore: %v\n", err)
+				} else {
+					result.GitignoreUpdated = true
+					humanPrintf(cmd, "✓ Updated .gitignore\n")
+				}
+			}
 
 			existingTags, err := a.Registry.ListTags(ctx, registryRef, accessToken)
 			if err != nil && !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "NAME_UNKNOWN") {
@@ -142,6 +151,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 					if err != nil || len(identities) == 0 {
 						result.NextSteps = append(result.NextSteps, "Ask an existing member to run 'enbu sync', then run 'enbu pull'.")
 						humanPrintf(cmd, "Could not load decryption keys; run 'enbu pull' after an existing member runs 'enbu sync'.\n")
+						updateGitignore()
 						return finishInit(cmd, result, warnings)
 					}
 					env := projectCfg.CurrentEnvironment()
@@ -165,13 +175,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 					result.NextSteps = append(result.NextSteps, "Wait for a member to run 'enbu add'.")
 					humanPrintf(cmd, "No secrets exist yet. You can access them after a member runs 'enbu add'.\n")
 				}
-				if err := ensureProjectGitignore(repoRoot, projectCfg); err != nil {
-					warnings = append(warnings, fmt.Sprintf("failed to update .gitignore: %v", err))
-					humanErrorf(cmd, "Warning: failed to update .gitignore: %v\n", err)
-				} else {
-					result.GitignoreUpdated = true
-					humanPrintf(cmd, "✓ Updated .gitignore\n")
-				}
+				updateGitignore()
 				return finishInit(cmd, result, warnings)
 			}
 
@@ -183,13 +187,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 				humanPrintf(cmd, "✓ Created enbu.toml\n")
 			}
 
-			if err := ensureProjectGitignore(repoRoot, projectCfg); err != nil {
-				warnings = append(warnings, fmt.Sprintf("failed to update .gitignore: %v", err))
-				humanErrorf(cmd, "Warning: failed to update .gitignore: %v\n", err)
-			} else {
-				result.GitignoreUpdated = true
-				humanPrintf(cmd, "✓ Updated .gitignore\n")
-			}
+			updateGitignore()
 
 			if configMissing {
 				if err := gitCommitInitFiles(ctx, gitClient(a), repoRoot); err != nil {

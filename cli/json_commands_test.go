@@ -13,6 +13,7 @@ import (
 	gitprovider "github.com/enbu-net/enbu/provider/git"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/enbu-net/enbu/utils/bundle"
+	"github.com/enbu-net/enbu/utils/oci"
 )
 
 func TestJSONSecretCommands(t *testing.T) {
@@ -21,11 +22,12 @@ func TestJSONSecretCommands(t *testing.T) {
 		command string
 		initial map[string]string
 		args    []string
+		secrets []string
 	}{
-		{name: "add", command: "add", initial: nil, args: []string{"API_KEY", "secret"}},
-		{name: "edit", command: "edit", initial: map[string]string{"API_KEY": "old"}, args: []string{"API_KEY", "new"}},
-		{name: "delete", command: "delete", initial: map[string]string{"API_KEY": "secret"}, args: []string{"API_KEY"}},
-		{name: "sync", command: "sync", initial: map[string]string{"API_KEY": "secret"}},
+		{name: "add", command: "add", initial: nil, args: []string{"API_KEY", "secret"}, secrets: []string{"secret"}},
+		{name: "edit", command: "edit", initial: map[string]string{"API_KEY": "old"}, args: []string{"API_KEY", "new"}, secrets: []string{"old", "new"}},
+		{name: "delete", command: "delete", initial: map[string]string{"API_KEY": "secret"}, args: []string{"API_KEY"}, secrets: []string{"secret"}},
+		{name: "sync", command: "sync", initial: map[string]string{"API_KEY": "secret"}, secrets: []string{"secret"}},
 	}
 
 	for _, tt := range tests {
@@ -40,8 +42,11 @@ func TestJSONSecretCommands(t *testing.T) {
 			if got := stringField(t, data, "environment"); got != app.DefaultEnvironment {
 				t.Fatalf("environment = %q", got)
 			}
-			if tt.command != "pull" && strings.Contains(fmt.Sprint(envelope), "secret") {
-				t.Fatalf("secret value leaked in response: %#v", envelope)
+			serialized := fmt.Sprint(envelope)
+			for _, secret := range tt.secrets {
+				if strings.Contains(serialized, secret) {
+					t.Fatalf("secret value %q leaked in response: %#v", secret, envelope)
+				}
 			}
 		})
 	}
@@ -115,7 +120,8 @@ func TestJSONHistoryCommands(t *testing.T) {
 	registryRef := "ghcr.io/owner/repo-enbu"
 	pushEncryptedHistory(t, registry, keyPair, registryRef+":secrets-default-1000", map[string]string{"A": "1"})
 	pushEncryptedHistory(t, registry, keyPair, registryRef+":secrets-default-2000", map[string]string{"A": "2", "B": "3"})
-	if err := registry.Push(context.Background(), registryRef+":recipient-alice", "", []byte(keyPair.PublicKey), "", nil); err != nil {
+	recipientTag := app.RecipientTagPrefix() + oci.CleanTag(fmt.Sprintf("alice-%s", age.Fingerprint(keyPair.PublicKey)))
+	if err := registry.Push(context.Background(), registryRef+":"+recipientTag, "", []byte(keyPair.PublicKey), "", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,8 +155,9 @@ func TestJSONInit(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	registry := newEnvRegistry()
 	a := &app.App{
-		Registry:      newEnvRegistry(),
+		Registry:      registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		KeyStore:      &staticKeyStore{},
@@ -165,8 +172,61 @@ func TestJSONInit(t *testing.T) {
 	if registered, _ := data["recipient_registered"].(bool); !registered {
 		t.Fatalf("recipient_registered = %#v", data["recipient_registered"])
 	}
-	if stringField(t, data, "public_key") == "" {
+	publicKey := stringField(t, data, "public_key")
+	if publicKey == "" {
 		t.Fatal("public_key is empty")
+	}
+	recipientTag := app.RecipientTagPrefix() + oci.CleanTag(fmt.Sprintf("alice-%s", age.Fingerprint(publicKey)))
+	if _, ok := registry.data["ghcr.io/owner/repo-enbu:"+recipientTag]; !ok {
+		t.Fatalf("recipient tag %q was not registered", recipientTag)
+	}
+}
+
+func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
+	dir := t.TempDir()
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(original) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha1"
+default_env = "default"
+
+[env.default]
+output = ".env"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := newEnvRegistry()
+	if err := registry.Push(context.Background(), "ghcr.io/owner/repo-enbu:secrets-default", "", []byte("ciphertext"), "", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := &app.App{
+		Registry:      registry,
+		TokenProvider: &deleteTestTokenProvider{},
+		RepoDetector:  &deleteTestRepoDetector{},
+		KeyStore:      &staticKeyStore{},
+		Git:           &jsonInitGit{root: dir},
+		Platform:      &jsonInitPlatform{},
+	}
+	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
+	data := objectField(t, envelope, "data")
+	if got := stringField(t, data, "mode"); got != "join" {
+		t.Fatalf("mode = %q", got)
+	}
+	if updated, _ := data["gitignore_updated"].(bool); !updated {
+		t.Fatalf("gitignore_updated = %#v", data["gitignore_updated"])
+	}
+	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), ".env") {
+		t.Fatalf(".gitignore does not contain .env: %q", content)
 	}
 }
 

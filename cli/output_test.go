@@ -53,7 +53,10 @@ func TestJSONExecutionErrorsUseOneStdoutObject(t *testing.T) {
 
 	for _, args := range tests {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			envelope := executeJSON(t, NewWithApp("test", &app.App{}), args...)
+			envelope, err := executeJSONResult(t, NewWithApp("test", &app.App{}), args...)
+			if err == nil {
+				t.Fatal("execution unexpectedly succeeded")
+			}
 			if ok, _ := envelope["ok"].(bool); ok {
 				t.Fatalf("response unexpectedly succeeded: %#v", envelope)
 			}
@@ -91,7 +94,10 @@ func TestJSONAuthDeviceIsRejectedBeforeLogin(t *testing.T) {
 			return nil, errors.New("unexpected call")
 		},
 	})
-	envelope := executeJSON(t, jsonTestRoot(login), "login", "--device", "--json")
+	envelope, err := executeJSONResult(t, jsonTestRoot(login), "login", "--device", "--json")
+	if err == nil {
+		t.Fatal("execution unexpectedly succeeded")
+	}
 	if called {
 		t.Fatal("device login started before rejecting JSON mode")
 	}
@@ -165,6 +171,15 @@ func jsonTestRoot(commands ...*cobra.Command) *cobra.Command {
 
 func executeJSON(t *testing.T, cmd *cobra.Command, args ...string) map[string]any {
 	t.Helper()
+	result, err := executeJSONResult(t, cmd, args...)
+	if err != nil {
+		t.Fatalf("unexpected execution error: %v", err)
+	}
+	return result
+}
+
+func executeJSONResult(t *testing.T, cmd *cobra.Command, args ...string) (map[string]any, error) {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
@@ -183,7 +198,7 @@ func executeJSON(t *testing.T, cmd *cobra.Command, args ...string) map[string]an
 			t.Fatalf("warnings = %#v, want an array", result["warnings"])
 		}
 	}
-	return result
+	return result, err
 }
 
 func assertOneJSONObject(t *testing.T, output string) map[string]any {
