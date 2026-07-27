@@ -25,7 +25,7 @@
     "@taplo/lsp": "^0.8.0",
     "ghostty-web": "0.4.0",
     "lucide-react": "^1.23.0",
-    "monaco-editor": "^0.55.1",
+    "monaco-editor": "^0.56.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "smol-toml": "^1.7.0",
