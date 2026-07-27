@@ -3,7 +3,6 @@
   "extends": [
     "github>aquaproj/aqua-renovate-config#2.13.0",
     "config:best-practices",
-    ":disableRateLimiting",
     ":label(renovate)",
     ":timezone(Asia/Tokyo)"
   ],
@@ -16,6 +15,12 @@
     {
       "matchPackageNames": ["aquaproj/aqua-registry"],
       "extends": ["schedule:earlyMondays"]
+    },
+    {
+      "description": "Group non-major updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-non-major"
     },
     {
       "description": "Major updates - block automerge",
