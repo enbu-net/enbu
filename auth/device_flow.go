@@ -93,7 +93,11 @@ func (c *deviceFlowClient) login(
 	for {
 		if err := c.wait(ctx, interval); err != nil {
 			if errors.Is(err, context.DeadlineExceeded) && parent.Err() == nil {
-				return nil, errors.New("device code expired, please try again")
+				return nil, apperr.New(
+					apperr.CodeAuthExpired,
+					"device code expired, please try again",
+					nil,
+				)
 			}
 			return nil, fmt.Errorf("waiting for device authorization: %w", err)
 		}
@@ -124,7 +128,11 @@ func (c *deviceFlowClient) login(
 				}
 			}
 		case "expired_token", "token_expired":
-			return nil, errors.New("device code expired, please try again")
+			return nil, apperr.New(
+				apperr.CodeAuthExpired,
+				"device code expired, please try again",
+				nil,
+			)
 		case "access_denied":
 			return nil, apperr.New(apperr.CodeAccessDenied, "access denied by user", nil)
 		case "device_flow_disabled":

@@ -307,7 +307,12 @@ func (s *Service) BrowseRepository() (RepoInfo, error) {
 func (s *Service) SelectRepository(path string) (RepoInfo, error) {
 	repo, err := validateRepoPath(s.context(), s.git, path)
 	if err != nil {
-		return RepoInfo{}, err
+		return RepoInfo{}, apperr.Wrap(
+			apperr.CodeInvalidArgument,
+			"invalid repository path",
+			err,
+			nil,
+		)
 	}
 	s.repoMu.Lock()
 	cfg, err := config.LoadGUI()

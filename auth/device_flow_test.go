@@ -105,9 +105,10 @@ func TestDeviceLoginErrors(t *testing.T) {
 		name     string
 		response deviceTokenResponse
 		want     error
+		wantCode apperr.Code
 	}{
-		{name: "access denied", response: deviceTokenResponse{Error: "access_denied"}, want: apperr.New(apperr.CodeAccessDenied, "access denied by user", nil)},
-		{name: "expired", response: deviceTokenResponse{Error: "expired_token"}, want: errors.New("device code expired")},
+		{name: "access denied", response: deviceTokenResponse{Error: "access_denied"}, wantCode: apperr.CodeAccessDenied},
+		{name: "expired", response: deviceTokenResponse{Error: "expired_token"}, wantCode: apperr.CodeAuthExpired},
 		{name: "disabled", response: deviceTokenResponse{Error: "device_flow_disabled"}, want: errors.New("not enabled")},
 		{
 			name: "unknown",
@@ -131,9 +132,9 @@ func TestDeviceLoginErrors(t *testing.T) {
 			_, err := client.login(context.Background(), "client-id", func(DeviceAuthorization) error {
 				return nil
 			})
-			if apperr.Is(tt.want, apperr.CodeAccessDenied) {
-				if !apperr.Is(err, apperr.CodeAccessDenied) {
-					t.Fatalf("error = %v, want %v", err, tt.want)
+			if tt.wantCode != "" {
+				if !apperr.Is(err, tt.wantCode) {
+					t.Fatalf("error = %v, want code %q", err, tt.wantCode)
 				}
 				return
 			}
@@ -156,8 +157,8 @@ func TestDeviceLoginReportsExpiredWhenDeviceDeadlineElapses(t *testing.T) {
 		},
 	}
 	_, err := client.login(context.Background(), "client-id", func(DeviceAuthorization) error { return nil })
-	if err == nil || err.Error() != "device code expired, please try again" {
-		t.Fatalf("error = %v", err)
+	if !apperr.Is(err, apperr.CodeAuthExpired) {
+		t.Fatalf("error = %v, want code %q", err, apperr.CodeAuthExpired)
 	}
 }
 

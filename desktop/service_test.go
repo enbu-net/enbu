@@ -130,6 +130,21 @@ func TestValidateRepoPathRejectsMissingPath(t *testing.T) {
 	}
 }
 
+func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	paths := []string{"", filepath.Join(t.TempDir(), "missing"), filePath}
+	for _, path := range paths {
+		s := NewService(app.New())
+		s.ctx = context.Background()
+		if _, err := s.SelectRepository(path); !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Errorf("SelectRepository(%q) error = %v, want %q", path, err, apperr.CodeInvalidArgument)
+		}
+	}
+}
+
 func TestGitInitInitializesSelectedDirectory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	dir := t.TempDir()
