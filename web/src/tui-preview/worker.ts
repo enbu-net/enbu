@@ -22,15 +22,14 @@ scope.onmessage = (
 
   if (event.data.type !== "init" || !event.data.imageURL) return;
   if (!ttyClient) {
-    scope.postMessage({ type: "error", error: "PTY was not initialized" });
+    console.error("TUI preview PTY was not initialized");
+    scope.postMessage({ type: "error" });
     return;
   }
 
   void run(event.data.imageURL, ttyClient).catch((error: unknown) => {
-    scope.postMessage({
-      type: "error",
-      error: error instanceof Error ? error.message : String(error),
-    });
+    console.error("TUI preview worker failed", error);
+    scope.postMessage({ type: "error" });
   });
 };
 

@@ -4,6 +4,7 @@ import { Box, HStack, VStack } from "../../styled-system/jsx";
 import { Button, Text } from "./ui";
 import { useI18n } from "../lib/i18n";
 import { useFocusTrap } from "../lib/use-focus-trap";
+import { formatDisplayError, type DisplayError } from "../lib/app-error";
 
 export interface ProgressStep {
   op: "add" | "pull" | "sync" | "delete";
@@ -14,7 +15,7 @@ export interface ProgressStep {
 interface TransferModalProps {
   open: boolean;
   operation: "add" | "pull" | "sync" | "delete" | null;
-  error?: string | null;
+  error?: DisplayError | null;
   onClose: () => void;
 }
 
@@ -26,7 +27,7 @@ const DEFAULT_STEPS: Record<"add" | "pull" | "sync" | "delete", string[]> = {
 };
 
 export function TransferModal({ open, operation, error, onClose }: TransferModalProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [currentStep, setCurrentStep] = useState<ProgressStep | null>(null);
   const [isDone, setIsDone] = useState(false);
   const isDoneRef = useRef(false);
@@ -134,7 +135,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
   const stepTranslated = stepType ? t(stepKey) : "";
 
   const statusText = error
-    ? error || t("transfer.error")
+    ? formatDisplayError(error, locale)
     : isDone
     ? t("transfer.done")
     : stepTranslated !== stepKey

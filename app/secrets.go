@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/enbu-net/enbu/utils/bundle"
 	"github.com/enbu-net/enbu/utils/oci"
@@ -17,7 +18,9 @@ import (
 
 const maxRetries = 3
 
-func (a *App) ListSecrets(ctx context.Context, env string) (map[string]string, error) {
+func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]string, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return nil, err
@@ -54,7 +57,9 @@ func (a *App) ListSecrets(ctx context.Context, env string) (map[string]string, e
 	return secrets, nil
 }
 
-func (a *App) AddSecret(ctx context.Context, env, key, value string) error {
+func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -106,7 +111,7 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) error {
 		}
 
 		if _, ok := secrets[key]; ok {
-			return fmt.Errorf("secret %s already exists (use 'enbu edit %s VALUE' to update it)", key, key)
+			return apperr.New(apperr.CodeSecretExists, fmt.Sprintf("secret %s already exists (use 'enbu edit %s VALUE' to update it)", key, key), apperr.Params{"key": key})
 		}
 		secrets[key] = value
 
@@ -121,7 +126,7 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) error {
 
 		a.emitStepProgress("add", "push", "start")
 		if err := a.Registry.Push(ctx, secretsRef, "application/vnd.enbu.secrets.age.v1", ciphertext, accessToken, pushOpts); err != nil {
-			if errors.Is(err, oci.ErrConflict) {
+			if apperr.Is(err, apperr.CodeConflict) {
 				if attempt < maxRetries-1 {
 					a.emitRetry(attempt+1, maxRetries)
 					time.Sleep(time.Duration(100+rand.IntN(100)) * time.Millisecond)
@@ -140,7 +145,9 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) error {
 	return nil
 }
 
-func (a *App) EditSecret(ctx context.Context, env, key, value string) error {
+func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -186,7 +193,7 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) error {
 		}
 
 		if _, ok := secrets[key]; !ok {
-			return fmt.Errorf("secret %s does not exist (use 'enbu add %s VALUE' to create it)", key, key)
+			return apperr.New(apperr.CodeSecretMissing, fmt.Sprintf("secret %s does not exist (use 'enbu add %s VALUE' to create it)", key, key), apperr.Params{"key": key})
 		}
 		secrets[key] = value
 
@@ -199,7 +206,7 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) error {
 		}
 
 		if err := a.Registry.Push(ctx, secretsRef, "application/vnd.enbu.secrets.age.v1", ciphertext, accessToken, pushOpts); err != nil {
-			if errors.Is(err, oci.ErrConflict) {
+			if apperr.Is(err, apperr.CodeConflict) {
 				if attempt < maxRetries-1 {
 					a.emitRetry(attempt+1, maxRetries)
 					continue
@@ -216,7 +223,9 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) error {
 	return nil
 }
 
-func (a *App) DeleteSecret(ctx context.Context, env, key string) error {
+func (a *App) DeleteSecret(ctx context.Context, env, key string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -284,7 +293,7 @@ func (a *App) DeleteSecret(ctx context.Context, env, key string) error {
 
 		a.emitStepProgress("delete", "push", "start")
 		if err := a.Registry.Push(ctx, secretsRef, "application/vnd.enbu.secrets.age.v1", ciphertext, accessToken, pushOpts); err != nil {
-			if errors.Is(err, oci.ErrConflict) {
+			if apperr.Is(err, apperr.CodeConflict) {
 				if attempt < maxRetries-1 {
 					a.emitRetry(attempt+1, maxRetries)
 					continue
@@ -308,11 +317,15 @@ type PulledSecrets struct {
 	Secrets     map[string]string
 }
 
-func (a *App) PullSecretsData(ctx context.Context, env string) (*PulledSecrets, error) {
+func (a *App) PullSecretsData(ctx context.Context, env string) (result *PulledSecrets, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	return a.pullSecretsData(ctx, env, true)
 }
 
-func (a *App) PullSecrets(ctx context.Context, env string) ([]byte, string, int, error) {
+func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output string, count int, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	result, err := a.pullSecretsData(ctx, env, true)
 	if err != nil {
 		return nil, "", 0, err
@@ -373,7 +386,9 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 	}, nil
 }
 
-func (a *App) PullSecretsToFile(ctx context.Context, env string) error {
+func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	result, err := a.pullSecretsData(ctx, env, false)
 	if err != nil {
 		return err
@@ -395,7 +410,9 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) error {
 
 var errConflict = errors.New("secrets changed by another user")
 
-func (a *App) SyncSecrets(ctx context.Context, env string) error {
+func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err

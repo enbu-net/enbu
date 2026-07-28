@@ -1,8 +1,13 @@
 package oci
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"testing"
+
+	"github.com/enbu-net/enbu/apperr"
+	"oras.land/oras-go/v2/errdef"
 )
 
 func TestDigestOf(t *testing.T) {
@@ -35,5 +40,18 @@ func TestBytesReader(t *testing.T) {
 	}
 	if string(got) != string(data) {
 		t.Errorf("got %q, want %q", got, data)
+	}
+}
+
+func TestWrapRemoteErrorClassifiesORASNotFound(t *testing.T) {
+	cause := fmt.Errorf("resolving reference: %w", errdef.ErrNotFound)
+
+	err := wrapRemoteError("pulling secrets", cause)
+
+	if !apperr.Is(err, apperr.CodeArtifactNotFound) {
+		t.Fatalf("code = %q, want %q", apperr.CodeOf(err), apperr.CodeArtifactNotFound)
+	}
+	if !errors.Is(err, errdef.ErrNotFound) {
+		t.Fatal("wrapped error does not preserve the ORAS cause")
 	}
 }

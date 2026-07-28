@@ -2,6 +2,7 @@ package keystore
 
 import (
 	"errors"
+	"io/fs"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -85,8 +86,8 @@ func TestTextBackend_RoundTrip(t *testing.T) {
 	}
 
 	_, err = tb.Load("svc", "key1")
-	if err != ErrNotFound {
-		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist after delete, got %v", err)
 	}
 }
 
@@ -96,8 +97,8 @@ func TestTextBackend_LoadNotFound(t *testing.T) {
 
 	tb := &TextBackend{}
 	_, err := tb.Load("svc", "nonexistent")
-	if err != ErrNotFound {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist, got %v", err)
 	}
 }
 

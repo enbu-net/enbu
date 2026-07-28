@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,7 +107,7 @@ func TestGitHubTokenIsEphemeral(t *testing.T) {
 		t.Fatalf("LoadToken = %#v, %v", token, err)
 	}
 	// Env token must NOT be persisted in the backend.
-	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, keystore.ErrNotFound) {
+	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatal("GITHUB_TOKEN was persisted in backend")
 	}
 }

@@ -21,7 +21,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "switch [env]",
 		Short: "Switch, create, or manage environments",
-		Args:  cobra.MaximumNArgs(1),
+		Args:  appArgs(cobra.MaximumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if list {
 				return runSwitchList(cmd, a)

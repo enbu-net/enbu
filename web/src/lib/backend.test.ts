@@ -7,6 +7,8 @@ declare global {
   }
 }
 
+const ok = <T>(data: T) => ({ data });
+
 beforeEach(() => {
   window.calls = [];
   window.go = {
@@ -20,74 +22,91 @@ beforeEach(() => {
         BrowseRepository: vi.fn(),
         SelectRepository: vi.fn(),
         GetRepoStatus: vi.fn(),
-        Initialize: vi.fn(async () => ({
-          public_key: "age1test",
-          username: "octo",
-          environment: "default",
-        })),
-        ListEnvironments: vi.fn(async () => [{ name: "default", current: true }]),
+        Initialize: vi.fn(async () =>
+          ok({
+            public_key: "age1test",
+            username: "octo",
+            environment: "default",
+          }),
+        ),
+        ListEnvironments: vi.fn(async () => ok([{ name: "default", current: true }])),
         CreateEnvironment: vi.fn(async (name: string) => {
           window.calls?.push(["create", name]);
+          return ok(undefined);
         }),
         SwitchEnvironment: vi.fn(async (name: string) => {
           window.calls?.push(["switch", name]);
+          return ok(undefined);
         }),
         RenameEnvironment: vi.fn(async (name: string, newName: string) => {
           window.calls?.push(["rename", name, newName]);
+          return ok(undefined);
         }),
         DeleteEnvironment: vi.fn(async (name: string) => {
           window.calls?.push(["deleteEnv", name]);
+          return ok(undefined);
         }),
-        ListSecrets: vi.fn(async (env: string) => ({
-          environment: env,
-          secrets: [{ key: "TOKEN", value: "secret" }],
-        })),
+        ListSecrets: vi.fn(async (env: string) =>
+          ok({
+            environment: env,
+            secrets: [{ key: "TOKEN", value: "secret" }],
+          }),
+        ),
         AddSecret: vi.fn(async (env: string, key: string, value: string) => {
           window.calls?.push(["add", env, key, value]);
+          return ok(undefined);
         }),
         EditSecret: vi.fn(async (env: string, key: string, value: string) => {
           window.calls?.push(["edit", env, key, value]);
+          return ok(undefined);
         }),
         DeleteSecret: vi.fn(async (env: string, key: string) => {
           window.calls?.push(["delete", env, key]);
+          return ok(undefined);
         }),
         PullSecrets: vi.fn(async (env: string) => {
           window.calls?.push(["pull", env]);
+          return ok(undefined);
         }),
         SyncSecrets: vi.fn(async (env: string) => {
           window.calls?.push(["sync", env]);
+          return ok(undefined);
         }),
-        ListRepositories: vi.fn(async () => []),
-        RemoveRepository: vi.fn(async () => {}),
-        ListRecipients: vi.fn(async () => []),
-        ReadConfig: vi.fn(async () => ""),
-        WriteConfig: vi.fn(async () => {}),
-        GitInit: vi.fn(async (path: string) => ({
-          path,
-          owner: "",
-          repo: "",
-          initialized: false,
-          has_git: true,
-          has_remote: false,
-        })),
-        ListRepositoryOwners: vi.fn(async () => [
-          { login: "octo", organization: false },
-          { login: "octo-org", organization: true },
-        ]),
+        ListRepositories: vi.fn(async () => ok([])),
+        RemoveRepository: vi.fn(async () => ok(undefined)),
+        ListRecipients: vi.fn(async () => ok([])),
+        ReadConfig: vi.fn(async () => ok("")),
+        WriteConfig: vi.fn(async () => ok(undefined)),
+        GitInit: vi.fn(async (path: string) =>
+          ok({
+            path,
+            owner: "",
+            repo: "",
+            initialized: false,
+            has_git: true,
+            has_remote: false,
+          }),
+        ),
+        ListRepositoryOwners: vi.fn(async () =>
+          ok([
+            { login: "octo", organization: false },
+            { login: "octo-org", organization: true },
+          ]),
+        ),
         GitCreateRemote: vi.fn(
           async (path: string, owner: string, repo: string, privateRepository: boolean) => {
             window.calls?.push(["createRemote", path, owner, repo, privateRepository]);
-            return {
+            return ok({
               path,
               owner,
               repo,
               initialized: false,
               has_git: true,
               has_remote: true,
-            };
+            });
           },
         ),
-        GetAppVersion: vi.fn(async () => "v0.7.5"),
+        GetAppVersion: vi.fn(async () => ok("v0.7.5")),
       },
     },
   };

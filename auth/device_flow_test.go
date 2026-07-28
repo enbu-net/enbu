@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/apperr"
 )
 
 func TestDeviceLoginEndToEnd(t *testing.T) {
@@ -104,7 +106,7 @@ func TestDeviceLoginErrors(t *testing.T) {
 		response deviceTokenResponse
 		want     error
 	}{
-		{name: "access denied", response: deviceTokenResponse{Error: "access_denied"}, want: ErrAccessDenied},
+		{name: "access denied", response: deviceTokenResponse{Error: "access_denied"}, want: apperr.New(apperr.CodeAccessDenied, "access denied by user", nil)},
 		{name: "expired", response: deviceTokenResponse{Error: "expired_token"}, want: errors.New("device code expired")},
 		{name: "disabled", response: deviceTokenResponse{Error: "device_flow_disabled"}, want: errors.New("not enabled")},
 		{
@@ -129,8 +131,8 @@ func TestDeviceLoginErrors(t *testing.T) {
 			_, err := client.login(context.Background(), "client-id", func(DeviceAuthorization) error {
 				return nil
 			})
-			if tt.want == ErrAccessDenied {
-				if !errors.Is(err, ErrAccessDenied) {
+			if apperr.Is(tt.want, apperr.CodeAccessDenied) {
+				if !apperr.Is(err, apperr.CodeAccessDenied) {
 					t.Fatalf("error = %v, want %v", err, tt.want)
 				}
 				return

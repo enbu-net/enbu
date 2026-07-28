@@ -5,10 +5,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 )
 
-func (a *App) ReadConfig() (string, error) {
+func (a *App) ReadConfig() (content string, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
 		return "", fmt.Errorf("enbu.toml not found: %w", err)
@@ -20,7 +23,9 @@ func (a *App) ReadConfig() (string, error) {
 	return string(data), nil
 }
 
-func (a *App) WriteConfig(content string) error {
+func (a *App) WriteConfig(content string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	cfg, err := config.ParseProject(content)
 	if err != nil {
 		return err

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
 	"github.com/enbu-net/enbu/tui"
 	"github.com/spf13/cobra"
@@ -37,6 +38,9 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		},
 	}
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid command options", err, nil)
+	})
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output one JSON response")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "version for enbu")
 	defaultHelp := rootCmd.HelpFunc()
@@ -62,6 +66,15 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 	)
 
 	return rootCmd
+}
+
+func appArgs(validate cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := validate(cmd, args); err != nil {
+			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid command arguments", err, nil)
+		}
+		return nil
+	}
 }
 
 func gitClient(a *app.App) gitprovider.Client {

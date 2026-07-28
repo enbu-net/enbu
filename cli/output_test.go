@@ -64,6 +64,12 @@ func TestJSONExecutionErrorsUseOneStdoutObject(t *testing.T) {
 			if stringField(t, errorData, "message") == "" {
 				t.Fatal("empty error message")
 			}
+			if stringField(t, errorData, "code") == "" {
+				t.Fatal("empty error code")
+			}
+			if _, ok := errorData["params"].(map[string]any); !ok {
+				t.Fatalf("params = %#v, want object", errorData["params"])
+			}
 		})
 	}
 }
@@ -79,7 +85,7 @@ func TestRenderExecutionErrorHonorsOptionTerminator(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if got := stderr.String(); got != "Error: failed\n" {
+	if got := stderr.String(); got != "Error: unexpected error: failed\n" {
 		t.Fatalf("stderr = %q", got)
 	}
 }
@@ -96,7 +102,7 @@ func TestRenderExecutionErrorSkipsOptionValues(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty (--json was a value for --env, not a flag)", stdout.String())
 	}
-	if got := stderr.String(); got != "Error: failed\n" {
+	if got := stderr.String(); got != "Error: unexpected error: failed\n" {
 		t.Fatalf("stderr = %q", got)
 	}
 }

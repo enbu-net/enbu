@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 	gh "github.com/enbu-net/enbu/provider/github"
 	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -19,7 +20,9 @@ type InitResult struct {
 	Environment string `json:"environment"`
 }
 
-func (a *App) InitializeRepository(ctx context.Context) (*InitResult, error) {
+func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	accessToken, username, err := a.TokenProvider.LoadToken()
 	if err != nil {
 		return nil, err
@@ -40,7 +43,7 @@ func (a *App) InitializeRepository(ctx context.Context) (*InitResult, error) {
 			return nil, fmt.Errorf("parsing existing private key: %w", err)
 		}
 		publicKey = id.Recipient().String()
-	} else if err != nil && !errors.Is(err, keystore.ErrNotFound) {
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("loading private key from keystore: %w", err)
 	} else {
 		kp, err := age.GenerateKeyPair()
@@ -70,8 +73,7 @@ func (a *App) InitializeRepository(ctx context.Context) (*InitResult, error) {
 
 	projectCfg, err := a.loadProject()
 	if err != nil {
-		var notFound config.ErrConfigNotFound
-		if !errors.As(err, &notFound) {
+		if !apperr.Is(err, apperr.CodeConfigNotFound) {
 			return nil, fmt.Errorf("loading enbu.toml: %w", err)
 		}
 		projectCfg = config.NewProjectWithEnvironment(DefaultEnvironment)

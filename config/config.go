@@ -10,14 +10,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/enbu-net/enbu/apperr"
 )
-
-// ErrConfigNotFound is returned when enbu.toml does not exist.
-// Callers that need to distinguish "file missing" from "file invalid"
-// should use errors.As(err, &config.ErrConfigNotFound{}).
-type ErrConfigNotFound struct{ msg string }
-
-func (e ErrConfigNotFound) Error() string { return e.msg }
 
 const currentVersion = "v1alpha1"
 
@@ -42,7 +36,7 @@ func LoadProject() (*ProjectConfig, error) {
 func LoadProjectFrom(dir string) (*ProjectConfig, error) {
 	path, err := findProjectConfigFrom(dir)
 	if err != nil {
-		return nil, ErrConfigNotFound{msg: err.Error()}
+		return nil, apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
 	}
 
 	data, err := os.ReadFile(path)
@@ -208,7 +202,7 @@ func (cfg *ProjectConfig) SetDefault(name string) {
 
 func (cfg *ProjectConfig) AddEnvironment(name string) error {
 	if !ValidEnvironmentName(name) {
-		return fmt.Errorf("invalid environment name %q", name)
+		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
 	if cfg.Environments == nil {
 		cfg.Environments = make(map[string]EnvironmentConfig)
@@ -218,7 +212,7 @@ func (cfg *ProjectConfig) AddEnvironment(name string) error {
 		cfg.DefaultEnv = "default"
 	}
 	if _, exists := cfg.Environments[name]; exists {
-		return fmt.Errorf("environment %q already exists", name)
+		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", name), apperr.Params{"name": name})
 	}
 	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name)}
 	return nil
@@ -226,7 +220,7 @@ func (cfg *ProjectConfig) AddEnvironment(name string) error {
 
 func (cfg *ProjectConfig) RemoveEnvironment(name string) error {
 	if _, exists := cfg.Environments[name]; !exists {
-		return fmt.Errorf("environment %q does not exist", name)
+		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", name), apperr.Params{"name": name})
 	}
 	delete(cfg.Environments, name)
 	if cfg.DefaultEnv == name {
@@ -237,14 +231,14 @@ func (cfg *ProjectConfig) RemoveEnvironment(name string) error {
 
 func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 	if !ValidEnvironmentName(newName) {
-		return fmt.Errorf("invalid environment name %q", newName)
+		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", newName), apperr.Params{"name": newName})
 	}
 	env, exists := cfg.Environments[oldName]
 	if !exists {
-		return fmt.Errorf("environment %q does not exist", oldName)
+		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", oldName), apperr.Params{"name": oldName})
 	}
 	if _, exists := cfg.Environments[newName]; exists {
-		return fmt.Errorf("environment %q already exists", newName)
+		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", newName), apperr.Params{"name": newName})
 	}
 	delete(cfg.Environments, oldName)
 	env.Output = DefaultOutput(newName)
@@ -265,17 +259,17 @@ func (cfg *ProjectConfig) Environment(name string) (EnvironmentConfig, error) {
 		name = cfg.CurrentEnvironment()
 	}
 	if !ValidEnvironmentName(name) {
-		return EnvironmentConfig{}, fmt.Errorf("invalid environment %q", name)
+		return EnvironmentConfig{}, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment %q", name), apperr.Params{"name": name})
 	}
 	if len(cfg.Environments) == 0 {
 		if name != "default" {
-			return EnvironmentConfig{}, fmt.Errorf("environment %q is not defined in enbu.toml", name)
+			return EnvironmentConfig{}, apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q is not defined in enbu.toml", name), apperr.Params{"name": name})
 		}
 		return EnvironmentConfig{Output: DefaultOutput(name)}, nil
 	}
 	env, ok := cfg.Environments[name]
 	if !ok {
-		return EnvironmentConfig{}, fmt.Errorf("environment %q is not defined in enbu.toml", name)
+		return EnvironmentConfig{}, apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q is not defined in enbu.toml", name), apperr.Params{"name": name})
 	}
 	if env.Output == "" {
 		env.Output = DefaultOutput(name)

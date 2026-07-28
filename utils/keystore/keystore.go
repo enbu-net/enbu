@@ -1,12 +1,9 @@
 package keystore
 
 import (
-	"errors"
 	"fmt"
 	"os"
 )
-
-var ErrNotFound = errors.New("secret not found")
 
 type Backend interface {
 	Store(service, key string, secret []byte) error

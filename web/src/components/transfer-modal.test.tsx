@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { I18nProvider } from "../lib/i18n";
+import { displayError, type DisplayError } from "../lib/app-error";
 import { TransferModal, type ProgressStep } from "./transfer-modal";
 
 describe("TransferModal", () => {
@@ -24,7 +25,7 @@ describe("TransferModal", () => {
     vi.useRealTimers();
   });
 
-  function renderModal(error?: string) {
+  function renderModal(error?: DisplayError) {
     act(() => {
       root.render(
         <I18nProvider>
@@ -98,11 +99,11 @@ describe("TransferModal", () => {
   });
 
   it("exposes dialog semantics and dismisses errors by button or Escape", () => {
-    renderModal("network failed");
+    renderModal(displayError("internal"));
     const dialog = container.querySelector('[role="dialog"]');
     expect(dialog?.getAttribute("aria-modal")).toBe("true");
     expect(dialog?.getAttribute("aria-labelledby")).toBeTruthy();
-    expect(container.textContent).toContain("network failed");
+    expect(container.textContent).toContain("An unexpected error occurred");
 
     act(() => container.querySelector<HTMLButtonElement>("button")?.click());
     expect(onClose).toHaveBeenCalledTimes(1);

@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strconv"
 	"strings"
 	"time"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/enbu-net/enbu/utils/bundle"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -32,8 +33,8 @@ func LoadIdentitiesForRepo(ks KeyStore, owner, repo string) ([]agecrypto.Identit
 	key := RepoKeystoreKey(owner, repo)
 	privKeyBytes, err := ks.Load(KeystoreService, key)
 	if err != nil {
-		if errors.Is(err, keystore.ErrNotFound) {
-			return nil, fmt.Errorf("no private key found (run 'enbu init' first)")
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, apperr.New(apperr.CodeNotInitialized, "no private key found (run 'enbu init' first)", nil)
 		}
 		return nil, fmt.Errorf("loading private key: %w", err)
 	}
@@ -115,13 +116,7 @@ func IsUserRecipientTag(tag string) bool {
 }
 
 func IsNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "404") ||
-		strings.Contains(errStr, "NAME_UNKNOWN") ||
-		strings.Contains(errStr, "not found")
+	return apperr.Is(err, apperr.CodeArtifactNotFound)
 }
 
 type ResolvedEnvironment struct {
@@ -140,7 +135,7 @@ func (a *App) resolveEnvironment(name string) (*ResolvedEnvironment, error) {
 func resolveEnvironment(load func() (*config.ProjectConfig, error), name string) (*ResolvedEnvironment, error) {
 	cfg, err := load()
 	if err != nil {
-		if strings.Contains(err.Error(), "enbu.toml not found") {
+		if apperr.Is(err, apperr.CodeConfigNotFound) {
 			if name == "" {
 				name = DefaultEnvironment
 			}
@@ -157,7 +152,7 @@ func resolveEnvironment(load func() (*config.ProjectConfig, error), name string)
 	}
 
 	if !config.ValidEnvironmentName(name) {
-		return nil, fmt.Errorf("invalid environment %q", name)
+		return nil, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment %q", name), apperr.Params{"name": name})
 	}
 
 	env, err := cfg.Environment(name)
@@ -171,12 +166,8 @@ func resolveEnvironment(load func() (*config.ProjectConfig, error), name string)
 }
 
 func IsNotInitializedError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "enbu.toml not found") ||
-		strings.Contains(s, "no private key found")
+	return apperr.Is(err, apperr.CodeConfigNotFound) ||
+		apperr.Is(err, apperr.CodeNotInitialized)
 }
 
 func snapshotTag(env string) string {

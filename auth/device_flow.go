@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/enbu-net/enbu/apperr"
 )
 
 const (
@@ -124,7 +126,7 @@ func (c *deviceFlowClient) login(
 		case "expired_token", "token_expired":
 			return nil, errors.New("device code expired, please try again")
 		case "access_denied":
-			return nil, ErrAccessDenied
+			return nil, apperr.New(apperr.CodeAccessDenied, "access denied by user", nil)
 		case "device_flow_disabled":
 			return nil, errors.New("GitHub Device Flow is not enabled for this OAuth app")
 		case "incorrect_client_credentials":

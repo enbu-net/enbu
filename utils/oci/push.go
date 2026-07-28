@@ -3,9 +3,9 @@ package oci
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
@@ -13,8 +13,6 @@ import (
 )
 
 const emptyConfigJSON = "{}"
-
-var ErrConflict = errors.New("remote reference changed")
 
 type PushOptions struct {
 	SourceRepo     string
@@ -73,7 +71,10 @@ func Push(ctx context.Context, ref string, mediaType string, data []byte, token 
 			return fmt.Errorf("getting current digest: %w", err)
 		}
 		if currentDigest != opts.ExpectedDigest {
-			return fmt.Errorf("%w: expected %s, got %s", ErrConflict, opts.ExpectedDigest, currentDigest)
+			return apperr.New(apperr.CodeConflict, "remote reference changed", apperr.Params{
+				"expected": opts.ExpectedDigest,
+				"actual":   currentDigest,
+			})
 		}
 	}
 

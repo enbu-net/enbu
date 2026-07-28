@@ -1,5 +1,6 @@
 import { FitAddon, Terminal, init } from "ghostty-web";
 import * as xtermPty from "xterm-pty";
+import { formatDisplayError, toDisplayError } from "../lib/app-error";
 import { attachMouseReporting } from "./mouse-adapter";
 import { type RegisterCleanup, SessionController } from "./session-controller";
 import { createPtyTerminal, resolveRuntimeURL } from "./terminal-adapter";
@@ -40,10 +41,17 @@ const restartButton = requiredElement<HTMLButtonElement>("#restart");
 const sessions = new SessionController();
 let startPromise: Promise<void> | undefined;
 
+function currentLocale(): "en" | "ja" {
+  const saved = localStorage.getItem("enbu_locale");
+  if (saved === "en" || saved === "ja") return saved;
+  return navigator.language.toLowerCase().startsWith("ja") ? "ja" : "en";
+}
+
 function reportError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  statusElement.textContent = "Failed to start";
-  errorElement.textContent = `The browser VM could not start.\n${message}`;
+  console.error("TUI preview failed", error);
+  const locale = currentLocale();
+  statusElement.textContent = locale === "ja" ? "起動に失敗しました" : "Failed to start";
+  errorElement.textContent = formatDisplayError(toDisplayError(error), locale);
   errorElement.hidden = false;
 }
 
@@ -133,15 +141,14 @@ async function startSession(register: RegisterCleanup): Promise<void> {
     };
     const onMessage = (event: MessageEvent<unknown>) => {
       if (typeof event.data !== "object" || event.data === null) return;
-      const message = event.data as { type?: string; error?: string };
+      const message = event.data as { type?: string };
       if (message.type === "ready") {
         ready = true;
         resolve();
       }
       if (message.type === "error") {
-        const error = new Error(message.error ?? "Unknown worker error");
-        if (ready) reportError(error);
-        else reject(error);
+        if (ready) reportError(message);
+        else reject(message);
       }
     };
     worker.addEventListener("error", onError);

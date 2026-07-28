@@ -55,6 +55,12 @@ export default defineConfig(({ mode }) => ({
           "typescript/no-unsafe-assignment": "off",
         },
       },
+      {
+        files: ["scripts/**/*.mjs"],
+        rules: {
+          "typescript/no-unsafe-assignment": "off",
+        },
+      },
     ],
     jsPlugins: [
       {

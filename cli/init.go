@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
 	gh "github.com/enbu-net/enbu/provider/github"
 	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 	"github.com/spf13/cobra"
 )
@@ -47,7 +48,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 			projectCfg, err := config.LoadProject()
 			configMissing := false
 			if err != nil {
-				if strings.Contains(err.Error(), "enbu.toml not found") {
+				if apperr.Is(err, apperr.CodeConfigNotFound) {
 					configMissing = true
 					projectCfg = config.NewProjectWithEnvironment(app.DefaultEnvironment)
 				} else {
@@ -74,7 +75,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 			}
 
 			existingTags, err := a.Registry.ListTags(ctx, registryRef, accessToken)
-			if err != nil && !strings.Contains(err.Error(), "404") && !strings.Contains(err.Error(), "NAME_UNKNOWN") {
+			if err != nil && !app.IsNotFoundError(err) {
 				return fmt.Errorf("checking existing setup: %w", err)
 			}
 			hasRecipients := false
@@ -108,7 +109,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 				}
 				publicKey = id.Recipient().String()
 				humanPrintf(cmd, "Using existing age public key: %s\n", publicKey)
-			} else if err != nil && !errors.Is(err, keystore.ErrNotFound) {
+			} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 				return fmt.Errorf("loading private key from keystore: %w", err)
 			} else {
 				humanPrintf(cmd, "Generating new age key pair...\n")

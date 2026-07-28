@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -23,7 +24,9 @@ type errorEnvelope struct {
 }
 
 type errorResponse struct {
-	Message string `json:"message"`
+	Code    apperr.Code   `json:"code"`
+	Message string        `json:"message"`
+	Params  apperr.Params `json:"params"`
 }
 
 type helpResponse struct {
@@ -63,10 +66,13 @@ func writeJSON(cmd *cobra.Command, data any, warnings ...string) error {
 }
 
 func writeErrorJSON(w io.Writer, err error) error {
+	payload := apperr.PayloadOf(err)
 	return encodeJSON(w, errorEnvelope{
 		OK: false,
 		Error: errorResponse{
-			Message: err.Error(),
+			Code:    payload.Code,
+			Message: payload.Message,
+			Params:  payload.Params,
 		},
 	})
 }
@@ -198,6 +204,7 @@ func requestedJSON(cmd *cobra.Command, args []string) bool {
 // RenderExecutionError writes one command execution error using the selected
 // output format. JSON errors intentionally go to stdout for process consumers.
 func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
+	err = apperr.Normalize(err)
 	if requestedJSON(cmd, args) || jsonEnabled(cmd) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
 		return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,8 @@ import (
 	"testing"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -37,7 +38,7 @@ func (r *memRegistry) Pull(_ context.Context, ref, _ string) ([]byte, error) {
 	defer r.mu.RUnlock()
 	d, ok := r.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	return append([]byte(nil), d...), nil
 }
@@ -60,7 +61,7 @@ func (r *memRegistry) GetDigest(_ context.Context, ref, _ string) (string, error
 	defer r.mu.RUnlock()
 	d, ok := r.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	sum := sha256.Sum256(d)
 	return fmt.Sprintf("sha256:%x", sum), nil
@@ -93,7 +94,7 @@ func (m *memKeyStore) Load(_, key string) ([]byte, error) {
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]
 	if !ok {
-		return nil, keystore.ErrNotFound
+		return nil, fs.ErrNotExist
 	}
 	return append([]byte(nil), d...), nil
 }

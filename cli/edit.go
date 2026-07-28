@@ -11,7 +11,7 @@ func newEditCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit KEY VALUE",
 		Short: "Edit an existing secret in the repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  appArgs(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.EditSecret(cmd.Context(), envName, args[0], args[1]); err != nil {
 				return err

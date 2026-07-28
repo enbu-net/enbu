@@ -2,6 +2,7 @@ package keystore
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,7 +24,7 @@ func (t *TextBackend) Load(service, key string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, ErrNotFound
+			return nil, fs.ErrNotExist
 		}
 		return nil, err
 	}

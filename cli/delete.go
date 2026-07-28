@@ -11,7 +11,7 @@ func newDeleteCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete KEY",
 		Short: "Delete a secret from the repository",
-		Args:  cobra.ExactArgs(1),
+		Args:  appArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.DeleteSecret(cmd.Context(), envName, args[0]); err != nil {
 				return err
