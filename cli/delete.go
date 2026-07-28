@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +16,14 @@ func newDeleteCommand(a *app.App) *cobra.Command {
 			if err := a.DeleteSecret(cmd.Context(), envName, args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("✓ Deleted %s\n", args[0])
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"action":      "delete",
+					"environment": resolvedEnvironmentName(a, envName),
+					"key":         args[0],
+				})
+			}
+			cmd.Printf("✓ Deleted %s\n", args[0])
 			return nil
 		},
 	}

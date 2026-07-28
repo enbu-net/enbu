@@ -139,6 +139,23 @@ For environments without a keychain (containers, headless servers), specify a fa
 export ENBU_BACKEND=text  # Plaintext file (0600 permissions)
 ```
 
+## JSON output
+
+Pass `--json` to any command when invoking enbu from a process such as a VS Code extension.
+The command writes exactly one JSON value to stdout.
+
+```json
+{"ok":true,"data":{"action":"add","environment":"dev","key":"API_KEY"},"warnings":[]}
+{"ok":false,"error":{"message":"secret \"API_KEY\" already exists"}}
+```
+
+Successful commands exit with status 0.
+Errors are also written to stdout as JSON and exit with status 1.
+`enbu pull --json` does not write an `.env` file; it returns the decrypted secrets in `data.secrets`.
+Do not log or persist this response.
+`enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
+Use `enbu auth login --json` for browser authentication.
+
 ## How It Works
 
 ```

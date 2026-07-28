@@ -302,24 +302,38 @@ func (a *App) DeleteSecret(ctx context.Context, env, key string) error {
 	return nil
 }
 
-func (a *App) PullSecrets(ctx context.Context, env string) ([]byte, string, int, error) {
-	return a.pullSecrets(ctx, env, true)
+type PulledSecrets struct {
+	Environment string
+	Output      string
+	Secrets     map[string]string
 }
 
-func (a *App) pullSecrets(ctx context.Context, env string, emitDone bool) ([]byte, string, int, error) {
-	resolved, err := a.resolveEnvironment(env)
+func (a *App) PullSecretsData(ctx context.Context, env string) (*PulledSecrets, error) {
+	return a.pullSecretsData(ctx, env, true)
+}
+
+func (a *App) PullSecrets(ctx context.Context, env string) ([]byte, string, int, error) {
+	result, err := a.pullSecretsData(ctx, env, true)
 	if err != nil {
 		return nil, "", 0, err
+	}
+	return bundle.ToDotEnv(result.Secrets), result.Output, len(result.Secrets), nil
+}
+
+func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
+	resolved, err := a.resolveEnvironment(env)
+	if err != nil {
+		return nil, err
 	}
 
 	accessToken, _, err := a.TokenProvider.LoadToken()
 	if err != nil {
-		return nil, "", 0, err
+		return nil, err
 	}
 
 	owner, repo, err := a.RepoDetector.LoadRepo()
 	if err != nil {
-		return nil, "", 0, err
+		return nil, err
 	}
 
 	ref := a.secretsRef(owner, repo, resolved.Name)
@@ -327,52 +341,55 @@ func (a *App) pullSecrets(ctx context.Context, env string, emitDone bool) ([]byt
 	a.emitStepProgress("pull", "pull_secrets", "start")
 	ciphertext, err := a.Registry.Pull(ctx, ref, accessToken)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("pulling secrets: %w", err)
+		return nil, fmt.Errorf("pulling secrets: %w", err)
 	}
 
 	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
 	if err != nil {
-		return nil, "", 0, err
+		return nil, err
 	}
 	if len(identities) == 0 {
-		return nil, "", 0, fmt.Errorf("no decryption keys found (run 'enbu init' first)")
+		return nil, fmt.Errorf("no decryption keys found (run 'enbu init' first)")
 	}
 
 	a.emitStepProgress("pull", "decrypt", "start")
 	plaintext, err := age.Decrypt(ciphertext, identities...)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("decrypting secrets: %w", err)
+		return nil, fmt.Errorf("decrypting secrets: %w", err)
 	}
 
 	secrets, err := bundle.Unmarshal(plaintext)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("parsing secrets: %w", err)
+		return nil, fmt.Errorf("parsing secrets: %w", err)
 	}
 
-	dotenv := bundle.ToDotEnv(secrets)
 	if emitDone {
 		a.emitStepProgress("pull", "decrypt", "done")
 	}
-	return dotenv, resolved.Output, len(secrets), nil
+	return &PulledSecrets{
+		Environment: resolved.Name,
+		Output:      resolved.Output,
+		Secrets:     secrets,
+	}, nil
 }
 
 func (a *App) PullSecretsToFile(ctx context.Context, env string) error {
-	dotenv, output, count, err := a.pullSecrets(ctx, env, false)
+	result, err := a.pullSecretsData(ctx, env, false)
 	if err != nil {
 		return err
 	}
 
-	outputPath := output
-	if a.RepositoryDir != "" && !filepath.IsAbs(output) {
-		outputPath = filepath.Join(a.RepositoryDir, output)
+	outputPath := result.Output
+	if a.RepositoryDir != "" && !filepath.IsAbs(result.Output) {
+		outputPath = filepath.Join(a.RepositoryDir, result.Output)
 	}
 	a.emitStepProgress("pull", "write", "start")
-	if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {
-		return fmt.Errorf("writing %s: %w", output, err)
+	if err := os.WriteFile(outputPath, bundle.ToDotEnv(result.Secrets), 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
 	a.emitStepProgress("pull", "write", "done")
-	a.emit(fmt.Sprintf("Written %s (%d secrets)", output, count))
+	a.emit(fmt.Sprintf("Written %s (%d secrets)", result.Output, len(result.Secrets)))
 	return nil
 }
 

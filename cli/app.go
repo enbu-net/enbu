@@ -12,15 +12,41 @@ func New(version string) *cobra.Command {
 }
 
 func NewWithApp(version string, a *app.App) *cobra.Command {
+	var (
+		jsonOutput  bool
+		showVersion bool
+	)
+
 	rootCmd := &cobra.Command{
-		Use:          "enbu",
-		Short:        "Keyless .env management powered by GitHub",
-		Version:      version,
-		SilenceUsage: true,
+		Use:           "enbu",
+		Short:         "Keyless .env management powered by GitHub",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if showVersion {
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]string{"version": version})
+				}
+				cmd.Printf("%s version %s\n", cmd.Name(), version)
+				return nil
+			}
+			if jsonEnabled(cmd) {
+				return renderHelp(cmd)
+			}
 			return tui.Run(a)
 		},
 	}
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output one JSON response")
+	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "version for enbu")
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		if jsonEnabled(cmd) {
+			_ = writeJSON(cmd, commandHelp(cmd))
+			return
+		}
+		defaultHelp(cmd, nil)
+	})
 
 	rootCmd.AddCommand(
 		newAuthCommand(a),
@@ -32,6 +58,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		newPullCommand(a),
 		newSyncCommand(a),
 		newHistoryCommand(a),
+		newCompletionCommand(rootCmd),
 	)
 
 	return rootCmd

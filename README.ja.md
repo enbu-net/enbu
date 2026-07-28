@@ -141,6 +141,23 @@ output = ".env.prod"
 export ENBU_BACKEND=text  # 平文ファイル (0600) で保存
 ```
 
+## JSON出力
+
+VS Code拡張などのプロセスからenbuを実行する場合は、任意のコマンドへ `--json` を指定します。
+コマンドは標準出力へJSONを一つだけ出力します。
+
+```json
+{"ok":true,"data":{"action":"add","environment":"dev","key":"API_KEY"},"warnings":[]}
+{"ok":false,"error":{"message":"secret \"API_KEY\" already exists"}}
+```
+
+成功時の終了コードは0です。
+失敗時も標準出力へJSONを出力し、終了コード1で終了します。
+`enbu pull --json` は `.env` を書き込まず、復号したシークレットを `data.secrets` で返します。
+このレスポンスをログへ記録したり、永続化したりしないでください。
+Device Flowは認証完了前にコードを表示する必要があるため、`enbu auth login --device --json` には対応していません。
+ブラウザ認証には `enbu auth login --json` を使います。
+
 ## 仕組み
 
 ```

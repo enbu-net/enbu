@@ -24,14 +24,21 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if list {
-				return runSwitchList(a)
+				return runSwitchList(cmd, a)
 			}
 
 			if doMove {
 				if err := a.RenameEnvironment(moveOld, moveNew); err != nil {
 					return err
 				}
-				fmt.Printf("Renamed '%s' to '%s'\n", moveOld, moveNew)
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"action":   "rename",
+						"old_name": moveOld,
+						"new_name": moveNew,
+					})
+				}
+				cmd.Printf("Renamed '%s' to '%s'\n", moveOld, moveNew)
 				return nil
 			}
 
@@ -42,12 +49,18 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 				if err := a.DeleteEnvironment(args[0]); err != nil {
 					return err
 				}
-				fmt.Printf("Deleted environment '%s'\n", args[0])
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"action":      "delete",
+						"environment": args[0],
+					})
+				}
+				cmd.Printf("Deleted environment '%s'\n", args[0])
 				return nil
 			}
 
 			if len(args) == 0 {
-				return runSwitchList(a)
+				return runSwitchList(cmd, a)
 			}
 
 			name := args[0]
@@ -56,7 +69,13 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 				if err := a.CreateEnvironment(name); err != nil {
 					return err
 				}
-				fmt.Printf("Created and switched to '%s'\n", name)
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"action":      "create",
+						"environment": name,
+					})
+				}
+				cmd.Printf("Created and switched to '%s'\n", name)
 				return nil
 			}
 
@@ -65,14 +84,26 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Printf("Switched to '%s'\n", target)
+				if jsonEnabled(cmd) {
+					return writeJSON(cmd, map[string]any{
+						"action":      "switch",
+						"environment": target,
+					})
+				}
+				cmd.Printf("Switched to '%s'\n", target)
 				return nil
 			}
 
 			if err := a.SwitchEnvironment(name); err != nil {
 				return err
 			}
-			fmt.Printf("Switched to '%s'\n", name)
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"action":      "switch",
+					"environment": name,
+				})
+			}
+			cmd.Printf("Switched to '%s'\n", name)
 			return nil
 		},
 	}
@@ -96,7 +127,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 	return cmd
 }
 
-func runSwitchList(a *app.App) error {
+func runSwitchList(cmd *cobra.Command, a *app.App) error {
 	envs, err := a.ListEnvironments()
 	if err != nil {
 		return err
@@ -104,11 +135,18 @@ func runSwitchList(a *app.App) error {
 
 	sort.Slice(envs, func(i, j int) bool { return envs[i].Name < envs[j].Name })
 
+	if jsonEnabled(cmd) {
+		return writeJSON(cmd, map[string]any{
+			"action":       "list",
+			"environments": envs,
+		})
+	}
+
 	for _, env := range envs {
 		if env.IsCurrent {
-			fmt.Printf("* %s\n", env.Name)
+			cmd.Printf("* %s\n", env.Name)
 		} else {
-			fmt.Printf("  %s\n", env.Name)
+			cmd.Printf("  %s\n", env.Name)
 		}
 	}
 	return nil

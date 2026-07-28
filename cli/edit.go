@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +16,14 @@ func newEditCommand(a *app.App) *cobra.Command {
 			if err := a.EditSecret(cmd.Context(), envName, args[0], args[1]); err != nil {
 				return err
 			}
-			fmt.Printf("✓ Edited %s\n", args[0])
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"action":      "edit",
+					"environment": resolvedEnvironmentName(a, envName),
+					"key":         args[0],
+				})
+			}
+			cmd.Printf("✓ Edited %s\n", args[0])
 			return nil
 		},
 	}
