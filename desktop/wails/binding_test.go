@@ -2,10 +2,23 @@ package main
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/enbu-net/enbu/apperr"
 )
+
+func TestBindingResultReturnsData(t *testing.T) {
+	data := map[string]string{"environment": "dev"}
+	response := bindingResult(data, nil)
+
+	if response.Error != nil {
+		t.Fatalf("binding response error = %#v", response.Error)
+	}
+	if !reflect.DeepEqual(response.Data, data) {
+		t.Fatalf("binding response data = %#v, want %#v", response.Data, data)
+	}
+}
 
 func TestBindingResultReturnsStructuredAppError(t *testing.T) {
 	response := bindingResult[any](nil, apperr.New(

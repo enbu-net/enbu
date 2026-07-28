@@ -220,12 +220,13 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 		if err != nil {
 			slog.Error("OAuth login failed", "session_id", sessionID, "err", err)
 			state := "error"
+			payload := apperr.PayloadOf(err)
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				state = "expired"
+				payload = apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
 			} else if apperr.Is(err, apperr.CodeAccessDenied) {
 				state = "denied"
 			}
-			payload := apperr.PayloadOf(err)
 			s.setOAuthStatus(sessionID, OAuthStatus{State: state, Error: &payload})
 			return
 		}

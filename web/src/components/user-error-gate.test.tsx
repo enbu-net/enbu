@@ -1,5 +1,5 @@
+import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { I18nProvider } from "../lib/i18n";
 import { UserErrorGate } from "./user-error-gate";

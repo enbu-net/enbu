@@ -306,6 +306,19 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 	}
 }
 
+func TestStartOAuthLoginClassifiesExpiredContext(t *testing.T) {
+	s := NewService(app.New())
+	s.ctx = context.Background()
+	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
+		return nil, context.DeadlineExceeded
+	}
+
+	_, err := s.StartOAuthLogin()
+	if !apperr.Is(err, apperr.CodeAuthExpired) {
+		t.Fatalf("StartOAuthLogin error = %v, want %q", err, apperr.CodeAuthExpired)
+	}
+}
+
 func TestSelectRepositoryUpdatesHistory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
