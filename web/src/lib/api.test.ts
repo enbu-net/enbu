@@ -45,13 +45,15 @@ describe("api.auth.status", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
-          error: { message: "not logged in", code: "NOT_AUTHENTICATED" },
+          error: { message: "not logged in", code: "not_authenticated", params: {} },
         }),
         { status: 401 },
       ),
     );
 
-    await expect(api.auth.status()).rejects.toThrow("not logged in");
+    await expect(api.auth.status()).rejects.toMatchObject({
+      payload: { code: "not_authenticated", message: "not logged in" },
+    });
   });
 });
 

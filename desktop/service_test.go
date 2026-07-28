@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/config"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
@@ -125,6 +127,21 @@ func TestOnStepProgressEmitsWailsEvent(t *testing.T) {
 func TestValidateRepoPathRejectsMissingPath(t *testing.T) {
 	if _, err := ValidateRepoPath(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("ValidateRepoPath succeeded for missing path")
+	}
+}
+
+func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	paths := []string{"", filepath.Join(t.TempDir(), "missing"), filePath}
+	for _, path := range paths {
+		s := NewService(app.New())
+		s.ctx = context.Background()
+		if _, err := s.SelectRepository(path); !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Errorf("SelectRepository(%q) error = %v, want %q", path, err, apperr.CodeInvalidArgument)
+		}
 	}
 }
 
@@ -278,6 +295,11 @@ func TestGetOAuthLoginStatus(t *testing.T) {
 }
 
 func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	s := NewService(app.New())
 	s.ctx = context.Background()
 	var loginContext context.Context
@@ -293,6 +315,22 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 	case <-loginContext.Done():
 	case <-time.After(time.Second):
 		t.Fatal("failed login context was not cancelled")
+	}
+	if !strings.Contains(logs.String(), "login failed") {
+		t.Fatalf("OAuth failure was not logged: %q", logs.String())
+	}
+}
+
+func TestStartOAuthLoginClassifiesExpiredContext(t *testing.T) {
+	s := NewService(app.New())
+	s.ctx = context.Background()
+	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
+		return nil, context.DeadlineExceeded
+	}
+
+	_, err := s.StartOAuthLogin()
+	if !apperr.Is(err, apperr.CodeAuthExpired) {
+		t.Fatalf("StartOAuthLogin error = %v, want %q", err, apperr.CodeAuthExpired)
 	}
 }
 
@@ -426,6 +464,30 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	}
 	if !strings.Contains(string(gitignore), "secrets.local") {
 		t.Fatalf(".gitignore does not contain custom output: %q", gitignore)
+	}
+}
+
+func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	repoDir := newGitRepo(t)
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := app.New()
+	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	s := NewService(a)
+	if _, err := s.SelectRepository(repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, content := range []string{
+		"not valid toml =",
+		"version = \"v1alpha1\"\n[env.dev]\noutput = \"../outside\"\n",
+	} {
+		err := s.WriteConfig(content)
+		if !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Fatalf("WriteConfig(%q) error = %v, want invalid_argument", content, err)
+		}
 	}
 }
 

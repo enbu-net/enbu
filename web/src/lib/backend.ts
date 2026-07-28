@@ -7,6 +7,14 @@ import {
   type Recipient,
   type SecretsResponse,
 } from "./api";
+import {
+  createAppError,
+  type AppErrorPayload,
+  type BindingResult,
+  type DisplayError,
+  toDisplayError,
+  unwrapBindingResult,
+} from "./app-error";
 import { mockBackend } from "./mock-backend";
 
 const isMock =
@@ -20,9 +28,11 @@ export interface OAuthStart {
 
 export interface OAuthStatus {
   state: "pending" | "success" | "expired" | "denied" | "error";
-  message?: string;
+  error?: DisplayError;
   username?: string;
 }
+
+type DesktopOAuthStatus = Omit<OAuthStatus, "error"> & { error?: AppErrorPayload };
 
 export interface RepositoryOwner {
   login: string;
@@ -32,7 +42,7 @@ export interface RepositoryOwner {
 type DesktopService = {
   GetAuthStatus: () => Promise<DesktopAuthStatus>;
   StartOAuthLogin: () => Promise<OAuthStart>;
-  GetOAuthLoginStatus: (sessionID: string) => Promise<OAuthStatus>;
+  GetOAuthLoginStatus: (sessionID: string) => Promise<DesktopOAuthStatus>;
   CancelOAuthLogin: (sessionID: string) => Promise<void>;
   Logout: () => Promise<void>;
   BrowseRepository: () => Promise<GUIRepoStatus["repo"]>;
@@ -70,6 +80,14 @@ type DesktopService = {
   GetAppVersion: () => Promise<string>;
 };
 
+type DesktopBindingService = {
+  [K in keyof DesktopService]: DesktopService[K] extends (
+    ...args: infer Args
+  ) => Promise<infer Result>
+    ? (...args: Args) => Promise<BindingResult<Result>>
+    : never;
+};
+
 type DesktopAuthStatus = Omit<AuthStatus, "repo"> & {
   repo?: AuthStatus["repo"] & {
     repo?: string;
@@ -80,17 +98,35 @@ declare global {
   interface Window {
     go?: {
       main?: {
-        DesktopService?: DesktopService;
+        DesktopService?: DesktopBindingService;
       };
       desktop?: {
-        Service?: DesktopService;
+        Service?: DesktopBindingService;
       };
     };
   }
 }
 
+let cachedBinding: DesktopBindingService | undefined;
+let cachedService: DesktopService | undefined;
+
 function service(): DesktopService | undefined {
-  return window.go?.main?.DesktopService ?? window.go?.desktop?.Service;
+  const binding = window.go?.main?.DesktopService ?? window.go?.desktop?.Service;
+  if (!binding) return undefined;
+  if (binding === cachedBinding && cachedService) return cachedService;
+
+  cachedBinding = binding;
+  cachedService = new Proxy(binding, {
+    get(target, property) {
+      const method = target[property as keyof DesktopBindingService];
+      if (typeof method !== "function") return method;
+      return async (...args: unknown[]) =>
+        unwrapBindingResult(
+          await (method as (...values: unknown[]) => Promise<BindingResult<unknown>>)(...args),
+        );
+    },
+  }) as unknown as DesktopService;
+  return cachedService;
 }
 
 const realBackend = {
@@ -104,16 +140,20 @@ const realBackend = {
   async startOAuthLogin(): Promise<OAuthStart> {
     const svc = service();
     if (!svc) {
-      throw new Error("Desktop authentication is not available");
+      throw createAppError("unavailable");
     }
     return svc.StartOAuthLogin();
   },
   async oauthStatus(sessionID: string): Promise<OAuthStatus> {
     const svc = service();
     if (!svc) {
-      throw new Error("Desktop authentication is not available");
+      throw createAppError("unavailable");
     }
-    return svc.GetOAuthLoginStatus(sessionID);
+    const status = await svc.GetOAuthLoginStatus(sessionID);
+    return {
+      ...status,
+      error: status.error ? toDisplayError(status.error) : undefined,
+    };
   },
   async cancelOAuthLogin(sessionID: string): Promise<void> {
     await service()?.CancelOAuthLogin(sessionID);
@@ -137,7 +177,7 @@ const realBackend = {
   async browseRepository(): Promise<GUIRepoStatus> {
     const svc = service();
     if (!svc) {
-      throw new Error("Native repository picker is not available");
+      throw createAppError("unavailable");
     }
     const repo = await svc.BrowseRepository();
     return { selected: Boolean(repo?.path), repo };
@@ -160,7 +200,7 @@ const realBackend = {
   async gitInit(path: string): Promise<GUIRepoStatus> {
     const svc = service();
     if (!svc) {
-      throw new Error("Desktop Git initialization is not available");
+      throw createAppError("unavailable");
     }
     const repo = await svc.GitInit(path);
     return { selected: Boolean(repo?.path), repo };
@@ -173,7 +213,7 @@ const realBackend = {
   ): Promise<GUIRepoStatus> {
     const svc = service();
     if (!svc) {
-      throw new Error("Desktop GitHub repository creation is not available");
+      throw createAppError("unavailable");
     }
     const repo = await svc.GitCreateRemote(path, owner, repoName, privateRepository);
     return { selected: Boolean(repo?.path), repo };
@@ -181,7 +221,7 @@ const realBackend = {
   async listRepositoryOwners(): Promise<RepositoryOwner[]> {
     const svc = service();
     if (!svc) {
-      throw new Error("Desktop GitHub account selection is not available");
+      throw createAppError("unavailable");
     }
     return svc.ListRepositoryOwners();
   },
@@ -293,7 +333,7 @@ const realBackend = {
   },
   async readConfig(): Promise<string> {
     const svc = service();
-    if (!svc) throw new Error("Not available");
+    if (!svc) throw createAppError("unavailable");
     return svc.ReadConfig();
   },
   async writeConfig(content: string): Promise<void> {

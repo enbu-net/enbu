@@ -23,7 +23,7 @@ func Pull(ctx context.Context, ref string, token string) ([]byte, error) {
 
 	desc, err := oras.Copy(ctx, repo, tag, store, tag, oras.DefaultCopyOptions)
 	if err != nil {
-		return nil, fmt.Errorf("pulling from %s: %w", ref, err)
+		return nil, wrapRemoteError(fmt.Sprintf("pulling from %s", ref), err)
 	}
 
 	rc, err := store.Fetch(ctx, desc)
@@ -71,7 +71,7 @@ func ListTags(ctx context.Context, ref string, token string) ([]string, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listing tags: %w", err)
+		return nil, wrapRemoteError("listing tags", err)
 	}
 
 	return tags, nil
@@ -86,7 +86,7 @@ func GetDigest(ctx context.Context, ref string, token string) (string, error) {
 	tag := repo.Reference.Reference
 	desc, err := repo.Resolve(ctx, tag)
 	if err != nil {
-		return "", fmt.Errorf("resolving %s: %w", ref, err)
+		return "", wrapRemoteError(fmt.Sprintf("resolving %s", ref), err)
 	}
 
 	return string(desc.Digest), nil

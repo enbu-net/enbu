@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -12,7 +11,7 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       "completion [bash|zsh|fish|powershell]",
 		Short:     "Generate the autocompletion script for the specified shell",
-		Args:      cobra.ExactArgs(1),
+		Args:      appArgs(cobra.ExactArgs(1)),
 		ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var output bytes.Buffer
@@ -35,7 +34,7 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 					err = root.GenPowerShellCompletionWithDesc(&output)
 				}
 			default:
-				return fmt.Errorf("unsupported shell %q", args[0])
+				return invalidArgument("unsupported shell "+args[0], nil)
 			}
 			if err != nil {
 				return err

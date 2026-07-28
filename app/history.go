@@ -2,13 +2,13 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand/v2"
 	"sort"
 	"time"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/enbu-net/enbu/utils/bundle"
 	"github.com/enbu-net/enbu/utils/oci"
@@ -26,7 +26,9 @@ type Diff struct {
 	Modified []string `json:"modified"`
 }
 
-func (a *App) ListHistory(ctx context.Context, env string) ([]HistoryEntry, error) {
+func (a *App) ListHistory(ctx context.Context, env string) (history []HistoryEntry, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return nil, err
@@ -71,17 +73,19 @@ func (a *App) ListHistory(ctx context.Context, env string) ([]HistoryEntry, erro
 	return entries, nil
 }
 
-func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (*Diff, error) {
+func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (diff *Diff, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	entries, err := a.ListHistory(ctx, env)
 	if err != nil {
 		return nil, err
 	}
 
 	if fromIdx < 1 || fromIdx > len(entries) {
-		return nil, fmt.Errorf("version %d not found (history has %d entries)", fromIdx, len(entries))
+		return nil, invalidHistoryIndexError(fromIdx, len(entries))
 	}
 	if toIdx < 1 || toIdx > len(entries) {
-		return nil, fmt.Errorf("version %d not found (history has %d entries)", toIdx, len(entries))
+		return nil, invalidHistoryIndexError(toIdx, len(entries))
 	}
 
 	accessToken, _, err := a.TokenProvider.LoadToken()
@@ -119,7 +123,9 @@ func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (
 	return diffSecrets(fromSecrets, toSecrets), nil
 }
 
-func (a *App) RestoreHistory(ctx context.Context, env string, idx int) error {
+func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -131,7 +137,7 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) error {
 	}
 
 	if idx < 1 || idx > len(entries) {
-		return fmt.Errorf("version %d not found (history has %d entries)", idx, len(entries))
+		return invalidHistoryIndexError(idx, len(entries))
 	}
 
 	accessToken, _, err := a.TokenProvider.LoadToken()
@@ -188,13 +194,13 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) error {
 		}
 
 		if err := a.Registry.Push(ctx, secretsRef, "application/vnd.enbu.secrets.age.v1", ciphertext, accessToken, pushOpts); err != nil {
-			if errors.Is(err, oci.ErrConflict) {
+			if apperr.Is(err, apperr.CodeConflict) {
 				if attempt < maxRetries-1 {
 					a.emitRetry(attempt+1, maxRetries)
 					time.Sleep(time.Duration(100+rand.IntN(100)) * time.Millisecond)
 					continue
 				}
-				return fmt.Errorf("secrets changed by another user, failed after %d attempts", maxRetries)
+				return conflictRetriesExhausted(err, maxRetries)
 			}
 			return fmt.Errorf("pushing restored secrets: %w", err)
 		}
@@ -206,6 +212,14 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) error {
 		return nil
 	}
 	return nil
+}
+
+func invalidHistoryIndexError(index, count int) error {
+	return apperr.New(
+		apperr.CodeInvalidArgument,
+		fmt.Sprintf("version %d not found (history has %d entries)", index, count),
+		apperr.Params{"index": fmt.Sprint(index)},
+	)
 }
 
 func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []agecrypto.Identity) (map[string]string, error) {

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 
+	"github.com/enbu-net/enbu/apperr"
 	enbucli "github.com/enbu-net/enbu/cli"
 )
 
@@ -18,9 +19,10 @@ func main() {
 
 	app := enbucli.New(getVersion())
 	if err := app.ExecuteContext(ctx); err != nil {
+		err = apperr.Normalize(err)
 		log.SetFlags(0)
 		enbucli.RenderExecutionError(app, err, os.Args[1:])
-		os.Exit(1)
+		os.Exit(apperr.ExitCode(err))
 	}
 }
 

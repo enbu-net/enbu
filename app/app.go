@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/config"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
@@ -167,11 +168,11 @@ type unavailableKeyStore struct {
 }
 
 func (u *unavailableKeyStore) Store(_, _ string, _ []byte) error {
-	return u.err
+	return apperr.Wrap(apperr.CodeUnavailable, "keystore is unavailable", u.err, nil)
 }
 
 func (u *unavailableKeyStore) Load(_, _ string) ([]byte, error) {
-	return nil, u.err
+	return nil, apperr.Wrap(apperr.CodeUnavailable, "keystore is unavailable", u.err, nil)
 }
 
 func (a *App) sourceRepoURL(owner, repo string) string {

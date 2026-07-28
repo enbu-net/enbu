@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/enbu-net/enbu/apperr"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -13,7 +14,9 @@ type RecipientInfo struct {
 	PublicKey   string
 }
 
-func (a *App) ListRecipients(ctx context.Context) ([]RecipientInfo, error) {
+func (a *App) ListRecipients(ctx context.Context) (recipients []RecipientInfo, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	accessToken, _, err := a.TokenProvider.LoadToken()
 	if err != nil {
 		return nil, err

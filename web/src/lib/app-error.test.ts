@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vite-plus/test";
+import {
+  AppError,
+  displayError,
+  formatDisplayError,
+  toDisplayError,
+  unwrapBindingResult,
+} from "./app-error";
+
+describe("display errors", () => {
+  it("localizes a known code and expands params at display time", () => {
+    const error = toDisplayError(
+      new AppError({
+        code: "environment_not_found",
+        message: "must not be displayed",
+        params: { name: "dev" },
+      }),
+    );
+
+    expect(formatDisplayError(error, "ja")).toBe("環境「dev」は存在しません。");
+    expect(formatDisplayError(error, "en")).toBe('Environment "dev" does not exist.');
+  });
+
+  it("never displays the payload message for an unknown code", () => {
+    const error = toDisplayError(
+      new AppError({ code: "future_code", message: "token=secret", params: {} }),
+    );
+
+    expect(formatDisplayError(error, "ja")).toBe("予期しないエラーが発生しました。");
+    expect(formatDisplayError(error, "en")).toBe("An unexpected error occurred.");
+  });
+
+  it("maps ordinary errors and malformed payloads to internal", () => {
+    expect(formatDisplayError(toDisplayError(new Error("token=secret")), "ja")).toBe(
+      "予期しないエラーが発生しました。",
+    );
+    expect(formatDisplayError(toDisplayError({ code: 42 }), "en")).toBe(
+      "An unexpected error occurred.",
+    );
+  });
+
+  it("keeps translation reactive to the selected locale", () => {
+    const error = displayError("access_denied");
+    expect(formatDisplayError(error, "ja")).toBe("アクセスが拒否されました。");
+    expect(formatDisplayError(error, "en")).toBe("Access was denied.");
+  });
+
+  it("preserves replacement-token characters in params", () => {
+    const error = displayError("secret_not_found", { key: "$&$'$`" });
+
+    expect(formatDisplayError(error, "en")).toBe('Secret "$&$\'$`" does not exist.');
+  });
+
+  it("unwraps binding errors without localizing them early", () => {
+    expect(() =>
+      unwrapBindingResult({
+        error: { code: "conflict", message: "raw", params: {} },
+      }),
+    ).toThrow(AppError);
+  });
+});

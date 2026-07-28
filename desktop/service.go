@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/config"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
@@ -132,9 +133,9 @@ type OAuthStart struct {
 }
 
 type OAuthStatus struct {
-	State    string `json:"state"`
-	Message  string `json:"message,omitempty"`
-	Username string `json:"username,omitempty"`
+	State    string          `json:"state"`
+	Error    *apperr.Payload `json:"error,omitempty"`
+	Username string          `json:"username,omitempty"`
 }
 
 type Environment struct {
@@ -217,13 +218,16 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 			return nil
 		})
 		if err != nil {
+			slog.Error("OAuth login failed", "session_id", sessionID, "err", err)
 			state := "error"
+			payload := apperr.PayloadOf(err)
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				state = "expired"
-			} else if errors.Is(err, auth.ErrAccessDenied) {
+				payload = apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
+			} else if apperr.Is(err, apperr.CodeAccessDenied) {
 				state = "denied"
 			}
-			s.setOAuthStatus(sessionID, OAuthStatus{State: state, Message: err.Error()})
+			s.setOAuthStatus(sessionID, OAuthStatus{State: state, Error: &payload})
 			return
 		}
 		s.setOAuthStatus(sessionID, OAuthStatus{State: "success", Username: token.Username})
@@ -237,10 +241,10 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 		if status.State == "success" {
 			return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt}, nil
 		}
-		if status.Message == "" {
-			status.Message = "OAuth login failed"
+		if status.Error == nil {
+			return OAuthStart{}, errors.New("OAuth login failed")
 		}
-		return OAuthStart{}, errors.New(status.Message)
+		return OAuthStart{}, apperr.New(status.Error.Code, status.Error.Message, status.Error.Params)
 	case <-s.context().Done():
 		cancel()
 		return OAuthStart{}, s.context().Err()
@@ -252,10 +256,12 @@ func (s *Service) GetOAuthLoginStatus(sessionID string) (OAuthStatus, error) {
 	defer s.authMu.Unlock()
 	session, ok := s.sessions[sessionID]
 	if !ok {
-		return OAuthStatus{State: "expired", Message: "login session expired"}, nil
+		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
+		return OAuthStatus{State: "expired", Error: &payload}, nil
 	}
 	if time.Now().After(session.expiresAt) && session.status.State == "pending" {
-		session.status = OAuthStatus{State: "expired", Message: "login session expired"}
+		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
+		session.status = OAuthStatus{State: "expired", Error: &payload}
 	}
 	return session.status, nil
 }
@@ -301,7 +307,12 @@ func (s *Service) BrowseRepository() (RepoInfo, error) {
 func (s *Service) SelectRepository(path string) (RepoInfo, error) {
 	repo, err := validateRepoPath(s.context(), s.git, path)
 	if err != nil {
-		return RepoInfo{}, err
+		return RepoInfo{}, apperr.Wrap(
+			apperr.CodeInvalidArgument,
+			"invalid repository path",
+			err,
+			nil,
+		)
 	}
 	s.repoMu.Lock()
 	cfg, err := config.LoadGUI()
@@ -443,10 +454,10 @@ func (s *Service) WriteConfig(content string) error {
 	return s.withRepo(func() error {
 		cfg, err := config.ParseProject(content)
 		if err != nil {
-			return err
+			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 		}
 		if err := config.ValidateProjectOutputs(cfg); err != nil {
-			return err
+			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 		}
 		if err := ensureGitignore(s.app.RepositoryDir, projectGitignoreEntries(cfg)...); err != nil {
 			return fmt.Errorf("updating .gitignore: %w", err)

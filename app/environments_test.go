@@ -3,6 +3,8 @@ package app
 import (
 	"os"
 	"testing"
+
+	"github.com/enbu-net/enbu/apperr"
 )
 
 // SwitchEnvironment should not panic when .enbu.local does not exist
@@ -28,5 +30,32 @@ output = ".env.staging"
 	a := &App{}
 	if err := a.SwitchEnvironment("staging"); err != nil {
 		t.Fatalf("SwitchEnvironment: %v", err)
+	}
+}
+
+func TestSwitchEnvironmentRejectsInvalidName(t *testing.T) {
+	a := &App{RepositoryDir: t.TempDir()}
+	err := a.SwitchEnvironment("bad/name")
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("SwitchEnvironment error = %v, want %q", err, apperr.CodeInvalidArgument)
+	}
+}
+
+func TestDeleteEnvironmentRejectsCurrent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `version = "v1alpha1"
+default_env = "dev"
+
+[env.dev]
+output = ".env.dev"
+`
+	if err := os.WriteFile(dir+"/enbu.toml", []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &App{RepositoryDir: dir}
+	err := a.DeleteEnvironment("dev")
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("DeleteEnvironment error = %v, want %q", err, apperr.CodeInvalidArgument)
 	}
 }

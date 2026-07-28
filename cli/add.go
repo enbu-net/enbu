@@ -11,7 +11,7 @@ func newAddCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add KEY VALUE",
 		Short: "Add a secret to the repository",
-		Args:  cobra.ExactArgs(2),
+		Args:  appArgs(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.AddSecret(cmd.Context(), envName, args[0], args[1]); err != nil {
 				return err

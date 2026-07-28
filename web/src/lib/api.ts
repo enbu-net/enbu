@@ -1,3 +1,5 @@
+import { AppError, createAppError, type AppErrorPayload } from "./app-error";
+
 function getCsrfToken(): string {
   const match = document.cookie.match(/(?:^|; )enbu_csrf=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -17,22 +19,23 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    let errorMessage = "";
+    let errorPayload: AppErrorPayload | undefined;
     try {
-      const errJson = JSON.parse(text) as { error?: { message?: string } };
-      errorMessage = errJson.error?.message ?? "";
+      const errJson = JSON.parse(text) as { error?: AppErrorPayload };
+      errorPayload = errJson.error;
     } catch {
       // ignore JSON parse errors
     }
-    if (errorMessage) {
-      throw new Error(errorMessage);
+    if (errorPayload) {
+      throw new AppError(errorPayload);
     }
-    throw new Error(text || `HTTP ${res.status}`);
+    console.error("unstructured API error", { status: res.status, body: text });
+    throw createAppError("internal");
   }
 
-  const json = (await res.json()) as { data: T; error?: { message: string } };
+  const json = (await res.json()) as { data: T; error?: AppErrorPayload };
   if (json.error) {
-    throw new Error(json.error.message);
+    throw new AppError(json.error);
   }
   return json.data;
 }

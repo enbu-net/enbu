@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/spf13/cobra"
@@ -64,6 +65,12 @@ func TestJSONExecutionErrorsUseOneStdoutObject(t *testing.T) {
 			if stringField(t, errorData, "message") == "" {
 				t.Fatal("empty error message")
 			}
+			if stringField(t, errorData, "code") == "" {
+				t.Fatal("empty error code")
+			}
+			if _, ok := errorData["params"].(map[string]any); !ok {
+				t.Fatalf("params = %#v, want object", errorData["params"])
+			}
 		})
 	}
 }
@@ -79,7 +86,7 @@ func TestRenderExecutionErrorHonorsOptionTerminator(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
-	if got := stderr.String(); got != "Error: failed\n" {
+	if got := stderr.String(); got != "Error: An unexpected error occurred.\n" {
 		t.Fatalf("stderr = %q", got)
 	}
 }
@@ -96,8 +103,36 @@ func TestRenderExecutionErrorSkipsOptionValues(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty (--json was a value for --env, not a flag)", stdout.String())
 	}
-	if got := stderr.String(); got != "Error: failed\n" {
+	if got := stderr.String(); got != "Error: An unexpected error occurred.\n" {
 		t.Fatalf("stderr = %q", got)
+	}
+}
+
+func TestJSONUserInputErrorsAreInvalidArguments(t *testing.T) {
+	tests := [][]string{
+		{"history", "diff", "nope", "1", "--json"},
+		{"history", "restore", "nope", "--json"},
+		{"completion", "nope", "--json"},
+		{"switch", "--delete", "--json"},
+		{"switch", "--move", "old", "--json"},
+		{"pull", "--stdout", "--json"},
+		{"auth", "login", "--device", "--json"},
+	}
+
+	for _, args := range tests {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			envelope, err := executeJSONResult(t, NewWithApp("test", &app.App{}), args...)
+			if !apperr.Is(err, apperr.CodeInvalidArgument) {
+				t.Fatalf("error = %v, want invalid_argument", err)
+			}
+			if got := apperr.ExitCode(err); got != 2 {
+				t.Fatalf("exit code = %d, want 2", got)
+			}
+			errorData := objectField(t, envelope, "error")
+			if got := stringField(t, errorData, "code"); got != string(apperr.CodeInvalidArgument) {
+				t.Fatalf("code = %q, want %q", got, apperr.CodeInvalidArgument)
+			}
+		})
 	}
 }
 

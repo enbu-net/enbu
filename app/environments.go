@@ -1,9 +1,9 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 )
 
@@ -12,7 +12,9 @@ type EnvInfo struct {
 	IsCurrent bool   `json:"current"`
 }
 
-func (a *App) ListEnvironments() ([]EnvInfo, error) {
+func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return nil, err
@@ -21,7 +23,7 @@ func (a *App) ListEnvironments() ([]EnvInfo, error) {
 	current := cfg.CurrentEnvironment()
 	names := cfg.EnvironmentNames()
 
-	envs := make([]EnvInfo, len(names))
+	envs = make([]EnvInfo, len(names))
 	for i, name := range names {
 		envs[i] = EnvInfo{
 			Name:      name,
@@ -31,7 +33,9 @@ func (a *App) ListEnvironments() ([]EnvInfo, error) {
 	return envs, nil
 }
 
-func (a *App) CurrentEnvironment() (string, error) {
+func (a *App) CurrentEnvironment() (name string, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return "", err
@@ -39,14 +43,20 @@ func (a *App) CurrentEnvironment() (string, error) {
 	return cfg.CurrentEnvironment(), nil
 }
 
-func (a *App) SwitchEnvironment(name string) error {
+func (a *App) SwitchEnvironment(name string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
+	if !config.ValidEnvironmentName(name) {
+		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
+	}
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err
 	}
 
 	if !cfg.HasEnvironment(name) {
-		return fmt.Errorf("environment %q does not exist (use create to add it)", name)
+		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist (use create to add it)", name), apperr.Params{"name": name})
 	}
 
 	previous := cfg.CurrentEnvironment()
@@ -68,7 +78,9 @@ func (a *App) SwitchEnvironment(name string) error {
 	return nil
 }
 
-func (a *App) SwitchPrevious() (string, error) {
+func (a *App) SwitchPrevious() (name string, err error) {
+	defer apperr.NormalizeInto(&err)
+
 	local, err := a.loadLocal()
 	if err != nil || local.Previous == "" {
 		return "", fmt.Errorf("no previous environment")
@@ -80,15 +92,16 @@ func (a *App) SwitchPrevious() (string, error) {
 	return local.Previous, nil
 }
 
-func (a *App) CreateEnvironment(name string) error {
+func (a *App) CreateEnvironment(name string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	if !config.ValidEnvironmentName(name) {
-		return fmt.Errorf("invalid environment name %q", name)
+		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
 
 	cfg, err := a.loadProject()
 	if err != nil {
-		var notFound config.ErrConfigNotFound
-		if !errors.As(err, &notFound) {
+		if !apperr.Is(err, apperr.CodeConfigNotFound) {
 			return err
 		}
 		cfg = config.NewProjectWithEnvironment(name)
@@ -117,14 +130,20 @@ func (a *App) CreateEnvironment(name string) error {
 	return nil
 }
 
-func (a *App) DeleteEnvironment(name string) error {
+func (a *App) DeleteEnvironment(name string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err
 	}
 
 	if cfg.CurrentEnvironment() == name {
-		return fmt.Errorf("cannot delete the current environment '%s' (switch to another first)", name)
+		return apperr.New(
+			apperr.CodeInvalidArgument,
+			fmt.Sprintf("cannot delete the current environment %q (switch to another first)", name),
+			apperr.Params{"name": name},
+		)
 	}
 
 	if err := cfg.RemoveEnvironment(name); err != nil {
@@ -134,7 +153,9 @@ func (a *App) DeleteEnvironment(name string) error {
 	return a.saveProject(cfg)
 }
 
-func (a *App) RenameEnvironment(oldName, newName string) error {
+func (a *App) RenameEnvironment(oldName, newName string) (err error) {
+	defer apperr.NormalizeInto(&err)
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err

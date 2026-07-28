@@ -6,10 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"sync"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/provider"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -34,7 +35,7 @@ func (m *mockRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, er
 	defer m.mu.RUnlock()
 	d, ok := m.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	return append([]byte(nil), d...), nil
 }
@@ -57,7 +58,7 @@ func (m *mockRegistry) GetDigest(_ context.Context, ref string, _ string) (strin
 	defer m.mu.RUnlock()
 	d, ok := m.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	sum := sha256.Sum256(d)
 	return fmt.Sprintf("sha256:%x", sum), nil
@@ -102,7 +103,7 @@ func (m *mockKeyStore) Load(_, key string) ([]byte, error) {
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]
 	if !ok {
-		return nil, keystore.ErrNotFound
+		return nil, fs.ErrNotExist
 	}
 	return append([]byte(nil), d...), nil
 }

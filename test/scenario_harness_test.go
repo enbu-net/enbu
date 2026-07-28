@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -17,7 +18,6 @@ import (
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/provider"
 	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -307,7 +307,7 @@ func (m *mockKeyStore) Load(_, key string) ([]byte, error) {
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]
 	if !ok {
-		return nil, keystore.ErrNotFound
+		return nil, fs.ErrNotExist
 	}
 	return append([]byte(nil), d...), nil
 }

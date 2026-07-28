@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/config"
 	"github.com/enbu-net/enbu/utils/keystore"
 )
@@ -64,7 +66,7 @@ func LoadToken() (*StoredToken, error) {
 
 	data, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
 	if err != nil {
-		if errors.Is(err, keystore.ErrNotFound) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, notLoggedInError()
 		}
 		return nil, fmt.Errorf("loading token: %w", err)
@@ -86,7 +88,7 @@ func LoadToken() (*StoredToken, error) {
 
 func DeleteToken() error {
 	var deleteErrors []error
-	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, keystore.ErrNotFound) {
+	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		deleteErrors = append(deleteErrors, fmt.Errorf("removing token: %w", err))
 	}
 	if err := os.Remove(legacyTokenPath()); err != nil && !os.IsNotExist(err) {
@@ -106,7 +108,7 @@ func validateStoredToken(token *StoredToken) error {
 }
 
 func notLoggedInError() error {
-	return errors.New("not logged in: run 'enbu auth login' to authenticate with GitHub")
+	return apperr.New(apperr.CodeNotAuthenticated, "not logged in: run 'enbu auth login' to authenticate with GitHub", nil)
 }
 
 func legacyTokenPath() string {

@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enbu-net/enbu/apperr"
 	gh "github.com/enbu-net/enbu/provider/github"
 )
 
@@ -36,8 +37,7 @@ const (
 var (
 	statePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-	ErrAccessDenied = errors.New("access denied by user")
-	getGitHubUser   = func(ctx context.Context, token string) (string, int64, error) {
+	getGitHubUser = func(ctx context.Context, token string) (string, int64, error) {
 		user, err := gh.NewClient(token).GetUser(ctx)
 		if err != nil {
 			return "", 0, err
@@ -155,7 +155,7 @@ func (c *oauthClient) login(parent context.Context, openBrowser BrowserOpener) (
 	case callback = <-callbackCh:
 	}
 	if callback.denied {
-		return nil, ErrAccessDenied
+		return nil, apperr.New(apperr.CodeAccessDenied, "access denied by user", nil)
 	}
 
 	token, err := c.exchange(ctx, exchangeRequest{

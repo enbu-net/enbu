@@ -1,0 +1,16 @@
+{
+  "internal": "予期しないエラーが発生しました。",
+  "invalid_argument": "入力内容が正しくありません。",
+  "not_authenticated": "続行するにはGitHub認証が必要です。",
+  "access_denied": "アクセスが拒否されました。",
+  "authentication_expired": "認証セッションの有効期限が切れました。もう一度お試しください。",
+  "not_initialized": "先にこのリポジトリでenbuをセットアップしてください。",
+  "config_not_found": "enbu.tomlが見つかりません。",
+  "environment_not_found": "環境「{name}」は存在しません。",
+  "environment_already_exists": "環境「{name}」はすでに存在します。",
+  "secret_not_found": "シークレット「{key}」は存在しません。",
+  "secret_already_exists": "シークレット「{key}」はすでに存在します。",
+  "artifact_not_found": "対象のシークレットが見つかりません。",
+  "conflict": "リモートのシークレットが変更されました。もう一度お試しください。",
+  "unavailable": "必要なサービスを利用できません。"
+}

@@ -2,6 +2,7 @@ package keystore
 
 import (
 	"errors"
+	"io/fs"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -50,6 +51,17 @@ func TestNew_KeyringAvailableFallbackNotTriggered(t *testing.T) {
 	}
 }
 
+func TestKeyringBackendDeleteMissing(t *testing.T) {
+	keyring.MockInit()
+	backend := &KeyringBackend{}
+
+	err := backend.Delete("svc", "missing")
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Delete() error = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestNew_KeyringUnavailableFallsBackToText(t *testing.T) {
 	keyring.MockInitWithError(errors.New("no secret service"))
 	t.Setenv("ENBU_BACKEND", "keyring")
@@ -85,8 +97,8 @@ func TestTextBackend_RoundTrip(t *testing.T) {
 	}
 
 	_, err = tb.Load("svc", "key1")
-	if err != ErrNotFound {
-		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist after delete, got %v", err)
 	}
 }
 
@@ -96,8 +108,8 @@ func TestTextBackend_LoadNotFound(t *testing.T) {
 
 	tb := &TextBackend{}
 	_, err := tb.Load("svc", "nonexistent")
-	if err != ErrNotFound {
-		t.Fatalf("expected ErrNotFound, got %v", err)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("expected fs.ErrNotExist, got %v", err)
 	}
 }
 

@@ -17,6 +17,7 @@ import { createAuthRefresher, type AuthRefreshOptions } from "../lib/auth-refres
 import { I18nProvider, useI18n } from "../lib/i18n";
 import { ConfirmDeleteDialog } from "../components/confirm-delete-dialog";
 import { LanguageSelector } from "../components/language-selector";
+import { UserErrorGate } from "../components/user-error-gate";
 
 export type AuthContextValue = {
   status: AuthStatus | null;
@@ -43,7 +44,9 @@ export const Route = createRootRoute({
 function RootWithProviders() {
   return (
     <I18nProvider>
-      <RootLayout />
+      <UserErrorGate>
+        <RootLayout />
+      </UserErrorGate>
     </I18nProvider>
   );
 }

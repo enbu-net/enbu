@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -23,7 +22,7 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List history entries",
-		Args:  cobra.NoArgs,
+		Args:  appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			entries, err := a.ListHistory(cmd.Context(), env)
 			if err != nil {
@@ -63,15 +62,15 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 	diffCmd := &cobra.Command{
 		Use:   "diff <from> <to>",
 		Short: "Show diff between two history entries",
-		Args:  cobra.ExactArgs(2),
+		Args:  appArgs(cobra.ExactArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			from, err := strconv.Atoi(args[0])
 			if err != nil {
-				return fmt.Errorf("invalid version number %q", args[0])
+				return invalidArgument("invalid version number "+args[0], err)
 			}
 			to, err := strconv.Atoi(args[1])
 			if err != nil {
-				return fmt.Errorf("invalid version number %q", args[1])
+				return invalidArgument("invalid version number "+args[1], err)
 			}
 
 			diff, err := a.DiffHistory(cmd.Context(), env, from, to)
@@ -111,11 +110,11 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 	restoreCmd := &cobra.Command{
 		Use:   "restore <version>",
 		Short: "Restore secrets to a previous history entry",
-		Args:  cobra.ExactArgs(1),
+		Args:  appArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			idx, err := strconv.Atoi(args[0])
 			if err != nil {
-				return fmt.Errorf("invalid version number %q", args[0])
+				return invalidArgument("invalid version number "+args[0], err)
 			}
 			if err := a.RestoreHistory(cmd.Context(), env, idx); err != nil {
 				return err

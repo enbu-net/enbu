@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,8 @@ import (
 	"testing"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/keystore"
 	"github.com/enbu-net/enbu/utils/oci"
 )
 
@@ -21,6 +22,19 @@ import (
 type memRegistry struct {
 	mu   sync.RWMutex
 	data map[string][]byte
+}
+
+type conflictOnceRegistry struct {
+	Registry
+	pushes int
+}
+
+func (r *conflictOnceRegistry) Push(ctx context.Context, ref, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
+	r.pushes++
+	if r.pushes == 1 {
+		return apperr.New(apperr.CodeConflict, "digest mismatch", nil)
+	}
+	return r.Registry.Push(ctx, ref, mediaType, data, token, opts)
 }
 
 func newMemRegistry() *memRegistry { return &memRegistry{data: make(map[string][]byte)} }
@@ -37,7 +51,7 @@ func (r *memRegistry) Pull(_ context.Context, ref, _ string) ([]byte, error) {
 	defer r.mu.RUnlock()
 	d, ok := r.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	return append([]byte(nil), d...), nil
 }
@@ -60,7 +74,7 @@ func (r *memRegistry) GetDigest(_ context.Context, ref, _ string) (string, error
 	defer r.mu.RUnlock()
 	d, ok := r.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	sum := sha256.Sum256(d)
 	return fmt.Sprintf("sha256:%x", sum), nil
@@ -93,7 +107,7 @@ func (m *memKeyStore) Load(_, key string) ([]byte, error) {
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]
 	if !ok {
-		return nil, keystore.ErrNotFound
+		return nil, fs.ErrNotExist
 	}
 	return append([]byte(nil), d...), nil
 }
@@ -142,6 +156,19 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 		t.Fatalf("GenerateKeyPair: %v", err)
 	}
 	return kp
+}
+
+func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
+	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
+	registry := &conflictOnceRegistry{Registry: a.Registry}
+	a.Registry = registry
+
+	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
+		t.Fatalf("SyncSecrets: %v", err)
+	}
+	if registry.pushes != 2 {
+		t.Fatalf("pushes = %d, want 2", registry.pushes)
+	}
 }
 
 // --- tests ---

@@ -54,3 +54,14 @@ test/                → scenario tests (build tag: scenario)
 - Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
 - Only age X25519 keys are used — no SSH key support
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
+
+## Error handling
+
+- Functions continue to return the standard `error` interface. `AppError` is a concrete implementation, not a separate return type.
+- Every error leaving an exported `app` operation must be normalized to `AppError`. Unclassified errors use the `internal` code.
+- Internal packages may return ordinary errors and add context with `%w`. Preserve the cause chain for `errors.Is` and `errors.As`.
+- Assign a specific error code only when callers need to change behavior, such as retrying, selecting an exit code, translating a GUI message, or changing screens.
+- Never inspect `err.Error()` to control behavior.
+- Desktop UI error state and error component props must use `DisplayError`; never render `err.message`, `String(err)`, an HTTP response body, or an `AppError` payload message directly.
+- Convert unknown frontend and backend failures with `toDisplayError`. Unknown or invalid codes must display the localized `internal` message; detailed causes belong only in logs.
+- Access Wails bindings only through the frontend backend adapter. Every exported Wails `DesktopService` method must return `BindingResponse` through `bindingResult` or `bindingError`.

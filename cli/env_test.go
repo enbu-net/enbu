@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/utils/age"
 	"github.com/enbu-net/enbu/utils/oci"
 )
@@ -37,7 +38,7 @@ func (e *envRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, err
 	defer e.mu.RUnlock()
 	data, ok := e.data[ref]
 	if !ok {
-		return nil, fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	return append([]byte(nil), data...), nil
 }
@@ -60,7 +61,7 @@ func (e *envRegistry) GetDigest(_ context.Context, ref string, _ string) (string
 	defer e.mu.RUnlock()
 	data, ok := e.data[ref]
 	if !ok {
-		return "", fmt.Errorf("NAME_UNKNOWN: %s", ref)
+		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
 	}
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("sha256:%x", sum), nil

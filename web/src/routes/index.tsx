@@ -39,6 +39,12 @@ import { TransferModal } from "../components/transfer-modal";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { LanguageSelector } from "../components/language-selector";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
+import {
+  displayError,
+  formatDisplayError,
+  toDisplayError,
+  type DisplayError,
+} from "../lib/app-error";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -191,11 +197,11 @@ export function HomePage() {
     };
   } | null>(null);
   const [repoPath, setRepoPath] = useState("");
-  const [repoError, setRepoError] = useState("");
+  const [repoError, setRepoError] = useState<DisplayError | null>(null);
   const [selectingRepo, setSelectingRepo] = useState(false);
   const [oauthStart, setOAuthStart] = useState<OAuthStart | null>(null);
   const [oauthStatus, setOAuthStatus] = useState<OAuthStatus | null>(null);
-  const [authError, setAuthError] = useState("");
+  const [authError, setAuthError] = useState<DisplayError | null>(null);
   const [startingAuth, setStartingAuth] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [repositorySetupLoading, setRepositorySetupLoading] = useState(false);
@@ -207,7 +213,7 @@ export function HomePage() {
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
-  const [actionError, setActionError] = useState("");
+  const [actionError, setActionError] = useState<DisplayError | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
   const [secretKey, setSecretKey] = useState("");
@@ -218,13 +224,13 @@ export function HomePage() {
   const [now, setNow] = useState(() => Date.now());
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [recipientsLoading, setRecipientsLoading] = useState(false);
-  const [recipientsError, setRecipientsError] = useState("");
+  const [recipientsError, setRecipientsError] = useState<DisplayError | null>(null);
   const recipientsRequestRef = useRef(0);
   const addEnvironmentTriggerRef = useRef<HTMLButtonElement>(null);
   const [transferModal, setTransferModal] = useState<{
     open: boolean;
     op: "add" | "pull" | "sync" | "delete" | null;
-    error: string | null;
+    error: DisplayError | null;
   }>({ open: false, op: null, error: null });
 
   const runWithTransferAnimation = useCallback(
@@ -234,8 +240,7 @@ export function HomePage() {
         await task();
         await new Promise((r) => setTimeout(r, 1200));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setTransferModal({ open: true, op, error: msg });
+        setTransferModal({ open: true, op, error: toDisplayError(err) });
         await new Promise((r) => setTimeout(r, 2200));
         throw err;
       } finally {
@@ -252,9 +257,7 @@ export function HomePage() {
   }, [status?.authenticated]);
 
   useEffect(() => {
-    fetchRepoStatus().catch((err) =>
-      setRepoError(err instanceof Error ? err.message : String(err)),
-    );
+    fetchRepoStatus().catch((err) => setRepoError(toDisplayError(err)));
   }, [fetchRepoStatus]);
 
   useEffect(() => {
@@ -286,12 +289,12 @@ export function HomePage() {
         try {
           setRepoStatus(await backend.repoStatus());
         } catch (err) {
-          setRepoError(err instanceof Error ? err.message : String(err));
+          setRepoError(toDisplayError(err));
         }
       } catch (err) {
         setOAuthStatus({
           state: "error",
-          message: err instanceof Error ? err.message : String(err),
+          error: toDisplayError(err),
         });
       }
     }, 1000);
@@ -313,14 +316,14 @@ export function HomePage() {
     if (!recipientRepoPath) return;
     const request = ++recipientsRequestRef.current;
     setRecipientsLoading(true);
-    setRecipientsError("");
+    setRecipientsError(null);
     try {
       const list = await backend.listRecipients();
       if (request !== recipientsRequestRef.current) return;
       setRecipients((list ?? []).filter((r): r is Recipient => r != null));
     } catch (err) {
       if (request !== recipientsRequestRef.current) return;
-      setRecipientsError(err instanceof Error ? err.message : String(err));
+      setRecipientsError(toDisplayError(err));
     } finally {
       if (request === recipientsRequestRef.current) setRecipientsLoading(false);
     }
@@ -328,14 +331,14 @@ export function HomePage() {
 
   async function refreshWorkspace(env = currentEnvironment) {
     setWorkspaceLoading(true);
-    setActionError("");
+    setActionError(null);
     try {
       const envs = await backend.listEnvironments();
       const nextEnv = resolveWorkspaceEnvironment(env, envs);
       setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));
       setSecrets(await backend.listSecrets(nextEnv));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(toDisplayError(err));
     } finally {
       setWorkspaceLoading(false);
     }
@@ -365,7 +368,7 @@ export function HomePage() {
 
     let cancelled = false;
     setRepositoryOwnersLoading(true);
-    setActionError("");
+    setActionError(null);
     backend
       .listRepositoryOwners()
       .then((owners) => {
@@ -381,7 +384,7 @@ export function HomePage() {
         });
       })
       .catch((err) => {
-        if (!cancelled) setActionError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setActionError(toDisplayError(err));
       })
       .finally(() => {
         if (!cancelled) setRepositoryOwnersLoading(false);
@@ -393,13 +396,13 @@ export function HomePage() {
 
   async function handleStartAuth() {
     setStartingAuth(true);
-    setAuthError("");
+    setAuthError(null);
     try {
       const start = await backend.startOAuthLogin();
       setOAuthStart(start);
       setOAuthStatus({ state: "pending" });
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : String(err));
+      setAuthError(toDisplayError(err));
     } finally {
       setStartingAuth(false);
     }
@@ -422,7 +425,7 @@ export function HomePage() {
     return (
       <PageCenter>
         <VStack gap={5} w="full" maxW="480px" textAlign="center">
-          {authError && <ErrorAlert message={authError} onDismiss={() => setAuthError("")} />}
+          {authError && <ErrorAlert error={authError} onDismiss={() => setAuthError(null)} />}
           <Button
             w="full"
             bg="accent.default"
@@ -455,7 +458,7 @@ export function HomePage() {
           onRetry={() => {
             setOAuthStart(null);
             setOAuthStatus(null);
-            setAuthError("");
+            setAuthError(null);
           }}
         />
       </PageCenter>
@@ -476,7 +479,7 @@ export function HomePage() {
           onRetry={() => {
             setOAuthStart(null);
             setOAuthStatus(null);
-            setAuthError("");
+            setAuthError(null);
           }}
         />
       </PageCenter>
@@ -494,7 +497,7 @@ export function HomePage() {
             </Heading>
             <Text color="fg.muted">{t("repo.selectDescription")}</Text>
           </Box>
-          {repoError && <ErrorAlert message={repoError} onDismiss={() => setRepoError("")} />}
+          {repoError && <ErrorAlert error={repoError} onDismiss={() => setRepoError(null)} />}
           <HStack>
             <Input
               aria-label={t("repo.pathPlaceholder")}
@@ -514,14 +517,14 @@ export function HomePage() {
               flexShrink={0}
               onClick={async () => {
                 setSelectingRepo(true);
-                setRepoError("");
+                setRepoError(null);
                 try {
                   const nextRepoStatus = await backend.browseRepository();
                   setRepoStatus(nextRepoStatus);
                   window.dispatchEvent(new Event("enbu-repo-changed"));
                   window.dispatchEvent(new Event("enbu-auth-changed"));
                 } catch (err) {
-                  setRepoError(err instanceof Error ? err.message : String(err));
+                  setRepoError(toDisplayError(err));
                 } finally {
                   setSelectingRepo(false);
                 }
@@ -537,14 +540,14 @@ export function HomePage() {
             loading={selectingRepo}
             onClick={async () => {
               setSelectingRepo(true);
-              setRepoError("");
+              setRepoError(null);
               try {
                 const nextRepoStatus = await backend.selectRepository(repoPath);
                 setRepoStatus(nextRepoStatus);
                 window.dispatchEvent(new Event("enbu-repo-changed"));
                 window.dispatchEvent(new Event("enbu-auth-changed"));
               } catch (err) {
-                setRepoError(err instanceof Error ? err.message : String(err));
+                setRepoError(toDisplayError(err));
               } finally {
                 setSelectingRepo(false);
               }
@@ -568,7 +571,7 @@ export function HomePage() {
             </Heading>
             <Text color="fg.muted">{t("init.gitDescription")}</Text>
           </Box>
-          {actionError && <ErrorAlert message={actionError} onDismiss={() => setActionError("")} />}
+          {actionError && <ErrorAlert error={actionError} onDismiss={() => setActionError(null)} />}
           <Button
             bg="accent.default"
             color="accent.fg"
@@ -576,11 +579,11 @@ export function HomePage() {
             loading={repositorySetupLoading}
             onClick={async () => {
               setRepositorySetupLoading(true);
-              setActionError("");
+              setActionError(null);
               try {
                 setRepoStatus(await backend.gitInit(repoStatus.repo?.path ?? ""));
               } catch (err) {
-                setActionError(err instanceof Error ? err.message : String(err));
+                setActionError(toDisplayError(err));
               } finally {
                 setRepositorySetupLoading(false);
               }
@@ -601,7 +604,7 @@ export function HomePage() {
           <Heading as="h1" size="2xl" fontWeight="extrabold">
             {t("init.remoteTitle")}
           </Heading>
-          {actionError && <ErrorAlert message={actionError} onDismiss={() => setActionError("")} />}
+          {actionError && <ErrorAlert error={actionError} onDismiss={() => setActionError(null)} />}
           <RepositoryOwnerSelect
             owners={repositoryOwners}
             value={selectedRepositoryOwner}
@@ -636,7 +639,7 @@ export function HomePage() {
             disabled={!remoteRepoName.trim() || !selectedRepositoryOwner}
             onClick={async () => {
               setRepositorySetupLoading(true);
-              setActionError("");
+              setActionError(null);
               try {
                 const nextRepoStatus = await backend.gitCreateRemote(
                   repoStatus.repo?.path ?? "",
@@ -648,7 +651,7 @@ export function HomePage() {
                 window.dispatchEvent(new Event("enbu-repo-changed"));
                 window.dispatchEvent(new Event("enbu-auth-changed"));
               } catch (err) {
-                setActionError(err instanceof Error ? err.message : String(err));
+                setActionError(toDisplayError(err));
               } finally {
                 setRepositorySetupLoading(false);
               }
@@ -672,7 +675,7 @@ export function HomePage() {
             </Heading>
             <Text color="fg.muted">{t("init.description")}</Text>
           </Box>
-          {actionError && <ErrorAlert message={actionError} onDismiss={() => setActionError("")} />}
+          {actionError && <ErrorAlert error={actionError} onDismiss={() => setActionError(null)} />}
           <Button
             bg="accent.default"
             color="accent.fg"
@@ -680,12 +683,12 @@ export function HomePage() {
             loading={initializing}
             onClick={async () => {
               setInitializing(true);
-              setActionError("");
+              setActionError(null);
               try {
                 await backend.initialize();
                 setRepoStatus(await backend.repoStatus());
               } catch (err) {
-                setActionError(err instanceof Error ? err.message : String(err));
+                setActionError(toDisplayError(err));
               } finally {
                 setInitializing(false);
               }
@@ -729,7 +732,7 @@ export function HomePage() {
 
         {actionError && (
           <Box mb="4">
-            <ErrorAlert message={actionError} onDismiss={() => setActionError("")} />
+            <ErrorAlert error={actionError} onDismiss={() => setActionError(null)} />
           </Box>
         )}
 
@@ -765,7 +768,7 @@ export function HomePage() {
                       await backend.switchEnvironment(environment);
                       await refreshWorkspace(environment);
                     } catch (err) {
-                      setActionError(err instanceof Error ? err.message : String(err));
+                      setActionError(toDisplayError(err));
                     }
                   }}
                   onAdd={() => setEnvironmentModalOpen(true)}
@@ -786,7 +789,7 @@ export function HomePage() {
                         await refreshWorkspace(currentEnvironment);
                       });
                     } catch (err) {
-                      setActionError(err instanceof Error ? err.message : String(err));
+                      setActionError(toDisplayError(err));
                     } finally {
                       setPullLoading(false);
                     }
@@ -819,7 +822,7 @@ export function HomePage() {
                         await backend.editSecret(secret.key, value, currentEnvironment);
                         await refreshWorkspace(currentEnvironment);
                       } catch (err) {
-                        setActionError(err instanceof Error ? err.message : String(err));
+                        setActionError(toDisplayError(err));
                       }
                     }}
                     onDelete={async () => {
@@ -829,7 +832,7 @@ export function HomePage() {
                           await refreshWorkspace(currentEnvironment);
                         });
                       } catch (err) {
-                        setActionError(err instanceof Error ? err.message : String(err));
+                        setActionError(toDisplayError(err));
                       }
                     }}
                     deleteLabel={t("dashboard.delete")}
@@ -874,7 +877,7 @@ export function HomePage() {
                   const trimmedKey = secretKey.trim();
                   if (!trimmedKey) return;
                   if (secrets?.secrets.some((s) => s.key === trimmedKey)) {
-                    setActionError(t("dashboard.duplicateKey", { key: trimmedKey }));
+                    setActionError(displayError("secret_already_exists", { key: trimmedKey }));
                     return;
                   }
                   setAddLoading(true);
@@ -886,7 +889,7 @@ export function HomePage() {
                       await refreshWorkspace(currentEnvironment);
                     });
                   } catch (err) {
-                    setActionError(err instanceof Error ? err.message : String(err));
+                    setActionError(toDisplayError(err));
                   } finally {
                     setAddLoading(false);
                   }
@@ -911,12 +914,12 @@ export function HomePage() {
                     await fetchRecipients();
                   });
                 } catch (err) {
-                  setRecipientsError(err instanceof Error ? err.message : String(err));
+                  setRecipientsError(toDisplayError(err));
                 } finally {
                   setRecipientsLoading(false);
                 }
               }}
-              onErrorDismiss={() => setRecipientsError("")}
+              onErrorDismiss={() => setRecipientsError(null)}
             />
           </DashboardTabContent>
           <DashboardTabContent value="settings">
@@ -938,7 +941,7 @@ export function HomePage() {
             const created = newEnv.trim();
             if (!created) return;
             setEnvironmentCreateLoading(true);
-            setActionError("");
+            setActionError(null);
             try {
               await backend.createEnvironment(created);
               await backend.switchEnvironment(created);
@@ -946,7 +949,7 @@ export function HomePage() {
               setEnvironmentModalOpen(false);
               setNewEnv("");
             } catch (err) {
-              setActionError(err instanceof Error ? err.message : String(err));
+              setActionError(toDisplayError(err));
             } finally {
               setEnvironmentCreateLoading(false);
             }
@@ -1279,8 +1282,9 @@ function PageCenter({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ErrorAlert({ message, onDismiss }: { message: string; onDismiss?: () => void }) {
-  const { t } = useI18n();
+function ErrorAlert({ error, onDismiss }: { error: DisplayError; onDismiss?: () => void }) {
+  const { locale, t } = useI18n();
+  const message = formatDisplayError(error, locale);
   return (
     <Alert.Root
       borderRadius="md"
@@ -1468,7 +1472,7 @@ export function RecipientsPanel({
 }: {
   recipients: Recipient[];
   loading: boolean;
-  error: string;
+  error: DisplayError | null;
   onSync: () => void | Promise<void>;
   onErrorDismiss: () => void;
 }) {
@@ -1490,7 +1494,7 @@ export function RecipientsPanel({
       </SectionHeader>
       {error && (
         <Box mb="4">
-          <ErrorAlert message={error} onDismiss={onErrorDismiss} />
+          <ErrorAlert error={error} onDismiss={onErrorDismiss} />
         </Box>
       )}
       {loading ? (
@@ -1653,8 +1657,8 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
   const [view, setView] = useState<"gui" | "code">("gui");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [saveError, setSaveError] = useState("");
+  const [loadError, setLoadError] = useState<DisplayError | null>(null);
+  const [saveError, setSaveError] = useState<DisplayError | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -1662,9 +1666,9 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
       setContent(text ?? "");
       setDraft(text ?? "");
       setGui(parseConfigDraft(text ?? "", environments));
-      setLoadError("");
+      setLoadError(null);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+      setLoadError(toDisplayError(err));
     } finally {
       setLoading(false);
     }
@@ -1677,17 +1681,17 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
   const updateGui = (next: EnbuConfigDraft) => {
     setGui(next);
     setDraft(serializeConfigDraft(next));
-    setSaveError("");
+    setSaveError(null);
   };
 
   const save = async () => {
     setSaving(true);
-    setSaveError("");
+    setSaveError(null);
     try {
       await backend.writeConfig(draft);
       setContent(draft);
-    } catch {
-      setSaveError(t("config.saveError"));
+    } catch (err) {
+      setSaveError(toDisplayError(err));
     } finally {
       setSaving(false);
     }
@@ -1706,9 +1710,10 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
                 try {
                   setGui(parseConfigDraft(draft, environments));
                   setView("gui");
-                  setSaveError("");
-                } catch {
-                  setSaveError(t("config.invalidToml"));
+                  setSaveError(null);
+                } catch (err) {
+                  console.error("invalid TOML", err);
+                  setSaveError(displayError("invalid_argument"));
                 }
               } else setView("code");
             }}
@@ -1731,12 +1736,12 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
       </SectionHeader>
       {loadError && (
         <Box mb="4">
-          <ErrorAlert message={loadError} onDismiss={() => setLoadError("")} />
+          <ErrorAlert error={loadError} onDismiss={() => setLoadError(null)} />
         </Box>
       )}
       {saveError && (
         <Box mb="4">
-          <ErrorAlert message={saveError} onDismiss={() => setSaveError("")} />
+          <ErrorAlert error={saveError} onDismiss={() => setSaveError(null)} />
         </Box>
       )}
       {loading ? (
@@ -1899,9 +1904,9 @@ function OAuthLoginPanel({
           </Text>
         </HStack>
       )}
-      {status?.state === "denied" && <ErrorAlert message={t("auth.denied")} />}
-      {status?.state === "expired" && <ErrorAlert message={t("auth.expired")} />}
-      {status?.state === "error" && <ErrorAlert message={status.message ?? t("auth.error")} />}
+      {status?.state === "denied" && <ErrorAlert error={displayError("access_denied")} />}
+      {status?.state === "expired" && <ErrorAlert error={displayError("authentication_expired")} />}
+      {status?.state === "error" && <ErrorAlert error={status.error ?? displayError("internal")} />}
 
       {/* Actions */}
       <HStack justifyContent="center" flexWrap="wrap">

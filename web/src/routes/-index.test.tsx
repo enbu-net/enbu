@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test"
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { I18nProvider } from "../lib/i18n";
+import { displayError } from "../lib/app-error";
 import { backend, openURL } from "../lib/backend";
 import { AccountMenu, AuthContext, RepositoryContextMenu, Sidebar } from "./__root";
 import {
@@ -224,7 +225,8 @@ describe("OAuth login", () => {
     });
     await act(async () => vi.advanceTimersByTimeAsync(1000));
 
-    expect(container.textContent).toContain("poll failed");
+    expect(container.textContent).toContain("An unexpected error occurred");
+    expect(container.textContent).not.toContain("poll failed");
     expect(queryButton("Try again")).toBeTruthy();
   });
 
@@ -702,7 +704,7 @@ describe("accessibility: live regions", () => {
           <RecipientsPanel
             recipients={[]}
             loading={true}
-            error=""
+            error={null}
             onSync={() => {}}
             onErrorDismiss={() => {}}
           />
@@ -758,7 +760,7 @@ describe("dashboard review regressions", () => {
     act(() => queryButton("Add")?.click());
 
     expect(backendMock.addSecret).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('Key "KEY" already exists');
+    expect(container.textContent).toContain('Secret "KEY" already exists.');
   });
 
   it("reloads recipients by repository path and ignores stale completions", async () => {
@@ -827,7 +829,7 @@ describe("dashboard review regressions", () => {
           <RecipientsPanel
             recipients={[]}
             loading={false}
-            error="failed"
+            error={displayError("internal")}
             onSync={onSync}
             onErrorDismiss={onErrorDismiss}
           />

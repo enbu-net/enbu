@@ -2,6 +2,7 @@ package keystore
 
 import (
 	"errors"
+	"io/fs"
 	"time"
 
 	"github.com/zalando/go-keyring"
@@ -35,7 +36,7 @@ func (k *KeyringBackend) Load(service, key string) ([]byte, error) {
 	s, err := keyring.Get(service, key)
 	if err != nil {
 		if errors.Is(err, keyring.ErrNotFound) {
-			return nil, ErrNotFound
+			return nil, fs.ErrNotExist
 		}
 		return nil, err
 	}
@@ -43,5 +44,9 @@ func (k *KeyringBackend) Load(service, key string) ([]byte, error) {
 }
 
 func (k *KeyringBackend) Delete(service, key string) error {
-	return keyring.Delete(service, key)
+	err := keyring.Delete(service, key)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return fs.ErrNotExist
+	}
+	return err
 }
