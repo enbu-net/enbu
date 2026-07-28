@@ -42,6 +42,9 @@ export default defineConfig(({ mode }) => ({
     },
     plugins: ["react", "typescript", "oxc"],
     rules: {
+      "enbu/no-direct-wails-binding": "error",
+      "enbu/no-error-alert-message": "error",
+      "enbu/no-raw-error-display": "error",
       "react/rules-of-hooks": "error",
       "react/only-export-components": "off",
       "typescript/no-floating-promises": "error",
@@ -61,8 +64,18 @@ export default defineConfig(({ mode }) => ({
           "typescript/no-unsafe-assignment": "off",
         },
       },
+      {
+        files: ["src/lib/backend.test.ts", "src/lib/backend.ts"],
+        rules: {
+          "enbu/no-direct-wails-binding": "off",
+        },
+      },
     ],
     jsPlugins: [
+      {
+        name: "enbu",
+        specifier: "./scripts/oxlint-plugin-enbu.mjs",
+      },
       {
         name: "vite-plus",
         specifier: "vite-plus/oxlint-plugin",

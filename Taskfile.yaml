@@ -43,7 +43,6 @@ tasks:
       - gui/build/frontend
     dir: web
     cmds:
-      - node --test scripts/check-user-errors.node-test.mjs
       - vp test
 
   scripts/test:
@@ -117,7 +116,6 @@ tasks:
       - gui/install
     dir: web
     cmds:
-      - node scripts/check-user-errors.mjs
       - vp check
 
   scripts/check:
