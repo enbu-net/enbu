@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -14,10 +16,13 @@ func (a *App) ReadConfig() (content string, err error) {
 
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
-		return "", fmt.Errorf("enbu.toml not found: %w", err)
+		return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
+		}
 		return "", fmt.Errorf("reading enbu.toml: %w", err)
 	}
 	return string(data), nil

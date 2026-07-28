@@ -22,7 +22,7 @@ func bindingResult[T any](data T, err error) BindingResponse {
 	}
 	normalized := apperr.Normalize(err)
 	payload := apperr.PayloadOf(normalized)
-	if payload.Code == apperr.CodeInternal {
+	if payload.Code == apperr.CodeInternal || payload.Code == apperr.CodeUnavailable {
 		slog.Error("desktop operation failed", "err", normalized)
 	}
 	return BindingResponse{Error: &payload}

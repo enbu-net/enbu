@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/apperr"
 )
 
 func TestReadWriteConfig(t *testing.T) {
@@ -65,7 +67,7 @@ func TestReadConfigMissing(t *testing.T) {
 	dir := t.TempDir()
 	a := &App{RepositoryDir: dir}
 	_, err := a.ReadConfig()
-	if err == nil {
-		t.Fatal("ReadConfig succeeded for missing enbu.toml, want error")
+	if !apperr.Is(err, apperr.CodeConfigNotFound) {
+		t.Fatalf("ReadConfig error = %v, want %q", err, apperr.CodeConfigNotFound)
 	}
 }

@@ -46,6 +46,10 @@ func (a *App) CurrentEnvironment() (name string, err error) {
 func (a *App) SwitchEnvironment(name string) (err error) {
 	defer apperr.NormalizeInto(&err)
 
+	if !config.ValidEnvironmentName(name) {
+		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
+	}
+
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err
