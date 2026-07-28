@@ -32,7 +32,10 @@ export function UserErrorGate({ children }: { children: ReactNode }) {
   }, [report]);
 
   return (
-    <RenderErrorBoundary onError={report} fallback={<GlobalError error={error} />}>
+    <RenderErrorBoundary
+      onError={report}
+      fallback={<GlobalError error={error} onDismiss={() => window.location.reload()} />}
+    >
       {error && <GlobalError error={error} onDismiss={() => setError(null)} />}
       {children}
     </RenderErrorBoundary>

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/apperr"
 	"github.com/enbu-net/enbu/auth"
 	"github.com/enbu-net/enbu/config"
 	gitprovider "github.com/enbu-net/enbu/provider/git"
@@ -278,6 +280,11 @@ func TestGetOAuthLoginStatus(t *testing.T) {
 }
 
 func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
 	s := NewService(app.New())
 	s.ctx = context.Background()
 	var loginContext context.Context
@@ -293,6 +300,9 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 	case <-loginContext.Done():
 	case <-time.After(time.Second):
 		t.Fatal("failed login context was not cancelled")
+	}
+	if !strings.Contains(logs.String(), "login failed") {
+		t.Fatalf("OAuth failure was not logged: %q", logs.String())
 	}
 }
 
@@ -426,6 +436,30 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	}
 	if !strings.Contains(string(gitignore), "secrets.local") {
 		t.Fatalf(".gitignore does not contain custom output: %q", gitignore)
+	}
+}
+
+func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	repoDir := newGitRepo(t)
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := app.New()
+	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	s := NewService(a)
+	if _, err := s.SelectRepository(repoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, content := range []string{
+		"not valid toml =",
+		"version = \"v1alpha1\"\n[env.dev]\noutput = \"../outside\"\n",
+	} {
+		err := s.WriteConfig(content)
+		if !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Fatalf("WriteConfig(%q) error = %v, want invalid_argument", content, err)
+		}
 	}
 }
 

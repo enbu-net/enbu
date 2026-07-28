@@ -58,7 +58,7 @@ export function displayError(code: ErrorCode, params: Record<string, string> = {
 export function formatDisplayError(error: DisplayError, locale: Locale): string {
   const template = messages[locale][error.code] ?? messages[locale].internal;
   return Object.entries(error.params).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, value),
+    (text, [name, value]) => text.replaceAll(`{${name}}`, () => value),
     template,
   );
 }

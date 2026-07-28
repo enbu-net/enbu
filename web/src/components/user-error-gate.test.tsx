@@ -65,5 +65,6 @@ describe("UserErrorGate", () => {
       "予期しないエラーが発生しました。",
     );
     expect(container.textContent).not.toContain("sensitive render detail");
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="閉じる"]')).toBeTruthy();
   });
 });

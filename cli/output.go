@@ -209,5 +209,5 @@ func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
 		return
 	}
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", apperr.PayloadOf(err).Message)
 }

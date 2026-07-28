@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/enbu-net/enbu/app"
@@ -44,7 +43,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 
 			if delete {
 				if len(args) == 0 {
-					return fmt.Errorf("environment name required for --delete")
+					return invalidArgument("environment name required for --delete", nil)
 				}
 				if err := a.DeleteEnvironment(args[0]); err != nil {
 					return err
@@ -117,7 +116,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 		if moveOld != "" {
 			doMove = true
 			if len(args) == 0 {
-				return fmt.Errorf("new name required: enbu switch -m <old> <new>")
+				return invalidArgument("new name required: enbu switch -m <old> <new>", nil)
 			}
 			moveNew = args[0]
 		}

@@ -44,5 +44,9 @@ func (k *KeyringBackend) Load(service, key string) ([]byte, error) {
 }
 
 func (k *KeyringBackend) Delete(service, key string) error {
-	return keyring.Delete(service, key)
+	err := keyring.Delete(service, key)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return fs.ErrNotExist
+	}
+	return err
 }

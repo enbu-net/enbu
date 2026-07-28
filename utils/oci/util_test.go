@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"testing"
 
 	"github.com/enbu-net/enbu/apperr"
 	"oras.land/oras-go/v2/errdef"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 func TestDigestOf(t *testing.T) {
@@ -44,14 +46,25 @@ func TestBytesReader(t *testing.T) {
 }
 
 func TestWrapRemoteErrorClassifiesORASNotFound(t *testing.T) {
-	cause := fmt.Errorf("resolving reference: %w", errdef.ErrNotFound)
-
-	err := wrapRemoteError("pulling secrets", cause)
-
-	if !apperr.Is(err, apperr.CodeArtifactNotFound) {
-		t.Fatalf("code = %q, want %q", apperr.CodeOf(err), apperr.CodeArtifactNotFound)
+	tests := []struct {
+		name  string
+		cause error
+	}{
+		{name: "ORAS sentinel", cause: fmt.Errorf("resolving reference: %w", errdef.ErrNotFound)},
+		{name: "HTTP 404", cause: &errcode.ErrorResponse{StatusCode: http.StatusNotFound}},
+		{name: "manifest unknown", cause: errcode.Error{Code: errcode.ErrorCodeManifestUnknown}},
+		{name: "name unknown", cause: errcode.Error{Code: errcode.ErrorCodeNameUnknown}},
 	}
-	if !errors.Is(err, errdef.ErrNotFound) {
-		t.Fatal("wrapped error does not preserve the ORAS cause")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := wrapRemoteError("pulling secrets", tt.cause)
+			if !apperr.Is(err, apperr.CodeArtifactNotFound) {
+				t.Fatalf("code = %q, want %q", apperr.CodeOf(err), apperr.CodeArtifactNotFound)
+			}
+			if !errors.Is(err, tt.cause) {
+				t.Fatal("wrapped error does not preserve the ORAS cause")
+			}
+		})
 	}
 }

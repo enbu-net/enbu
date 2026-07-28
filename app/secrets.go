@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
 	"math/rand/v2"
@@ -132,7 +131,7 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error)
 					time.Sleep(time.Duration(100+rand.IntN(100)) * time.Millisecond)
 					continue
 				}
-				return fmt.Errorf("secrets changed by another user, failed after %d attempts", maxRetries)
+				return conflictRetriesExhausted(err, maxRetries)
 			}
 			return fmt.Errorf("pushing encrypted secrets: %w", err)
 		}
@@ -211,7 +210,7 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error
 					a.emitRetry(attempt+1, maxRetries)
 					continue
 				}
-				return fmt.Errorf("secrets changed by another user, failed after %d attempts", maxRetries)
+				return conflictRetriesExhausted(err, maxRetries)
 			}
 			return fmt.Errorf("pushing encrypted secrets: %w", err)
 		}
@@ -298,7 +297,7 @@ func (a *App) DeleteSecret(ctx context.Context, env, key string) (err error) {
 					a.emitRetry(attempt+1, maxRetries)
 					continue
 				}
-				return fmt.Errorf("secrets changed by another user, failed after %d attempts", maxRetries)
+				return conflictRetriesExhausted(err, maxRetries)
 			}
 			return fmt.Errorf("pushing encrypted secrets: %w", err)
 		}
@@ -408,8 +407,6 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 	return nil
 }
 
-var errConflict = errors.New("secrets changed by another user")
-
 func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 	defer apperr.NormalizeInto(&err)
 
@@ -450,11 +447,11 @@ func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 		if err == nil {
 			return nil
 		}
-		if !errors.Is(err, errConflict) {
+		if !apperr.Is(err, apperr.CodeConflict) {
 			return err
 		}
 		if attempt == syncMaxRetries-1 {
-			return fmt.Errorf("sync failed after %d attempts: %w", syncMaxRetries, err)
+			return conflictRetriesExhausted(err, syncMaxRetries)
 		}
 
 		a.emitRetry(attempt+1, syncMaxRetries)
@@ -496,9 +493,10 @@ func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token strin
 	if baseDigest != "" {
 		currentDigest, err := a.Registry.GetDigest(ctx, secretsRef, token)
 		if err == nil && currentDigest != baseDigest {
-			return fmt.Errorf("%w", errConflict)
+			return apperr.New(apperr.CodeConflict, "secrets changed by another user", nil)
 		}
 	}
+	pushOpts.ExpectedDigest = baseDigest
 
 	a.emitStepProgress("sync", "reencrypt", "start")
 	plaintext := bundle.Marshal(secrets)
@@ -515,4 +513,8 @@ func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token strin
 	a.emitStepProgress("sync", "push", "done")
 	a.emit(fmt.Sprintf("Synchronized secrets for %d recipients (%d secrets)", len(publicKeys), len(secrets)))
 	return nil
+}
+
+func conflictRetriesExhausted(err error, attempts int) error {
+	return fmt.Errorf("secrets changed by another user, failed after %d attempts: %w", attempts, err)
 }

@@ -52,9 +52,10 @@ func run(root string) ([]string, error) {
 			}
 			return nil
 		}
+		normalized := string(filepath.Separator) + filepath.Clean(path)
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") ||
-			strings.Contains(path, string(filepath.Separator)+"apperr"+string(filepath.Separator)) ||
-			strings.Contains(path, string(filepath.Separator)+"internal"+string(filepath.Separator)+"tools"+string(filepath.Separator)+"apperrlint") {
+			strings.Contains(normalized, string(filepath.Separator)+"apperr"+string(filepath.Separator)) ||
+			strings.Contains(normalized, string(filepath.Separator)+"internal"+string(filepath.Separator)+"tools"+string(filepath.Separator)+"apperrlint") {
 			return nil
 		}
 		fileViolations, fileUsages, parseErr := inspectGoFile(root, path)
@@ -286,8 +287,11 @@ func hasNormalizeDefer(body *ast.BlockStmt) bool {
 			continue
 		}
 		selector, ok := deferStatement.Call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
 		ident, identOK := selector.X.(*ast.Ident)
-		if ok && identOK && ident.Name == "apperr" && selector.Sel.Name == "NormalizeInto" {
+		if identOK && ident.Name == "apperr" && selector.Sel.Name == "NormalizeInto" {
 			return true
 		}
 	}

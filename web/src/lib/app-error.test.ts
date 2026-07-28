@@ -45,6 +45,12 @@ describe("display errors", () => {
     expect(formatDisplayError(error, "en")).toBe("Access was denied.");
   });
 
+  it("preserves replacement-token characters in params", () => {
+    const error = displayError("secret_not_found", { key: "$&$'$`" });
+
+    expect(formatDisplayError(error, "en")).toBe('Secret "$&$\'$`" does not exist.');
+  });
+
   it("unwraps binding errors without localizing them early", () => {
     expect(() =>
       unwrapBindingResult({

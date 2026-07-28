@@ -77,6 +77,13 @@ func appArgs(validate cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
+func invalidArgument(message string, cause error) error {
+	if cause == nil {
+		return apperr.New(apperr.CodeInvalidArgument, message, nil)
+	}
+	return apperr.Wrap(apperr.CodeInvalidArgument, message, cause, nil)
+}
+
 func gitClient(a *app.App) gitprovider.Client {
 	if a.Git != nil {
 		return a.Git

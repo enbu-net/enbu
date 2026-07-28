@@ -218,6 +218,7 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 			return nil
 		})
 		if err != nil {
+			slog.Error("OAuth login failed", "session_id", sessionID, "err", err)
 			state := "error"
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				state = "expired"
@@ -447,10 +448,10 @@ func (s *Service) WriteConfig(content string) error {
 	return s.withRepo(func() error {
 		cfg, err := config.ParseProject(content)
 		if err != nil {
-			return err
+			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 		}
 		if err := config.ValidateProjectOutputs(cfg); err != nil {
-			return err
+			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 		}
 		if err := ensureGitignore(s.app.RepositoryDir, projectGitignoreEntries(cfg)...); err != nil {
 			return fmt.Errorf("updating .gitignore: %w", err)

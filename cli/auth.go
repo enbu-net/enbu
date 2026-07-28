@@ -59,7 +59,7 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 		Short: "Authenticate with GitHub",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonEnabled(cmd) && deviceFlow {
-				return fmt.Errorf("--device cannot be used with --json")
+				return invalidArgument("--device cannot be used with --json", nil)
 			}
 
 			ctx := cmd.Context()

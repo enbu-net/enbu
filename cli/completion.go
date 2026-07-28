@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -35,7 +34,7 @@ func newCompletionCommand(root *cobra.Command) *cobra.Command {
 					err = root.GenPowerShellCompletionWithDesc(&output)
 				}
 			default:
-				return fmt.Errorf("unsupported shell %q", args[0])
+				return invalidArgument("unsupported shell "+args[0], nil)
 			}
 			if err != nil {
 				return err

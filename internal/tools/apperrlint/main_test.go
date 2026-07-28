@@ -92,6 +92,42 @@ func (s *DesktopService) Bypass() BindingResponse { return BindingResponse{} }`)
 	}
 }
 
+func TestRunExcludesToolPackagesAndAcceptsDirectDefers(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "apperr/error.go", `package apperr
+type Code string
+const (
+	CodeInternal Code = "internal"
+	CodeOnlySelf Code = "only_self"
+)`)
+	writeFixture(t, root, "app/app.go", `package app
+type App struct{}
+func cleanup() {}
+func (a *App) Run() (err error) {
+	defer cleanup()
+	defer apperr.NormalizeInto(&err)
+	return nil
+}`)
+	writeFixture(t, root, "internal/tools/apperrlint/self.go", `package main
+func self() { _ = apperr.CodeOnlySelf }`)
+	writeFixture(t, root, "other/use.go", `package other
+func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
+	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal","only_self":"Self"}`)
+	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部","only_self":"自身"}`)
+
+	violations, err := run(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(violations, "\n")
+	if !strings.Contains(joined, "CodeOnlySelf is unused") {
+		t.Fatalf("self package was not excluded:\n%s", joined)
+	}
+	if strings.Contains(joined, "must defer apperr.NormalizeInto") {
+		t.Fatalf("direct defer hid NormalizeInto:\n%s", joined)
+	}
+}
+
 func writeFixture(t *testing.T, root, name, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(name))

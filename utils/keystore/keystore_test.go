@@ -51,6 +51,17 @@ func TestNew_KeyringAvailableFallbackNotTriggered(t *testing.T) {
 	}
 }
 
+func TestKeyringBackendDeleteMissing(t *testing.T) {
+	keyring.MockInit()
+	backend := &KeyringBackend{}
+
+	err := backend.Delete("svc", "missing")
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Delete() error = %v, want fs.ErrNotExist", err)
+	}
+}
+
 func TestNew_KeyringUnavailableFallsBackToText(t *testing.T) {
 	keyring.MockInitWithError(errors.New("no secret service"))
 	t.Setenv("ENBU_BACKEND", "keyring")

@@ -18,7 +18,7 @@ func newPullCommand(a *app.App) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonEnabled(cmd) {
 				if toStdout {
-					return fmt.Errorf("--stdout cannot be used with --json")
+					return invalidArgument("--stdout cannot be used with --json", nil)
 				}
 				result, err := a.PullSecretsData(cmd.Context(), envName)
 				if err != nil {

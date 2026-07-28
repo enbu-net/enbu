@@ -200,7 +200,7 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err erro
 					time.Sleep(time.Duration(100+rand.IntN(100)) * time.Millisecond)
 					continue
 				}
-				return fmt.Errorf("secrets changed by another user, failed after %d attempts", maxRetries)
+				return conflictRetriesExhausted(err, maxRetries)
 			}
 			return fmt.Errorf("pushing restored secrets: %w", err)
 		}

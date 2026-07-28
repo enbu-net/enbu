@@ -24,6 +24,19 @@ type memRegistry struct {
 	data map[string][]byte
 }
 
+type conflictOnceRegistry struct {
+	Registry
+	pushes int
+}
+
+func (r *conflictOnceRegistry) Push(ctx context.Context, ref, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
+	r.pushes++
+	if r.pushes == 1 {
+		return apperr.New(apperr.CodeConflict, "digest mismatch", nil)
+	}
+	return r.Registry.Push(ctx, ref, mediaType, data, token, opts)
+}
+
 func newMemRegistry() *memRegistry { return &memRegistry{data: make(map[string][]byte)} }
 
 func (r *memRegistry) Push(_ context.Context, ref, _ string, data []byte, _ string, _ *oci.PushOptions) error {
@@ -143,6 +156,19 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 		t.Fatalf("GenerateKeyPair: %v", err)
 	}
 	return kp
+}
+
+func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
+	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
+	registry := &conflictOnceRegistry{Registry: a.Registry}
+	a.Registry = registry
+
+	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
+		t.Fatalf("SyncSecrets: %v", err)
+	}
+	if registry.pushes != 2 {
+		t.Fatalf("pushes = %d, want 2", registry.pushes)
+	}
 }
 
 // --- tests ---
