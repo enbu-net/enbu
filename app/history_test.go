@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/apperr"
 )
 
 func TestListHistory_Empty(t *testing.T) {
@@ -161,8 +163,8 @@ func TestDiffHistory_InvalidIndex(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
 
 	_, err := a.DiffHistory(context.Background(), "default", 1, 99)
-	if err == nil {
-		t.Fatal("expected error for out-of-range index")
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("DiffHistory error = %v, want %q", err, apperr.CodeInvalidArgument)
 	}
 }
 
@@ -171,7 +173,7 @@ func TestRestoreHistory_InvalidIndex(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
 
 	err := a.RestoreHistory(context.Background(), "default", 99)
-	if err == nil {
-		t.Fatal("expected error for out-of-range index")
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("RestoreHistory error = %v, want %q", err, apperr.CodeInvalidArgument)
 	}
 }

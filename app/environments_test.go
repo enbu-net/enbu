@@ -40,3 +40,22 @@ func TestSwitchEnvironmentRejectsInvalidName(t *testing.T) {
 		t.Fatalf("SwitchEnvironment error = %v, want %q", err, apperr.CodeInvalidArgument)
 	}
 }
+
+func TestDeleteEnvironmentRejectsCurrent(t *testing.T) {
+	dir := t.TempDir()
+	cfg := `version = "v1alpha1"
+default_env = "dev"
+
+[env.dev]
+output = ".env.dev"
+`
+	if err := os.WriteFile(dir+"/enbu.toml", []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := &App{RepositoryDir: dir}
+	err := a.DeleteEnvironment("dev")
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("DeleteEnvironment error = %v, want %q", err, apperr.CodeInvalidArgument)
+	}
+}

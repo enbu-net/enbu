@@ -82,10 +82,10 @@ func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (
 	}
 
 	if fromIdx < 1 || fromIdx > len(entries) {
-		return nil, fmt.Errorf("version %d not found (history has %d entries)", fromIdx, len(entries))
+		return nil, invalidHistoryIndexError(fromIdx, len(entries))
 	}
 	if toIdx < 1 || toIdx > len(entries) {
-		return nil, fmt.Errorf("version %d not found (history has %d entries)", toIdx, len(entries))
+		return nil, invalidHistoryIndexError(toIdx, len(entries))
 	}
 
 	accessToken, _, err := a.TokenProvider.LoadToken()
@@ -137,7 +137,7 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err erro
 	}
 
 	if idx < 1 || idx > len(entries) {
-		return fmt.Errorf("version %d not found (history has %d entries)", idx, len(entries))
+		return invalidHistoryIndexError(idx, len(entries))
 	}
 
 	accessToken, _, err := a.TokenProvider.LoadToken()
@@ -212,6 +212,14 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err erro
 		return nil
 	}
 	return nil
+}
+
+func invalidHistoryIndexError(index, count int) error {
+	return apperr.New(
+		apperr.CodeInvalidArgument,
+		fmt.Sprintf("version %d not found (history has %d entries)", index, count),
+		apperr.Params{"index": fmt.Sprint(index)},
+	)
 }
 
 func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []agecrypto.Identity) (map[string]string, error) {

@@ -139,7 +139,11 @@ func (a *App) DeleteEnvironment(name string) (err error) {
 	}
 
 	if cfg.CurrentEnvironment() == name {
-		return fmt.Errorf("cannot delete the current environment '%s' (switch to another first)", name)
+		return apperr.New(
+			apperr.CodeInvalidArgument,
+			fmt.Sprintf("cannot delete the current environment %q (switch to another first)", name),
+			apperr.Params{"name": name},
+		)
 	}
 
 	if err := cfg.RemoveEnvironment(name); err != nil {

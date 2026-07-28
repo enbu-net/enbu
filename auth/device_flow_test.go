@@ -109,6 +109,7 @@ func TestDeviceLoginErrors(t *testing.T) {
 	}{
 		{name: "access denied", response: deviceTokenResponse{Error: "access_denied"}, wantCode: apperr.CodeAccessDenied},
 		{name: "expired", response: deviceTokenResponse{Error: "expired_token"}, wantCode: apperr.CodeAuthExpired},
+		{name: "expired alias", response: deviceTokenResponse{Error: "token_expired"}, wantCode: apperr.CodeAuthExpired},
 		{name: "disabled", response: deviceTokenResponse{Error: "device_flow_disabled"}, want: errors.New("not enabled")},
 		{
 			name: "unknown",
