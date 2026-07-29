@@ -4,14 +4,79 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions: {}
 
 jobs:
+  tag:
+    name: Create release tag
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Calculate and push tag
+        id: bump
+        shell: bash
+        run: |
+          latest=$(git tag --list 'v*' --sort=-version:refname | head -1)
+          if [ -z "$latest" ]; then latest="v0.0.0"; fi
+          version="${latest#v}"
+          IFS='.' read -r major minor patch <<< "$version"
+          case "${{ inputs.bump_type }}" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+          new_version="v${major}.${minor}.${patch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$new_version"
+          git push origin "$new_version"
+          echo "version=${new_version}" >> "$GITHUB_OUTPUT"
+
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [tag]
+    if: always() && (needs.tag.result == 'success' || needs.tag.result == 'skipped')
+    outputs:
+      version: ${{ steps.get.outputs.version }}
+    steps:
+      - name: Get version
+        id: get
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ needs.tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
   cli:
     name: Build CLI
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [version]
     permissions:
       contents: read
     steps:
@@ -33,6 +98,7 @@ jobs:
           args: release --clean --skip=publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ needs.version.outputs.version }}
 
       - name: Upload CLI artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -47,6 +113,7 @@ jobs:
     name: Build frontend
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: [version]
     permissions:
       contents: read
     steps:
@@ -86,7 +153,7 @@ jobs:
     name: Build desktop (${{ matrix.suffix }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
-    needs: frontend
+    needs: [version, frontend]
     permissions:
       contents: read
     strategy:
@@ -163,10 +230,11 @@ jobs:
         shell: bash
         env:
           DESKTOP_SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           mkdir -p release
           tar -C desktop/wails/build/bin \
-            -czf "release/enbu-desktop_${GITHUB_REF_NAME}_${DESKTOP_SUFFIX}.tar.gz" \
+            -czf "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.tar.gz" \
             .
 
       - name: Package desktop app
@@ -174,6 +242,7 @@ jobs:
         shell: bash
         env:
           DESKTOP_SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           app_path="$(find desktop/wails/build/bin -maxdepth 1 -type d -name '*.app' -print -quit)"
@@ -187,13 +256,14 @@ jobs:
             -s .github/dmg-settings.py \
             -D app="$app_path" \
             enbu \
-            "release/enbu-desktop_${GITHUB_REF_NAME}_${DESKTOP_SUFFIX}.dmg"
+            "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.dmg"
 
       - name: Package desktop app
         if: matrix.package == 'zip'
         shell: pwsh
         env:
           DESKTOP_SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           $binary = Get-ChildItem desktop/wails/build/bin -Filter *.exe | Select-Object -First 1
@@ -207,7 +277,7 @@ jobs:
             -Destination (Join-Path $staging "enbu-desktop.exe")
           Compress-Archive `
             -Path (Join-Path $staging "enbu-desktop.exe") `
-            -DestinationPath "release/enbu-desktop_${env:GITHUB_REF_NAME}_${env:DESKTOP_SUFFIX}.zip"
+            -DestinationPath "release/enbu-desktop_${env:VERSION}_${env:DESKTOP_SUFFIX}.zip"
 
       - name: Upload desktop artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -221,6 +291,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
+      - version
       - cli
       - desktop
     permissions:
@@ -308,15 +379,16 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="$GITHUB_REF_NAME" \
+            -f tag_name="$VERSION" \
             --jq .body > generated-notes.md
           python3 scripts/generate_release_notes.py \
             --assets-dir release-assets \
             --repository "$GITHUB_REPOSITORY" \
-            --tag "$GITHUB_REF_NAME" \
+            --tag "$VERSION" \
             --generated-notes generated-notes.md \
             > release-notes.md
 
@@ -324,20 +396,22 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+          gh release create "$VERSION" release-assets/* \
             --draft \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "$VERSION" \
             --notes-file release-notes.md
 
       - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release edit "$VERSION" --draft=false
 
       - name: Generate GitHub App token for homebrew-tap
         id: app-token
