@@ -20,6 +20,10 @@ type PushOptions struct {
 }
 
 func Push(ctx context.Context, ref string, mediaType string, data []byte, token string, opts *PushOptions) error {
+	if int64(len(data)) > maxArtifactBytes {
+		return fmt.Errorf("artifact too large: %d bytes (limit %d)", len(data), maxArtifactBytes)
+	}
+
 	repo, err := newRepository(ref, token)
 	if err != nil {
 		return err

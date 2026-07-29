@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unicode"
 )
 
 func Marshal(secrets map[string]string) []byte {
@@ -30,25 +29,15 @@ func ToDotEnv(secrets map[string]string) ([]byte, error) {
 
 	var sb strings.Builder
 	for _, k := range keys {
-		if err := validateDotEnvString("key", k); err != nil {
-			return nil, err
+		if strings.ContainsAny(k, "\n\r") {
+			return nil, fmt.Errorf(".env key contains newline character")
 		}
 		val := secrets[k]
-		if err := validateDotEnvString("value", val); err != nil {
-			return nil, fmt.Errorf("key %q: %w", k, err)
-		}
 		val = strings.ReplaceAll(val, "\\", "\\\\")
 		val = strings.ReplaceAll(val, "\"", "\\\"")
+		val = strings.ReplaceAll(val, "\n", "\\n")
+		val = strings.ReplaceAll(val, "\r", "\\r")
 		fmt.Fprintf(&sb, "%s=\"%s\"\n", k, val)
 	}
 	return []byte(sb.String()), nil
-}
-
-func validateDotEnvString(field, s string) error {
-	for _, r := range s {
-		if r == '\n' || r == '\r' || (unicode.IsControl(r) && r != '\t') {
-			return fmt.Errorf(".env %s contains invalid control character %q", field, r)
-		}
-	}
-	return nil
 }

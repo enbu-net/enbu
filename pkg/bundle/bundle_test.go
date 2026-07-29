@@ -99,9 +99,22 @@ func TestToDotEnvEmptyValue(t *testing.T) {
 }
 
 func TestToDotEnvNewlineInValue(t *testing.T) {
-	_, err := bundle.ToDotEnv(map[string]string{"KEY": "line1\nline2"})
-	if err == nil {
-		t.Fatal("expected error for newline in value")
+	result, err := bundle.ToDotEnv(map[string]string{"KEY": "line1\nline2"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result) != "KEY=\"line1\\nline2\"\n" {
+		t.Fatalf("got %q", result)
+	}
+}
+
+func TestToDotEnvCarriageReturnInValue(t *testing.T) {
+	result, err := bundle.ToDotEnv(map[string]string{"KEY": "val\r\nend"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result) != "KEY=\"val\\r\\nend\"\n" {
+		t.Fatalf("got %q", result)
 	}
 }
 

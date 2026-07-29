@@ -8,8 +8,8 @@ import (
 	"time"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/oci"
 )
