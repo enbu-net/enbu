@@ -16,9 +16,9 @@ import (
 
 	enbuapp "github.com/enbu-net/enbu/app"
 	enbucli "github.com/enbu-net/enbu/cli"
-	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/provider"
 )
 
 type testUser struct {

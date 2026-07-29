@@ -9,11 +9,11 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/provider"
-	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/provider"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 func TestJSONSecretCommands(t *testing.T) {

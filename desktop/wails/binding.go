@@ -3,8 +3,8 @@ package main
 import (
 	"log/slog"
 
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/desktop"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 type BindingResponse struct {

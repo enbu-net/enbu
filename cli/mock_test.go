@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/provider"
 )
 
 type mockRegistry struct {
