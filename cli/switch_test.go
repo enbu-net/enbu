@@ -93,8 +93,13 @@ output = ".env.dev"
 	}
 }
 
+type staticRepoDetector struct{ owner, repo string }
+
+func (s *staticRepoDetector) LoadRepo() (string, string, error) { return s.owner, s.repo, nil }
+
 func TestSwitchPrevious(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -110,7 +115,7 @@ output = ".env.staging"
 `
 	_ = os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(content), 0o644)
 
-	a := &app.App{}
+	a := &app.App{RepoDetector: &staticRepoDetector{owner: "test", repo: "repo"}}
 
 	cmd1 := NewWithApp("test", a)
 	cmd1.SetArgs([]string{"switch", "staging"})

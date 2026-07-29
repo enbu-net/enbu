@@ -115,63 +115,40 @@ func MarshalProject(cfg *ProjectConfig) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func LoadLocal() (*LocalConfig, error) {
-	return LoadLocalFrom("")
+// LocalStatePath returns the XDG data dir path for per-project local state.
+func LocalStatePath(owner, repo string) string {
+	return filepath.Join(DataDir(), "state", strings.ToLower(owner), strings.ToLower(repo)+".toml")
 }
 
-func LoadLocalFrom(dir string) (*LocalConfig, error) {
-	path, err := findLocalConfigFrom(dir)
-	if err != nil {
-		return &LocalConfig{}, nil
-	}
-
+// LoadLocalState loads per-project state from the XDG data directory.
+func LoadLocalState(owner, repo string) (*LocalConfig, error) {
+	path := LocalStatePath(owner, repo)
 	var cfg LocalConfig
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
-		return &LocalConfig{}, nil
+		if os.IsNotExist(err) {
+			return &LocalConfig{}, nil
+		}
+		return nil, fmt.Errorf("reading local state: %w", err)
 	}
 	return &cfg, nil
 }
 
-func SaveLocal(cfg *LocalConfig) error {
-	return SaveLocalTo("", cfg)
-}
-
-func SaveLocalTo(dir string, cfg *LocalConfig) error {
-	path, err := findLocalConfigFrom(dir)
-	if err != nil {
-		path = filepath.Join(baseDir(dir), ".enbu.local")
+// SaveLocalState persists per-project state to the XDG data directory.
+func SaveLocalState(owner, repo string, cfg *LocalConfig) error {
+	path := LocalStatePath(owner, repo)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating state directory: %w", err)
 	}
-
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("creating .enbu.local: %w", err)
+		return fmt.Errorf("creating state file: %w", err)
 	}
-
 	encoder := toml.NewEncoder(f)
 	if err := encoder.Encode(cfg); err != nil {
 		_ = f.Close()
 		return err
 	}
 	return f.Close()
-}
-
-func findLocalConfigFrom(dir string) (string, error) {
-	dir = baseDir(dir)
-
-	for {
-		path := filepath.Join(dir, ".enbu.local")
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
-	}
-
-	return "", fmt.Errorf(".enbu.local not found")
 }
 
 func NewProjectWithEnvironment(name string) *ProjectConfig {

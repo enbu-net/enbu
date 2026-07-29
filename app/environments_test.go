@@ -7,9 +7,10 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
-// SwitchEnvironment should not panic when .enbu.local does not exist
+// SwitchEnvironment should not panic when no local state exists
 func TestSwitchEnvironmentWithoutLocalFile(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -27,7 +28,10 @@ output = ".env.staging"
 		t.Fatal(err)
 	}
 
-	a := &App{}
+	a := &App{
+		RepositoryDir: dir,
+		RepoDetector:  &staticRepoDetector{owner: "test", repo: "repo"},
+	}
 	if err := a.SwitchEnvironment("staging"); err != nil {
 		t.Fatalf("SwitchEnvironment: %v", err)
 	}
