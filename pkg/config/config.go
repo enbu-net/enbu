@@ -128,7 +128,7 @@ func LoadLocalState(owner, repo string) (*LocalConfig, error) {
 		if os.IsNotExist(err) {
 			return &LocalConfig{}, nil
 		}
-		return &LocalConfig{}, nil
+		return nil, fmt.Errorf("reading local state: %w", err)
 	}
 	return &cfg, nil
 }
