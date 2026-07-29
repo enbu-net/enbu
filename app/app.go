@@ -41,11 +41,25 @@ func (a *App) saveProject(cfg *config.ProjectConfig) error {
 }
 
 func (a *App) loadLocal() (*config.LocalConfig, error) {
-	return config.LoadLocalFrom(a.RepositoryDir)
+	if a.RepoDetector == nil {
+		return &config.LocalConfig{}, nil
+	}
+	owner, repo, err := a.RepoDetector.LoadRepo()
+	if err != nil {
+		return &config.LocalConfig{}, nil
+	}
+	return config.LoadLocalState(owner, repo)
 }
 
 func (a *App) saveLocal(cfg *config.LocalConfig) error {
-	return config.SaveLocalTo(a.RepositoryDir, cfg)
+	if a.RepoDetector == nil {
+		return nil
+	}
+	owner, repo, err := a.RepoDetector.LoadRepo()
+	if err != nil {
+		return err
+	}
+	return config.SaveLocalState(owner, repo, cfg)
 }
 
 func (a *App) registryHost() string {
