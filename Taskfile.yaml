@@ -109,6 +109,7 @@ tasks:
       - go run ./internal/tools/apperrlint .
       - golangci-lint run --fix ./...
       - golangci-lint fmt ./...
+      - git diff --exit-code -- '*.go'
 
   gui/check:
     desc: Format and lint GUI code
