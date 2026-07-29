@@ -108,7 +108,7 @@ func (a *App) Run() (err error) {
 	defer apperr.NormalizeInto(&err)
 	return nil
 }`)
-	writeFixture(t, root, "internal/tools/apperrlint/self.go", `package main
+	writeFixture(t, root, "tools/apperrlint/self.go", `package main
 func self() { _ = apperr.CodeOnlySelf }`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)

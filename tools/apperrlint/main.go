@@ -55,7 +55,7 @@ func run(root string) ([]string, error) {
 		normalized := string(filepath.Separator) + filepath.Clean(path)
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") ||
 			strings.Contains(normalized, string(filepath.Separator)+"pkg"+string(filepath.Separator)+"apperr"+string(filepath.Separator)) ||
-			strings.Contains(normalized, string(filepath.Separator)+"internal"+string(filepath.Separator)+"tools"+string(filepath.Separator)+"apperrlint") {
+			strings.Contains(normalized, string(filepath.Separator)+"tools"+string(filepath.Separator)+"apperrlint") {
 			return nil
 		}
 		fileViolations, fileUsages, parseErr := inspectGoFile(root, path)

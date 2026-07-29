@@ -106,7 +106,7 @@ tasks:
     deps:
       - gui/build/frontend
     cmds:
-      - go run ./internal/tools/apperrlint .
+      - go run ./tools/apperrlint .
       - golangci-lint run --fix ./...
       - golangci-lint fmt ./...
       - git diff --exit-code -- '*.go'
