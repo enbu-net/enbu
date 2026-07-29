@@ -7,9 +7,9 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/auth"
-	"github.com/enbu-net/enbu/config"
-	"github.com/enbu-net/enbu/utils/keystore"
+	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/spf13/cobra"
 )
 

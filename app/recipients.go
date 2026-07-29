@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"golang.org/x/sync/errgroup"
 )
 

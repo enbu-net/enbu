@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/enbu-net/enbu/config"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
+	"github.com/enbu-net/enbu/pkg/config"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 type SelectedRepo struct {

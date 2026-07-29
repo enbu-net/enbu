@@ -7,7 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/config"
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 func Run(a *app.App) error {

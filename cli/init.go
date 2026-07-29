@@ -11,12 +11,12 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/config"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
-	gh "github.com/enbu-net/enbu/provider/github"
-	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/oci"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
 	"github.com/spf13/cobra"
 )
 
@@ -269,7 +269,7 @@ func registryHost(a *app.App) string {
 	return "ghcr.io"
 }
 
-func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []agecrypto.Identity) (bool, error) {
+func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []*agecrypto.X25519Identity) (bool, error) {
 	ciphertext, err := reg.Pull(ctx, secretsRef, token)
 	if err != nil {
 		return false, err

@@ -32,16 +32,20 @@ task gui/check          # Format and lint GUI code
 ## Architecture
 
 ```
-main.go              → version injection, signal handling, delegates to pkg/cli
-pkg/cli/             → cobra commands: auth, init, add, pull, sync, switch
-pkg/config/          → repo detection (git remote), enbu.toml, XDG data dir
-pkg/auth/            → GitHub OAuth broker flow, loopback callback, token persistence
-pkg/age/             → key generation, encrypt/decrypt with age (X25519 only)
-pkg/keystore/        → pluggable private key storage (OS keyring or plaintext file)
-pkg/bundle/          → JSON marshal/unmarshal of secret map, .env serialization
-pkg/oci/             → push/pull OCI artifacts to GHCR (oras-go), tag listing, digest checks
-pkg/provider/github/ → GitHub API client (org detection)
-test/                → scenario tests (build tag: scenario)
+main.go                  → version injection, signal handling, delegates to cli/
+cli/                     → cobra commands: auth, init, add, pull, sync, switch
+tui/                     → Bubble Tea TUI
+desktop/                 → Wails desktop app (service layer + bindings)
+app/                     → application layer (use-cases)
+pkg/config/              → repo detection (git remote), enbu.toml, XDG data dir
+pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
+pkg/age/                 → key generation, encrypt/decrypt with age (X25519 only)
+pkg/keystore/            → pluggable private key storage (OS keyring or plaintext file)
+pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
+pkg/oci/                 → push/pull OCI artifacts to GHCR (oras-go), tag listing, digest checks
+pkg/provider/github/     → GitHub API client (org detection)
+pkg/apperr/              → application error type, codes, and normalization helpers
+test/                    → scenario tests (build tag: scenario)
 ```
 
 ## Key design decisions

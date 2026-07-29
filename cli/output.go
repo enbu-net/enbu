@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )

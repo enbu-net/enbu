@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/auth"
-	"github.com/enbu-net/enbu/config"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
-	"github.com/enbu-net/enbu/utils/keystore"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/keystore"
+	"github.com/enbu-net/enbu/pkg/oci"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 type App struct {

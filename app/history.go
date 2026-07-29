@@ -8,10 +8,10 @@ import (
 	"time"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/bundle"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/oci"
 )
 
 type HistoryEntry struct {
@@ -222,7 +222,7 @@ func invalidHistoryIndexError(index, count int) error {
 	)
 }
 
-func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []agecrypto.Identity) (map[string]string, error) {
+func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []*agecrypto.X25519Identity) (map[string]string, error) {
 	ciphertext, err := reg.Pull(ctx, ref, token)
 	if err != nil {
 		return nil, err

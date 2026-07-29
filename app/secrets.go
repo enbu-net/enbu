@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/bundle"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/oci"
 )
 
 const maxRetries = 3
@@ -329,7 +329,11 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 	if err != nil {
 		return nil, "", 0, err
 	}
-	return bundle.ToDotEnv(result.Secrets), result.Output, len(result.Secrets), nil
+	dotenv, err := bundle.ToDotEnv(result.Secrets)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	return dotenv, result.Output, len(result.Secrets), nil
 }
 
 func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
@@ -398,7 +402,11 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 		outputPath = filepath.Join(a.RepositoryDir, result.Output)
 	}
 	a.emitStepProgress("pull", "write", "start")
-	if err := os.WriteFile(outputPath, bundle.ToDotEnv(result.Secrets), 0o600); err != nil {
+	dotenv, err := bundle.ToDotEnv(result.Secrets)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {
 		return fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
@@ -469,7 +477,7 @@ func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 	return nil
 }
 
-func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token string, identities []agecrypto.Identity, pushOpts *oci.PushOptions) error {
+func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token string, identities []*agecrypto.X25519Identity, pushOpts *oci.PushOptions) error {
 	a.emitStepProgress("sync", "pull_secrets", "start")
 	secrets, baseDigest, err := PullSecretsWithDigest(ctx, a.Registry, secretsRef, token, identities...)
 	if err != nil {

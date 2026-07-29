@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/oci"
 )
 
 const scenarioRegistryRef = "localhost:5000/test/enbu-scenario-registry"

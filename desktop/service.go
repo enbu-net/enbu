@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/auth"
-	"github.com/enbu-net/enbu/config"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
-	gh "github.com/enbu-net/enbu/provider/github"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/config"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 

@@ -9,9 +9,9 @@ import (
 	"io/fs"
 	"sync"
 
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/provider"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/provider"
 )
 
 type mockRegistry struct {

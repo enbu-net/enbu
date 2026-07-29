@@ -2,8 +2,8 @@ package cli
 
 import (
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/apperr"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/tui"
 	"github.com/spf13/cobra"
 )

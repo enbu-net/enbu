@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/config"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 func (a *App) ReadConfig() (content string, err error) {

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 func TestEnsureGitignore_CreatesNewFile(t *testing.T) {

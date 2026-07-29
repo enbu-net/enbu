@@ -7,8 +7,8 @@ import (
 	"os/signal"
 	"runtime/debug"
 
-	"github.com/enbu-net/enbu/apperr"
 	enbucli "github.com/enbu-net/enbu/cli"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 var Version string
