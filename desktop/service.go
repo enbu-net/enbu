@@ -693,7 +693,6 @@ var desktopGitignoreEntries = []string{
 	".env",
 	".env.*",
 	"!.env.example",
-	".enbu.local",
 }
 
 func projectGitignoreEntries(cfg *config.ProjectConfig) []string {

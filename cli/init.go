@@ -285,7 +285,6 @@ var gitignoreEntries = []string{
 	".env",
 	".env.*",
 	"!.env.example",
-	".enbu.local",
 }
 
 func ensureProjectGitignore(repoRoot string, cfg *config.ProjectConfig) error {
