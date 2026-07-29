@@ -376,3 +376,42 @@ func TestValidEnvironmentName(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalState_RoundTrip(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	want := &LocalConfig{Previous: "dev"}
+	if err := SaveLocalState("myorg", "myrepo", want); err != nil {
+		t.Fatalf("SaveLocalState: %v", err)
+	}
+
+	got, err := LoadLocalState("myorg", "myrepo")
+	if err != nil {
+		t.Fatalf("LoadLocalState: %v", err)
+	}
+	if got.Previous != want.Previous {
+		t.Errorf("Previous = %q, want %q", got.Previous, want.Previous)
+	}
+}
+
+func TestLoadLocalState_Missing(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+
+	cfg, err := LoadLocalState("noorg", "norepo")
+	if err != nil {
+		t.Fatalf("LoadLocalState: %v", err)
+	}
+	if cfg.Previous != "" {
+		t.Errorf("Previous = %q, want empty", cfg.Previous)
+	}
+}
+
+func TestLocalStatePath(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/tmp/testxdg")
+
+	path := LocalStatePath("MyOrg", "MyRepo")
+	want := "/tmp/testxdg/enbu/state/myorg/myrepo.toml"
+	if path != want {
+		t.Errorf("LocalStatePath = %q, want %q", path, want)
+	}
+}

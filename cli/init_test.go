@@ -61,7 +61,7 @@ func TestEnsureGitignore_AppendsToExisting(t *testing.T) {
 
 func TestEnsureGitignore_NoDuplicates(t *testing.T) {
 	dir := t.TempDir()
-	existing := ".env\n.env.*\n!.env.example\n.enbu.local\n"
+	existing := ".env\n.env.*\n!.env.example\n"
 	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(existing), 0o644); err != nil {
 		t.Fatal(err)
 	}
