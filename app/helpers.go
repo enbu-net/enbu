@@ -26,7 +26,7 @@ func RepoKeystoreKey(owner, repo string) string {
 	return fmt.Sprintf("%s/%s", strings.ToLower(owner), strings.ToLower(repo))
 }
 
-func LoadIdentitiesForRepo(ks KeyStore, owner, repo string) ([]agecrypto.Identity, error) {
+func LoadIdentitiesForRepo(ks KeyStore, owner, repo string) ([]*agecrypto.X25519Identity, error) {
 	if ks == nil {
 		return nil, fmt.Errorf("keystore is not initialized")
 	}
@@ -44,7 +44,7 @@ func LoadIdentitiesForRepo(ks KeyStore, owner, repo string) ([]agecrypto.Identit
 		return nil, fmt.Errorf("parsing private key: %w", err)
 	}
 
-	return []agecrypto.Identity{id}, nil
+	return []*agecrypto.X25519Identity{id}, nil
 }
 
 func PullAllRecipients(ctx context.Context, reg Registry, ref string, token string) ([]string, error) {
@@ -68,7 +68,7 @@ func PullAllRecipients(ctx context.Context, reg Registry, ref string, token stri
 	return publicKeys, nil
 }
 
-func PullSecretsWithDigest(ctx context.Context, reg Registry, ref, token string, identities ...agecrypto.Identity) (map[string]string, string, error) {
+func PullSecretsWithDigest(ctx context.Context, reg Registry, ref, token string, identities ...*agecrypto.X25519Identity) (map[string]string, string, error) {
 	digest, err := reg.GetDigest(ctx, ref, token)
 	if err != nil {
 		return nil, "", err

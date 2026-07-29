@@ -21,7 +21,7 @@ func New() (Backend, error) {
 	case "keyring":
 		kb := &KeyringBackend{}
 		if err := kb.probe(); err != nil {
-			return &TextBackend{}, nil
+			return nil, fmt.Errorf("keystore unavailable: %w", err)
 		}
 		return kb, nil
 	case "text":

@@ -269,7 +269,7 @@ func registryHost(a *app.App) string {
 	return "ghcr.io"
 }
 
-func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []agecrypto.Identity) (bool, error) {
+func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []*agecrypto.X25519Identity) (bool, error) {
 	ciphertext, err := reg.Pull(ctx, secretsRef, token)
 	if err != nil {
 		return false, err

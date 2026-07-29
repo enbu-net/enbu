@@ -12,6 +12,8 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 )
 
+const maxArtifactBytes = 10 * 1024 * 1024 // 10 MiB
+
 func Pull(ctx context.Context, ref string, token string) ([]byte, error) {
 	repo, err := newRepository(ref, token)
 	if err != nil {
@@ -45,15 +47,24 @@ func Pull(ctx context.Context, ref string, token string) ([]byte, error) {
 		return nil, fmt.Errorf("no layers in manifest")
 	}
 
-	layerRC, err := store.Fetch(ctx, manifest.Layers[0])
+	layer := manifest.Layers[0]
+	if layer.Size > maxArtifactBytes {
+		return nil, fmt.Errorf("artifact layer too large: %d bytes (limit %d)", layer.Size, maxArtifactBytes)
+	}
+
+	layerRC, err := store.Fetch(ctx, layer)
 	if err != nil {
 		return nil, fmt.Errorf("fetching layer: %w", err)
 	}
 	defer func() { _ = layerRC.Close() }()
 
-	data, err := io.ReadAll(layerRC)
+	limited := io.LimitReader(layerRC, maxArtifactBytes+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, fmt.Errorf("reading layer: %w", err)
+	}
+	if int64(len(data)) > maxArtifactBytes {
+		return nil, fmt.Errorf("artifact layer exceeds size limit of %d bytes", maxArtifactBytes)
 	}
 
 	return data, nil

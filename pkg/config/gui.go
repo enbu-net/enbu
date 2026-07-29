@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,21 +27,41 @@ func LoadGUI() (*GUIConfig, error) {
 }
 
 func SaveGUI(cfg *GUIConfig) error {
-	if err := os.MkdirAll(DataDir(), 0o700); err != nil {
+	dir := DataDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating data directory: %w", err)
 	}
 
-	f, err := os.OpenFile(guiConfigPath(), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("creating GUI config: %w", err)
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
+		return fmt.Errorf("encoding GUI config: %w", err)
 	}
 
-	encoder := toml.NewEncoder(f)
-	if err := encoder.Encode(cfg); err != nil {
-		_ = f.Close()
-		return err
+	tmp, err := os.CreateTemp(dir, ".gui.toml.tmp*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
 	}
-	return f.Close()
+	tmpName := tmp.Name()
+
+	if _, err := tmp.Write(buf.Bytes()); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("writing GUI config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("syncing GUI config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("closing GUI config: %w", err)
+	}
+	if err := os.Rename(tmpName, guiConfigPath()); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("replacing GUI config: %w", err)
+	}
+	return nil
 }
 
 func guiConfigPath() string {

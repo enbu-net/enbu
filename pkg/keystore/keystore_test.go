@@ -3,6 +3,7 @@ package keystore
 import (
 	"errors"
 	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -62,15 +63,15 @@ func TestKeyringBackendDeleteMissing(t *testing.T) {
 	}
 }
 
-func TestNew_KeyringUnavailableFallsBackToText(t *testing.T) {
+func TestNew_KeyringUnavailableReturnsError(t *testing.T) {
 	keyring.MockInitWithError(errors.New("no secret service"))
 	t.Setenv("ENBU_BACKEND", "keyring")
-	b, err := New()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := New()
+	if err == nil {
+		t.Fatal("expected error when keyring is unavailable, got nil")
 	}
-	if _, ok := b.(*TextBackend); !ok {
-		t.Fatalf("expected *TextBackend on probe failure, got %T", b)
+	if !strings.Contains(err.Error(), "keystore unavailable") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

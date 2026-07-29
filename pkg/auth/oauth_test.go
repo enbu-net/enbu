@@ -176,9 +176,13 @@ func TestOAuthLoginEndToEnd(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 			}
+			mu.Lock()
+			wantRedirectURI := redirectURI
+			wantChallenge := challenge
+			mu.Unlock()
 			verifierSum := sha256.Sum256([]byte(body.CodeVerifier))
-			if body.Code != "github-code" || body.RedirectURI != redirectURI ||
-				base64.RawURLEncoding.EncodeToString(verifierSum[:]) != challenge {
+			if body.Code != "github-code" || body.RedirectURI != wantRedirectURI ||
+				base64.RawURLEncoding.EncodeToString(verifierSum[:]) != wantChallenge {
 				t.Errorf("invalid exchange request")
 			}
 			if r.Header.Get("Authorization") != "" {

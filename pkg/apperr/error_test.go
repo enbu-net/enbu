@@ -82,3 +82,27 @@ func TestPayloadRejectsUnknownCode(t *testing.T) {
 		t.Fatalf("params = %#v", payload.Params)
 	}
 }
+
+func TestTypedNilError(t *testing.T) {
+	var typedNil *Error
+	wrapped := fmt.Errorf("wrapping: %w", typedNil)
+
+	if Is(wrapped, CodeInternal) {
+		t.Fatal("Is() should return false for typed-nil *Error")
+	}
+	if code := CodeOf(wrapped); code != CodeInternal {
+		t.Fatalf("CodeOf() = %q, want %q", code, CodeInternal)
+	}
+	normalized := Normalize(wrapped)
+	if normalized == nil {
+		t.Fatal("Normalize() returned nil for non-nil error")
+	}
+}
+
+func TestPayloadOfInternalHidesParams(t *testing.T) {
+	err := Wrap(CodeInternal, "reading secret", errors.New("cause"), Params{"token": "secret-value"})
+	payload := PayloadOf(err)
+	if len(payload.Params) != 0 {
+		t.Fatalf("internal error payload must not expose params, got %#v", payload.Params)
+	}
+}

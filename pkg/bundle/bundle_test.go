@@ -29,10 +29,12 @@ func TestToDotEnv(t *testing.T) {
 		"A_KEY": "val1",
 	}
 
-	result := string(bundle.ToDotEnv(secrets))
+	result, err := bundle.ToDotEnv(secrets)
+	if err != nil {
+		t.Fatalf("ToDotEnv: %v", err)
+	}
 	expected := "A_KEY=\"val1\"\nB_KEY=\"val2\"\n"
-
-	if result != expected {
+	if string(result) != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
 }
@@ -43,17 +45,21 @@ func TestToDotEnvEscaping(t *testing.T) {
 		"SLASH":  `path\to\file`,
 	}
 
-	result := string(bundle.ToDotEnv(secrets))
+	result, err := bundle.ToDotEnv(secrets)
+	if err != nil {
+		t.Fatalf("ToDotEnv: %v", err)
+	}
 	expected := "QUOTED=\"he said \\\"hello\\\"\"\nSLASH=\"path\\\\to\\\\file\"\n"
-
-	if result != expected {
+	if string(result) != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
 }
 
 func TestToDotEnvEmpty(t *testing.T) {
-	secrets := map[string]string{}
-	result := bundle.ToDotEnv(secrets)
+	result, err := bundle.ToDotEnv(map[string]string{})
+	if err != nil {
+		t.Fatalf("ToDotEnv: %v", err)
+	}
 	if len(result) != 0 {
 		t.Fatalf("expected empty, got %q", result)
 	}
@@ -64,10 +70,12 @@ func TestToDotEnvMultibyte(t *testing.T) {
 		"MSG": "こんにちは世界",
 	}
 
-	result := string(bundle.ToDotEnv(secrets))
+	result, err := bundle.ToDotEnv(secrets)
+	if err != nil {
+		t.Fatalf("ToDotEnv: %v", err)
+	}
 	expected := "MSG=\"こんにちは世界\"\n"
-
-	if result != expected {
+	if string(result) != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
 }
@@ -80,14 +88,26 @@ func TestUnmarshalInvalid(t *testing.T) {
 }
 
 func TestToDotEnvEmptyValue(t *testing.T) {
-	secrets := map[string]string{
-		"EMPTY": "",
+	result, err := bundle.ToDotEnv(map[string]string{"EMPTY": ""})
+	if err != nil {
+		t.Fatalf("ToDotEnv: %v", err)
 	}
-
-	result := string(bundle.ToDotEnv(secrets))
 	expected := "EMPTY=\"\"\n"
-
-	if result != expected {
+	if string(result) != expected {
 		t.Fatalf("got %q, want %q", result, expected)
+	}
+}
+
+func TestToDotEnvNewlineInValue(t *testing.T) {
+	_, err := bundle.ToDotEnv(map[string]string{"KEY": "line1\nline2"})
+	if err == nil {
+		t.Fatal("expected error for newline in value")
+	}
+}
+
+func TestToDotEnvNewlineInKey(t *testing.T) {
+	_, err := bundle.ToDotEnv(map[string]string{"KEY\nINJECT": "val"})
+	if err == nil {
+		t.Fatal("expected error for newline in key")
 	}
 }

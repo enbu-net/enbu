@@ -222,7 +222,7 @@ func invalidHistoryIndexError(index, count int) error {
 	)
 }
 
-func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []agecrypto.Identity) (map[string]string, error) {
+func pullAndDecrypt(ctx context.Context, reg Registry, ref, token string, identities []*agecrypto.X25519Identity) (map[string]string, error) {
 	ciphertext, err := reg.Pull(ctx, ref, token)
 	if err != nil {
 		return nil, err

@@ -100,12 +100,12 @@ func (e *Error) Params() Params {
 
 func Is(err error, code Code) bool {
 	var appErr *Error
-	return errors.As(err, &appErr) && appErr.code == code
+	return errors.As(err, &appErr) && appErr != nil && appErr.code == code
 }
 
 func CodeOf(err error) Code {
 	var appErr *Error
-	if errors.As(err, &appErr) {
+	if errors.As(err, &appErr) && appErr != nil {
 		return appErr.code
 	}
 	return CodeInternal
@@ -120,7 +120,7 @@ func Normalize(err error) error {
 	}
 
 	var appErr *Error
-	if errors.As(err, &appErr) {
+	if errors.As(err, &appErr) && appErr != nil {
 		return Wrap(appErr.code, appErr.message, err, appErr.params)
 	}
 	return Wrap(CodeInternal, "unexpected error", err, nil)
@@ -140,10 +140,12 @@ func PayloadOf(err error) Payload {
 		return Payload{Code: CodeInternal, Message: "An unexpected error occurred.", Params: Params{}}
 	}
 	message := appErr.message
+	params := appErr.Params()
 	if appErr.code == CodeInternal {
 		message = "An unexpected error occurred."
+		params = Params{}
 	}
-	return Payload{Code: appErr.code, Message: message, Params: appErr.Params()}
+	return Payload{Code: appErr.code, Message: message, Params: params}
 }
 
 func IsKnownCode(code Code) bool {

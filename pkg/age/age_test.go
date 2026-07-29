@@ -93,3 +93,22 @@ func TestDecryptWithWrongKey(t *testing.T) {
 		t.Fatal("expected error decrypting with wrong key")
 	}
 }
+
+func TestDecryptAcceptsOnlyX25519Identity(t *testing.T) {
+	kp, err := age.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := age.EncryptForPublicKeys([]byte("data"), []string{kp.PublicKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// kp.Identity is *age.X25519Identity — this must compile and succeed
+	result, err := age.Decrypt(ciphertext, kp.Identity)
+	if err != nil {
+		t.Fatalf("Decrypt with X25519Identity: %v", err)
+	}
+	if string(result) != "data" {
+		t.Fatalf("got %q, want %q", result, "data")
+	}
+}
