@@ -35,7 +35,7 @@ func main() {
 }
 
 func run(root string) ([]string, error) {
-	codes, violations, err := loadCodes(filepath.Join(root, "apperr", "error.go"))
+	codes, violations, err := loadCodes(filepath.Join(root, "pkg", "apperr", "error.go"))
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func run(root string) ([]string, error) {
 		}
 		normalized := string(filepath.Separator) + filepath.Clean(path)
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") ||
-			strings.Contains(normalized, string(filepath.Separator)+"apperr"+string(filepath.Separator)) ||
+			strings.Contains(normalized, string(filepath.Separator)+"pkg"+string(filepath.Separator)+"apperr"+string(filepath.Separator)) ||
 			strings.Contains(normalized, string(filepath.Separator)+"internal"+string(filepath.Separator)+"tools"+string(filepath.Separator)+"apperrlint") {
 			return nil
 		}
@@ -74,7 +74,7 @@ func run(root string) ([]string, error) {
 
 	for name := range codes {
 		if usages[name] == 0 {
-			violations = append(violations, fmt.Sprintf("apperr/error.go: error code %s is unused in production code", name))
+			violations = append(violations, fmt.Sprintf("pkg/apperr/error.go: error code %s is unused in production code", name))
 		}
 	}
 
@@ -116,7 +116,7 @@ func loadCodes(path string) (map[string]string, []string, error) {
 					return nil, nil, unquoteErr
 				}
 				if previous, exists := values[value]; exists {
-					violations = append(violations, fmt.Sprintf("apperr/error.go: duplicate error code %q in %s and %s", value, previous, name.Name))
+					violations = append(violations, fmt.Sprintf("pkg/apperr/error.go: duplicate error code %q in %s and %s", value, previous, name.Name))
 				}
 				values[value] = name.Name
 				codes[name.Name] = value

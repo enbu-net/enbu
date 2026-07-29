@@ -9,7 +9,7 @@ import (
 
 func TestRunReportsUnusedCodeAndStringInspection(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "apperr/error.go", `package apperr
+	writeFixture(t, root, "pkg/apperr/error.go", `package apperr
 type Code string
 const (
 	CodeInternal Code = "internal"
@@ -42,7 +42,7 @@ func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
 
 func TestRunReportsMissingAppNormalizationAndTranslation(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "apperr/error.go", `package apperr
+	writeFixture(t, root, "pkg/apperr/error.go", `package apperr
 type Code string
 const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "app/app.go", `package app
@@ -66,7 +66,7 @@ func (a *App) Run() error { return apperr.New(apperr.CodeInternal, "failed", nil
 
 func TestRunReportsUnsafeDesktopBindingMethods(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "apperr/error.go", `package apperr
+	writeFixture(t, root, "pkg/apperr/error.go", `package apperr
 type Code string
 const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "other/use.go", `package other
@@ -94,7 +94,7 @@ func (s *DesktopService) Bypass() BindingResponse { return BindingResponse{} }`)
 
 func TestRunExcludesToolPackagesAndAcceptsDirectDefers(t *testing.T) {
 	root := t.TempDir()
-	writeFixture(t, root, "apperr/error.go", `package apperr
+	writeFixture(t, root, "pkg/apperr/error.go", `package apperr
 type Code string
 const (
 	CodeInternal Code = "internal"
