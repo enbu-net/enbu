@@ -1,1 +1,0 @@
-function e(e){return new Worker(`/enbu/pr-95/web/assets/editor.worker-tQh_ADBU.js`,{name:e?.name})}export{e as default};
