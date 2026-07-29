@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 func TestListHistory_Empty(t *testing.T) {

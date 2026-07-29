@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enbu-net/enbu/auth"
+	"github.com/enbu-net/enbu/pkg/auth"
 )
 
 func TestAuthLoginDeviceFlagUsesDeviceFlow(t *testing.T) {

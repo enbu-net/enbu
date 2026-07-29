@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry/remote/errcode"
 )

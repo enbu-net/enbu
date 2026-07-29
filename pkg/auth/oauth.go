@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/enbu-net/enbu/apperr"
-	gh "github.com/enbu-net/enbu/provider/github"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
 const (

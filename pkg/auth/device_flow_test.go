@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 func TestDeviceLoginEndToEnd(t *testing.T) {

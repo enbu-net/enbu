@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/opencontainers/go-digest"
 	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry/remote"

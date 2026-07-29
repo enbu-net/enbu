@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 const currentVersion = "v1alpha1"

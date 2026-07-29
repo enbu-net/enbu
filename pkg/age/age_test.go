@@ -3,7 +3,7 @@ package age_test
 import (
 	"testing"
 
-	"github.com/enbu-net/enbu/utils/age"
+	"github.com/enbu-net/enbu/pkg/age"
 )
 
 func TestKeyGenAndEncryptDecrypt(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	enbucli "github.com/enbu-net/enbu/cli"
 )
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/enbu-net/enbu/provider"
+	"github.com/enbu-net/enbu/pkg/provider"
 	githubsdk "github.com/google/go-github/v89/github"
 )
 

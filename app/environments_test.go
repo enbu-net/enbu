@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/enbu-net/enbu/apperr"
+	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 // SwitchEnvironment should not panic when .enbu.local does not exist

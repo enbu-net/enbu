@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/enbu-net/enbu/utils/keystore"
+	"github.com/enbu-net/enbu/pkg/keystore"
 )
 
 // stubBackend replaces tokenBackend with an in-memory store for the duration of the test.

@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/config"
-	"github.com/enbu-net/enbu/utils/keystore"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/keystore"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/enbu-net/enbu/utils/process"
+	"github.com/enbu-net/enbu/pkg/process"
 )
 
 type Repository struct {

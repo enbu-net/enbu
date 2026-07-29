@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/bundle"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/oci"
 )
 
 const scenarioLifecycleRegistryRef = "localhost:5000/test/enbu-scenario-lifecycle"

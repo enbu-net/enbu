@@ -11,12 +11,12 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/apperr"
-	"github.com/enbu-net/enbu/config"
-	gitprovider "github.com/enbu-net/enbu/provider/git"
-	gh "github.com/enbu-net/enbu/provider/github"
-	"github.com/enbu-net/enbu/utils/age"
-	"github.com/enbu-net/enbu/utils/oci"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/spf13/cobra"
 )
 
