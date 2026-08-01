@@ -1,1 +1,0 @@
-function e(e){return new Worker(`/enbu/pr-83/web/assets/editor.worker-CvshpKml.js`,{name:e?.name})}export{e as default};
