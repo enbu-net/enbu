@@ -32,8 +32,8 @@
     "xterm-pty": "0.12.0"
   },
   "devDependencies": {
-    "@pandacss/dev": "1.11.5",
-    "@pandacss/preset-base": "1.11.5",
+    "@pandacss/dev": "1.12.0",
+    "@pandacss/preset-base": "1.12.0",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.0",
     "@tanstack/router-plugin": "1.168.23",
