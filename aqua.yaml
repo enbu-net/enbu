@@ -15,6 +15,6 @@ packages:
 - name: go-task/task@v3.52.0
 - name: golangci/golangci-lint@v2.12.2
 - name: koki-develop/ghasec@v0.17.0
-- name: pnpm/pnpm@v11.18.0
+- name: pnpm/pnpm@v11.19.0
 - name: suzuki-shunsuke/pinact@v4.1.1
 - name: astral-sh/uv@0.12.1
