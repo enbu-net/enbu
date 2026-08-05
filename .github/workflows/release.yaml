@@ -37,22 +37,25 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Calculate and push tag
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/aquaproj-aqua
+          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
+          restore-keys: |
+            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.62.1
+
+      - name: Calculate and push tag with svu
         id: bump
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
         shell: bash
         run: |
-          latest=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-          if [ -z "$latest" ]; then latest="v0.0.0"; fi
-          version="${latest#v}"
-          IFS='.' read -r major minor patch <<< "$version"
-          case "$BUMP_TYPE" in
-            major) major=$((major+1)); minor=0; patch=0 ;;
-            minor) minor=$((minor+1)); patch=0 ;;
-            patch) patch=$((patch+1)) ;;
-          esac
-          new_version="v${major}.${minor}.${patch}"
+          set -euo pipefail
+          new_version="$(svu "$BUMP_TYPE" --tag.pattern 'v[0-9]*.[0-9]*.[0-9]*')"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git rev-parse "$new_version" >/dev/null 2>&1; then
