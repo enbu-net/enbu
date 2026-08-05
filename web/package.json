@@ -32,16 +32,16 @@
     "xterm-pty": "0.12.0"
   },
   "devDependencies": {
-    "@pandacss/dev": "1.11.5",
-    "@pandacss/preset-base": "1.11.5",
+    "@pandacss/dev": "1.12.0",
+    "@pandacss/preset-base": "1.12.0",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.0",
     "@tanstack/router-plugin": "1.168.23",
     "@types/node": "24.13.3",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.4",
-    "jsdom": "29.1.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
     "typescript": "7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
@@ -53,5 +53,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.17.0"
+  "packageManager": "pnpm@11.19.0"
 }
