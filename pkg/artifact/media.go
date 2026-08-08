@@ -54,3 +54,11 @@ type ObjectSink interface {
 type ObjectSource interface {
 	Open(context.Context, digest.Digest) (io.ReadCloser, Descriptor, error)
 }
+
+// ExpectedObjectSource fetches through a complete trusted descriptor. Remote
+// registries should implement it so untrusted manifest metadata can never
+// poison a process-global digest-to-media-type cache. Callers still verify the
+// returned stream through size, digest, and EOF.
+type ExpectedObjectSource interface {
+	OpenExpected(context.Context, Descriptor) (io.ReadCloser, error)
+}

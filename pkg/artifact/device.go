@@ -191,6 +191,13 @@ func (d VerifiedDevice) SigningPublicKey() ed25519.PublicKey {
 }
 func (d VerifiedDevice) AssertionDigest() digest.Digest { return d.assertionDigest }
 
+// EnrollmentAssertion returns a defensive copy of the immutable assertion
+// that produced this verified device. It is intended for encrypted historical
+// records that must remain verifiable by newly enrolled clients.
+func (d VerifiedDevice) EnrollmentAssertion() []byte {
+	return append([]byte(nil), d.assertion...)
+}
+
 func (d VerifiedDevice) validate() error {
 	if err := d.id.Validate(); err != nil {
 		return fmt.Errorf("%w: device ID: %v", ErrInvalidEnrollment, err)
