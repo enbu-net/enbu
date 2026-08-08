@@ -37,6 +37,18 @@ tasks:
       - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
       - go test -v -shuffle=on -race -tags=scenario ./...
 
+  core/test:
+    desc: Run platform-neutral core tests without frontend generation
+    deps:
+      - core/test/unit
+
+  core/test/unit:
+    desc: Run platform-neutral core unit tests
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -v -shuffle=on ./pkg/artifact/...
+
   gui/test:
     desc: Run GUI tests
     deps:
