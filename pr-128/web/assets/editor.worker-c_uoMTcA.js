@@ -1,0 +1,1 @@
+function e(e){return new Worker(`/enbu/pr-128/web/assets/editor.worker-BgeVITW_.js`,{name:e?.name})}export{e as default};
