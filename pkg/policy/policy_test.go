@@ -73,9 +73,11 @@ func TestPolicyBoundsAndCancellation(t *testing.T) {
 	if _, err := engine.Evaluate(ctx, OwnerOnlyPolicy(), testInput()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled policy error = %v", err)
 	}
-	deadline, cancel := context.WithTimeout(context.Background(), time.Nanosecond)
+	// Use an already-expired deadline instead of a nanosecond timeout. The
+	// latter is timing-sensitive on slower CI architectures (notably Windows
+	// arm64) and can race the initial context check.
+	deadline, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	time.Sleep(time.Millisecond)
 	if _, err := engine.Evaluate(deadline, OwnerOnlyPolicy(), testInput()); !errors.Is(err, ErrPolicyTimeout) {
 		t.Fatalf("deadline policy error = %v", err)
 	}
