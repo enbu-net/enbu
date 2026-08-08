@@ -1,4 +1,4 @@
-import type { AuthStatus } from "./api";
+import type { AuthStatus } from "./types";
 
 export type AuthRefreshOptions = {
   force?: boolean;

@@ -30,7 +30,7 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { Environment, Recipient, SecretsResponse } from "../lib/api";
+import type { Environment, Recipient, SecretsResponse } from "../lib/types";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";

@@ -11,7 +11,7 @@ import {
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
 import { Button, Popover, Separator, Text } from "../components/ui";
 import { Trash2 } from "lucide-react";
-import type { AuthStatus } from "../lib/api";
+import type { AuthStatus } from "../lib/types";
 import { backend } from "../lib/backend";
 import { createAuthRefresher, type AuthRefreshOptions } from "../lib/auth-refresh";
 import { I18nProvider, useI18n } from "../lib/i18n";

@@ -43,6 +43,7 @@ type Service struct {
 	authMu     sync.Mutex
 	repoPath   string
 	sessions   map[string]*oauthSession
+	hostOps    *HostOperations
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	emitEvent  func(context.Context, string, ...interface{})
 	AppVersion string

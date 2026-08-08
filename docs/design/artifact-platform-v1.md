@@ -560,13 +560,13 @@ stages are present in the current tree.
 | 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | Implemented in the base stack |
 | 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Implemented in this stage |
 | 3. Storage and commits | Local CAS, streaming OCI, announcements and authenticated frontier DAG | Implemented in this stage |
-| 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Planned |
-| 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Planned |
-| 6. Platform security | Platform dirs, locks, SecureWriter, native ACL and keystore behavior | Planned |
-| 7. Built-in schemas | Opaque, SecretMap, FileTree, views, DotEnv and materializers | Planned |
-| 8. Application host | Immutable sessions, operations, configuration and orchestration | Planned |
-| 9. Client cutover | CLI, TUI, Wails, removal of the HTTP fallback | Planned |
-| 10. Legacy removal | Delete old implementation, update release matrix and documentation | Planned |
+| 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Implemented in this stage |
+| 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Implemented in this stage |
+| 6. Platform security | Platform dirs, locks, SecureWriter, native ACL and keystore behavior | Implemented in this stage |
+| 7. Built-in schemas | Opaque, SecretMap, FileTree, views, DotEnv and materializers | Implemented in this stage |
+| 8. Application host | Immutable sessions, operations, configuration and orchestration | Implemented in this stage |
+| 9. Client cutover | CLI, TUI, Wails, removal of the HTTP fallback | Implemented in this stage |
+| 10. Legacy removal | Delete old implementation, update release matrix and documentation | In progress |
 
 Stage 1 MUST test canonical digest equality, malformed and non-canonical CBOR,
 all Resource and Collection invariants, pinned-cycle and revision-ambiguity
