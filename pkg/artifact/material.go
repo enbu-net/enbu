@@ -22,8 +22,9 @@ const (
 )
 
 var (
-	ErrMaterialIdentity = errors.New("invalid material identity")
-	ErrMaterialMismatch = errors.New("material does not match revision")
+	ErrMaterialIdentity       = errors.New("invalid material identity")
+	ErrMaterialMismatch       = errors.New("material does not match revision")
+	ErrInvalidEncryptedObject = errors.New("invalid encrypted object")
 )
 
 // MaterialIdentity is the internal, per-material age identity. Its secret is

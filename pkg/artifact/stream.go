@@ -238,7 +238,22 @@ func decryptAgeObject(
 	identity age.Identity,
 	destination io.Writer,
 ) (written int64, returnedErr error) {
-	object, descriptor, err := source.Open(ctx, expectedDigest)
+	expectedDescriptor := Descriptor{MediaType: expectedMediaType, Digest: expectedDigest, Size: expectedSize}
+	var (
+		object     io.ReadCloser
+		descriptor Descriptor
+		err        error
+	)
+	if expectedSize >= 0 {
+		if exact, ok := source.(ExpectedObjectSource); ok {
+			object, err = exact.OpenExpected(ctx, expectedDescriptor)
+			descriptor = expectedDescriptor
+		} else {
+			object, descriptor, err = source.Open(ctx, expectedDigest)
+		}
+	} else {
+		object, descriptor, err = source.Open(ctx, expectedDigest)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("open encrypted object: %w", err)
 	}
@@ -269,11 +284,27 @@ func decryptAgeObject(
 	}
 	plaintext, err := age.Decrypt(verified, identity)
 	if err != nil {
-		return 0, fmt.Errorf("decrypt age object: %w", err)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return 0, ctxErr
+		}
+		if verified.sourceErr != nil {
+			return 0, fmt.Errorf("read encrypted object: %w", verified.sourceErr)
+		}
+		return 0, fmt.Errorf("%w: age header: %v", ErrInvalidEncryptedObject, err)
 	}
-	written, err = copyContext(ctx, destination, plaintext)
+	trackedDestination := &errorTrackingWriter{destination: destination}
+	written, err = copyContext(ctx, trackedDestination, plaintext)
 	if err != nil {
-		return written, fmt.Errorf("read authenticated plaintext: %w", err)
+		switch {
+		case ctx.Err() != nil:
+			return written, ctx.Err()
+		case verified.sourceErr != nil:
+			return written, fmt.Errorf("read encrypted object: %w", verified.sourceErr)
+		case trackedDestination.err != nil:
+			return written, fmt.Errorf("write decrypted object: %w", trackedDestination.err)
+		default:
+			return written, fmt.Errorf("%w: age payload authentication: %v", ErrInvalidEncryptedObject, err)
+		}
 	}
 	if verified.size != descriptor.Size {
 		return written, fmt.Errorf("%w: ciphertext size is %d, want %d", ErrMaterialMismatch, verified.size, descriptor.Size)
@@ -428,9 +459,10 @@ func (w *observedWriter) Write(p []byte) (int, error) {
 }
 
 type observedReader struct {
-	source io.Reader
-	hash   hash.Hash
-	size   int64
+	source    io.Reader
+	hash      hash.Hash
+	size      int64
+	sourceErr error
 }
 
 func (r *observedReader) Read(p []byte) (int, error) {
@@ -438,6 +470,22 @@ func (r *observedReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		_, _ = r.hash.Write(p[:n])
 		r.size += int64(n)
+	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		r.sourceErr = err
+	}
+	return n, err
+}
+
+type errorTrackingWriter struct {
+	destination io.Writer
+	err         error
+}
+
+func (w *errorTrackingWriter) Write(p []byte) (int, error) {
+	n, err := w.destination.Write(p)
+	if err != nil {
+		w.err = err
 	}
 	return n, err
 }

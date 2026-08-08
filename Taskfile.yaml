@@ -48,7 +48,7 @@ tasks:
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -v -shuffle=on ./pkg/artifact/...
+      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/cas/... ./pkg/commit/... ./pkg/registry/...
 
   cli/test/e2e:
     desc: Run CLI end-to-end tests with atago
