@@ -4,19 +4,9 @@ package cas
 
 import (
 	"fmt"
-	"os"
 
 	"golang.org/x/sys/windows"
 )
-
-func syncDirectory(string) error { return nil }
-
-func openNoFollow(path string) (*os.File, error) {
-	if err := rejectPlatformSpecial(path); err != nil {
-		return nil, err
-	}
-	return os.Open(path)
-}
 
 func rejectPlatformSpecial(path string) error {
 	pathUTF16, err := windows.UTF16PtrFromString(path)
