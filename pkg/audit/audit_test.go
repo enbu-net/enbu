@@ -19,6 +19,7 @@ func newTestJournal(t *testing.T) (*Journal, *cas.Store, *artifact.DeviceIdentit
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	identity, err := artifact.GenerateMaterialIdentity()
 	if err != nil {
 		t.Fatal(err)
@@ -96,6 +97,7 @@ func TestJournalNeverStoresSecretMetadataAndRecoversTruncatedFrame(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	identity, err := artifact.GenerateMaterialIdentity()
 	if err != nil {
 		t.Fatal(err)
