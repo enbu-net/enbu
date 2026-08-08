@@ -543,6 +543,11 @@ func newTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 	return store
 }
 
