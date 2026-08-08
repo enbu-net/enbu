@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -46,7 +47,7 @@ func TestSessionIsImmutableAndOperationsShareContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := New()
-	session, err := host.OpenSession(context.Background(), SessionOptions{WorkspaceID: workspace, Root: t.TempDir() + "/workspace", Remote: emptyRemote{}, Source: emptySource{}, Sink: emptySink{}, ConfigRevision: "config-v1"})
+	session, err := host.OpenSession(context.Background(), SessionOptions{WorkspaceID: workspace, Root: filepath.Join(t.TempDir(), "workspace"), Remote: emptyRemote{}, Source: emptySource{}, Sink: emptySink{}, ConfigRevision: "config-v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestOpenSessionRejectsLegacyConfigurationBeforeCreatingPrivateDir(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o755 {
+	if info.Mode().Perm() != 0o755 && runtime.GOOS != "windows" {
 		t.Fatalf("legacy rejection mutated directory mode: %o", info.Mode().Perm())
 	}
 }
