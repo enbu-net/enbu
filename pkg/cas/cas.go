@@ -88,6 +88,18 @@ func New(rootPath string) (*Store, error) {
 	return store, nil
 }
 
+// Close releases the operating-system handle held for the store root. A
+// store must be closed after its operations finish; on Windows an open root
+// handle prevents the workspace from being removed. Close is idempotent.
+func (s *Store) Close() error {
+	if s == nil || s.fs == nil {
+		return nil
+	}
+	err := s.fs.Close()
+	s.fs = nil
+	return err
+}
+
 // Ingest streams source into private temporary storage, computes its SHA-256
 // digest and size, and atomically publishes an immutable object. The descriptor
 // sidecar is published last and is the sole visibility point.
