@@ -105,6 +105,15 @@ func TestDecodeRevisionRejectsNonCanonicalAndUnknownFields(t *testing.T) {
 	}
 }
 
+func TestDecodeRevisionRejectsOversizedInputBeforeDecode(t *testing.T) {
+	t.Parallel()
+
+	oversized := make([]byte, MaxRevisionBytes+1)
+	if _, err := DecodeRevision(oversized); !errors.Is(err, ErrInvalidArtifact) {
+		t.Fatalf("DecodeRevision(oversized) = %v, want ErrInvalidArtifact", err)
+	}
+}
+
 func TestUnmarshalStrictRejectsMalformedAndDuplicateMaps(t *testing.T) {
 	t.Parallel()
 
