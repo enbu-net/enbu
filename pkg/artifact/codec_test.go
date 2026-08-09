@@ -109,8 +109,8 @@ func TestDecodeRevisionRejectsOversizedInputBeforeDecode(t *testing.T) {
 	t.Parallel()
 
 	oversized := make([]byte, MaxRevisionBytes+1)
-	if _, err := DecodeRevision(oversized); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("DecodeRevision(oversized) = %v, want ErrInvalidArtifact", err)
+	if _, err := DecodeRevision(oversized); !errors.Is(err, ErrInvalidArtifact) || !strings.Contains(err.Error(), "revision exceeds") {
+		t.Fatalf("DecodeRevision(oversized) = %v, want revision size-limit error", err)
 	}
 }
 
