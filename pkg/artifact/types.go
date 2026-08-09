@@ -252,7 +252,7 @@ func (p PayloadRef) Validate() error {
 		return fmt.Errorf("%w: payload %q media type: %v", ErrInvalidArtifact, p.Name, err)
 	}
 	if err := validateDigest(p.Digest); err != nil {
-		return fmt.Errorf("%w: payload %q digest: %v", ErrInvalidArtifact, p.Name, err)
+		return fmt.Errorf("%w: payload %q digest: %w", ErrInvalidArtifact, p.Name, err)
 	}
 	if p.Size < 0 {
 		return fmt.Errorf("%w: payload %q has negative size", ErrInvalidArtifact, p.Name)
@@ -318,13 +318,13 @@ type SealedRef struct {
 
 func (r SealedRef) Validate() error {
 	if err := validateDigest(r.Revision); err != nil {
-		return fmt.Errorf("%w: revision digest: %v", ErrInvalidArtifact, err)
+		return fmt.Errorf("%w: revision digest: %w", ErrInvalidArtifact, err)
 	}
 	if err := validateDigest(r.Material); err != nil {
-		return fmt.Errorf("%w: material digest: %v", ErrInvalidArtifact, err)
+		return fmt.Errorf("%w: material digest: %w", ErrInvalidArtifact, err)
 	}
 	if err := validateDigest(r.Grant); err != nil {
-		return fmt.Errorf("%w: grant digest: %v", ErrInvalidArtifact, err)
+		return fmt.Errorf("%w: grant digest: %w", ErrInvalidArtifact, err)
 	}
 	return nil
 }

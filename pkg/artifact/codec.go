@@ -91,6 +91,9 @@ func EncodeRevision(revision Revision) ([]byte, error) {
 // EncodeRevision. This prevents alternate encodings from acquiring the same
 // semantic meaning while carrying a different content digest.
 func DecodeRevision(data []byte) (Revision, error) {
+	if len(data) > MaxRevisionBytes {
+		return Revision{}, fmt.Errorf("%w: revision exceeds %d encoded bytes", ErrInvalidArtifact, MaxRevisionBytes)
+	}
 	var revision Revision
 	if err := UnmarshalStrict(data, &revision); err != nil {
 		return Revision{}, err
