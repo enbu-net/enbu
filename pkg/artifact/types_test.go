@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/opencontainers/go-digest"
 )
 
 func TestParseUUID(t *testing.T) {
@@ -139,5 +141,20 @@ func TestRevisionKindAndUniqueness(t *testing.T) {
 	}}
 	if err := logicalMember.Validate(); !errors.Is(err, ErrInvalidArtifact) {
 		t.Fatalf("logical Member = %v, want ErrInvalidArtifact", err)
+	}
+}
+
+func TestDigestValidationPreservesNestedCause(t *testing.T) {
+	t.Parallel()
+
+	invalid := digest.Digest("sha256:" + strings.Repeat("z", 64))
+	payload := PayloadRef{Name: "content", MediaType: "text/plain", Digest: invalid}
+	if err := payload.Validate(); !errors.Is(err, digest.ErrDigestInvalidFormat) {
+		t.Fatalf("PayloadRef.Validate() = %v, want ErrDigestInvalidFormat", err)
+	}
+
+	sealed := SealedRef{Revision: invalid, Material: digest.FromString("material"), Grant: digest.FromString("grant")}
+	if err := sealed.Validate(); !errors.Is(err, digest.ErrDigestInvalidFormat) {
+		t.Fatalf("SealedRef.Validate() = %v, want ErrDigestInvalidFormat", err)
 	}
 }
