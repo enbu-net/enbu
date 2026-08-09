@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/spf13/cobra"
 )
 

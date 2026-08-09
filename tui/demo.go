@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 )
 
 var (

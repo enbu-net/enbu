@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/web"

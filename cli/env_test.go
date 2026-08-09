@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/oci"

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 )
 
 func TestDefaultAppWithInvalidBackendReturnsKeystoreError(t *testing.T) {

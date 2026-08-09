@@ -3,7 +3,7 @@ package cli
 import (
 	"sort"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/spf13/cobra"
 )
 

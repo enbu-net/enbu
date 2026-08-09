@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/tui"
