@@ -546,9 +546,11 @@ The refactor intentionally has no migration layer.
 - Dual-read, dual-write, conversion commands, legacy adapters, and compatibility
   feature flags are prohibited.
 
-Internal package overlap is allowed while the stacked refactor is in progress,
-but production clients switch once to the new application host and the legacy
-implementation is then deleted.
+The former application package is now private under `internal/application` and
+is reachable only by the in-process adapters. The public `app` package and the
+legacy HTTP client are gone. New graph and host APIs are the only extension
+boundary; the private package keeps the current use-cases behind that boundary
+while they are migrated to typed host operations.
 
 ## Delivery stages
 
@@ -566,7 +568,7 @@ stages are present in the current tree.
 | 7. Built-in schemas | Opaque, SecretMap, FileTree, views, DotEnv and materializers | Implemented in this stage |
 | 8. Application host | Immutable sessions, operations, configuration and orchestration | Implemented in this stage |
 | 9. Client cutover | CLI, TUI, Wails, removal of the HTTP fallback | Implemented in this stage |
-| 10. Legacy removal | Delete old implementation, update release matrix and documentation | In progress |
+| 10. Legacy removal | Delete old public implementation, update release matrix and documentation | In progress: public package internalized |
 
 Stage 1 MUST test canonical digest equality, malformed and non-canonical CBOR,
 all Resource and Collection invariants, pinned-cycle and revision-ambiguity
