@@ -218,7 +218,7 @@ importers:
     dependencies:
       '@ark-ui/react':
         specifier: ^5.37.2
-        version: 5.38.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 5.38.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@bjorn3/browser_wasi_shim':
         specifier: 0.4.2
         version: 0.4.2
@@ -305,8 +305,8 @@ packages:
     resolution: {integrity: sha512-KoROLVVT23BvFHcye/GYhG8NJ2CH0C+CaoJhXrkEjvk8pbEx80Xk5NIUy5gL7xmX+LDD7kY5t3NotBqCu+2L2w==}
     deprecated: This package is deprecated. Please import directly from @ark-ui/<framework>
 
-  '@ark-ui/react@5.38.0':
-    resolution: {integrity: sha512-0tgeBjY8kSynhFhVgtUsev/nAo55d9V1xYoWTCqQeZflKNZpE5nW+9uRM88gjz34CJMKmfMOKkItPDQtHJpktQ==}
+  '@ark-ui/react@5.38.1':
+    resolution: {integrity: sha512-GlDwTFEwR58/2u1M6X8ajWL5hQLf1y90LmIRpPocK3xPT6IVnM7dKQwye9dx+Z268IZCz8smESzcemZ9DDysUg==}
     peerDependencies:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
@@ -3297,7 +3297,7 @@ snapshots:
     transitivePeerDependencies:
       - '@internationalized/date'
 
-  '@ark-ui/react@5.38.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@ark-ui/react@5.38.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@internationalized/date': 3.12.2
       '@zag-js/accordion': 1.43.0
