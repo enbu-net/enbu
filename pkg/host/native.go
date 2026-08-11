@@ -31,10 +31,14 @@ type FileInput struct {
 // NewFileInput captures an absolute, clean native path. The path may disappear
 // or change before use; Open performs the authoritative safety checks.
 func NewFileInput(path string) (*FileInput, error) {
-	if err := validateCapabilityPath(path); err != nil {
+	canonical, err := platform.CanonicalizeParentPath(path)
+	if err != nil {
 		return nil, newCapabilityError(ErrUnsafeFileInput, "capture path", err)
 	}
-	return &FileInput{path: path}, nil
+	if err := validateCapabilityPath(canonical); err != nil {
+		return nil, newCapabilityError(ErrUnsafeFileInput, "capture path", err)
+	}
+	return &FileInput{path: canonical}, nil
 }
 
 // Open pins and returns the regular file currently named by the captured path.
@@ -72,13 +76,17 @@ type SecureFileOutput struct {
 
 // NewSecureFileOutput captures an absolute, clean native destination path.
 func NewSecureFileOutput(path string) (*SecureFileOutput, error) {
-	if err := validateCapabilityPath(path); err != nil {
+	canonical, err := platform.CanonicalizeParentPath(path)
+	if err != nil {
 		return nil, newCapabilityError(ErrUnsafeFileOutput, "capture path", err)
 	}
-	if filepath.Dir(path) == path {
+	if err := validateCapabilityPath(canonical); err != nil {
+		return nil, newCapabilityError(ErrUnsafeFileOutput, "capture path", err)
+	}
+	if filepath.Dir(canonical) == canonical {
 		return nil, newCapabilityError(ErrUnsafeFileOutput, "capture path", errors.New("filesystem root"))
 	}
-	return &SecureFileOutput{path: path}, nil
+	return &SecureFileOutput{path: canonical}, nil
 }
 
 // Open creates a private, same-directory temporary writer. Callers cannot

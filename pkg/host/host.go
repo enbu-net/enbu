@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/artifact"
+	"github.com/enbu-net/enbu/pkg/platform"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -216,6 +217,11 @@ func (host *Host) OpenWorkspace(ctx context.Context, request OpenWorkspaceReques
 	if err := validateSHA256(request.ConfigRevision); err != nil {
 		return nil, fmt.Errorf("%w: configuration revision: %v", ErrInvalidWorkspace, err)
 	}
+	canonicalRoot, err := platform.CanonicalizeParentPath(request.Root)
+	if err != nil {
+		return nil, fmt.Errorf("%w: root must be a safe native path", ErrInvalidWorkspace)
+	}
+	request.Root = canonicalRoot
 	if err := validateWorkspaceRoot(request.Root); err != nil {
 		return nil, err
 	}
