@@ -107,7 +107,7 @@ func privateAccessEntry(sid *windows.SID, inheritance uint32) windows.EXPLICIT_A
 	}
 }
 
-func validatePrivateOpenedFile(file *os.File, directory bool) error {
+func validatePrivateOpenedFile(file *os.File, _ bool) error {
 	sd, err := windows.GetSecurityInfo(
 		windows.Handle(file.Fd()),
 		windows.SE_FILE_OBJECT,
@@ -140,10 +140,6 @@ func validatePrivateOpenedFile(file *os.File, directory bool) error {
 	}
 	foundUser := false
 	foundSystem := false
-	wantInheritance := uint8(0)
-	if directory {
-		wantInheritance = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
-	}
 	for index := uint32(0); index < uint32(dacl.AceCount); index++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if err := windows.GetAce(dacl, index, &ace); err != nil {
@@ -152,8 +148,8 @@ func validatePrivateOpenedFile(file *os.File, directory bool) error {
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask == 0 {
 			return fmt.Errorf("%w: DACL contains a non-private entry", ErrInsecureFile)
 		}
-		if ace.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) != wantInheritance {
-			return fmt.Errorf("%w: DACL has incorrect inheritance", ErrInsecureFile)
+		if ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
+			return fmt.Errorf("%w: DACL contains an inherited entry", ErrInsecureFile)
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 		isUser := sid.Equals(user.User.Sid)
