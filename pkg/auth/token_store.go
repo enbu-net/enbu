@@ -9,9 +9,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"
 )
 
@@ -112,5 +112,18 @@ func notLoggedInError() error {
 }
 
 func legacyTokenPath() string {
-	return filepath.Join(config.DataDir(), "token.json")
+	var base string
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		base = filepath.Join(xdg, "enbu")
+	} else {
+		switch runtime.GOOS {
+		case "darwin":
+			base = filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "enbu")
+		case "windows":
+			base = filepath.Join(os.Getenv("LOCALAPPDATA"), "enbu")
+		default:
+			base = filepath.Join(os.Getenv("HOME"), ".local", "share", "enbu")
+		}
+	}
+	return filepath.Join(base, "token.json")
 }

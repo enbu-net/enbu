@@ -32,10 +32,47 @@ type VerifiedCommit struct {
 	EncryptedCommit   artifact.Descriptor
 	Grant             artifact.Descriptor
 	Value             commitmodel.VerifiedCommit
+	openedGrant       artifact.OpenedGrant
+}
+
+// RewrapAccessGrant creates a new envelope for this already authenticated
+// encrypted Commit. The material identity never leaves the verified value;
+// callers can only ask for a newly signed Grant bound to the exact Commit and
+// policy revision that were verified together.
+func (commit VerifiedCommit) RewrapAccessGrant(
+	ctx context.Context,
+	issuer *artifact.DeviceIdentity,
+	recipients []artifact.VerifiedDevice,
+) (artifact.AccessGrant, error) {
+	if commit.Value.Commit().Policy.Revision == "" || commit.openedGrant.Claims.Material != commit.EncryptedCommit.Digest {
+		return artifact.AccessGrant{}, errors.New("registry: verified Commit has no rewrappable Grant capability")
+	}
+	return artifact.CreateAccessGrant(
+		ctx,
+		commit.EncryptedCommit.Digest,
+		commit.Value.Commit().Policy.Revision,
+		commit.openedGrant.Identity,
+		issuer,
+		recipients,
+	)
 }
 
 type CommitVerifier interface {
 	VerifyCommit(context.Context, CommitAnnouncement, *VerificationBudget) (VerifiedCommit, error)
+}
+
+// announcementRetentionRegistrar is implemented by remotes whose mutable
+// visibility ref points to a second, bounded retention tree. Registration is
+// deliberately sequenced after Commit authentication so unauthenticated tag
+// listing cannot populate digest-global object lookup.
+type announcementRetentionRegistrar interface {
+	registerAnnouncementRetention(
+		context.Context,
+		string,
+		artifact.Descriptor,
+		CommitAnnouncement,
+		*VerificationBudget,
+	) error
 }
 
 type VerifiedAnnouncement struct {
@@ -185,6 +222,18 @@ func Discover(
 		if !commitMatchesAnnouncement(verified, announcement) {
 			result.reject(ref.Tag, RejectionInvalidBinding)
 			continue
+		}
+		if registrar, ok := remote.(announcementRetentionRegistrar); ok {
+			if err := registrar.registerAnnouncementRetention(ctx, ref.Tag, ref.Descriptor, announcement, budget); err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return Discovery{}, ctxErr
+				}
+				if isRejectedObjectError(err) {
+					result.reject(ref.Tag, RejectionInvalidDescriptor)
+					continue
+				}
+				return Discovery{}, fmt.Errorf("verify announced retention %q: %w", ref.Tag, err)
+			}
 		}
 		result.Announcements = append(result.Announcements, VerifiedAnnouncement{
 			Tag:          ref.Tag,

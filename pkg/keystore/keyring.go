@@ -5,10 +5,17 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/artifact"
 	"github.com/zalando/go-keyring"
 )
 
 type KeyringBackend struct{}
+
+// Protection reports the security property required by the artifact device
+// credential contract. KeyringBackend never falls back to a plaintext file.
+func (*KeyringBackend) Protection() artifact.CredentialProtection {
+	return artifact.CredentialProtectionOS
+}
 
 func (k *KeyringBackend) probe() error {
 	type result struct{ err error }
