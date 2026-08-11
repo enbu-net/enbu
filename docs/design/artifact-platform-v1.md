@@ -218,6 +218,11 @@ Logical relationships such as `derivedFrom`, `documents`, and `supersedes`
 remain query hints. Provenance required for security is stored as pinned input
 references in a transform record, not inferred from logical edges.
 
+Every provenance input has a typed role, target UID, and `SealedRef`. The pair
+of role and UID is unique within one mutation record. Multi-input operations
+such as merge use distinct roles for base, left, and right; two revisions of
+one UID under the same role are rejected as ambiguous.
+
 Possession of an ancestor, Collection, edge, label, or commit does not grant
 the ability to decrypt a target. Every pinned reference carries an explicit
 Grant reference, and authorization is checked for each material object.
@@ -366,19 +371,34 @@ merge identity. No fixed 10 MiB artifact limit is part of this contract.
 
 A Commit is an encrypted, immutable, signed object containing workspace ID,
 root SealedRef, pinned policy reference, parent commit digests, actor and device
-IDs, operation ID, timestamp, and mutation provenance. A commit has one parent
-for an ordinary mutation, multiple parents for a merge, and no parent only for
+IDs, operation ID, timestamp, and mutation provenance. Its signed envelope
+embeds the bounded historical author enrollment assertion. A fresh client can
+therefore verify the exact author, Device ID, and Ed25519 key without consulting
+a mutable username or a pre-populated key cache. A commit has one parent for an
+ordinary mutation, multiple parents for a merge, and no parent only for
 workspace initialization.
 
-Publication order is payload chunks, material manifests, Grants, Commit, then
-a signed `commit-<sha256 hex>` announcement tag. The announcement is the
-visibility point. Interrupted publication before it is unreachable but safe;
-v1 performs no destructive remote garbage collection.
+Publication order is payload chunks, material manifests, Grants, pinned plugin
+packages, Commit, announcement object, then a signed
+`commit-<announcement sha256 hex>` tag. The tag identifies the canonical
+announcement bytes, not the logical Commit, so an authorized device may publish
+a new Grant and encrypted envelope for an existing signed Commit. The public
+announcement contains only workspace ID, logical Commit digest, exact encrypted
+Commit and Grant descriptors, and its signature. Its publisher identity and
+enrollment are recovered from the successfully opened Grant before the
+announcement signature is trusted. The announcement tag is the visibility
+point. Interrupted publication before it is unreachable but safe; v1 performs
+no destructive remote garbage collection.
 
 A mutable head tag MAY be maintained as a cache hint but MUST NOT be used for
-correctness. Clients discover announcements, verify them, and compute the
-frontier as commits not reachable from any other discovered commit. Concurrent
-commits therefore form a visible fork instead of overwriting one another.
+correctness. Clients page through bounded announcement listings, discard other
+workspace IDs before Grant work, enforce aggregate byte and unwrap budgets,
+verify each accessible announcement, deduplicate envelope variants by logical
+Commit digest, and compute the frontier as commits not reachable from any other
+discovered commit. Inaccessible announcements remain distinct from malformed
+hostile entries. Any transport failure or budget exhaustion aborts discovery,
+so an incomplete frontier is never presented as complete. Concurrent commits
+therefore form a visible fork instead of overwriting one another.
 
 Three-way merge is deterministic:
 
@@ -539,7 +559,7 @@ stages are present in the current tree.
 | --- | --- | --- |
 | 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | Implemented in the base stack |
 | 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Implemented in this stage |
-| 3. Storage and commits | Local CAS, streaming OCI, announcements, frontier and merge | Planned |
+| 3. Storage and commits | Local CAS, streaming OCI, announcements and authenticated frontier DAG | Implemented in this stage |
 | 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Planned |
 | 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Planned |
 | 6. Platform security | Platform dirs, locks, SecureWriter, native ACL and keystore behavior | Planned |

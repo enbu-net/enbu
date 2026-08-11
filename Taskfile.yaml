@@ -47,7 +47,7 @@ tasks:
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -v -shuffle=on ./pkg/artifact/...
+      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/cas/... ./pkg/commit/... ./pkg/registry/...
 
   gui/test:
     desc: Run GUI tests
