@@ -8,37 +8,25 @@ import (
 type Code string
 
 const (
-	CodeInternal           Code = "internal"
-	CodeInvalidArgument    Code = "invalid_argument"
-	CodeNotAuthenticated   Code = "not_authenticated"
-	CodeAccessDenied       Code = "access_denied"
-	CodeAuthExpired        Code = "authentication_expired"
-	CodeNotInitialized     Code = "not_initialized"
-	CodeConfigNotFound     Code = "config_not_found"
-	CodeEnvironmentMissing Code = "environment_not_found"
-	CodeEnvironmentExists  Code = "environment_already_exists"
-	CodeSecretMissing      Code = "secret_not_found"
-	CodeSecretExists       Code = "secret_already_exists"
-	CodeArtifactNotFound   Code = "artifact_not_found"
-	CodeConflict           Code = "conflict"
-	CodeUnavailable        Code = "unavailable"
+	CodeInternal         Code = "internal"
+	CodeInvalidArgument  Code = "invalid_argument"
+	CodeNotAuthenticated Code = "not_authenticated"
+	CodeAccessDenied     Code = "access_denied"
+	CodeAuthExpired      Code = "authentication_expired"
+	CodeNotInitialized   Code = "not_initialized"
+	CodeConflict         Code = "conflict"
+	CodeUnavailable      Code = "unavailable"
 )
 
 var knownCodes = map[Code]struct{}{
-	CodeInternal:           {},
-	CodeInvalidArgument:    {},
-	CodeNotAuthenticated:   {},
-	CodeAccessDenied:       {},
-	CodeAuthExpired:        {},
-	CodeNotInitialized:     {},
-	CodeConfigNotFound:     {},
-	CodeEnvironmentMissing: {},
-	CodeEnvironmentExists:  {},
-	CodeSecretMissing:      {},
-	CodeSecretExists:       {},
-	CodeArtifactNotFound:   {},
-	CodeConflict:           {},
-	CodeUnavailable:        {},
+	CodeInternal:         {},
+	CodeInvalidArgument:  {},
+	CodeNotAuthenticated: {},
+	CodeAccessDenied:     {},
+	CodeAuthExpired:      {},
+	CodeNotInitialized:   {},
+	CodeConflict:         {},
+	CodeUnavailable:      {},
 }
 
 type Params map[string]string

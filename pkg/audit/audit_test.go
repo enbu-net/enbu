@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,6 +43,7 @@ func testEvent(signer *artifact.DeviceIdentity, result string) Event {
 	return Event{
 		APIVersion: APIVersion, Kind: Kind, OperationID: operationID,
 		Action: "materialize", DeviceID: signer.DeviceID(),
+		Actor:            "github:12345",
 		CiphertextDigest: digest.FromString("ciphertext"), ResultCode: result,
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -67,6 +69,42 @@ func TestJournalEncryptsSignsAndChainsEvents(t *testing.T) {
 	}
 	if events[1].PreviousDigest != digest.FromBytes(mustEncodeEvent(t, events[0])) {
 		t.Fatal("second event does not link to first event")
+	}
+}
+
+func TestConcurrentJournalsRefreshChainUnderProcessLock(t *testing.T) {
+	first, store, signer, path := newTestJournal(t)
+	second, err := NewJournal(path, store, store, first.identity, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+
+	const count = 16
+	var group sync.WaitGroup
+	errorsOut := make(chan error, count)
+	for index := 0; index < count; index++ {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			journal := first
+			if index%2 != 0 {
+				journal = second
+			}
+			_, err := journal.Append(context.Background(), testEvent(signer, "succeeded"))
+			errorsOut <- err
+		}(index)
+	}
+	group.Wait()
+	close(errorsOut)
+	for err := range errorsOut {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := first.Replay(context.Background(), signer.SigningPublicKey())
+	if err != nil || len(events) != count {
+		t.Fatalf("Replay() count = %d, %v", len(events), err)
 	}
 }
 

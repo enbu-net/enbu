@@ -15,6 +15,9 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -134,15 +137,21 @@ func ValidateRegoPolicy(source []byte) error {
 }
 
 func ValidateFileTreePath(value string) error {
-	if value == "" || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "\\") || strings.Contains(value, "\\") || strings.Contains(value, ":") || strings.ContainsRune(value, 0) {
+	if value == "" || len(value) > MaxFileTreePathBytes || !utf8.ValidString(value) || !norm.NFC.IsNormalString(value) {
+		return ErrInvalidPath
+	}
+	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, "\\") || strings.Contains(value, "\\") || strings.Contains(value, ":") || strings.IndexFunc(value, isFileTreeControl) >= 0 {
 		return ErrInvalidPath
 	}
 	if path.Clean(value) != value {
 		return ErrInvalidPath
 	}
 	parts := strings.Split(value, "/")
+	if len(parts) > MaxFileTreeDepth {
+		return ErrInvalidPath
+	}
 	for _, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") || isWindowsReserved(part) || strings.ContainsAny(part, "<>|?*") {
+		if part == "" || len(part) > MaxFileTreeSegmentBytes || part == "." || part == ".." || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") || isWindowsReserved(part) || strings.ContainsAny(part, "<>\"|?*") {
 			return ErrInvalidPath
 		}
 	}
@@ -155,13 +164,24 @@ func ValidateFileTreePaths(paths []string) error {
 		if err := ValidateFileTreePath(value); err != nil {
 			return err
 		}
-		folded := strings.ToLower(value)
+		folded := norm.NFC.String(cases.Fold().String(value))
 		if _, exists := seen[folded]; exists {
 			return fmt.Errorf("%w: case-fold collision", ErrInvalidPath)
 		}
 		seen[folded] = struct{}{}
 	}
+	for value := range seen {
+		for parent := path.Dir(value); parent != "."; parent = path.Dir(parent) {
+			if _, exists := seen[parent]; exists {
+				return fmt.Errorf("%w: file/directory collision", ErrInvalidPath)
+			}
+		}
+	}
 	return nil
+}
+
+func isFileTreeControl(character rune) bool {
+	return character < 0x20 || character == 0x7f
 }
 
 type Table struct {
