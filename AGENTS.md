@@ -36,7 +36,7 @@ main.go                  → version injection, signal handling, delegates to cl
 cli/                     → cobra commands: auth, init, add, pull, sync, switch
 tui/                     → Bubble Tea TUI
 desktop/                 → Wails desktop app (service layer + bindings)
-app/                     → application layer (use-cases)
+internal/application/    → application use-cases (internal adapter)
 pkg/config/              → repo detection (git remote), enbu.toml, XDG data dir
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/age/                 → key generation, encrypt/decrypt with age (X25519 only)
@@ -62,7 +62,7 @@ test/                    → scenario tests (build tag: scenario)
 ## Error handling
 
 - Functions continue to return the standard `error` interface. `AppError` is a concrete implementation, not a separate return type.
-- Every error leaving an exported `app` operation must be normalized to `AppError`. Unclassified errors use the `internal` code.
+- Every error leaving an exported application operation must be normalized to `AppError`. Unclassified errors use the `internal` code.
 - Internal packages may return ordinary errors and add context with `%w`. Preserve the cause chain for `errors.Is` and `errors.As`.
 - Assign a specific error code only when callers need to change behavior, such as retrying, selecting an exit code, translating a GUI message, or changing screens.
 - Never inspect `err.Error()` to control behavior.
