@@ -498,6 +498,11 @@ func validateRoot(value string) (string, error) {
 	if value == "" || !filepath.IsAbs(value) || filepath.Clean(value) != value {
 		return "", errors.New("apphost: workspace root must be absolute and clean")
 	}
+	canonical, err := platform.CanonicalizeParentPath(value)
+	if err != nil {
+		return "", err
+	}
+	value = canonical
 	info, err := os.Lstat(value)
 	if err != nil {
 		return "", err
