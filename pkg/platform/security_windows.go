@@ -18,13 +18,13 @@ const (
 	volumeNameDOS = 0
 )
 
-func protectOpenedFile(_ *os.File, path string, directory bool) error {
+func protectOpenedFile(file *os.File, _ string, directory bool) error {
 	acl, err := privateACL(directory)
 	if err != nil {
 		return err
 	}
-	return windows.SetNamedSecurityInfo(
-		path,
+	return windows.SetSecurityInfo(
+		windows.Handle(file.Fd()),
 		windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil,
@@ -87,8 +87,8 @@ func validatePrivateOpenedFile(file *os.File, directory bool) error {
 	if err != nil {
 		return err
 	}
-	if dacl == nil || dacl.AceCount != 2 {
-		return fmt.Errorf("%w: DACL must contain exactly two entries", ErrInsecureFile)
+	if dacl == nil || dacl.AceCount == 0 {
+		return fmt.Errorf("%w: DACL must contain private entries", ErrInsecureFile)
 	}
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
@@ -109,15 +109,20 @@ func validatePrivateOpenedFile(file *os.File, directory bool) error {
 		if err := windows.GetAce(dacl, index, &ace); err != nil {
 			return err
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask&windows.GENERIC_ALL == 0 {
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask == 0 {
 			return fmt.Errorf("%w: DACL contains a non-private entry", ErrInsecureFile)
 		}
 		if ace.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) != wantInheritance {
 			return fmt.Errorf("%w: DACL has incorrect inheritance", ErrInsecureFile)
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		foundUser = foundUser || sid.Equals(user.User.Sid)
-		foundSystem = foundSystem || sid.Equals(system)
+		isUser := sid.Equals(user.User.Sid)
+		isSystem := sid.Equals(system)
+		if !isUser && !isSystem {
+			return fmt.Errorf("%w: DACL grants an unexpected principal", ErrInsecureFile)
+		}
+		foundUser = foundUser || isUser
+		foundSystem = foundSystem || isSystem
 	}
 	if !foundUser || !foundSystem {
 		return fmt.Errorf("%w: DACL must grant only the current user and SYSTEM", ErrInsecureFile)
@@ -157,7 +162,7 @@ func finalRootPath(root *os.Root) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer directory.Close()
+	defer func() { _ = directory.Close() }()
 	buffer := make([]uint16, 100)
 	for {
 		length, err := windows.GetFinalPathNameByHandle(
@@ -225,6 +230,8 @@ func validatePlatformPath(path string) error {
 	}
 	return nil
 }
+
+func canonicalizeParentPath(path string) (string, error) { return path, nil }
 
 func isReservedWindowsName(name string) bool {
 	switch name {

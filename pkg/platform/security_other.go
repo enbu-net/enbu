@@ -34,6 +34,7 @@ func replaceFile(root *os.Root, temporary, destination string) error {
 	return root.Rename(temporary, destination)
 }
 
-func syncDirectory(*os.Root) error       { return nil }
-func rejectPlatformSpecial(string) error { return nil }
-func validatePlatformPath(string) error  { return nil }
+func syncDirectory(*os.Root) error                       { return nil }
+func rejectPlatformSpecial(string) error                 { return nil }
+func validatePlatformPath(string) error                  { return nil }
+func canonicalizeParentPath(path string) (string, error) { return path, nil }
