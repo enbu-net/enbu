@@ -22,13 +22,13 @@ func TestErrorWrapPreservesCauseAndCode(t *testing.T) {
 }
 
 func TestParamsAreDefensivelyCopied(t *testing.T) {
-	input := Params{"name": "default"}
-	err := New(CodeEnvironmentMissing, "environment missing", input)
-	input["name"] = "changed"
+	input := Params{"field": "default"}
+	err := New(CodeInvalidArgument, "invalid field", input)
+	input["field"] = "changed"
 
 	got := err.Params()
-	got["name"] = "changed again"
-	if value := err.Params()["name"]; value != "default" {
+	got["field"] = "changed again"
+	if value := err.Params()["field"]; value != "default" {
 		t.Fatalf("stored param = %q", value)
 	}
 }

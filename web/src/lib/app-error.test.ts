@@ -11,14 +11,14 @@ describe("display errors", () => {
   it("localizes a known code and expands params at display time", () => {
     const error = toDisplayError(
       new AppError({
-        code: "environment_not_found",
+        code: "conflict",
         message: "must not be displayed",
-        params: { name: "dev" },
+        params: {},
       }),
     );
 
-    expect(formatDisplayError(error, "ja")).toBe("環境「dev」は存在しません。");
-    expect(formatDisplayError(error, "en")).toBe('Environment "dev" does not exist.');
+    expect(formatDisplayError(error, "ja")).toContain("workspace");
+    expect(formatDisplayError(error, "en")).toContain("changed concurrently");
   });
 
   it("never displays the payload message for an unknown code", () => {
@@ -46,9 +46,9 @@ describe("display errors", () => {
   });
 
   it("preserves replacement-token characters in params", () => {
-    const error = displayError("secret_not_found", { key: "$&$'$`" });
+    const error = displayError("invalid_argument", { key: "$&$'$`" });
 
-    expect(formatDisplayError(error, "en")).toBe('Secret "$&$\'$`" does not exist.');
+    expect(formatDisplayError(error, "en")).toBe("The input is invalid.");
   });
 
   it("unwraps binding errors without localizing them early", () => {

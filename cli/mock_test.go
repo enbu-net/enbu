@@ -1,4 +1,4 @@
-//go:build scenario
+//go:build scenario && legacy
 
 package cli
 

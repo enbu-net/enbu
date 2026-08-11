@@ -1,3 +1,5 @@
+//go:build legacy
+
 package tui
 
 import "github.com/enbu-net/enbu/internal/application"

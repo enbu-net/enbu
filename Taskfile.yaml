@@ -18,7 +18,6 @@ tasks:
     desc: Run all CLI tests
     deps:
       - cli/test/unit
-      - cli/test/scenario
 
   cli/test/unit:
     desc: Run unit tests
@@ -26,16 +25,6 @@ tasks:
       - gui/build/frontend
     cmds:
       - go test -v -shuffle=on -race ./...
-
-  cli/test/scenario:
-    desc: Run scenario tests
-    deps:
-      - gui/build/frontend
-    cmds:
-      - docker compose up -d --wait
-      - defer: docker compose down
-      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
-      - go test -v -shuffle=on -race -tags=scenario ./...
 
   core/test:
     desc: Run platform-neutral core tests without frontend generation
@@ -47,7 +36,7 @@ tasks:
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/cas/... ./pkg/commit/... ./pkg/registry/... ./pkg/policy/... ./pkg/audit/... ./pkg/plugin/... ./pkg/platform/... ./pkg/schema/... ./pkg/host/... ./pkg/client/...
+      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/cas/... ./pkg/commit/... ./pkg/registry/... ./pkg/policy/... ./pkg/audit/... ./pkg/plugin/... ./pkg/platform/... ./pkg/schema/... ./pkg/host/... ./pkg/workspace/... ./pkg/enrollment/... ./internal/engine/... ./internal/apphost/...
 
   gui/test:
     desc: Run GUI tests

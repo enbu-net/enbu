@@ -4,13 +4,7 @@
   "not_authenticated": "Sign in with GitHub to continue.",
   "access_denied": "Access was denied.",
   "authentication_expired": "The authentication session expired. Try again.",
-  "not_initialized": "Set up enbu for this repository first.",
-  "config_not_found": "enbu.toml was not found.",
-  "environment_not_found": "Environment \"{name}\" does not exist.",
-  "environment_already_exists": "Environment \"{name}\" already exists.",
-  "secret_not_found": "Secret \"{key}\" does not exist.",
-  "secret_already_exists": "Secret \"{key}\" already exists.",
-  "artifact_not_found": "The requested secrets were not found.",
-  "conflict": "Secrets changed remotely. Try again.",
+  "not_initialized": "Initialize this encrypted workspace first.",
+  "conflict": "The workspace changed concurrently. Refresh and resolve the conflict.",
   "unavailable": "The required service is unavailable."
 }

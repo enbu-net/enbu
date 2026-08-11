@@ -1,6 +1,8 @@
 // Package client contains the protocol-neutral adapters used by the CLI,
 // Bubble Tea, and Wails frontends. It deliberately exposes operation state,
 // not resource payloads: payload access stays inside the application host.
+//go:build legacy
+
 package client
 
 import (

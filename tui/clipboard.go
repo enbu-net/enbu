@@ -1,3 +1,5 @@
+//go:build legacy
+
 package tui
 
 import "golang.design/x/clipboard"

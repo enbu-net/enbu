@@ -10,7 +10,6 @@ import (
 
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
-	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
@@ -98,8 +97,7 @@ func main() {
 		slog.Warn("registering enbu protocol handler", "err", err)
 	}
 
-	core := desktop.NewService(app.New())
-	core.AppVersion = Version
+	core := desktop.NewService(Version)
 	service := &DesktopService{service: core}
 	onSecondInstanceLaunch, onURLOpen := activationHandlers(
 		core.Context,
@@ -111,10 +109,11 @@ func main() {
 			Title: "Select Git repository",
 		})
 	})
-	core.SetBrowserOpener(func(url string) error {
-		slog.Info("BrowserOpenURL")
-		runtime.BrowserOpenURL(core.Context(), url)
-		return nil
+	core.SetFilePicker(func(ctx context.Context, title string) (string, error) {
+		return runtime.OpenFileDialog(ctx, runtime.OpenDialogOptions{Title: title})
+	})
+	core.SetSavePicker(func(ctx context.Context, title string) (string, error) {
+		return runtime.SaveFileDialog(ctx, runtime.SaveDialogOptions{Title: title})
 	})
 
 	if err := wails.Run(&options.App{
@@ -143,6 +142,11 @@ func main() {
 			ProgramName: "enbu",
 		},
 		OnStartup: core.Startup,
+		OnShutdown: func(ctx context.Context) {
+			if err := core.Shutdown(ctx); err != nil {
+				slog.Error("desktop shutdown failed", "err", err)
+			}
+		},
 		OnDomReady: func(ctx context.Context) {
 			slog.Info("Wails.OnDomReady called")
 		},
