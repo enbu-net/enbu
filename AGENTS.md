@@ -4,7 +4,7 @@ This file provides guidance to Agent tool when working with code in this reposit
 
 ## What is enbu
 
-Keyless `.env` management powered by GitHub. Encrypts secrets with age, stores ciphertext as OCI artifacts on GHCR, and uses Authorization Code Flow with PKCE for authentication. No shared master key — each team member gets their own age recipient key.
+Cross-platform encrypted artifact workspaces backed by OCI. Resources form a signed, immutable graph with typed schemas, named encrypted streams, exact Rego policy revisions, device-specific Grants, and verified WASM transforms. `.env` is one built-in format rather than the core data model.
 
 ## Notes
 
@@ -22,7 +22,6 @@ task all/check          # Format and lint all code
 task cli/build          # Build CLI
 task cli/test           # All CLI tests
 task cli/test/unit      # Unit tests
-task cli/test/scenario  # Scenario tests
 task cli/check          # Format and lint CLI code
 task gui/build          # Build GUI desktop app
 task gui/test           # GUI tests
@@ -33,31 +32,33 @@ task gui/check          # Format and lint GUI code
 
 ```
 main.go                  → version injection, signal handling, delegates to cli/
-cli/                     → cobra commands: auth, init, add, pull, sync, switch
-tui/                     → Bubble Tea TUI
-desktop/                 → Wails desktop app (service layer + bindings)
-internal/application/    → application use-cases (internal adapter)
-pkg/config/              → repo detection (git remote), enbu.toml, XDG data dir
+cli/                     → finite typed commands and native file capabilities
+tui/                     → metadata-only Bubble Tea client
+desktop/                 → payload-free Wails service and bindings
+internal/apphost/        → sole production composition root and use-cases
+internal/engine/         → graph sealing/opening, publication, transforms
+pkg/artifact/            → canonical Resource, Collection, Grant, Commit contracts
+pkg/host/                → typed actions, sessions, operations, native capabilities
+pkg/workspace/           → canonical v1 workspace configuration
+pkg/cas/, pkg/registry/  → local CAS and authenticated OCI discovery/publication
+pkg/policy/, pkg/audit/  → bounded Rego evaluation and encrypted audit journal
+pkg/plugin/              → verified, capability-restricted WASM transform host
+pkg/schema/              → Opaque, SecretMap, Table, ValueTree, FileTree
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
-pkg/age/                 → key generation, encrypt/decrypt with age (X25519 only)
-pkg/keystore/            → pluggable private key storage (OS keyring or plaintext file)
-pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
-pkg/oci/                 → push/pull OCI artifacts to GHCR (oras-go), tag listing, digest checks
-pkg/provider/github/     → GitHub API client (org detection)
+pkg/keystore/            → protected OS keyring credentials
+pkg/platform/            → native path, lock, ACL and transactional writer boundary
 pkg/apperr/              → application error type, codes, and normalization helpers
-test/                    → scenario tests (build tag: scenario)
 ```
 
 ## Key design decisions
 
-- Secrets are stored per environment as OCI manifests tagged `secrets-{env}` on `ghcr.io/{owner}/{repo}-enbu`
-- Recipients are environment-independent: each user's public key is stored as `recipient-{username}-{fingerprint}` (shared across all environments)
-- `enbu switch` manages environments (create, switch, delete, rename) with state tracked in `enbu.toml` (shared) and `.enbu.local` (per-user)
-- Access control is delegated to OPA/Rego policy evaluated at sync time — not per-environment recipient lists
-- `sync` command re-encrypts for all recipients with optimistic concurrency (digest-based conflict detection + exponential backoff retry)
-- Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
-- Only age X25519 keys are used — no SSH key support
-- No bot/CI decryption — re-encryption requires a human to run `enbu sync`
+- `docs/design/artifact-platform-v1.md` is the canonical architecture and security contract.
+- Clients receive only opaque session/operation/stream handles and metadata summaries. Secret bytes and native paths never cross Wails JSON.
+- All mutations require an explicit base Commit and produce a new signed Commit or a typed conflict. There is no last-write-wins path.
+- Ciphertext is chunked and immutable. Access changes publish new Grant envelopes without rewriting payloads.
+- Unknown schemas are preserved as opaque streams. New formats are added through built-ins or verified WASM transforms, not client-specific methods.
+- WASM has no WASI, filesystem, network, environment, keychain, registry, or action capability and is bounded by input/output, memory, calls, and time.
+- Legacy `enbu.toml`, `.enbu.local`, bundle JSON, environment tags, commands, and compatibility adapters are rejected rather than migrated.
 
 ## Error handling
 

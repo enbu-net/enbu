@@ -511,11 +511,11 @@ behave identically on Windows, macOS, and Linux.
 There is no daemon and no HTTP API. CLI, Bubble Tea TUI, and Wails Desktop link
 the same Go application host in-process.
 
-An opened workspace is an immutable session value containing its workspace ID,
-fixed root, remote, configuration revision, stores, and platform capabilities.
-Operations receive an explicit session and base revision. A mutable global
-repository directory is prohibited. Multiple workspaces may be open in one
-Desktop process.
+An opened workspace is an opaque session capability. The host retains its
+workspace ID, fixed root, remote, configuration revision, stores, and platform
+capabilities; clients cannot access them. Operations receive an explicit
+session and base revision. A mutable global repository directory is prohibited.
+Multiple workspaces may be open in one Desktop process.
 
 Long operations return an Operation ID and publish bounded, sequenced progress
 events. CLI signals, TUI cancellation, and Desktop cancellation terminate the
@@ -539,36 +539,34 @@ The refactor intentionally has no migration layer.
   read or written by the new application host.
 - Detection of a legacy configuration returns a typed unsupported-format or
   uninitialized error before filesystem, keystore, or registry mutation.
-- Workspace initialization overwrites legacy configuration only after an
-  explicit destructive confirmation.
+- Workspace initialization never overwrites legacy configuration. Removal is a
+  separate, explicitly destructive operator action outside the host.
 - Existing OCI objects are not deleted; they are invisible because v1 discovers
   only verified v1 commit announcements.
 - Dual-read, dual-write, conversion commands, legacy adapters, and compatibility
   feature flags are prohibited.
 
-The former application package is now private under `internal/application` and
-is reachable only by the in-process adapters. The public `app` package and the
-legacy HTTP client are gone. New graph and host APIs are the only extension
-boundary; the private package keeps the current use-cases behind that boundary
-while they are migrated to typed host operations.
+The former application package, public `app` package, legacy HTTP client, and
+legacy format packages are gone. `internal/apphost` is the sole production
+composition root. The typed host actions and verified transform ABI are the
+only mutation and extension boundaries.
 
 ## Delivery stages
 
-This specification defines the target contract. It does not assert that later
-stages are present in the current tree.
+This specification defines the implemented v1 contract.
 
-| Stage | Required implementation | Status at start of refactor |
+| Stage | Required implementation | Status |
 | --- | --- | --- |
-| 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | Implemented in the base stack |
-| 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Implemented in this stage |
-| 3. Storage and commits | Local CAS, streaming OCI, announcements and authenticated frontier DAG | Implemented in this stage |
-| 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Implemented in this stage |
-| 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Implemented in this stage |
-| 6. Platform security | Platform dirs, locks, SecureWriter, native ACL and keystore behavior | Implemented in this stage |
-| 7. Built-in schemas | Opaque, SecretMap, FileTree, views, DotEnv and materializers | Implemented in this stage |
-| 8. Application host | Immutable sessions, operations, configuration and orchestration | Implemented in this stage |
-| 9. Client cutover | CLI, TUI, Wails, removal of the HTTP fallback | Implemented in this stage |
-| 10. Legacy removal | Delete old public implementation, update release matrix and documentation | In progress: public package internalized |
+| 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | Implemented |
+| 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Implemented |
+| 3. Storage and commits | Local CAS, streaming OCI, announcements and authenticated frontier DAG | Implemented |
+| 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Implemented |
+| 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Implemented |
+| 6. Platform security | Platform dirs, locks, SecureWriter, native ACL and keystore behavior | Implemented |
+| 7. Built-in schemas | Opaque, SecretMap, FileTree, views, DotEnv and materializers | Implemented |
+| 8. Application host | Immutable sessions, operations, configuration and orchestration | Implemented |
+| 9. Client cutover | CLI, TUI, Wails, removal of the HTTP fallback | Implemented |
+| 10. Legacy removal | Delete old public implementation, update release matrix and documentation | Implemented |
 
 Stage 1 MUST test canonical digest equality, malformed and non-canonical CBOR,
 all Resource and Collection invariants, pinned-cycle and revision-ambiguity
