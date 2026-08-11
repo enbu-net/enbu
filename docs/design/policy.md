@@ -1,5 +1,10 @@
 # Policy Design: Environment Access Control
 
+> [!WARNING]
+> This is a legacy design record. It is superseded by
+> [`artifact-platform-v1.md`](./artifact-platform-v1.md) and is not a contract
+> for the current implementation.
+
 ## Overview
 
 enbu uses a layered security model combining **age encryption** (cryptographic enforcement) with **policy rules** (operational guardrails) to control per-environment access.

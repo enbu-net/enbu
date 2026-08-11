@@ -1,32 +1,19 @@
-# 💃 enbu
+# enbu
 
-A `.env` management tool that works entirely within GitHub.
+enbu is a cross-platform encrypted artifact workspace for secrets and other sensitive data. It stores immutable, signed, end-to-end encrypted object graphs in an OCI registry. The v1 model is intentionally not limited to `.env` files.
 
-## Why
+The canonical architecture and security contract are in [docs/design/artifact-platform-v1.md](docs/design/artifact-platform-v1.md).
 
-Development requires sensitive information like API keys and database passwords, but existing approaches have problems:
+## Data model
 
-- Slack/Discord/Email lack E2EE
-    - Confusing characters like `1`, `I`, `l` and italic rendering cause copy-paste errors
-    - Every change requires notifying everyone manually
-    - Even if you encrypt: the delivery channel for the password or decryption key is often insecure
-- Dedicated secret managers?
-    - External services come with cost and operational overhead
-        - AWS/Google Cloud/1Password require contracts and account management
-        - Significant organizational burden in both cost and operations
-- Just commit it to Git!
-    - Ciphertext persists permanently in Git history
-    - Future algorithm weaknesses could allow retroactive decryption
+- Resources have stable UUIDs, typed schemas, Kubernetes-style labels and annotations, named payload streams, and typed graph edges.
+- Commits pin the root graph revision and the exact Rego policy revision. Concurrent changes produce explicit conflicts; there is no last-write-wins path.
+- Grants wrap a Resource material key independently of ciphertext, so access changes do not require rewriting payloads.
+- Unknown extension schemas remain opaque and round-trip safely.
 
-## Features
+Built-in imports cover opaque files, dotenv/SecretMap, CSV/Table, JSON/ValueTree, and FileTree. An SSH private key, spreadsheet, firmware image, certificate, or embedded-device configuration can be retained as an opaque typed stream without teaching the core its internal structure. FileTree handles related files such as firmware sources containing Wi-Fi SSIDs and passwords while preserving portable logical paths.
 
-- **GitHub-only** — No dependency on external platforms
-- **E2E encrypted** — Only each member's local private key can decrypt
-- **Simple CLI** — After setup, just `enbu add` and `enbu pull`
-<!-- Planned -->
-<!--- **Secret leak prevention** — Prevent committing .env files or hardcoded secrets -->
-<!--- **Tamper detection** — Sigstore-based signing and verification to detect tampering -->
-<!--- **Policy control** — OPA/Rego-based policy enforcement -->
+Verified WASM transforms provide user-defined schema conversion. Plugins receive only explicitly pinned encrypted inputs through a bounded streaming ABI. They have no filesystem, network, environment, clock, registry, keychain, or host-action capability; package signatures, trust grants, namespaces, memory, calls, output size, and wall-clock duration are enforced by the host.
 
 ## Install
 
@@ -36,214 +23,81 @@ go install github.com/enbu-net/enbu@latest
 
 Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
 
-## Quick Start
+## CLI quick start
 
-### 1. Authenticate
+Authenticate and initialize a workspace with an exact OCI repository:
 
 ```bash
 enbu auth login
+enbu init --registry ghcr.io/OWNER/REPOSITORY-enbu
 ```
 
-Log in to GitHub.
-For a headless environment, use `enbu auth login --device` and enter the displayed code on GitHub.
-
-### 2. Initialize the repository
+Import common formats or an arbitrary file:
 
 ```bash
-cd your-repo
-enbu init
+enbu import-file .env --format dotenv --name application
+enbu import-file customers.csv --format csv --name customers
+enbu import-file config.json --format json --name configuration
+enbu import-file id_ed25519 --format opaque --name deployment-key
 ```
 
-Run once per user per repository. This automatically:
-
-- Generates an X25519 key pair
-- Stores the private key in the OS keychain
-- Registers the public key on GHCR
-- Creates `enbu.toml`
-- Updates `.gitignore`
-
-### 3. Add or edit secrets
+Import a portable group of files. Native paths stay in the CLI process; only logical paths and opaque input capabilities reach the host:
 
 ```bash
-enbu add DATABASE_URL "postgres://..."
-enbu add API_KEY "sk-..."
-enbu edit API_KEY "sk-new..."
-
-# Environment-specific secrets
-enbu add --env dev DATABASE_URL "postgres://dev/..."
-enbu add --env prod DATABASE_URL "postgres://prod/..."
+enbu import-tree \
+  device/wifi.conf=./firmware/wifi.conf \
+  keys/id_ed25519=./keys/id_ed25519 \
+  --name embedded-device
 ```
 
-`add` creates a new secret and fails if the key already exists. Use `edit` to update an existing secret.
-
-### 4. Delete secrets
+List payload-free metadata and materialize one selected Resource:
 
 ```bash
-enbu delete API_KEY
+enbu list
+enbu history
+enbu materialize RESOURCE_UUID output.bin --format Raw --payload content
+enbu materialize FILE_TREE_UUID files.tar --format FileTreeTar
 ```
 
-### 5. Pull secrets
+The CLI never returns plaintext through `--json`. Materialization writes through a host-owned transactional file capability.
+
+## Multi-device enrollment
+
+A candidate creates a signed request. An existing owner approves its exact identity, and the candidate imports the signed assertion before access is granted:
 
 ```bash
-enbu pull  # Writes to .env file
-enbu pull --env dev  # Writes to the configured output for dev
+# candidate
+enbu enrollment request github:candidate request.cbor
+
+# owner
+enbu enrollment approve request.cbor github:candidate assertion.cbor
+
+# candidate
+enbu enrollment import assertion.cbor
 ```
 
-### 6. Add a team member
+Access changes publish historical Grant envelope variants so a newly authorized device can verify and traverse the complete reachable Commit history.
 
-A new member runs `enbu init` inside the repository to enter join mode and register their public key.  
-An existing member then runs `enbu sync` locally to re-encrypt secrets for the new recipient.
-
-## Environments
-
-Manage environments with `enbu switch`:
+## Plugin installation
 
 ```bash
-enbu switch -c dev          # Create and switch to dev
-enbu switch -c prod         # Create and switch to prod
-enbu switch dev             # Switch to dev
-enbu switch -               # Switch back to previous
-enbu switch -l              # List environments
-enbu switch -d staging      # Delete an environment
-enbu switch -m old new      # Rename an environment
+enbu plugin install transform.enbu-plugin.cbor trust-grant.cbor
 ```
 
-Define environments in `enbu.toml`:
+Installation verifies both objects and stores only the verified package under its digest. A later typed `TransformAction` must explicitly select the plugin digest, exact input revisions, and host-planned output slots.
 
-```toml
-version = "0.1"
-default = "dev"
+## Cross-platform security boundary
 
-[env.dev]
-output = ".env.dev"
+Linux, macOS, and Windows use the same semantic contracts with native implementations for private directories, no-follow file capabilities, transactional replacement, audit journal locking, and OS key storage. Symlinks, Windows reparse points and alternate data streams, unsafe UNC/device paths, Unicode/case-fold path collisions, ancestor collisions, and path replacement during open are rejected.
 
-[env.prod]
-output = ".env.prod"
-```
+The desktop webview receives only session IDs, operation IDs, progress enums, digests, and metadata summaries. Secret values, native paths selected by dialogs, key material, storage handles, and arbitrary errors do not cross the Wails JSON boundary.
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — access control is handled by OPA/Rego policy at sync time. Without `-e`, enbu uses the environment set by `switch`.
-
-## Key Storage
-
-Private keys are stored in the OS secure storage:
-
-| OS | Backend |
-|----|---------|
-| macOS | Keychain |
-| Linux | Secret Service (GNOME Keyring / KWallet) |
-| Windows | Credential Manager |
-
-For environments without a keychain (containers, headless servers), specify a fallback via environment variable:
+## Development
 
 ```bash
-export ENBU_BACKEND=text  # Plaintext file (0600 permissions)
+task all/build
+task all/test
+task all/check
 ```
 
-## JSON output
-
-Pass `--json` to any command when invoking enbu from a process such as a VS Code extension.
-The command writes exactly one JSON value to stdout.
-
-```json
-{"ok":true,"data":{"action":"add","environment":"dev","key":"API_KEY"},"warnings":[]}
-{"ok":false,"error":{"message":"secret \"API_KEY\" already exists"}}
-```
-
-Successful commands exit with status 0.
-Errors are also written to stdout as JSON and exit with status 1.
-`enbu pull --json` does not write an `.env` file; it returns the decrypted secrets in `data.secrets`.
-Do not log or persist this response.
-`enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
-Use `enbu auth login --json` for browser authentication.
-
-## How It Works
-
-```
-GHCR (ghcr.io/{owner}/{repo}-enbu)
-├── recipient-{user}-{fingerprint}      ← Public keys (shared across all environments)
-├── secrets-default                     ← Encrypted secrets for default environment
-└── secrets-dev                         ← Encrypted secrets for dev environment
-```
-
-1. `enbu add` — Creates a new secret, encrypts for all recipients' public keys, and pushes as an OCI image artifact
-2. `enbu edit` — Updates an existing secret in the encrypted bundle and pushes the updated artifact
-3. `enbu delete` — Removes a secret from the encrypted bundle and pushes the updated artifact
-4. `enbu pull` — Pulls ciphertext, decrypts with your private key, writes to `.env`
-5. `enbu sync` — Re-encrypts with the current recipient list when members are added or removed
-
-### Authentication & Initialization Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant CLI as enbu CLI
-    participant Auth as auth.enbu.net
-    participant GitHub as GitHub OAuth
-    participant GHCR
-
-    User->>CLI: enbu auth login
-    CLI->>CLI: Start 127.0.0.1 callback listener
-    CLI->>Auth: Create PKCE session
-    Auth-->>CLI: GitHub authorization URL
-    CLI-->>User: Open browser
-    User->>GitHub: Authorize in browser
-    GitHub-->>CLI: Authorization code via loopback callback
-    CLI->>Auth: Exchange code with PKCE verifier
-    Auth-->>CLI: Access token
-    CLI->>CLI: Store token in OS keychain
-    CLI-->>User: ✓ Authenticated
-
-    User->>CLI: enbu init
-    CLI->>CLI: Generate age X25519 key pair
-    CLI->>CLI: Store private key in OS keychain
-    CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
-    Note over GHCR: Recipients are environment-independent
-    GHCR-->>CLI: Done
-    CLI-->>User: ✓ Initialized
-```
-
-### Secret Addition Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant CLI as enbu CLI
-    participant GHCR
-
-    User->>CLI: enbu add KEY VALUE
-    CLI->>GHCR: Fetch all recipient public keys
-    GHCR-->>CLI: Public key list
-    CLI->>CLI: Encrypt with age for all public keys
-    CLI->>GHCR: Push to secrets-default
-    GHCR-->>CLI: Done
-    CLI-->>User: ✓ Secret added
-```
-
-### Member Addition & Sync Flow
-
-```mermaid
-sequenceDiagram
-    participant New as New Member
-    participant Member as Existing Member
-    participant CLI as enbu CLI
-    participant GHCR
-
-    New->>CLI: enbu init (join mode)
-    CLI->>CLI: Generate age key pair
-    CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
-    CLI-->>New: ✓ Key registered
-
-    Member->>CLI: enbu sync
-    CLI->>GHCR: Fetch all recipient public keys
-    GHCR-->>CLI: Public key list
-    CLI->>GHCR: Pull secrets-default
-    GHCR-->>CLI: Ciphertext
-    CLI->>CLI: Decrypt with private key → re-encrypt for all public keys
-    CLI->>GHCR: Update secrets-default
-
-    New->>CLI: enbu pull
-    CLI->>GHCR: Pull secrets-default
-    GHCR-->>CLI: Ciphertext
-    CLI->>CLI: Decrypt with private key
-    CLI-->>New: Write .env
-```
+The three gates include the CLI, TUI, Wails desktop, web frontend, race tests, formatting, linting, and platform builds configured by the repository.

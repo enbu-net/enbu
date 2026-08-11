@@ -1,5 +1,10 @@
 # Audit Design: Operation History Recording and Verification
 
+> [!WARNING]
+> This is a legacy design record. It is superseded by
+> [`artifact-platform-v1.md`](./artifact-platform-v1.md) and is not a contract
+> for the current implementation.
+
 ## Overview
 
 The audit feature records operations on secrets (pull, add, edit, delete, sync, restore) as signed events, providing post-incident traceability and compliance evidence.
