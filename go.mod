@@ -8,15 +8,18 @@ require (
 	charm.land/lipgloss/v2 v2.0.5
 	filippo.io/age v1.3.1
 	github.com/BurntSushi/toml v1.6.0
+	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/google/go-github/v89 v89.0.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.9
 	github.com/wailsapp/wails/v2 v2.13.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.38.0
 	oras.land/oras-go/v2 v2.6.2
 )
 
@@ -57,12 +60,12 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/wailsapp/go-webview2 v1.0.22 // indirect
 	github.com/wailsapp/mimetype v1.4.1 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
@@ -70,5 +73,4 @@ require (
 	golang.org/x/image v0.40.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
 )
