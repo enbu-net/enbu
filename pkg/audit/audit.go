@@ -24,6 +24,7 @@ const (
 	APIVersion         = "artifacts.enbu.net/v1alpha1"
 	Kind               = "AuditEvent"
 	MaxActionBytes     = 128
+	MaxActorBytes      = 512
 	MaxResultCodeBytes = 128
 	MaxFrameBytes      = 256 * 1024
 	auditDomain        = "enbu.net/audit-event/v1\x00"
@@ -43,6 +44,7 @@ type Event struct {
 	Kind             string        `cbor:"kind" json:"kind"`
 	OperationID      artifact.UUID `cbor:"operationID" json:"operationID"`
 	Action           string        `cbor:"action" json:"action"`
+	Actor            string        `cbor:"actor" json:"actor"`
 	DeviceID         artifact.UUID `cbor:"deviceID" json:"deviceID"`
 	CiphertextDigest digest.Digest `cbor:"ciphertextDigest" json:"ciphertextDigest"`
 	ResultCode       string        `cbor:"resultCode" json:"resultCode"`
@@ -56,6 +58,7 @@ type eventBody struct {
 	Kind             string        `cbor:"kind"`
 	OperationID      artifact.UUID `cbor:"operationID"`
 	Action           string        `cbor:"action"`
+	Actor            string        `cbor:"actor"`
 	DeviceID         artifact.UUID `cbor:"deviceID"`
 	CiphertextDigest digest.Digest `cbor:"ciphertextDigest"`
 	ResultCode       string        `cbor:"resultCode"`
@@ -71,7 +74,7 @@ type frame struct {
 
 func (event Event) body() eventBody {
 	return eventBody{APIVersion: event.APIVersion, Kind: event.Kind, OperationID: event.OperationID,
-		Action: event.Action, DeviceID: event.DeviceID, CiphertextDigest: event.CiphertextDigest,
+		Action: event.Action, Actor: event.Actor, DeviceID: event.DeviceID, CiphertextDigest: event.CiphertextDigest,
 		ResultCode: event.ResultCode, Timestamp: event.Timestamp, PreviousDigest: event.PreviousDigest}
 }
 
@@ -87,6 +90,9 @@ func (event Event) Validate() error {
 	}
 	if err := validateText(event.Action, MaxActionBytes, "action"); err != nil {
 		return err
+	}
+	if err := validateText(event.Actor, MaxActorBytes, "actor"); err != nil || !strings.Contains(event.Actor, ":") {
+		return fmt.Errorf("%w: actor must be provider-qualified", ErrInvalidEvent)
 	}
 	if err := validateText(event.ResultCode, MaxResultCodeBytes, "result code"); err != nil {
 		return err
@@ -194,9 +200,18 @@ func NewJournal(path string, sink artifact.ObjectSink, source artifact.ObjectSou
 		return nil, fmt.Errorf("%w: open: %v", ErrJournal, err)
 	}
 	journal := &Journal{file: file, sink: sink, source: source, identity: identity, signer: signer, sync: file.Sync}
+	if err := lockJournalFile(file); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("%w: lock: %v", ErrJournal, err)
+	}
 	if err := journal.recoverFrames(); err != nil {
+		_ = unlockJournalFile(file)
 		_ = file.Close()
 		return nil, err
+	}
+	if err := unlockJournalFile(file); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("%w: unlock: %v", ErrJournal, err)
 	}
 	return journal, nil
 }
@@ -211,6 +226,15 @@ func (journal *Journal) Append(ctx context.Context, event Event) (artifact.Descr
 		return artifact.Descriptor{}, fmt.Errorf("%w: nil context", ErrJournal)
 	}
 	if err := ctx.Err(); err != nil {
+		return artifact.Descriptor{}, err
+	}
+	if err := lockJournalFile(journal.file); err != nil {
+		return artifact.Descriptor{}, fmt.Errorf("%w: lock append: %v", ErrJournal, err)
+	}
+	defer func() { _ = unlockJournalFile(journal.file) }()
+	// Another process may have appended since this Journal was opened. Recover
+	// and refresh the chain head while holding the inter-process lock.
+	if err := journal.recoverFrames(); err != nil {
 		return artifact.Descriptor{}, err
 	}
 	event.PreviousDigest = journal.last
@@ -259,6 +283,10 @@ func (journal *Journal) Replay(ctx context.Context, publicKey ed25519.PublicKey)
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: nil context", ErrJournal)
 	}
+	if err := lockJournalFile(journal.file); err != nil {
+		return nil, fmt.Errorf("%w: lock replay: %v", ErrJournal, err)
+	}
+	defer func() { _ = unlockJournalFile(journal.file) }()
 	if _, err := journal.file.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("%w: seek: %v", ErrJournal, err)
 	}
