@@ -121,6 +121,7 @@ func (v *EncryptedCommitVerifier) VerifyCommit(
 		EncryptedCommit:   announcement.EncryptedCommit,
 		Grant:             announcement.Grant,
 		Value:             verified,
+		openedGrant:       openedGrant,
 	}, nil
 }
 
