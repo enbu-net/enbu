@@ -62,9 +62,7 @@ func TestSecureWriterAbortLeavesDestinationUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "credential")
-	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writePrivateTestFile(t, path, "original")
 
 	writer, err := NewSecureWriter(path)
 	if err != nil {
@@ -136,9 +134,7 @@ func TestSecureWriterReplaceFailureLeavesDestinationUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "credential")
-	if err := os.WriteFile(path, []byte("original"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writePrivateTestFile(t, path, "original")
 
 	writer, err := NewSecureWriter(path)
 	if err != nil {
@@ -174,6 +170,21 @@ func TestSecureWriterParentSyncFailureOccursAfterReplacement(t *testing.T) {
 	assertPrivateContent(t, path, "replacement")
 	if err := writer.Abort(); err != nil {
 		t.Fatalf("Abort after replacement = %v", err)
+	}
+}
+
+func writePrivateTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	writer, err := NewSecureWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Abort() })
+	if _, err := io.WriteString(writer, content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Commit(); err != nil {
+		t.Fatal(err)
 	}
 }
 
