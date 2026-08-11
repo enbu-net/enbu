@@ -45,6 +45,11 @@ func DataDir() (string, error) {
 // directory policy to the final directory. Existing ancestors are validated
 // but never have their permissions changed.
 func EnsurePrivateDir(path string) error {
+	canonical, err := CanonicalizeParentPath(path)
+	if err != nil {
+		return err
+	}
+	path = canonical
 	if err := prepareDirectoryPath(path); err != nil {
 		return err
 	}
@@ -163,9 +168,11 @@ type SecureWriter struct {
 // absolute, clean, non-root path with no existing symlink or platform-specific
 // reparse component.
 func NewSecureWriter(path string) (*SecureWriter, error) {
-	if err := validateUsableAbsolute(path); err != nil {
+	canonical, err := CanonicalizeParentPath(path)
+	if err != nil {
 		return nil, err
 	}
+	path = canonical
 	parentPath := filepath.Dir(path)
 	if parentPath == path {
 		return nil, fmt.Errorf("%w: destination cannot be a filesystem root", ErrUnsafePath)
@@ -417,9 +424,11 @@ func (lock *Lock) Acquire() func() {
 // ValidatePrivateFile verifies that path is a real regular file protected by
 // the native private-file policy.
 func ValidatePrivateFile(path string) error {
-	if err := validateUsableAbsolute(path); err != nil {
+	canonical, err := CanonicalizeParentPath(path)
+	if err != nil {
 		return err
 	}
+	path = canonical
 	if err := validatePathComponents(path, false); err != nil {
 		return err
 	}
@@ -443,6 +452,25 @@ func ValidatePrivateFile(path string) error {
 		return fmt.Errorf("%w: private file changed while opening", ErrUnsafePath)
 	}
 	return validatePrivateOpenedFile(file, false)
+}
+
+// CanonicalizeParentPath resolves only operating-system-owned path aliases in
+// the parent portion of path. It never resolves the final component, so a
+// caller-supplied symlink or reparse target remains rejectable by the pinned
+// open that follows. On macOS this makes the immutable /var, /tmp, and /etc
+// aliases usable without weakening the rule for arbitrary symlinks.
+func CanonicalizeParentPath(path string) (string, error) {
+	if err := validateUsableAbsolute(path); err != nil {
+		return "", err
+	}
+	canonical, err := canonicalizeParentPath(path)
+	if err != nil {
+		return "", err
+	}
+	if err := validateUsableAbsolute(canonical); err != nil {
+		return "", err
+	}
+	return canonical, nil
 }
 
 func validateUsableAbsolute(path string) error {
