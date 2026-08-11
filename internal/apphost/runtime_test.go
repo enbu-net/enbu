@@ -16,6 +16,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/artifact"
 	"github.com/enbu-net/enbu/pkg/cas"
 	"github.com/enbu-net/enbu/pkg/host"
+	"github.com/enbu-net/enbu/pkg/platform"
 	"github.com/enbu-net/enbu/pkg/policy"
 	"github.com/enbu-net/enbu/pkg/registry"
 	"github.com/enbu-net/enbu/pkg/schema"
@@ -550,6 +551,21 @@ func TestRuntimeRejectsLegacyBeforeCredentialOrRegistryMutation(t *testing.T) {
 	credentials.mu.Unlock()
 	if credentialCount != 0 || len(remote.objects) != 0 || len(remote.refs) != 0 {
 		t.Fatal("legacy rejection mutated credentials or registry")
+	}
+}
+
+func TestValidateRootMatchesHostPlatformCanonicalization(t *testing.T) {
+	root := t.TempDir()
+	want, err := platform.CanonicalizeParentPath(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := validateRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("validateRoot() = %q, want host canonical root %q", got, want)
 	}
 }
 
