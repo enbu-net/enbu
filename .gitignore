@@ -3,6 +3,7 @@ tui-demo
 dist/
 .env
 .worktrees/
+.tmp/
 *.enc
 output/
 
