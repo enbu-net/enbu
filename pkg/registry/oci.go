@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/enbu-net/enbu/pkg/artifact"
 	"github.com/opencontainers/go-digest"
@@ -71,7 +72,13 @@ type OCIRemote struct {
 
 	descriptorMu sync.RWMutex
 	descriptors  map[digest.Digest]artifact.Descriptor
-	publishMu    sync.Mutex
+	// retainedDescriptors are learned only after an announcement and Commit
+	// authenticate successfully. Unlike descriptors learned from Push or an
+	// explicitly verified registration, they remain a set: cross-media claims
+	// for identical bytes become ambiguous and fail closed instead of allowing
+	// whichever announcement was listed first to poison digest-global lookup.
+	retainedDescriptors map[digest.Digest]map[artifact.Descriptor]struct{}
+	publishMu           sync.Mutex
 }
 
 var _ Remote = (*OCIRemote)(nil)
@@ -82,7 +89,11 @@ func NewOCIRemote(target OCITarget) (*OCIRemote, error) {
 	if target == nil || (reflect.ValueOf(target).Kind() == reflect.Pointer && reflect.ValueOf(target).IsNil()) {
 		return nil, errors.New("registry: nil OCI target")
 	}
-	return &OCIRemote{target: target, descriptors: make(map[digest.Digest]artifact.Descriptor)}, nil
+	return &OCIRemote{
+		target:              target,
+		descriptors:         make(map[digest.Digest]artifact.Descriptor),
+		retainedDescriptors: make(map[digest.Digest]map[artifact.Descriptor]struct{}),
+	}, nil
 }
 
 // Push streams and verifies one immutable blob. An existing identical object
@@ -151,9 +162,12 @@ func (r *OCIRemote) Open(ctx context.Context, objectDigest digest.Digest) (io.Re
 	if err := ctx.Err(); err != nil {
 		return nil, artifact.Descriptor{}, err
 	}
-	descriptor, ok := r.knownDescriptor(objectDigest)
-	if !ok {
+	descriptor, err := r.lookupDescriptor(objectDigest)
+	if errors.Is(err, ErrObjectNotFound) {
 		return nil, artifact.Descriptor{}, ErrObjectNotFound
+	}
+	if err != nil {
+		return nil, artifact.Descriptor{}, err
 	}
 	reader, err := r.OpenExpected(ctx, descriptor)
 	if err != nil {
@@ -206,9 +220,12 @@ func (r *OCIRemote) Has(ctx context.Context, objectDigest digest.Digest) (bool, 
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	descriptor, ok := r.knownDescriptor(objectDigest)
-	if !ok {
+	descriptor, err := r.lookupDescriptor(objectDigest)
+	if errors.Is(err, ErrObjectNotFound) {
 		return false, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	exists, err := r.target.Exists(ctx, toOCIDescriptor(descriptor))
 	if err != nil {
@@ -281,10 +298,9 @@ func (r *OCIRemote) PublishAnnouncement(
 	}
 	for _, descriptor := range ordered {
 		if err := r.verifyTargetObject(ctx, descriptor); err != nil {
-			return fmt.Errorf("verify retained object %s before tagging: %w", descriptor.Digest, err)
+			return fmt.Errorf("verify retained object %s before metadata publication: %w", descriptor.Digest, err)
 		}
 	}
-
 	configDescriptor := ociAnnouncementConfigDescriptor()
 	if err := r.pushFixedOCIBytes(ctx, configDescriptor, emptyOCIAnnouncementConfig); err != nil {
 		return fmt.Errorf("publish announcement config: %w", err)
@@ -319,6 +335,22 @@ func (r *OCIRemote) PublishAnnouncement(
 	if err := r.pushFixedOCIBytes(ctx, indexDescriptor, indexBytes); err != nil {
 		return fmt.Errorf("publish announcement index: %w", err)
 	}
+	// The index is the only mutable visibility point. Re-read its complete
+	// one-level closure after every child has been uploaded, validate the exact
+	// descriptor set, and verify every retained object before allowing Tag.
+	// This catches registries that accepted an upload but lost, truncated, or
+	// substituted a bootstrap, shard, index, config, or retained object while
+	// the publication was still in flight.
+	if err := r.verifyOCIAnnouncementPublication(
+		ctx,
+		indexDescriptor,
+		index,
+		announcement,
+		decodedAnnouncement,
+		ordered,
+	); err != nil {
+		return fmt.Errorf("verify announcement publication before tagging: %w", err)
+	}
 
 	r.publishMu.Lock()
 	defer r.publishMu.Unlock()
@@ -346,11 +378,17 @@ func (r *OCIRemote) PublishAnnouncement(
 		}
 		return nil
 	}
-	resolved, err = r.target.Resolve(ctx, tag)
+	// Tag is the publication point of no return. Verification after it must not
+	// inherit caller cancellation, otherwise a visible publication could be
+	// reported as canceled. A bounded detached context still catches a registry
+	// that substituted the tag at the visibility boundary.
+	verifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	resolved, err = r.target.Resolve(verifyCtx, tag)
 	if err != nil {
-		return normalizeOCIContextError(ctx, err)
+		return normalizeOCIContextError(verifyCtx, err)
 	}
-	return r.requireIdenticalAnnouncementIndex(ctx, resolved, indexDescriptor, index)
+	return r.requireIdenticalAnnouncementIndex(verifyCtx, resolved, indexDescriptor, index)
 }
 
 // ListAnnouncements enumerates one bounded page of commit-* tags. OCI Tags is
@@ -508,6 +546,92 @@ func (r *OCIRemote) resolveOCIAnnouncementRef(
 	return ref, nil
 }
 
+// registerAnnouncementRetention traverses and registers one OCI retention
+// tree only after Discover has authenticated the announcement and its Commit.
+// ListAnnouncements intentionally does not call this method: listing remains
+// bootstrap-only, and unauthenticated public metadata cannot affect digest-
+// global Open/Has behavior.
+func (r *OCIRemote) registerAnnouncementRetention(
+	ctx context.Context,
+	tag string,
+	expectedDescriptor artifact.Descriptor,
+	expectedAnnouncement CommitAnnouncement,
+	budget *VerificationBudget,
+) error {
+	expectedDigest, err := ParseAnnouncementTag(tag)
+	if err != nil || expectedDescriptor.Digest != expectedDigest {
+		return fmt.Errorf("%w: retention tag binding", ErrInvalidRemoteObject)
+	}
+	if err := budget.ConsumeBytes(int64(len(emptyOCIAnnouncementConfig))); err != nil {
+		return err
+	}
+	config, err := r.fetchOCIBytes(
+		ctx,
+		ociAnnouncementConfigDescriptor(),
+		int64(len(emptyOCIAnnouncementConfig)),
+	)
+	if err != nil {
+		return classifyOCIRetentionError("config", err)
+	}
+	if !bytes.Equal(config, emptyOCIAnnouncementConfig) {
+		return fmt.Errorf("%w: retention config bytes differ", ErrInvalidRemoteObject)
+	}
+
+	rootDescriptor, err := r.target.Resolve(ctx, tag)
+	if err != nil {
+		return classifyOCIRetentionError("resolve root", normalizeOCIContextError(ctx, err))
+	}
+	_, bootstrapDescriptor, shardDescriptors, err := r.loadOCIAnnouncementIndex(ctx, rootDescriptor, budget)
+	if err != nil {
+		return classifyOCIRetentionError("root index", err)
+	}
+	bootstrap, announcementDescriptor, bootstrapRetained, err := r.loadOCIAnnouncementBootstrap(
+		ctx,
+		bootstrapDescriptor,
+		budget,
+	)
+	if err != nil {
+		return classifyOCIRetentionError("bootstrap", err)
+	}
+	if announcementDescriptor != expectedDescriptor {
+		return fmt.Errorf("%w: retention bootstrap announcement binding", ErrInvalidRemoteObject)
+	}
+	announcement, err := r.validateOCIAnnouncementBootstrap(ctx, bootstrap, announcementDescriptor, budget)
+	if err != nil {
+		return classifyOCIRetentionError("bootstrap announcement", err)
+	}
+	if !reflect.DeepEqual(announcement, expectedAnnouncement) {
+		return fmt.Errorf("%w: retention announcement changed after verification", ErrInvalidRemoteObject)
+	}
+
+	retained := append([]artifact.Descriptor(nil), bootstrapRetained...)
+	for index, shardDescriptor := range shardDescriptors {
+		_, shardRetained, _, err := r.loadOCIRetentionShard(ctx, shardDescriptor, budget)
+		if err != nil {
+			return classifyOCIRetentionError(fmt.Sprintf("shard %d", index), err)
+		}
+		if len(retained) > MaxPublicationObjects-len(shardRetained) {
+			return fmt.Errorf("%w: retention closure exceeds %d descriptors", ErrInvalidRemoteObject, MaxPublicationObjects)
+		}
+		retained = append(retained, shardRetained...)
+	}
+	canonical, err := canonicalOCIRetained(retained, announcementDescriptor)
+	if err != nil {
+		return fmt.Errorf("%w: retention closure: %v", ErrInvalidRemoteObject, err)
+	}
+	if err := requireAnnouncementRetention(canonical, expectedAnnouncement); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRemoteObject, err)
+	}
+	return r.rememberRetainedDescriptors(canonical)
+}
+
+func classifyOCIRetentionError(name string, err error) error {
+	if isInvalidOCIObjectError(err) {
+		return fmt.Errorf("%w: invalid OCI retention %s: %v", ErrInvalidRemoteObject, name, err)
+	}
+	return fmt.Errorf("OCI retention %s: %w", name, err)
+}
+
 func (r *OCIRemote) requireIdenticalAnnouncementIndex(
 	ctx context.Context,
 	resolved, expectedDescriptor ocispec.Descriptor,
@@ -555,6 +679,85 @@ func (r *OCIRemote) requireIdenticalAnnouncementIndex(
 	}
 	if !bareOCIDescriptorsEqual(resolved, expectedDescriptor) || !reflect.DeepEqual(actual, expected) {
 		return fmt.Errorf("%w: existing tag names a different index", ErrAnnouncementConflict)
+	}
+	return nil
+}
+
+// verifyOCIAnnouncementPublication performs the last pre-visibility check for
+// a publication. It deliberately walks only the bounded root metadata tree;
+// tag enumeration remains bootstrap-only, while authenticated retention
+// traversal accounts child metadata against the shared discovery budget.
+func (r *OCIRemote) verifyOCIAnnouncementPublication(
+	ctx context.Context,
+	expectedIndexDescriptor ocispec.Descriptor,
+	expectedIndex ocispec.Index,
+	expectedAnnouncementDescriptor artifact.Descriptor,
+	expectedAnnouncement CommitAnnouncement,
+	expectedRetained []artifact.Descriptor,
+) error {
+	configDescriptor := ociAnnouncementConfigDescriptor()
+	config, err := r.fetchOCIBytes(ctx, configDescriptor, int64(len(emptyOCIAnnouncementConfig)))
+	if err != nil {
+		return fmt.Errorf("announcement config: %w", err)
+	}
+	if !bytes.Equal(config, emptyOCIAnnouncementConfig) {
+		return fmt.Errorf("%w: announcement config bytes differ", ErrInvalidRemoteObject)
+	}
+
+	actualIndex, bootstrapDescriptor, shardDescriptors, err := r.loadOCIAnnouncementIndex(
+		ctx,
+		expectedIndexDescriptor,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("announcement index: %w", err)
+	}
+	if !reflect.DeepEqual(actualIndex, expectedIndex) {
+		return fmt.Errorf("%w: announcement index differs from publication plan", ErrInvalidRemoteObject)
+	}
+
+	bootstrap, announcementDescriptor, bootstrapRetained, err := r.loadOCIAnnouncementBootstrap(
+		ctx,
+		bootstrapDescriptor,
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("announcement bootstrap: %w", err)
+	}
+	if announcementDescriptor != expectedAnnouncementDescriptor {
+		return fmt.Errorf("%w: bootstrap announcement descriptor differs", ErrInvalidRemoteObject)
+	}
+	announcement, err := r.validateOCIAnnouncementBootstrap(ctx, bootstrap, announcementDescriptor, nil)
+	if err != nil {
+		return fmt.Errorf("announcement bootstrap closure: %w", err)
+	}
+	if !reflect.DeepEqual(announcement, expectedAnnouncement) {
+		return fmt.Errorf("%w: bootstrap announcement differs", ErrInvalidRemoteObject)
+	}
+
+	retained := append([]artifact.Descriptor(nil), bootstrapRetained...)
+	for index, descriptor := range shardDescriptors {
+		_, shardRetained, _, err := r.loadOCIRetentionShard(ctx, descriptor, nil)
+		if err != nil {
+			return fmt.Errorf("retention shard %d: %w", index, err)
+		}
+		retained = append(retained, shardRetained...)
+		if len(retained) > MaxPublicationObjects {
+			return fmt.Errorf("%w: retained descriptor count exceeds %d", ErrInvalidRemoteObject, MaxPublicationObjects)
+		}
+	}
+	canonical, err := canonicalOCIRetained(retained, announcementDescriptor)
+	if err != nil {
+		return fmt.Errorf("retained descriptor closure: %w", err)
+	}
+	if !reflect.DeepEqual(canonical, expectedRetained) {
+		return fmt.Errorf("%w: retained descriptor closure differs from publication plan", ErrInvalidRemoteObject)
+	}
+
+	for _, descriptor := range canonical {
+		if err := r.verifyTargetObject(ctx, descriptor); err != nil {
+			return fmt.Errorf("retained object %s: %w", descriptor.Digest, err)
+		}
 	}
 	return nil
 }
@@ -812,6 +1015,52 @@ func (r *OCIRemote) knownDescriptor(objectDigest digest.Digest) (artifact.Descri
 	defer r.descriptorMu.RUnlock()
 	descriptor, ok := r.descriptors[objectDigest]
 	return descriptor, ok
+}
+
+func (r *OCIRemote) lookupDescriptor(objectDigest digest.Digest) (artifact.Descriptor, error) {
+	r.descriptorMu.RLock()
+	defer r.descriptorMu.RUnlock()
+	if descriptor, ok := r.descriptors[objectDigest]; ok {
+		return descriptor, nil
+	}
+	candidates := r.retainedDescriptors[objectDigest]
+	if len(candidates) == 0 {
+		return artifact.Descriptor{}, ErrObjectNotFound
+	}
+	if len(candidates) != 1 {
+		return artifact.Descriptor{}, fmt.Errorf("%w: ambiguous retained descriptor for %s", ErrInvalidRemoteObject, objectDigest)
+	}
+	for descriptor := range candidates {
+		return descriptor, nil
+	}
+	return artifact.Descriptor{}, fmt.Errorf("%w: empty retained descriptor set for %s", ErrInvalidRemoteObject, objectDigest)
+}
+
+func (r *OCIRemote) rememberRetainedDescriptors(descriptors []artifact.Descriptor) error {
+	if len(descriptors) > MaxPublicationObjects {
+		return fmt.Errorf("%w: retained descriptor count exceeds %d", ErrInvalidRemoteObject, MaxPublicationObjects)
+	}
+	batch := make(map[digest.Digest]artifact.Descriptor, len(descriptors))
+	for _, descriptor := range descriptors {
+		if err := validateRetainedArtifactDescriptor(descriptor); err != nil {
+			return err
+		}
+		if existing, ok := batch[descriptor.Digest]; ok && existing != descriptor {
+			return fmt.Errorf("%w: conflicting retained descriptor for %s", ErrInvalidRemoteObject, descriptor.Digest)
+		}
+		batch[descriptor.Digest] = descriptor
+	}
+	r.descriptorMu.Lock()
+	defer r.descriptorMu.Unlock()
+	for objectDigest, descriptor := range batch {
+		candidates := r.retainedDescriptors[objectDigest]
+		if candidates == nil {
+			candidates = make(map[artifact.Descriptor]struct{}, 1)
+			r.retainedDescriptors[objectDigest] = candidates
+		}
+		candidates[descriptor] = struct{}{}
+	}
+	return nil
 }
 
 func buildOCIAnnouncementBootstrapManifest(

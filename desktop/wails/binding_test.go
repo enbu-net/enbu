@@ -25,18 +25,18 @@ func TestBindingResultReturnsData(t *testing.T) {
 
 func TestBindingResultReturnsStructuredAppError(t *testing.T) {
 	response := bindingResult[any](nil, apperr.New(
-		apperr.CodeEnvironmentMissing,
-		"environment missing",
-		apperr.Params{"name": "dev"},
+		apperr.CodeConflict,
+		"workspace changed",
+		apperr.Params{"commit": "sha256:abc"},
 	))
 
 	if response.Error == nil {
 		t.Fatal("binding response has no error")
 	}
-	if response.Error.Code != apperr.CodeEnvironmentMissing {
+	if response.Error.Code != apperr.CodeConflict {
 		t.Fatalf("code = %q", response.Error.Code)
 	}
-	if response.Error.Params["name"] != "dev" {
+	if response.Error.Params["commit"] != "sha256:abc" {
 		t.Fatalf("params = %#v", response.Error.Params)
 	}
 }
@@ -72,5 +72,17 @@ func TestBindingResultLogsUnavailableCause(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "opening keyring failed") {
 		t.Fatalf("unavailable cause was not logged: %q", logs.String())
+	}
+}
+
+func TestDesktopBindingHasNoSecretPayloadOrOpenEndedActionMethods(t *testing.T) {
+	typeOf := reflect.TypeOf((*DesktopService)(nil))
+	for _, forbidden := range []string{
+		"ListSecrets", "AddSecret", "EditSecret", "DeleteSecret", "PullSecrets", "ReadConfig", "WriteConfig", "StartHostOperation",
+		"OpenWorkspace", "InitializeWorkspace",
+	} {
+		if _, exists := typeOf.MethodByName(forbidden); exists {
+			t.Fatalf("forbidden Wails method %s is exported", forbidden)
+		}
 	}
 }

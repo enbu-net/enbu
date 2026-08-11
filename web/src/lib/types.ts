@@ -1,57 +1,31 @@
-export interface AuthStatus {
-  authenticated: boolean;
-  username?: string;
-  repo?: { owner: string; name: string };
-}
+export type WorkspaceSnapshot = {
+  frontier: string[];
+  config_revision: string;
+  resource_count: number;
+  commit_count: number;
+};
 
-export interface Recipient {
-  username: string;
-  fingerprint: string;
-  public_key: string;
-}
-
-export interface GUIRepoStatus {
-  selected: boolean;
-  repo?: {
-    path: string;
-    owner: string;
-    repo: string;
-    initialized?: boolean;
-    has_git?: boolean;
-    has_remote?: boolean;
+export type ResourceMetadata = {
+  kind: string;
+  uid: string;
+  schema: { group: string; version: string; kind: string } | string;
+  metadata: {
+    name?: string;
+    labels?: Record<string, string>;
+    annotations?: Record<string, string>;
   };
-}
+  sealed: { revision: string; material: string; grant: string };
+};
 
-export interface RepoStatus {
-  owner: string;
-  repo: string;
-  initialized: boolean;
-}
+export type ResourcePage = { resources: ResourceMetadata[]; next?: string };
+export type CommitPage = { commits: Array<Record<string, unknown>>; next?: string };
+export type OperationSnapshot = {
+  operation_id: string;
+  kind: string;
+  state: "queued" | "running" | "succeeded" | "conflicted" | "failed" | "canceled";
+  next_cursor: number;
+  events?: Array<{ sequence: number; phase: string; completed: number; total: number }>;
+};
 
-export interface InitResult {
-  public_key: string;
-  username: string;
-  environment: string;
-}
-
-export interface Environment {
-  name: string;
-  current: boolean;
-}
-
-export interface SecretsResponse {
-  environment: string;
-  secrets: { key: string; value: string }[];
-}
-
-export interface HistoryEntry {
-  index: number;
-  timestamp: string;
-  tag: string;
-}
-
-export interface DiffResult {
-  added: string[];
-  removed: string[];
-  modified: string[];
-}
+export type OpenWorkspaceResult = { session_id: string; snapshot: WorkspaceSnapshot };
+export type InitializeWorkspaceResult = { session_id: string; operation_id: string };

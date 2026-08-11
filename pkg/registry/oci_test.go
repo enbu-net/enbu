@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -181,6 +180,45 @@ func TestOCIRemoteListRegistersOnlyVerifiedBootstrapDescriptors(t *testing.T) {
 	for _, descriptor := range trusted {
 		if has, err := reader.Has(context.Background(), descriptor.Digest); err != nil || !has {
 			t.Fatalf("registered descriptor %s Has() = %v, %v", descriptor.Digest, has, err)
+		}
+	}
+}
+
+func TestOCIRemoteAuthenticatedRetentionCrossMediaClaimsFailClosed(t *testing.T) {
+	t.Parallel()
+	data := []byte("identical retained bytes")
+	grant := descriptorFor(artifact.MediaTypeAccessGrant, data)
+	material := descriptorFor(artifact.MediaTypeEncryptedMaterial, data)
+	target := newTestOCITarget()
+	for _, descriptor := range []artifact.Descriptor{grant, material} {
+		if err := target.Push(context.Background(), toOCIDescriptor(descriptor), bytes.NewReader(data)); err != nil && !errors.Is(err, errdef.ErrAlreadyExists) {
+			t.Fatal(err)
+		}
+	}
+	remote := mustOCIRemote(t, target)
+	if err := remote.rememberRetainedDescriptors([]artifact.Descriptor{grant}); err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.rememberRetainedDescriptors([]artifact.Descriptor{material}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := remote.Open(context.Background(), grant.Digest); !errors.Is(err, ErrInvalidRemoteObject) {
+		t.Fatalf("ambiguous retained Open() error = %v", err)
+	}
+	if _, err := remote.Has(context.Background(), grant.Digest); !errors.Is(err, ErrInvalidRemoteObject) {
+		t.Fatalf("ambiguous retained Has() error = %v", err)
+	}
+	for _, descriptor := range []artifact.Descriptor{grant, material} {
+		reader, err := remote.OpenExpected(context.Background(), descriptor)
+		if err != nil {
+			t.Fatalf("OpenExpected(%s) error = %v", descriptor.MediaType, err)
+		}
+		if _, err := io.Copy(io.Discard, reader); err != nil {
+			t.Fatal(err)
+		}
+		if err := reader.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
@@ -528,6 +566,24 @@ func TestOCIRemotePostTagValidationDetectsMutation(t *testing.T) {
 	}
 }
 
+func TestOCIRemoteCancellationAfterTagReportsVisibleSuccess(t *testing.T) {
+	t.Parallel()
+	fixture := newRegistryFixture(t)
+	target := newTestOCITarget()
+	remote := mustOCIRemote(t, target)
+	ctx, cancel := context.WithCancel(context.Background())
+	target.setAfterTag(func(string) { cancel() })
+
+	announcement, err := Publish(ctx, remote, fixture.local, publicationClosure(fixture.dependency), fixture.announcement)
+	if err != nil {
+		t.Fatalf("Publish() after successful visibility point = %v", err)
+	}
+	tag, _ := AnnouncementTag(announcement.Digest)
+	if !target.hasTag(tag) {
+		t.Fatal("successful publication tag is not visible")
+	}
+}
+
 func TestOCIRemoteMalformedManifestIsIndependentDiscoveryRejection(t *testing.T) {
 	t.Parallel()
 	fixture := newRegistryFixture(t)
@@ -793,6 +849,82 @@ func TestOCIRemoteMissingRetainedObjectNeverPublishesManifest(t *testing.T) {
 	}
 }
 
+func TestOCIRemoteMissingOrMalformedPublicationMetadataNeverTags(t *testing.T) {
+	t.Parallel()
+	for _, fault := range []postIndexFault{
+		postIndexMissingShard,
+		postIndexMalformedShard,
+		postIndexMissingIndex,
+		postIndexMalformedIndex,
+	} {
+		fault := fault
+		t.Run(fault.String(), func(t *testing.T) {
+			t.Parallel()
+			fixture := newRegistryFixture(t)
+			base := newTestOCITarget()
+			target := &postIndexFaultTarget{testOCITarget: base, fault: fault}
+			remote := mustOCIRemote(t, target)
+
+			announcement, err := Publish(
+				context.Background(),
+				remote,
+				fixture.local,
+				publicationClosure(fixture.dependency),
+				fixture.announcement,
+			)
+			if err == nil {
+				t.Fatal("Publish() succeeded after publication metadata fault")
+			}
+			tag, tagErr := AnnouncementTag(announcement.Digest)
+			if tagErr == nil && base.hasTag(tag) {
+				t.Fatal("faulted publication became visible")
+			}
+			if base.tagCount() != 0 {
+				t.Fatalf("faulted publication installed %d tags", base.tagCount())
+			}
+		})
+	}
+}
+
+func TestOCIRemoteInterruptedChildOrIndexUploadNeverTags(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		mediaType string
+		ordinal   int
+	}{
+		{name: "retention shard", mediaType: ocispec.MediaTypeImageManifest, ordinal: 2},
+		{name: "announcement index", mediaType: ocispec.MediaTypeImageIndex, ordinal: 1},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newRegistryFixture(t)
+			base := newTestOCITarget()
+			target := &interruptingPushOCITarget{
+				testOCITarget: base,
+				mediaType:     test.mediaType,
+				ordinal:       test.ordinal,
+				err:           errors.New("publication interrupted"),
+			}
+			remote := mustOCIRemote(t, target)
+
+			if _, err := Publish(
+				context.Background(),
+				remote,
+				fixture.local,
+				publicationClosure(fixture.dependency),
+				fixture.announcement,
+			); err == nil {
+				t.Fatal("Publish() succeeded after interrupted metadata upload")
+			}
+			if base.tagCount() != 0 {
+				t.Fatalf("interrupted publication installed %d tags", base.tagCount())
+			}
+		})
+	}
+}
+
 func copyRegistryTestObject(
 	t *testing.T,
 	ctx context.Context,
@@ -847,61 +979,132 @@ func TestOCIRemoteCancellation(t *testing.T) {
 	}
 }
 
-func TestOCIRetainedClosureScalesAcrossDeterministicShards(t *testing.T) {
-	// Keep this as a unit-level boundary test: constructing 100k descriptors is
-	// substantially cheaper and more precise than pushing them to a registry,
-	// while exercising the exact publication limit and shard fan-out.
+func TestOCIRetainedClosureAboveFlatLimitHasDeterministicRoot(t *testing.T) {
 	fixture := newRegistryFixture(t)
-	encodedAnnouncement, err := EncodeCommitAnnouncement(fixture.announcement)
-	if err != nil {
-		t.Fatalf("EncodeCommitAnnouncement() error = %v", err)
-	}
-	announcementDescriptor := descriptorFor(artifact.MediaTypeCommitAnnouncement, encodedAnnouncement)
-	retained := make([]artifact.Descriptor, 0, MaxPublicationObjects)
-	retained = append(retained, fixture.grant, fixture.commit)
-	for index := 0; index < MaxPublicationObjects-2; index++ {
-		retained = append(retained, artifact.Descriptor{
-			MediaType: artifact.MediaTypeEncryptedChunk,
-			Digest:    digest.FromString(fmt.Sprintf("retained-%d", index)),
-			Size:      1,
-		})
+	announcement := encodedAnnouncementDescriptor(t, fixture.announcement)
+	// 10,001 non-bootstrap layers force two shards. A flat announcement
+	// manifest could not represent this closure under the 10,000-layer bound.
+	retained := append(
+		[]artifact.Descriptor{fixture.grant, fixture.commit},
+		retainedChunkDescriptors(10_001, "above-flat-limit")...,
+	)
+	forward := buildTestOCIRetentionRoot(t, announcement, fixture.announcement, retained)
+	if len(forward.shards) != 2 || forward.shardLayers[0] != MaxOCIRetentionShardLayers || forward.shardLayers[1] != 1 {
+		t.Fatalf("shards/layers = %d/%v, want 2/[10000 1]", len(forward.shards), forward.shardLayers)
 	}
 
-	ordered, err := canonicalOCIRetained(retained, announcementDescriptor)
-	if err != nil {
-		t.Fatalf("canonicalOCIRetained(max) error = %v", err)
-	}
-	bootstrap, shardRetained, err := partitionOCIRetained(ordered, fixture.announcement)
-	if err != nil {
-		t.Fatalf("partitionOCIRetained(max) error = %v", err)
-	}
-	if len(bootstrap) != 2 || len(shardRetained) != MaxPublicationObjects-2 {
-		t.Fatalf("partition sizes = %d/%d, want 2/%d", len(bootstrap), len(shardRetained), MaxPublicationObjects-2)
-	}
-	if got := retentionShardCount(len(shardRetained)); got != 10 {
-		t.Fatalf("retentionShardCount(max) = %d, want 10", got)
-	}
-
-	// Sorting is independent of caller order, so a reversed closure has the
-	// same bootstrap and every shard boundary.
 	reversed := append([]artifact.Descriptor(nil), retained...)
-	sort.Slice(reversed, func(i, j int) bool { return i > j })
-	reversedOrdered, err := canonicalOCIRetained(reversed, announcementDescriptor)
-	if err != nil {
-		t.Fatalf("canonicalOCIRetained(reversed) error = %v", err)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
 	}
-	if !reflect.DeepEqual(ordered, reversedOrdered) {
-		t.Fatal("canonical retained order changed when input was reversed")
+	backward := buildTestOCIRetentionRoot(t, announcement, fixture.announcement, reversed)
+	if !bareOCIDescriptorsEqual(forward.root, backward.root) || !bytes.Equal(forward.encodedRoot, backward.encodedRoot) {
+		t.Fatalf("root changed with input order: %#v != %#v", forward.root, backward.root)
+	}
+}
+
+func TestOCIRetainedClosureExactMaximumAndMaximumPlusOne(t *testing.T) {
+	// Keep this unit-level: constructing the complete 100k-descriptor metadata
+	// plan exercises the real shard bytes/root while avoiding 100k registry
+	// object uploads in a boundary test.
+	fixture := newRegistryFixture(t)
+	announcement := encodedAnnouncementDescriptor(t, fixture.announcement)
+	chunks := retainedChunkDescriptors(MaxPublicationObjects-2, "publication-maximum")
+	retained := append([]artifact.Descriptor{fixture.grant, fixture.commit}, chunks...)
+	maximum := buildTestOCIRetentionRoot(t, announcement, fixture.announcement, retained)
+	if len(maximum.shards) != 10 || len(maximum.index.Manifests) != MaxOCIAnnouncementIndexManifests {
+		t.Fatalf("maximum root children = %d shards / %d manifests", len(maximum.shards), len(maximum.index.Manifests))
+	}
+	for index, size := range maximum.shardBytes {
+		if size <= 0 || size > MaxOCIAnnouncementManifestBytes {
+			t.Fatalf("maximum shard %d size = %d", index, size)
+		}
 	}
 
-	tooMany := append(append([]artifact.Descriptor(nil), retained...), artifact.Descriptor{
+	closure := PublicationClosure{PayloadChunks: append([]artifact.Descriptor(nil), chunks...)}
+	ordered, err := canonicalPublicationClosure(closure, fixture.grant, fixture.commit)
+	if err != nil || len(ordered)+1 != MaxPublicationObjects {
+		t.Fatalf("canonicalPublicationClosure(max) = %d, %v", len(ordered)+1, err)
+	}
+	overLimit := artifact.Descriptor{
 		MediaType: artifact.MediaTypeEncryptedChunk,
-		Digest:    digest.FromString("retained-over-limit"),
+		Digest:    digest.FromString("publication-over-limit"),
 		Size:      1,
-	})
-	if _, err := canonicalOCIRetained(tooMany, announcementDescriptor); err == nil {
+	}
+	closure.PayloadChunks = append(closure.PayloadChunks, overLimit)
+	if _, err := canonicalPublicationClosure(closure, fixture.grant, fixture.commit); err == nil {
+		t.Fatal("canonicalPublicationClosure(max+1) succeeded")
+	}
+	if _, err := canonicalOCIRetained(append(retained, overLimit), announcement); err == nil {
 		t.Fatal("canonicalOCIRetained(max+1) succeeded")
 	}
+}
+
+type testOCIRetentionRoot struct {
+	root        ocispec.Descriptor
+	encodedRoot []byte
+	index       ocispec.Index
+	shards      []ocispec.Descriptor
+	shardLayers []int
+	shardBytes  []int
+}
+
+func buildTestOCIRetentionRoot(
+	t *testing.T,
+	announcementDescriptor artifact.Descriptor,
+	announcement CommitAnnouncement,
+	retained []artifact.Descriptor,
+) testOCIRetentionRoot {
+	t.Helper()
+	ordered, err := canonicalOCIRetained(retained, announcementDescriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapRetained, shardRetained, err := partitionOCIRetained(ordered, announcement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, bootstrap, err := buildOCIAnnouncementBootstrapManifest(announcementDescriptor, bootstrapRetained)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := testOCIRetentionRoot{}
+	for first := 0; first < len(shardRetained); first += MaxOCIRetentionShardLayers {
+		last := min(first+MaxOCIRetentionShardLayers, len(shardRetained))
+		_, encoded, shard, err := buildOCIRetentionShardManifest(shardRetained[first:last])
+		if err != nil {
+			t.Fatal(err)
+		}
+		result.shards = append(result.shards, shard)
+		result.shardLayers = append(result.shardLayers, last-first)
+		result.shardBytes = append(result.shardBytes, len(encoded))
+	}
+	result.index, result.encodedRoot, result.root, err = buildOCIAnnouncementIndex(bootstrap, result.shards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func encodedAnnouncementDescriptor(t *testing.T, announcement CommitAnnouncement) artifact.Descriptor {
+	t.Helper()
+	encoded, err := EncodeCommitAnnouncement(announcement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return descriptorFor(artifact.MediaTypeCommitAnnouncement, encoded)
+}
+
+func retainedChunkDescriptors(count int, namespace string) []artifact.Descriptor {
+	result := make([]artifact.Descriptor, count)
+	for index := range result {
+		result[index] = artifact.Descriptor{
+			MediaType: artifact.MediaTypeEncryptedChunk,
+			Digest:    digest.FromString(fmt.Sprintf("%s-%d", namespace, index)),
+			Size:      1,
+		}
+	}
+	return result
 }
 
 func mustOCIRemote(t *testing.T, target OCITarget) *OCIRemote {
@@ -1063,6 +1266,114 @@ type terminalErrorReader struct {
 
 func (r terminalErrorReader) Read([]byte) (int, error) {
 	return 0, r.err
+}
+
+type postIndexFault uint8
+
+const (
+	postIndexMissingShard postIndexFault = iota + 1
+	postIndexMalformedShard
+	postIndexMissingIndex
+	postIndexMalformedIndex
+)
+
+func (f postIndexFault) String() string {
+	switch f {
+	case postIndexMissingShard:
+		return "missing shard"
+	case postIndexMalformedShard:
+		return "malformed shard"
+	case postIndexMissingIndex:
+		return "missing index"
+	case postIndexMalformedIndex:
+		return "malformed index"
+	default:
+		return "unknown"
+	}
+}
+
+// postIndexFaultTarget starts faulting only after the root index upload has
+// completed. That proves PublishAnnouncement re-reads the complete metadata
+// closure immediately before installing its tag instead of trusting earlier
+// child upload acknowledgements.
+type postIndexFaultTarget struct {
+	*testOCITarget
+
+	mu     sync.Mutex
+	fault  postIndexFault
+	active bool
+	index  ocispec.Descriptor
+	shard  ocispec.Descriptor
+}
+
+func (t *postIndexFaultTarget) Push(ctx context.Context, descriptor ocispec.Descriptor, source io.Reader) error {
+	if descriptor.MediaType != ocispec.MediaTypeImageIndex {
+		return t.testOCITarget.Push(ctx, descriptor, source)
+	}
+	encoded, err := io.ReadAll(source)
+	if err != nil {
+		return err
+	}
+	if err := t.testOCITarget.Push(ctx, descriptor, bytes.NewReader(encoded)); err != nil {
+		return err
+	}
+	var index ocispec.Index
+	if err := json.Unmarshal(encoded, &index); err != nil {
+		return err
+	}
+	if len(index.Manifests) < 2 {
+		return errors.New("test publication has no retention shard")
+	}
+	t.mu.Lock()
+	t.active = true
+	t.index = descriptor
+	t.shard = index.Manifests[1]
+	t.mu.Unlock()
+	return nil
+}
+
+func (t *postIndexFaultTarget) Fetch(ctx context.Context, descriptor ocispec.Descriptor) (io.ReadCloser, error) {
+	t.mu.Lock()
+	active := t.active
+	fault := t.fault
+	index := t.index
+	shard := t.shard
+	t.mu.Unlock()
+
+	targeted := (fault == postIndexMissingShard || fault == postIndexMalformedShard) &&
+		bareOCIDescriptorsEqual(descriptor, shard) ||
+		(fault == postIndexMissingIndex || fault == postIndexMalformedIndex) &&
+			bareOCIDescriptorsEqual(descriptor, index)
+	if !active || !targeted {
+		return t.testOCITarget.Fetch(ctx, descriptor)
+	}
+	if fault == postIndexMissingShard || fault == postIndexMissingIndex {
+		return nil, errdef.ErrNotFound
+	}
+	return io.NopCloser(bytes.NewReader(bytes.Repeat([]byte{0xff}, int(descriptor.Size)))), nil
+}
+
+type interruptingPushOCITarget struct {
+	*testOCITarget
+
+	mu        sync.Mutex
+	mediaType string
+	ordinal   int
+	observed  int
+	err       error
+}
+
+func (t *interruptingPushOCITarget) Push(ctx context.Context, descriptor ocispec.Descriptor, source io.Reader) error {
+	if descriptor.MediaType == t.mediaType {
+		t.mu.Lock()
+		t.observed++
+		interrupt := t.observed == t.ordinal
+		t.mu.Unlock()
+		if interrupt {
+			return t.err
+		}
+	}
+	return t.testOCITarget.Push(ctx, descriptor, source)
 }
 
 func newTestOCITarget() *testOCITarget {

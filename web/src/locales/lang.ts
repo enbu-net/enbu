@@ -3,132 +3,13 @@ export interface Messages {
     name: string;
     language: string;
   };
-  repo: {
-    selectTitle: string;
-    selectDescription: string;
-    browse: string;
-    pathPlaceholder: string;
-    continue: string;
-    current: string;
-  };
-  init: {
+  workspace: {
     title: string;
-    description: string;
-    action: string;
-    success: string;
-    gitTitle: string;
-    gitDescription: string;
-    gitAction: string;
-    remoteTitle: string;
-    repositoryOwner: string;
-    personalAccount: string;
-    organization: string;
-    repositoryName: string;
-    privateRepository: string;
-    createRemote: string;
-  };
-  dashboard: {
-    secrets: string;
-    environments: string;
-    empty: string;
-    key: string;
-    value: string;
-    add: string;
-    save: string;
-    delete: string;
-    deleteSecretConfirm: string;
-    duplicateKey: string;
-    pull: string;
-    sync: string;
-    pullDescription: string;
-    syncDescription: string;
-    newEnvironment: string;
-    createEnvironment: string;
-    addEnvironment: string;
-    createEnvironmentTitle: string;
-    environmentName: string;
-    secretHeadingSuffix: string;
-    copyKey: string;
-    copyValue: string;
-    keyCopied: string;
-    valueCopied: string;
-    showValue: string;
-    hideValue: string;
-    currentEnvironment: string;
     current: string;
-    activeEnvironment: string;
-    switchEnvironment: string;
-    environmentSecrets: string;
-  };
-  auth: {
-    connect: string;
-    waiting: string;
-    cancel: string;
-    tryAgain: string;
-    expiresIn: string;
-    denied: string;
-    expired: string;
-    error: string;
-    hello: string;
-    signedIn: string;
-    signedOut: string;
-    checkFailed: string;
-    logout: string;
-    authorizeTitle: string;
-    browserInstruction: string;
   };
   common: {
     loading: string;
     error: string;
     close: string;
-  };
-  sidebar: {
-    repositories: string;
-    addRepository: string;
-    noRepositories: string;
-    remove: string;
-    removeConfirm: string;
-    active: string;
-    navigation: string;
-    repositoryOptions: string;
-  };
-  recipients: {
-    title: string;
-    members: string;
-    member: string;
-    empty: string;
-    username: string;
-    fingerprint: string;
-  };
-  config: {
-    title: string;
-    settings: string;
-    edit: string;
-    save: string;
-    cancel: string;
-    saveError: string;
-    invalidToml: string;
-    guiView: string;
-    codeView: string;
-    general: string;
-    defaultEnvironment: string;
-    outputFileNames: string;
-  };
-  transfer: {
-    addTitle: string;
-    pullTitle: string;
-    syncTitle: string;
-    deleteTitle: string;
-    steps: {
-      pull_recipients: string;
-      pull_secrets: string;
-      encrypt: string;
-      push: string;
-      decrypt: string;
-      write: string;
-      reencrypt: string;
-    };
-    done: string;
-    error: string;
   };
 }
