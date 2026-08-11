@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -43,6 +43,7 @@ type Service struct {
 	authMu     sync.Mutex
 	repoPath   string
 	sessions   map[string]*oauthSession
+	hostOps    *HostOperations
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	emitEvent  func(context.Context, string, ...interface{})
 	AppVersion string

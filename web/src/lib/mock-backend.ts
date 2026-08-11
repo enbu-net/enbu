@@ -5,7 +5,7 @@ import type {
   InitResult,
   Recipient,
   SecretsResponse,
-} from "./api";
+} from "./types";
 import type { OAuthStart, OAuthStatus } from "./backend";
 
 const previewUsername = "yashikota";
@@ -214,5 +214,14 @@ export const mockBackend = {
   },
   async appVersion(): Promise<string> {
     return "";
+  },
+  async startHostOperation(_action: string): Promise<{ operation_id: string }> {
+    return { operation_id: "mock-operation" };
+  },
+  async pollHostOperation(operationID: string) {
+    return { operation_id: operationID, events: [], done: true };
+  },
+  async cancelHostOperation(_operationID: string): Promise<void> {
+    // no-op in mock
   },
 };

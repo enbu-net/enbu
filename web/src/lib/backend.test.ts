@@ -107,6 +107,11 @@ beforeEach(() => {
           },
         ),
         GetAppVersion: vi.fn(async () => ok("v0.7.5")),
+        StartHostOperation: vi.fn(async (action: string) => ok({ operation_id: action })),
+        PollHostOperation: vi.fn(async (operationID: string) =>
+          ok({ operation_id: operationID, events: [], done: true }),
+        ),
+        CancelHostOperation: vi.fn(async () => ok(undefined)),
       },
     },
   };

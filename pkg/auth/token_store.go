@@ -23,7 +23,7 @@ const (
 var tokenBackend = func() keystore.Backend {
 	b, err := keystore.New()
 	if err != nil || b == nil {
-		return &keystore.TextBackend{}
+		return &keystore.UnavailableBackend{Err: err}
 	}
 	return b
 }()

@@ -6,7 +6,7 @@ import (
 	"os"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/internal/application"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"

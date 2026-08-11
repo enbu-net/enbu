@@ -6,17 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/artifact"
 	"github.com/zalando/go-keyring"
 )
 
 func TestNew_ExplicitText(t *testing.T) {
 	t.Setenv("ENBU_BACKEND", "text")
-	b, err := New()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if _, ok := b.(*TextBackend); !ok {
-		t.Fatalf("expected *TextBackend, got %T", b)
+	if _, err := New(); !errors.Is(err, artifact.ErrInsecureCredentialStore) {
+		t.Fatalf("New() error = %v, want ErrInsecureCredentialStore", err)
 	}
 }
 

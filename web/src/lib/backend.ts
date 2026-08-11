@@ -1,12 +1,11 @@
 import {
-  api,
   type AuthStatus,
   type Environment,
   type GUIRepoStatus,
   type InitResult,
   type Recipient,
   type SecretsResponse,
-} from "./api";
+} from "./types";
 import {
   createAppError,
   type AppErrorPayload,
@@ -37,6 +36,13 @@ type DesktopOAuthStatus = Omit<OAuthStatus, "error"> & { error?: AppErrorPayload
 export interface RepositoryOwner {
   login: string;
   organization: boolean;
+}
+
+export interface HostOperationStatus {
+  operation_id: string;
+  events: { operation_id: string; sequence: number; phase: string }[];
+  done: boolean;
+  error_code?: string;
 }
 
 type DesktopService = {
@@ -78,6 +84,9 @@ type DesktopService = {
     privateRepository: boolean,
   ) => Promise<GUIRepoStatus["repo"]>;
   GetAppVersion: () => Promise<string>;
+  StartHostOperation: (action: string) => Promise<{ operation_id: string }>;
+  PollHostOperation: (operationID: string) => Promise<HostOperationStatus>;
+  CancelHostOperation: (operationID: string) => Promise<void>;
 };
 
 type DesktopBindingService = {
@@ -133,7 +142,7 @@ const realBackend = {
   async authStatus(): Promise<AuthStatus> {
     const svc = service();
     if (!svc) {
-      return api.auth.status();
+      throw createAppError("unavailable");
     }
     return normalizeAuthStatus(await svc.GetAuthStatus());
   },
@@ -156,20 +165,21 @@ const realBackend = {
     };
   },
   async cancelOAuthLogin(sessionID: string): Promise<void> {
-    await service()?.CancelOAuthLogin(sessionID);
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.CancelOAuthLogin(sessionID);
   },
   async logout(): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.auth.logout();
-      return;
+      throw createAppError("unavailable");
     }
     await svc.Logout();
   },
   async repoStatus(): Promise<GUIRepoStatus> {
     const svc = service();
     if (!svc) {
-      return api.gui.repo();
+      throw createAppError("unavailable");
     }
     const repo = await svc.GetRepoStatus();
     return { selected: Boolean(repo?.path), repo };
@@ -185,7 +195,7 @@ const realBackend = {
   async selectRepository(path: string): Promise<GUIRepoStatus> {
     const svc = service();
     if (!svc) {
-      return api.gui.selectRepo(path);
+      throw createAppError("unavailable");
     }
     const repo = await svc.SelectRepository(path);
     return { selected: Boolean(repo?.path), repo };
@@ -193,7 +203,7 @@ const realBackend = {
   async initialize(): Promise<InitResult> {
     const svc = service();
     if (!svc) {
-      return api.init();
+      throw createAppError("unavailable");
     }
     return svc.Initialize();
   },
@@ -228,82 +238,75 @@ const realBackend = {
   async listEnvironments(): Promise<Environment[]> {
     const svc = service();
     if (!svc) {
-      return (await api.environments.list()).environments;
+      throw createAppError("unavailable");
     }
     return svc.ListEnvironments();
   },
   async createEnvironment(name: string): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.environments.create(name);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.CreateEnvironment(name);
   },
   async switchEnvironment(name: string): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.environments.switch(name);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.SwitchEnvironment(name);
   },
   async renameEnvironment(name: string, newName: string): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.environments.rename(name, newName);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.RenameEnvironment(name, newName);
   },
   async deleteEnvironment(name: string): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.environments.delete(name);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.DeleteEnvironment(name);
   },
   async listSecrets(env = ""): Promise<SecretsResponse> {
-    return service()?.ListSecrets(env) ?? api.secrets.list(env || undefined);
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.ListSecrets(env);
   },
   async addSecret(key: string, value: string, env = ""): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.secrets.add(key, value, env || undefined);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.AddSecret(env, key, value);
   },
   async editSecret(key: string, value: string, env = ""): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.secrets.edit(key, value, env || undefined);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.EditSecret(env, key, value);
   },
   async deleteSecret(key: string, env = ""): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.secrets.delete(key, env || undefined);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.DeleteSecret(env, key);
   },
   async pullSecrets(env = ""): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.secrets.pull(env || undefined);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.PullSecrets(env);
   },
   async syncSecrets(env = ""): Promise<void> {
     const svc = service();
     if (!svc) {
-      await api.secrets.sync(env || undefined);
-      return;
+      throw createAppError("unavailable");
     }
     await svc.SyncSecrets(env);
   },
@@ -319,7 +322,9 @@ const realBackend = {
     }));
   },
   async removeRepository(path: string): Promise<void> {
-    await service()?.RemoveRepository(path);
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.RemoveRepository(path);
   },
   async listRecipients(): Promise<Recipient[]> {
     const svc = service();
@@ -337,10 +342,29 @@ const realBackend = {
     return svc.ReadConfig();
   },
   async writeConfig(content: string): Promise<void> {
-    await service()?.WriteConfig(content);
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.WriteConfig(content);
   },
   async appVersion(): Promise<string> {
-    return (await service()?.GetAppVersion()) ?? "";
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.GetAppVersion();
+  },
+  async startHostOperation(action: string): Promise<{ operation_id: string }> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.StartHostOperation(action);
+  },
+  async pollHostOperation(operationID: string): Promise<HostOperationStatus> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.PollHostOperation(operationID);
+  },
+  async cancelHostOperation(operationID: string): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.CancelHostOperation(operationID);
   },
 };
 

@@ -162,6 +162,20 @@ func (s *DesktopService) GetAppVersion() BindingResponse {
 	return bindingResult(s.service.GetAppVersion(), nil)
 }
 
+func (s *DesktopService) StartHostOperation(action string) BindingResponse {
+	value, err := s.service.StartHostOperation(action)
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) PollHostOperation(operationID string) BindingResponse {
+	value, err := s.service.PollHostOperation(operationID)
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) CancelHostOperation(operationID string) BindingResponse {
+	return bindingError(s.service.CancelHostOperation(operationID))
+}
+
 func (s *DesktopService) GitInit(path string) BindingResponse {
 	value, err := s.service.GitInit(path)
 	return bindingResult(value, err)
