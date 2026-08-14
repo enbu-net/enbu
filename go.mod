@@ -12,7 +12,8 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
-	github.com/wailsapp/wails/v2 v2.13.0
+	github.com/spf13/pflag v1.0.9
+	github.com/wailsapp/wails/v2 v2.14.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/sync v0.22.0
@@ -57,7 +58,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/samber/lo v1.49.1 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tkrajina/go-reflector v0.5.8 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -67,8 +67,8 @@ require (
 	golang.design/x/x11 v0.2.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20250606033433-dcc06ee1d476 // indirect
-	golang.org/x/image v0.40.0 // indirect
+	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
