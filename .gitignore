@@ -5,6 +5,7 @@ dist/
 .worktrees/
 *.enc
 output/
+.tmp/
 
 # Binaries for programs and plugins
 *.exe

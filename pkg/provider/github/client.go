@@ -14,12 +14,15 @@ type Client struct {
 	initErr error
 }
 
+// apiBaseURL is overridden with -ldflags only by local E2E builds.
+var apiBaseURL string
+
 func NewClient(token string) *Client {
-	return NewClientWithHTTPClient(token, http.DefaultClient)
+	return newClient(token, http.DefaultClient, apiBaseURL)
 }
 
 func NewClientWithHTTPClient(token string, httpClient *http.Client) *Client {
-	return newClient(token, httpClient, "")
+	return newClient(token, httpClient, apiBaseURL)
 }
 
 func newClient(token string, httpClient *http.Client, baseURL string) *Client {
