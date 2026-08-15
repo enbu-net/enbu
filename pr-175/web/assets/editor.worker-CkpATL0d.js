@@ -1,0 +1,1 @@
+function e(e){return new Worker(`/enbu/pr-175/web/assets/editor.worker-D9zwrD0f.js`,{name:e?.name})}export{e as default};
