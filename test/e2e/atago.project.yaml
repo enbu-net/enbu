@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nao1215/atago/v0.20.0/schema/atago.project.schema.json
+env:
+  ENBU_BACKEND: text
+  ENBU_TEXT_BACKEND_DIR: "${workdir}/keys"
+  XDG_DATA_HOME: "${workdir}/data"
+  GITHUB_TOKEN: e2e-token
+  GITHUB_ACTOR: e2e-user
+  NO_COLOR: "1"
+defaults:
+  run:
+    sandbox_home: true
+subject:
+  name: enbu
+  artifact: bin/enbu
+  build:
+    shell: true
+    cwd: ../..
+    timeout: 5m
+    command: >-
+      go build -buildvcs=false
+      -ldflags '-X main.Version=e2e-test
+      -X main.registryHost=localhost:5001
+      -X github.com/enbu-net/enbu/pkg/provider/github.apiBaseURL=http://127.0.0.1:18080/
+      -X github.com/enbu-net/enbu/pkg/auth.authEndpoint=http://127.0.0.1:18080
+      -X github.com/enbu-net/enbu/pkg/auth.githubDeviceCodeURL=http://127.0.0.1:18080/login/device/code
+      -X github.com/enbu-net/enbu/pkg/auth.githubTokenURL=http://127.0.0.1:18080/login/oauth/access_token
+      -X github.com/enbu-net/enbu/pkg/auth.githubDeviceURL=http://127.0.0.1:18080/login/device'
+      -o ${artifact} .

@@ -50,7 +50,7 @@ jobs:
           fi
 
   test:
-    name: Test
+    name: Unit and component tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -79,4 +79,75 @@ jobs:
           run-install: false
 
       - name: Test
-        run: task all/test
+        run: |
+          task cli/test/unit
+          task gui/test
+          task scripts/test
+
+  scenario:
+    name: Scenario tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/aquaproj-aqua
+          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
+          restore-keys: |
+            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.62.3
+
+      - uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
+        with:
+          run-install: false
+
+      - name: Scenario tests
+        run: task cli/test/scenario
+
+  e2e:
+    name: CLI E2E tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.local/share/aquaproj-aqua
+          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
+          restore-keys: |
+            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.62.3
+
+      - name: CLI E2E tests
+        run: task cli/test/e2e
+
+      - name: Upload atago failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: atago-failure-artifacts
+          path: .tmp/atago-artifacts
+          if-no-files-found: ignore
