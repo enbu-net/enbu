@@ -8,7 +8,7 @@ permissions: {}
 
 concurrency:
   group: preview-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-web:
