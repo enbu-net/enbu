@@ -98,6 +98,7 @@ type model struct {
 	revealed map[string]bool
 
 	spinner         spinner.Model
+	animateSpinner  bool
 	copyToClipboard func(string) error
 
 	loading bool
@@ -144,6 +145,7 @@ func newModel(a *app.App) *model {
 		app:             a,
 		tab:             tabSecrets,
 		spinner:         sp,
+		animateSpinner:  true,
 		keyInput:        ki,
 		valueInput:      vi,
 		envInput:        ei,
@@ -156,6 +158,9 @@ func newModel(a *app.App) *model {
 }
 
 func (m *model) Init() tea.Cmd {
+	if !m.animateSpinner {
+		return m.loadWorkspace()
+	}
 	return tea.Batch(m.spinner.Tick, m.loadWorkspace())
 }
 
@@ -167,6 +172,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resizeInputs()
 		return m, nil
 	case spinner.TickMsg:
+		if !m.animateSpinner {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd

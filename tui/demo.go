@@ -45,15 +45,21 @@ output = ".env.staging"
 )
 
 func RunDemo() error {
-	m := newModel(nil)
-	m.loading = false
-	m.current = demoCurrent
-	m.repository = "enbu-net/enbu"
-	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
-	m.envs = append([]envItem(nil), demoEnvs...)
+	m := newDemoModel()
 	p := tea.NewProgram(m, demoProgramOptions()...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui demo: %w", err)
 	}
 	return nil
+}
+
+func newDemoModel() *model {
+	m := newModel(nil)
+	m.animateSpinner = false
+	m.loading = false
+	m.current = demoCurrent
+	m.repository = "enbu-net/enbu"
+	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
+	m.envs = append([]envItem(nil), demoEnvs...)
+	return m
 }

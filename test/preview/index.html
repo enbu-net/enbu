@@ -69,10 +69,6 @@
       display: block;
       border: none;
     }
-    .hint {
-      font-size: 0.85rem;
-      color: #8b949e;
-    }
   </style>
 </head>
 <body>
@@ -90,7 +86,6 @@
     </section>
     <section>
       <h2>TUI</h2>
-      <p class="hint" id="tui-hint">Preparing the TUI WebAssembly runtime…</p>
       <div class="tui-frame">
         <iframe data-src="./web/tui.html" title="Interactive enbu TUI preview"></iframe>
       </div>
@@ -116,8 +111,6 @@
     const frames = document.querySelectorAll("iframe[data-src]");
     if (crossOriginIsolated) {
       for (const frame of frames) frame.src = frame.dataset.src;
-      document.getElementById("tui-hint").textContent =
-        "Click the terminal, then use the keyboard or mouse. The demo runs entirely in your browser.";
     } else {
       let reloading = false;
       const reloadWhenControlled = () => {

@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"charm.land/bubbles/v2/spinner"
+)
 
 func TestDemoTerminalDimension(t *testing.T) {
 	tests := []struct {
@@ -22,5 +26,16 @@ func TestDemoTerminalDimension(t *testing.T) {
 				t.Fatalf("demoTerminalDimension(%q, %d) = %d, want %d", tt.value, tt.fallback, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDemoDoesNotScheduleHiddenSpinnerFrames(t *testing.T) {
+	m := newDemoModel()
+	if m.animateSpinner {
+		t.Fatal("demo spinner animation is enabled")
+	}
+	_, cmd := m.Update(spinner.TickMsg{})
+	if cmd != nil {
+		t.Fatal("hidden demo spinner scheduled another frame")
 	}
 }

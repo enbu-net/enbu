@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import { WASI } from "@bjorn3/browser_wasi_shim";
+import { readIovecsOnce, type Iovec, writeIovecsOnce } from "./io-vectors";
 import { collectPollEvents } from "./poll-events";
 import { runtimeEnvironment } from "./runtime-environment";
 
@@ -111,13 +112,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     const view = new DataView(wasi.inst.exports.memory.buffer);
     const bytes = new Uint8Array(wasi.inst.exports.memory.buffer);
     const iovecs = readIovecs(view, iovsPointer, iovsLength);
-    let total = 0;
-    for (const iovec of iovecs) {
-      if (iovec.buf_len === 0) continue;
-      const data = client.onRead(iovec.buf_len);
-      bytes.set(data, iovec.buf);
-      total += data.length;
-    }
+    const total = readIovecsOnce(bytes, iovecs, (length) => client.onRead(length));
     view.setUint32(readPointer, total, true);
     return 0;
   };
@@ -134,13 +129,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     const view = new DataView(wasi.inst.exports.memory.buffer);
     const bytes = new Uint8Array(wasi.inst.exports.memory.buffer);
     const iovecs = readIovecs(view, iovsPointer, iovsLength);
-    let total = 0;
-    for (const iovec of iovecs) {
-      if (iovec.buf_len === 0) continue;
-      const data = Array.from(bytes.slice(iovec.buf, iovec.buf + iovec.buf_len));
-      client.onWrite(data);
-      total += data.length;
-    }
+    const total = writeIovecsOnce(bytes, iovecs, (data) => client.onWrite(data));
     view.setUint32(writtenPointer, total, true);
     return 0;
   };
@@ -161,11 +150,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     );
 }
 
-function readIovecs(
-  view: DataView,
-  pointer: number,
-  length: number,
-): Array<{ buf: number; buf_len: number }> {
+function readIovecs(view: DataView, pointer: number, length: number): Iovec[] {
   return Array.from({ length }, (_, index) => {
     const offset = pointer + index * 8;
     return {
