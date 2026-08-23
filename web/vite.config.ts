@@ -4,7 +4,7 @@ import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import { resolve } from "path";
 
 export default defineConfig(({ mode }) => ({
-  base: mode === "preview" ? (process.env.PREVIEW_BASE ?? "/enbu/main/web/") : undefined,
+  base: mode === "preview" ? (process.env.PREVIEW_BASE ?? "/enbu/web/") : undefined,
   build: {
     outDir: mode === "preview" ? "dist-preview" : "dist",
     rollupOptions: {
