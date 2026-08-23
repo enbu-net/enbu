@@ -6,10 +6,6 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: preview-pages
-  cancel-in-progress: false
-
 jobs:
   build-web:
     name: Build Web Preview
