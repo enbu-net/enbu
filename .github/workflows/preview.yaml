@@ -1,16 +1,10 @@
 name: Preview
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
 
 permissions: {}
-
-concurrency:
-  group: preview-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
 
 jobs:
   build-web:
@@ -43,12 +37,13 @@ jobs:
         run: pnpm run build:preview
         working-directory: web
         env:
-          PREVIEW_BASE: ${{ github.event_name == 'pull_request' && format('/enbu/pr-{0}/web/', github.event.pull_request.number) || '/enbu/main/web/' }}
+          PREVIEW_BASE: /enbu/web/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: web-preview
           path: web/dist-preview
+          retention-days: 1
 
   build-tui:
     name: Build TUI Preview
@@ -105,17 +100,15 @@ jobs:
         with:
           name: tui-preview
           path: test/preview/out
+          retention-days: 1
 
   deploy:
     name: Deploy to GitHub Pages
     needs: [build-web, build-tui]
-    concurrency:
-      group: preview-store
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -149,114 +142,15 @@ jobs:
       - name: Copy cross-origin isolation worker
         run: cp src/test/preview/coi-serviceworker.min.js site/coi-serviceworker.min.js
 
-      - name: Determine deploy path
-        id: path
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "deploy_path=pr-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy_path=main" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Clone or init _preview-store
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code "$REPO_URL" "refs/heads/_preview-store" > /dev/null 2>&1; then
-            git clone --depth 1 --branch _preview-store "$REPO_URL" _preview-store
-          else
-            git init -b _preview-store _preview-store
-            cd _preview-store || exit 1
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git remote add origin "$REPO_URL"
-            git commit --allow-empty -m "chore: init _preview-store"
-          fi
-
-      - name: Update deploy directory in state store
-        env:
-          DEPLOY_PATH: ${{ steps.path.outputs.deploy_path }}
-        run: |
-          rm -rf "_preview-store/${DEPLOY_PATH}"
-          mkdir -p "_preview-store/${DEPLOY_PATH}"
-          cp -r site/. "_preview-store/${DEPLOY_PATH}/"
-
-      - name: Create root index if missing
-        run: |
-          if [ ! -f _preview-store/index.html ]; then
-            cat > _preview-store/index.html <<'HTML'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head><meta charset="UTF-8"><title>enbu Previews</title>
-          <style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;max-width:600px;margin:4rem auto;padding:1rem}a{color:#58a6ff}</style>
-          </head>
-          <body>
-          <h1>enbu Previews</h1>
-          <p><a href="main/">main branch</a></p>
-          </body></html>
-          HTML
-          fi
-
-      - name: Save state store to _preview-store branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEPLOY_PATH: ${{ steps.path.outputs.deploy_path }}
-        run: |
-          cd _preview-store || exit 1
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git remote get-url origin > /dev/null 2>&1; then
-            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          else
-            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          fi
-          git add -A
-          git diff --staged --quiet || git commit -m "preview: update ${DEPLOY_PATH}"
-          git push origin _preview-store:_preview-store
-
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: _preview-store
+          path: site
+          retention-days: 1
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
-
-  comment:
-    name: Post Preview URL
-    needs: deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.event_name == 'pull_request'
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Find existing comment
-        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
-        id: find
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: github-actions[bot]
-          body-includes: "<!-- enbu-preview -->"
-
-      - name: Post or update comment
-        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
-        with:
-          comment-id: ${{ steps.find.outputs.comment-id }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            <!-- enbu-preview -->
-            ## Preview
-
-            https://enbu-net.github.io/enbu/pr-${{ github.event.pull_request.number }}/
-
-            > Updated at ${{ github.sha }}
-          edit-mode: replace
