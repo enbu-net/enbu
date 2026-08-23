@@ -146,7 +146,7 @@ func TestOAuthLoginEndToEnd(t *testing.T) {
 	var redirectURI string
 	var challenge string
 	var mu sync.Mutex
-	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	broker, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/oauth/authorize":
@@ -198,9 +198,7 @@ func TestOAuthLoginEndToEnd(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer broker.Close()
-
-	client := newOAuthClient(broker.URL, broker.Client())
+	client := newOAuthClient(broker.URL, httpClient)
 	token, err := client.login(context.Background(), func(string) error {
 		mu.Lock()
 		callbackURL := redirectURI
@@ -221,7 +219,7 @@ func TestOAuthLoginEndToEnd(t *testing.T) {
 
 func TestOAuthLoginReturnsWhenBrowserFails(t *testing.T) {
 	state := strings.Repeat("b", 64)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/oauth/authorize" {
 			w.WriteHeader(http.StatusNotFound)
@@ -236,9 +234,7 @@ func TestOAuthLoginReturnsWhenBrowserFails(t *testing.T) {
 			State:        state,
 		})
 	}))
-	defer server.Close()
-
-	client := newOAuthClient(server.URL, server.Client())
+	client := newOAuthClient(server.URL, httpClient)
 	_, err := client.login(context.Background(), func(string) error { return io.ErrClosedPipe })
 	if err == nil || err.Error() != "opening browser failed" {
 		t.Fatalf("login error = %v", err)
@@ -247,7 +243,7 @@ func TestOAuthLoginReturnsWhenBrowserFails(t *testing.T) {
 
 func TestOAuthLoginCancellationWhileWaitingForCallback(t *testing.T) {
 	state := strings.Repeat("d", 64)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/oauth/authorize" {
 			w.WriteHeader(http.StatusNotFound)
@@ -262,10 +258,8 @@ func TestOAuthLoginCancellationWhileWaitingForCallback(t *testing.T) {
 			State:        state,
 		})
 	}))
-	defer server.Close()
-
 	ctx, cancel := context.WithCancel(context.Background())
-	client := newOAuthClient(server.URL, server.Client())
+	client := newOAuthClient(server.URL, httpClient)
 	_, err := client.login(ctx, func(string) error {
 		cancel()
 		return nil
@@ -276,14 +270,11 @@ func TestOAuthLoginCancellationWhileWaitingForCallback(t *testing.T) {
 }
 
 func TestOAuthHTTPStagesHonorTimeouts(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(200 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusGatewayTimeout)
 	}))
-	defer server.Close()
-
-	httpClient := server.Client()
 	httpClient.Timeout = 25 * time.Millisecond
 	client := newOAuthClient(server.URL, httpClient)
 	started := time.Now()
@@ -303,14 +294,12 @@ func TestOAuthHTTPStagesHonorTimeouts(t *testing.T) {
 
 func TestOAuthErrorsDoNotExposeSecrets(t *testing.T) {
 	secrets := []string{"authorization-code", "pkce-verifier", "redirect-uri", "access-token"}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = io.WriteString(w, strings.Join(secrets, " "))
 	}))
-	defer server.Close()
-
-	client := newOAuthClient(server.URL, server.Client())
+	client := newOAuthClient(server.URL, httpClient)
 	_, err := client.exchange(context.Background(), exchangeRequest{
 		Code: secrets[0], CodeVerifier: secrets[1], RedirectURI: secrets[2],
 	})
@@ -326,7 +315,7 @@ func TestOAuthErrorsDoNotExposeSecrets(t *testing.T) {
 
 func TestExchangeRetriesOnlyRateLimit(t *testing.T) {
 	calls := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.Header().Set("Content-Type", "application/json")
 		if calls == 1 {
@@ -340,20 +329,18 @@ func TestExchangeRetriesOnlyRateLimit(t *testing.T) {
 			Scope:       "repo read:org write:packages read:packages",
 		})
 	}))
-	defer server.Close()
-	client := newOAuthClient(server.URL, server.Client())
+	client := newOAuthClient(server.URL, httpClient)
 	_, err := client.exchange(context.Background(), exchangeRequest{})
 	if err != nil || calls != 2 {
 		t.Fatalf("exchange err=%v calls=%d", err, calls)
 	}
 
 	calls = 0
-	badGatewayServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	badGatewayServer, badGatewayHTTPClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusBadGateway)
 	}))
-	defer badGatewayServer.Close()
-	client = newOAuthClient(badGatewayServer.URL, badGatewayServer.Client())
+	client = newOAuthClient(badGatewayServer.URL, badGatewayHTTPClient)
 	_, err = client.exchange(context.Background(), exchangeRequest{})
 	if err == nil || calls != 1 {
 		t.Fatalf("5xx exchange err=%v calls=%d", err, calls)
