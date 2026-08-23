@@ -162,7 +162,12 @@ async function startSession(register: RegisterCleanup): Promise<void> {
   const tty = new TtyServer(slave);
   tty.start(worker);
   register(() => tty.stop());
-  worker.postMessage({ type: "init", imageURL: resolveRuntimeURL(window.location.href) });
+  worker.postMessage({
+    type: "init",
+    imageURL: resolveRuntimeURL(window.location.href),
+    cols: terminal.cols,
+    rows: terminal.rows,
+  });
   await workerReady;
   terminal.focus();
   statusElement.textContent = terminal.hasMouseTracking()

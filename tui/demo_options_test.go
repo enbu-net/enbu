@@ -1,3 +1,5 @@
+//go:build !wasip1
+
 package tui
 
 import "testing"

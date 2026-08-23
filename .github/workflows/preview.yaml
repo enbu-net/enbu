@@ -102,6 +102,7 @@ jobs:
         with:
           sparse-checkout: |
             test/preview/index.html
+            test/preview/preview-metadata.js
             test/preview/coi-serviceworker.min.js
           sparse-checkout-cone-mode: false
           path: src
@@ -109,18 +110,21 @@ jobs:
 
       - run: cp src/test/preview/index.html site/index.html
 
+      - run: cp src/test/preview/preview-metadata.js site/preview-metadata.js
+
       - name: Write preview environment metadata
         env:
           PREVIEW_PR: ${{ github.event.pull_request.number }}
+          PREVIEW_PR_URL: ${{ github.event.pull_request.html_url }}
           PREVIEW_REF: ${{ github.head_ref }}
           PREVIEW_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           jq -n \
-            --arg environment "GitHub Pages PR Preview" \
             --arg pullRequest "$PREVIEW_PR" \
+            --arg pullRequestURL "$PREVIEW_PR_URL" \
             --arg ref "$PREVIEW_REF" \
             --arg sha "$PREVIEW_SHA" \
-            '{environment: $environment, pullRequest: $pullRequest, ref: $ref, sha: $sha}' \
+            '{pullRequest: $pullRequest, pullRequestURL: $pullRequestURL, ref: $ref, sha: $sha}' \
             > site/preview-metadata.json
 
       - name: Copy cross-origin isolation worker
