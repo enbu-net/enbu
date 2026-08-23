@@ -20,6 +20,7 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
+      flex-wrap: wrap;
     }
     header h1 { font-size: 1.1rem; font-weight: 600; }
     header .badge {
@@ -28,6 +29,16 @@
       border-radius: 999px;
       background: #1f6feb;
       color: #fff;
+    }
+    header .environment {
+      color: #3fb950;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    header .revision {
+      color: #8b949e;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.75rem;
     }
     main { max-width: 1200px; margin: 0 auto; padding: 2rem; display: grid; gap: 2rem; }
     section { display: grid; gap: 1rem; }
@@ -71,7 +82,9 @@
 <body>
   <header>
     <h1>enbu</h1>
+    <span class="environment" id="environment-label">Local preview</span>
     <span class="badge" id="ref-badge">preview</span>
+    <span class="revision" id="revision-label"></span>
   </header>
   <main>
     <section>
@@ -82,7 +95,7 @@
     </section>
     <section>
       <h2>TUI</h2>
-      <p class="hint" id="tui-hint">Preparing the secure browser runtime…</p>
+      <p class="hint" id="tui-hint">Preparing the TUI WebAssembly runtime…</p>
       <div class="tui-frame">
         <iframe data-src="./web/tui.html" title="Interactive enbu TUI preview"></iframe>
       </div>
@@ -92,6 +105,19 @@
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (ref) document.getElementById("ref-badge").textContent = ref;
+
+    fetch("./preview-metadata.json")
+      .then((response) => {
+        if (!response.ok) throw new Error(`preview metadata: ${response.status}`);
+        return response.json();
+      })
+      .then((metadata) => {
+        document.getElementById("environment-label").textContent = metadata.environment;
+        document.getElementById("ref-badge").textContent = `PR #${metadata.pullRequest}`;
+        document.getElementById("revision-label").textContent =
+          `${metadata.ref} · ${metadata.sha.slice(0, 7)}`;
+      })
+      .catch(() => {});
 
     const frames = document.querySelectorAll("iframe[data-src]");
     if (crossOriginIsolated) {
