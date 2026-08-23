@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
@@ -37,5 +38,22 @@ func TestDemoDoesNotScheduleHiddenSpinnerFrames(t *testing.T) {
 	_, cmd := m.Update(spinner.TickMsg{})
 	if cmd != nil {
 		t.Fatal("hidden demo spinner scheduled another frame")
+	}
+}
+
+func TestDemoTabsSwitchWithoutLoadingFrames(t *testing.T) {
+	m := newDemoModel()
+
+	_, cmd := m.Update(keyMsg("2"))
+	if cmd != nil || m.loading || m.tab != tabMembers {
+		t.Fatalf("members tab: cmd=%v loading=%v tab=%d", cmd != nil, m.loading, m.tab)
+	}
+	if view := m.View().Content; !strings.Contains(view, "octocat") || strings.Contains(view, "Loading") {
+		t.Fatalf("members view is not ready: %q", view)
+	}
+
+	_, cmd = m.Update(keyMsg("1"))
+	if cmd != nil || m.loading || m.tab != tabSecrets {
+		t.Fatalf("secrets tab: cmd=%v loading=%v tab=%d", cmd != nil, m.loading, m.tab)
 	}
 }

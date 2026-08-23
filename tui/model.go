@@ -99,6 +99,7 @@ type model struct {
 
 	spinner         spinner.Model
 	animateSpinner  bool
+	staticDemo      bool
 	copyToClipboard func(string) error
 
 	loading bool
@@ -548,9 +549,15 @@ func (m *model) activateTab(tab tabState) (tea.Model, tea.Cmd) {
 	m.status = ""
 	switch tab {
 	case tabMembers:
+		if m.staticDemo {
+			return m, nil
+		}
 		m.loading = true
 		return m, m.loadRecipients()
 	case tabSettings:
+		if m.staticDemo {
+			return m, nil
+		}
 		m.loading = true
 		return m, m.loadConfig()
 	default:

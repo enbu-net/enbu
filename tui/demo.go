@@ -56,10 +56,14 @@ func RunDemo() error {
 func newDemoModel() *model {
 	m := newModel(nil)
 	m.animateSpinner = false
+	m.staticDemo = true
 	m.loading = false
 	m.current = demoCurrent
 	m.repository = "enbu-net/enbu"
 	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
 	m.envs = append([]envItem(nil), demoEnvs...)
+	m.recipients = append([]app.RecipientInfo(nil), demoRecipients...)
+	m.configContent = demoConfigContent
+	m.configDraft = demoConfigContent
 	return m
 }

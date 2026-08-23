@@ -2,6 +2,7 @@
 
 import { WASI } from "@bjorn3/browser_wasi_shim";
 import { readIovecsOnce, type Iovec, writeIovecsOnce } from "./io-vectors";
+import { OutputBuffer } from "./output-buffer";
 import { collectPollEvents } from "./poll-events";
 import { runtimeEnvironment } from "./runtime-environment";
 
@@ -9,6 +10,7 @@ type TtyClientLike = {
   onRead(length: number): number[];
   onWrite(data: number[]): void;
   onWaitForReadable(timeout: number): boolean;
+  flushOutput(): void;
 };
 
 const scope = self;
@@ -43,6 +45,7 @@ scope.onmessage = (event: MessageEvent<SharedArrayBuffer | InitMessage>) => {
 class TtyClient implements TtyClientLike {
   private readonly control: Int32Array;
   private readonly data: Int32Array;
+  private readonly output = new OutputBuffer();
 
   constructor(shared: SharedArrayBuffer) {
     this.control = new Int32Array(shared, 0, 1);
@@ -50,17 +53,25 @@ class TtyClient implements TtyClientLike {
   }
 
   onRead(length: number): number[] {
+    this.flushOutput();
     this.request({ ttyRequestType: "read", length });
     return Array.from(this.data.slice(1, this.data[0] + 1));
   }
 
   onWrite(data: number[]): void {
-    this.request({ ttyRequestType: "write", buf: data });
+    this.output.append(data);
   }
 
   onWaitForReadable(timeout: number): boolean {
+    this.flushOutput();
     this.request({ ttyRequestType: "poll", timeout });
     return this.data[0] === 1;
+  }
+
+  flushOutput(): void {
+    const output = this.output.drain();
+    if (!output) return;
+    scope.postMessage({ ttyRequestType: "write", buf: output }, [output.buffer]);
   }
 
   private request(message: object): void {
@@ -85,11 +96,15 @@ async function run(message: InitMessage, client: TtyClientLike): Promise<void> {
     wasi_snapshot_preview1: wasi.wasiImport,
   });
   scope.postMessage({ type: "ready" });
-  wasi.start(
-    instance.instance as unknown as {
-      exports: { memory: WebAssembly.Memory; _start(): unknown };
-    },
-  );
+  try {
+    wasi.start(
+      instance.instance as unknown as {
+        exports: { memory: WebAssembly.Memory; _start(): unknown };
+      },
+    );
+  } finally {
+    client.flushOutput();
+  }
 }
 
 function patchSocketStubs(wasi: WASI): void {
