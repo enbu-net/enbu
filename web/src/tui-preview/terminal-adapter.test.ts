@@ -28,7 +28,7 @@ describe("createPtyTerminal", () => {
 });
 
 describe("resolveRuntimeURL", () => {
-  it("resolves the VM beside the preview root", () => {
+  it("resolves the WASI module beside the preview root", () => {
     expect(resolveRuntimeURL("https://example.test/enbu/pr-35/web/tui.html")).toBe(
       "https://example.test/enbu/pr-35/tui/out.wasm.gz",
     );

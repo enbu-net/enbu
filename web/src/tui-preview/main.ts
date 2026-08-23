@@ -87,7 +87,7 @@ async function startSession(register: RegisterCleanup): Promise<void> {
   terminal.loadAddon(fit);
   terminal.open(terminalElement);
   // RunDemo requests all-motion + SGR mouse reporting. Prime ghostty-web's
-  // input gate as well so early mode sequences emitted while the VM boots are
+  // input gate as well so early mode sequences emitted while WASI starts are
   // not missed.
   terminal.write("\x1b[?1003h\x1b[?1006h");
   terminal.attachCustomWheelEventHandler(() => terminal.hasMouseTracking());
@@ -129,7 +129,7 @@ async function startSession(register: RegisterCleanup): Promise<void> {
     }
   ).activate(createPtyTerminal(terminal));
 
-  statusElement.textContent = "Booting enbu…";
+  statusElement.textContent = "Starting enbu…";
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   register(() => worker.terminate());
 

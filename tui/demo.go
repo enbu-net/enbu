@@ -51,7 +51,7 @@ func RunDemo() error {
 	m.repository = "enbu-net/enbu"
 	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
 	m.envs = append([]envItem(nil), demoEnvs...)
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, demoProgramOptions()...)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui demo: %w", err)
 	}

@@ -65,9 +65,9 @@ class TtyClient implements TtyClientLike {
 
 async function run(imageURL: string, client: TtyClientLike): Promise<void> {
   const response = await fetch(imageURL, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`Failed to load browser VM (${response.status})`);
+  if (!response.ok) throw new Error(`Failed to load TUI WASI module (${response.status})`);
 
-  if (!response.body) throw new Error("The browser VM response did not include a body");
+  if (!response.body) throw new Error("The TUI WASI response did not include a body");
   const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
   const wasm = await new Response(decompressed).arrayBuffer();
   const wasi = new WASI([], ["TERM=xterm-256color", "COLORTERM=truecolor"], []);
