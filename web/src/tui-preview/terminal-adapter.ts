@@ -1,22 +1,29 @@
 import type { Terminal } from "ghostty-web";
 
-type Disposable = { dispose(): void };
-
-export type PtyTerminal = {
-  write(data: string | Uint8Array, callback?: () => void): void;
-  onData(listener: (data: string) => void): Disposable;
-  onBinary(listener: (data: string) => void): Disposable;
-  onResize(listener: (size: { cols: number; rows: number }) => void): Disposable;
+const navigationSequences: Readonly<Record<string, string>> = {
+  ArrowUp: "\x1b[A",
+  ArrowDown: "\x1b[B",
+  ArrowRight: "\x1b[C",
+  ArrowLeft: "\x1b[D",
+  Home: "\x1b[H",
+  End: "\x1b[F",
+  PageUp: "\x1b[5~",
+  PageDown: "\x1b[6~",
 };
 
-/** Adds the one xterm.js event that ghostty-web does not currently expose. */
-export function createPtyTerminal(terminal: Terminal): PtyTerminal {
-  return {
-    write: (data, callback) => terminal.write(data, callback),
-    onData: (listener) => terminal.onData(listener),
-    onBinary: () => ({ dispose() {} }),
-    onResize: (listener) => terminal.onResize(listener),
-  };
+/**
+ * Ghostty's enhanced key encoder and Bubble Tea can negotiate different arrow
+ * encodings. The preview only needs the portable VT sequences, so intercept
+ * navigation keys before that negotiation and feed an unambiguous sequence.
+ */
+export function attachNavigationKeyReporting(terminal: Terminal): void {
+  terminal.attachCustomKeyEventHandler((event) => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return false;
+    const sequence = navigationSequences[event.key];
+    if (!sequence) return false;
+    terminal.input(sequence, true);
+    return true;
+  });
 }
 
 export function resolveRuntimeURL(pageURL: string): string {

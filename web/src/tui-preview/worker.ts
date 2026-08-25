@@ -1,20 +1,29 @@
 /// <reference lib="webworker" />
 
 import { WASI } from "@bjorn3/browser_wasi_shim";
+import { readIovecsOnce, type Iovec, writeIovecsOnce } from "./io-vectors";
+import { OutputBuffer } from "./output-buffer";
 import { collectPollEvents } from "./poll-events";
+import { runtimeEnvironment } from "./runtime-environment";
 
 type TtyClientLike = {
   onRead(length: number): number[];
   onWrite(data: number[]): void;
   onWaitForReadable(timeout: number): boolean;
+  flushOutput(): void;
 };
 
 const scope = self;
 let ttyClient: TtyClientLike | undefined;
 
-scope.onmessage = (
-  event: MessageEvent<SharedArrayBuffer | { type: string; imageURL?: string }>,
-) => {
+type InitMessage = {
+  type: "init";
+  imageURL: string;
+  cols: number;
+  rows: number;
+};
+
+scope.onmessage = (event: MessageEvent<SharedArrayBuffer | InitMessage>) => {
   if (event.data instanceof SharedArrayBuffer) {
     ttyClient = new TtyClient(event.data);
     return;
@@ -27,7 +36,7 @@ scope.onmessage = (
     return;
   }
 
-  void run(event.data.imageURL, ttyClient).catch((error: unknown) => {
+  void run(event.data, ttyClient).catch((error: unknown) => {
     console.error("TUI preview worker failed", error);
     scope.postMessage({ type: "error" });
   });
@@ -36,6 +45,7 @@ scope.onmessage = (
 class TtyClient implements TtyClientLike {
   private readonly control: Int32Array;
   private readonly data: Int32Array;
+  private readonly output = new OutputBuffer();
 
   constructor(shared: SharedArrayBuffer) {
     this.control = new Int32Array(shared, 0, 1);
@@ -43,17 +53,25 @@ class TtyClient implements TtyClientLike {
   }
 
   onRead(length: number): number[] {
+    this.flushOutput();
     this.request({ ttyRequestType: "read", length });
     return Array.from(this.data.slice(1, this.data[0] + 1));
   }
 
   onWrite(data: number[]): void {
-    this.request({ ttyRequestType: "write", buf: data });
+    this.output.append(data);
   }
 
   onWaitForReadable(timeout: number): boolean {
+    this.flushOutput();
     this.request({ ttyRequestType: "poll", timeout });
     return this.data[0] === 1;
+  }
+
+  flushOutput(): void {
+    const output = this.output.drain();
+    if (!output) return;
+    scope.postMessage({ ttyRequestType: "write", buf: output }, [output.buffer]);
   }
 
   private request(message: object): void {
@@ -63,14 +81,14 @@ class TtyClient implements TtyClientLike {
   }
 }
 
-async function run(imageURL: string, client: TtyClientLike): Promise<void> {
-  const response = await fetch(imageURL, { credentials: "same-origin" });
-  if (!response.ok) throw new Error(`Failed to load browser VM (${response.status})`);
+async function run(message: InitMessage, client: TtyClientLike): Promise<void> {
+  const response = await fetch(message.imageURL, { credentials: "same-origin" });
+  if (!response.ok) throw new Error(`Failed to load TUI WASI module (${response.status})`);
 
-  if (!response.body) throw new Error("The browser VM response did not include a body");
+  if (!response.body) throw new Error("The TUI WASI response did not include a body");
   const decompressed = response.body.pipeThrough(new DecompressionStream("gzip"));
   const wasm = await new Response(decompressed).arrayBuffer();
-  const wasi = new WASI([], ["TERM=xterm-256color", "COLORTERM=truecolor"], []);
+  const wasi = new WASI([], runtimeEnvironment(message.cols, message.rows), []);
   patchTerminalIO(wasi, client);
   patchSocketStubs(wasi);
 
@@ -78,11 +96,15 @@ async function run(imageURL: string, client: TtyClientLike): Promise<void> {
     wasi_snapshot_preview1: wasi.wasiImport,
   });
   scope.postMessage({ type: "ready" });
-  wasi.start(
-    instance.instance as unknown as {
-      exports: { memory: WebAssembly.Memory; _start(): unknown };
-    },
-  );
+  try {
+    wasi.start(
+      instance.instance as unknown as {
+        exports: { memory: WebAssembly.Memory; _start(): unknown };
+      },
+    );
+  } finally {
+    client.flushOutput();
+  }
 }
 
 function patchSocketStubs(wasi: WASI): void {
@@ -105,13 +127,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     const view = new DataView(wasi.inst.exports.memory.buffer);
     const bytes = new Uint8Array(wasi.inst.exports.memory.buffer);
     const iovecs = readIovecs(view, iovsPointer, iovsLength);
-    let total = 0;
-    for (const iovec of iovecs) {
-      if (iovec.buf_len === 0) continue;
-      const data = client.onRead(iovec.buf_len);
-      bytes.set(data, iovec.buf);
-      total += data.length;
-    }
+    const total = readIovecsOnce(bytes, iovecs, (length) => client.onRead(length));
     view.setUint32(readPointer, total, true);
     return 0;
   };
@@ -128,13 +144,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     const view = new DataView(wasi.inst.exports.memory.buffer);
     const bytes = new Uint8Array(wasi.inst.exports.memory.buffer);
     const iovecs = readIovecs(view, iovsPointer, iovsLength);
-    let total = 0;
-    for (const iovec of iovecs) {
-      if (iovec.buf_len === 0) continue;
-      const data = Array.from(bytes.slice(iovec.buf, iovec.buf + iovec.buf_len));
-      client.onWrite(data);
-      total += data.length;
-    }
+    const total = writeIovecsOnce(bytes, iovecs, (data) => client.onWrite(data));
     view.setUint32(writtenPointer, total, true);
     return 0;
   };
@@ -155,11 +165,7 @@ function patchTerminalIO(wasi: WASI, client: TtyClientLike): void {
     );
 }
 
-function readIovecs(
-  view: DataView,
-  pointer: number,
-  length: number,
-): Array<{ buf: number; buf_len: number }> {
+function readIovecs(view: DataView, pointer: number, length: number): Iovec[] {
   return Array.from({ length }, (_, index) => {
     const offset = pointer + index * 8;
     return {

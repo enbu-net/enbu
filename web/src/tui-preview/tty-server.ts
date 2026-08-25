@@ -1,13 +1,3 @@
-type Disposable = { dispose(): void };
-
-type Slave = {
-  readonly writable: boolean;
-  onReadable(listener: () => void): Disposable;
-  onWritable(listener: () => void): Disposable;
-  read(length?: number): number[];
-  write(data: number[]): void;
-};
-
 type WorkerLike = {
   addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
   removeEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;
@@ -16,34 +6,37 @@ type WorkerLike = {
 
 type TtyRequest =
   | { ttyRequestType: "read"; length: number }
-  | { ttyRequestType: "write"; buf: number[] }
+  | { ttyRequestType: "write"; buf: Uint8Array | number[] }
   | { ttyRequestType: "poll"; timeout: number };
 
 const sharedBufferBytes = 260;
+const encoder = new TextEncoder();
 
+/**
+ * Bridges raw terminal input and output to WASI. Output never participates in
+ * the SharedArrayBuffer handshake: blocking the worker for every fd_write was
+ * both unnecessary and the dominant interaction cost.
+ */
 export class TtyServer {
-  private readonly slave: Slave;
+  private readonly writeOutput: (data: Uint8Array) => void;
   private readonly shared = new SharedArrayBuffer(sharedBufferBytes);
   private readonly control = new Int32Array(this.shared, 0, 1);
   private readonly data = new Int32Array(this.shared, 4);
-  private readonly disposables: Disposable[];
-  private readonly fromWorker: number[] = [];
   private readonly toWorker: number[] = [];
   private state: "idle" | "read" | "poll" = "idle";
   private readLength = 0;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private stopWorker: (() => void) | undefined;
 
-  constructor(slave: Slave) {
-    this.slave = slave;
-    this.disposables = [
-      slave.onWritable(() => this.flushWrite()),
-      slave.onReadable(() => {
-        this.toWorker.push(...slave.read());
-        if (this.state === "read") this.flushRead(this.readLength);
-        if (this.state === "poll") this.finishPoll(true);
-      }),
-    ];
+  constructor(writeOutput: (data: Uint8Array) => void) {
+    this.writeOutput = writeOutput;
+  }
+
+  input(value: string | Uint8Array): void {
+    const bytes = typeof value === "string" ? encoder.encode(value) : value;
+    for (const byte of bytes) this.toWorker.push(byte);
+    if (this.state === "read") this.flushRead(this.readLength);
+    if (this.state === "poll") this.finishPoll(true);
   }
 
   start(worker: WorkerLike): void {
@@ -66,7 +59,6 @@ export class TtyServer {
 
   dispose(): void {
     this.stop();
-    for (const disposable of this.disposables) disposable.dispose();
   }
 
   private handle(request: TtyRequest): void {
@@ -77,8 +69,7 @@ export class TtyServer {
         if (this.toWorker.length > 0) this.flushRead(request.length);
         break;
       case "write":
-        this.fromWorker.push(...request.buf);
-        this.flushWrite();
+        this.writeOutput(Uint8Array.from(request.buf));
         break;
       case "poll":
         this.state = "poll";
@@ -98,12 +89,6 @@ export class TtyServer {
     const chunk = this.toWorker.splice(0, count);
     this.data[0] = chunk.length;
     this.data.set(chunk, 1);
-    this.ack();
-  }
-
-  private flushWrite(): void {
-    if (!this.slave.writable || this.fromWorker.length === 0) return;
-    this.slave.write(this.fromWorker.splice(0));
     this.ack();
   }
 
