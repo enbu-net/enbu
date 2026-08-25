@@ -125,7 +125,7 @@ tasks:
   gui/check:
     desc: Format and lint GUI code
     deps:
-      - gui/install
+      - gui/build/frontend
     dir: web
     cmds:
       - vp check
