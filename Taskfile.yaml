@@ -168,6 +168,11 @@ tasks:
       - sh: command -v vhs
         msg: "VHS not installed. Install with: go install github.com/charmbracelet/vhs@latest"
 
+  cli/preview/wasm:
+    desc: Build the browser TUI as a WASI module
+    cmds:
+      - ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
+
   gui/install:
     internal: true
     run: once

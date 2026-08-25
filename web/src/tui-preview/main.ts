@@ -1,31 +1,10 @@
 import { FitAddon, Terminal, init } from "ghostty-web";
-import * as xtermPty from "xterm-pty";
 import { formatDisplayError, toDisplayError } from "../lib/app-error";
 import { attachMouseReporting } from "./mouse-adapter";
 import { type RegisterCleanup, SessionController } from "./session-controller";
-import { createPtyTerminal, resolveRuntimeURL } from "./terminal-adapter";
+import { attachNavigationKeyReporting, resolveRuntimeURL } from "./terminal-adapter";
 import { TtyServer } from "./tty-server";
 import "./style.css";
-
-const { Termios, openpty } = xtermPty;
-const terminalFlags = (
-  xtermPty as unknown as {
-    Flags: Record<
-      | "ECHO"
-      | "ECHONL"
-      | "ICANON"
-      | "ICRNL"
-      | "IEXTEN"
-      | "IGNCR"
-      | "INLCR"
-      | "ISIG"
-      | "ISTRIP"
-      | "IXON"
-      | "OPOST",
-      number
-    >;
-  }
-).Flags;
 
 function requiredElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -87,49 +66,17 @@ async function startSession(register: RegisterCleanup): Promise<void> {
   terminal.loadAddon(fit);
   terminal.open(terminalElement);
   // RunDemo requests all-motion + SGR mouse reporting. Prime ghostty-web's
-  // input gate as well so early mode sequences emitted while the VM boots are
+  // input gate as well so early mode sequences emitted while WASI starts are
   // not missed.
   terminal.write("\x1b[?1003h\x1b[?1006h");
   terminal.attachCustomWheelEventHandler(() => terminal.hasMouseTracking());
+  attachNavigationKeyReporting(terminal);
   const detachMouseReporting = attachMouseReporting(terminal, terminalElement);
   register(detachMouseReporting);
   fit.fit();
   fit.observeResize();
 
-  const { master, slave } = openpty();
-  register(() => master.dispose());
-  const settings = slave.ioctl("TCGETS");
-  slave.ioctl(
-    "TCSETS",
-    new Termios(
-      settings.iflag &
-        ~(
-          terminalFlags.ISTRIP |
-          terminalFlags.INLCR |
-          terminalFlags.IGNCR |
-          terminalFlags.ICRNL |
-          terminalFlags.IXON
-        ),
-      settings.oflag & ~terminalFlags.OPOST,
-      settings.cflag,
-      settings.lflag &
-        ~(
-          terminalFlags.ECHO |
-          terminalFlags.ECHONL |
-          terminalFlags.ICANON |
-          terminalFlags.ISIG |
-          terminalFlags.IEXTEN
-        ),
-      settings.cc,
-    ),
-  );
-  (
-    master as unknown as {
-      activate(terminal: ReturnType<typeof createPtyTerminal>): void;
-    }
-  ).activate(createPtyTerminal(terminal));
-
-  statusElement.textContent = "Booting enbu…";
+  statusElement.textContent = "Starting enbu…";
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   register(() => worker.terminate());
 
@@ -159,10 +106,17 @@ async function startSession(register: RegisterCleanup): Promise<void> {
     });
   });
 
-  const tty = new TtyServer(slave);
+  const tty = new TtyServer((data) => terminal.write(data));
+  const input = terminal.onData((data) => tty.input(data));
+  register(() => input.dispose());
   tty.start(worker);
-  register(() => tty.stop());
-  worker.postMessage({ type: "init", imageURL: resolveRuntimeURL(window.location.href) });
+  register(() => tty.dispose());
+  worker.postMessage({
+    type: "init",
+    imageURL: resolveRuntimeURL(window.location.href),
+    cols: terminal.cols,
+    rows: terminal.rows,
+  });
   await workerReady;
   terminal.focus();
   statusElement.textContent = terminal.hasMouseTracking()

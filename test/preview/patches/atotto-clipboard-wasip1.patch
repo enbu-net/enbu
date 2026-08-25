@@ -1,0 +1,25 @@
+diff --git a/clipboard_wasip1.go b/clipboard_wasip1.go
+new file mode 100644
+index 0000000..34827ac
+--- /dev/null
++++ b/clipboard_wasip1.go
+@@ -0,0 +1,19 @@
++//go:build wasip1
++
++package clipboard
++
++import "errors"
++
++var errWASIUnsupported = errors.New("clipboard is not supported on wasip1")
++
++func init() {
++	Unsupported = true
++}
++
++func readAll() (string, error) {
++	return "", errWASIUnsupported
++}
++
++func writeAll(string) error {
++	return errWASIUnsupported
++}

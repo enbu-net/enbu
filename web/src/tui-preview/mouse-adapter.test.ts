@@ -59,10 +59,20 @@ describe("attachMouseReporting", () => {
     press();
     expect(input).toHaveBeenCalledWith("\x1b[<0;6;3M", true);
 
+    const move = new MouseEvent("mousemove", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 60,
+      clientY: 70,
+    });
+    canvas.dispatchEvent(move);
+    canvas.dispatchEvent(move);
+    expect(input).toHaveBeenCalledTimes(2);
+
     canvas.dispatchEvent(new WheelEvent("wheel", { cancelable: true, deltaX: 1, deltaY: 0 }));
-    expect(input).toHaveBeenCalledTimes(1);
+    expect(input).toHaveBeenCalledTimes(2);
     cleanup();
     press();
-    expect(input).toHaveBeenCalledTimes(1);
+    expect(input).toHaveBeenCalledTimes(2);
   });
 });
