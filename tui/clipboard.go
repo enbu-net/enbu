@@ -1,11 +1,21 @@
 package tui
 
-import "golang.design/x/clipboard"
+import (
+	"context"
+
+	"golang.design/x/clipboard"
+)
+
+type clipboardWriteFunc func(context.Context, clipboard.Format, []byte, ...clipboard.Option) (<-chan struct{}, error)
 
 func copyToClipboard(text string) error {
-	if err := clipboard.Init(); err != nil {
+	return copyToClipboardWith(context.Background(), text, clipboard.Init, clipboard.Write)
+}
+
+func copyToClipboardWith(ctx context.Context, text string, initClipboard func() error, write clipboardWriteFunc) error {
+	if err := initClipboard(); err != nil {
 		return err
 	}
-	clipboard.Write(clipboard.FmtText, []byte(text))
-	return nil
+	_, err := write(ctx, clipboard.FmtText, []byte(text))
+	return err
 }
