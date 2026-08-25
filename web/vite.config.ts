@@ -1,7 +1,17 @@
 import { defineConfig, lazyPlugins } from "vite-plus";
-import react from "@vitejs/plugin-react";
-import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import { resolve } from "path";
+
+const loadPlugins = async () => {
+  const [{ TanStackRouterVite }, { default: react }] = await Promise.all([
+    import("@tanstack/router-plugin/vite"),
+    import("@vitejs/plugin-react"),
+  ]);
+
+  return [TanStackRouterVite(), react()];
+};
+
+// Vite 0.2.9's recursive PluginOption type exceeds TypeScript's comparison depth.
+const lazyPluginFactory = loadPlugins as unknown as Parameters<typeof lazyPlugins>[0];
 
 export default defineConfig(({ mode }) => ({
   base: mode === "preview" ? (process.env.PREVIEW_BASE ?? "/enbu/web/") : undefined,
@@ -82,7 +92,7 @@ export default defineConfig(({ mode }) => ({
       },
     ],
   },
-  plugins: lazyPlugins(() => [TanStackRouterVite(), react()]),
+  plugins: lazyPlugins(lazyPluginFactory),
   resolve: {
     alias: {
       "styled-system": resolve(__dirname, "styled-system"),
