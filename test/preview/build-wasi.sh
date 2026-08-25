@@ -22,7 +22,8 @@ copy_and_patch() {
 	target_name=$2
 	patch_file=$3
 
-	module_dir=$(go list -m -f '{{.Dir}}' "$module")
+	go mod download -modfile="$work_dir/enbu-preview.mod" "$module"
+	module_dir=$(go list -modfile="$work_dir/enbu-preview.mod" -m -f '{{.Dir}}' "$module")
 	target_dir="$work_dir/$target_name"
 	cp -R "$module_dir" "$target_dir"
 	chmod -R u+w "$target_dir"
