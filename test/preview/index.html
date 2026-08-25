@@ -20,6 +20,7 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
+      flex-wrap: wrap;
     }
     header h1 { font-size: 1.1rem; font-weight: 600; }
     header .badge {
@@ -28,6 +29,12 @@
       border-radius: 999px;
       background: #1f6feb;
       color: #fff;
+      text-decoration: none;
+    }
+    header .revision {
+      color: #8b949e;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 0.75rem;
     }
     main { max-width: 1200px; margin: 0 auto; padding: 2rem; display: grid; gap: 2rem; }
     section { display: grid; gap: 1rem; }
@@ -62,16 +69,13 @@
       display: block;
       border: none;
     }
-    .hint {
-      font-size: 0.85rem;
-      color: #8b949e;
-    }
   </style>
 </head>
 <body>
   <header>
     <h1>enbu</h1>
-    <span class="badge" id="ref-badge">preview</span>
+    <a class="badge" id="ref-badge" target="_blank" rel="noreferrer">preview</a>
+    <span class="revision" id="revision-label"></span>
   </header>
   <main>
     <section>
@@ -82,22 +86,31 @@
     </section>
     <section>
       <h2>TUI</h2>
-      <p class="hint" id="tui-hint">Preparing the secure browser runtime…</p>
       <div class="tui-frame">
         <iframe data-src="./web/tui.html" title="Interactive enbu TUI preview"></iframe>
       </div>
     </section>
   </main>
-  <script>
+  <script type="module">
+    import { applyPreviewMetadata } from "./preview-metadata.js";
+
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (ref) document.getElementById("ref-badge").textContent = ref;
 
+    fetch("./preview-metadata.json")
+      .then((response) => {
+        if (!response.ok) throw new Error(`preview metadata: ${response.status}`);
+        return response.json();
+      })
+      .then((metadata) => {
+        applyPreviewMetadata(document, metadata, ref);
+      })
+      .catch(() => {});
+
     const frames = document.querySelectorAll("iframe[data-src]");
     if (crossOriginIsolated) {
       for (const frame of frames) frame.src = frame.dataset.src;
-      document.getElementById("tui-hint").textContent =
-        "Click the terminal, then use the keyboard or mouse. The demo runs entirely in your browser.";
     } else {
       let reloading = false;
       const reloadWhenControlled = () => {

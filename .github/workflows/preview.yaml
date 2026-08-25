@@ -48,7 +48,7 @@ jobs:
   build-tui:
     name: Build TUI Preview
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -61,39 +61,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Restore browser VM cache
-        id: browser-vm-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: test/preview/out/tui/out.wasm.gz
-          key: tui-vm-${{ runner.os }}-c2w-v0.8.4-${{ hashFiles('go.mod', 'go.sum', '**/*.go', 'test/preview/Dockerfile.tui') }}
-
-      - name: Build TUI demo binary
-        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o tui-demo ./test/preview/tui-demo
-
-      - name: Build TUI container
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        run: docker build -f test/preview/Dockerfile.tui -t enbu-tui-preview:local .
-
-      - name: Install container2wasm
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        env:
-          C2W_VERSION: v0.8.4
-          C2W_COMMIT: 6ed3d98882a2b22eafc1334f574c364a5b2b8c47
+      - name: Build TUI WASI module
         run: |
-          curl -fsSL "https://github.com/container2wasm/container2wasm/releases/download/${C2W_VERSION}/container2wasm-${C2W_VERSION}-linux-amd64.tar.gz" -o /tmp/c2w.tar.gz
-          echo "1142ab95212578c0c7f666de830de6945f2abbea1713d1e07a7cb04072e00f31  /tmp/c2w.tar.gz" | sha256sum -c -
-          sudo tar -xz -C /usr/local/bin -f /tmp/c2w.tar.gz c2w
-          curl -fsSL "https://github.com/container2wasm/container2wasm/archive/${C2W_COMMIT}.tar.gz" -o /tmp/c2w-assets.tar.gz
-          echo "4815b8923167732ad53a8b60492395c6b0a9ff3d14cc2ac7fa08afab48e47bc5  /tmp/c2w-assets.tar.gz" | sha256sum -c -
-          mkdir -p /tmp/c2w-assets
-          tar -xzf /tmp/c2w-assets.tar.gz -C /tmp/c2w-assets --strip-components=1
-
-      - name: Build browser VM
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p test/preview/out/tui
-          c2w --assets /tmp/c2w-assets enbu-tui-preview:local test/preview/out/tui/out.wasm
+          ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
           gzip -9 test/preview/out/tui/out.wasm
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -132,12 +102,30 @@ jobs:
         with:
           sparse-checkout: |
             test/preview/index.html
+            test/preview/preview-metadata.js
             test/preview/coi-serviceworker.min.js
           sparse-checkout-cone-mode: false
           path: src
           persist-credentials: false
 
       - run: cp src/test/preview/index.html site/index.html
+
+      - run: cp src/test/preview/preview-metadata.js site/preview-metadata.js
+
+      - name: Write preview environment metadata
+        env:
+          PREVIEW_PR: ${{ github.event.pull_request.number }}
+          PREVIEW_PR_URL: ${{ github.event.pull_request.html_url }}
+          PREVIEW_REF: ${{ github.head_ref }}
+          PREVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          jq -n \
+            --arg pullRequest "$PREVIEW_PR" \
+            --arg pullRequestURL "$PREVIEW_PR_URL" \
+            --arg ref "$PREVIEW_REF" \
+            --arg sha "$PREVIEW_SHA" \
+            '{pullRequest: $pullRequest, pullRequestURL: $pullRequestURL, ref: $ref, sha: $sha}' \
+            > site/preview-metadata.json
 
       - name: Copy cross-origin isolation worker
         run: cp src/test/preview/coi-serviceworker.min.js site/coi-serviceworker.min.js
