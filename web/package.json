@@ -35,7 +35,7 @@
     "@pandacss/preset-base": "1.12.0",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.1",
-    "@tanstack/router-plugin": "1.168.34",
+    "@tanstack/router-plugin": "1.168.35",
     "@types/node": "24.13.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
