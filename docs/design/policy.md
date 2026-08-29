@@ -263,6 +263,10 @@ Policy ArtifactはDevice Signing KeyでDSSE署名し、Sigstore Bundle v0.3を�
 
 enbu CoreはSigstore署名、発行者の`policy.update`権限、payload digest、project ID、revision chainを検証してからOPAへloadする。
 
+取得したPolicy ArtifactのManifest digestは、使用するControl Stateの`policy_digest`と一致しなければならない。
+
+mutable tagが過去の正しい署名付きArtifactを指した場合も含め、不一致ならfail closedとし、OPAへloadしない。
+
 OPA固有のBundle署名は使用しない。
 
 OPAへ渡す前にenbu CoreがSigstoreとControl Stateで同じ性質を検証するため、二つ目の署名方式を導入する必要がない。

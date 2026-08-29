@@ -134,6 +134,16 @@ Control Stateの起点は、プロジェクト初期化時に明示的にpinし�
 
 一つのOCI Image Manifestへ、次の二つのlayerを格納する。
 
+Manifestの`artifactType`は`application/vnd.enbu.secret-artifact.v2`とする。
+
+必須の`config` descriptorには空のJSON object `{}`を使い、次の値を固定する。
+
+| Field | Value |
+|---|---|
+| `mediaType` | `application/vnd.oci.empty.v1+json` |
+| `digest` | `sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a` |
+| `size` | `2` |
+
 | Layer | Media type | 内容 |
 |---|---|---|
 | Secret payload | `application/vnd.enbu.secrets.age.v2` | ageで暗号化したSecret集合 |
