@@ -209,10 +209,16 @@ Sigstore Bundle v0.3はout-of-bandで配布した公開鍵の識別子と、任�
 3. pin済みgenesisからControl Stateの署名とchainを検証する。
 4. `device_key_id`に対応する公開鍵、Principal、権限、失効状態をControl Stateから解決する。
 5. Sigstore BundleとDSSE署名を検証する。
-6. Statementのpayload digest、project ID、environment ID、generation、Control State digest、Policy Artifact digestが取得対象と一致することを検証する。
+6. Statementのpayload digest、project ID、environment ID、generationが取得対象と一致し、`control_digest`と`policy_digest`が検証済みの発行時stateを参照することを確認する。
 7. generationと`previous_artifact_digest`を端末のhigh-water markと比較する。
-8. すべて成功した後にだけageで復号する。
-9. `.env`を書き出した後、Access Audit Eventを生成する。
+8. 最新generationからhigh-water markまでに差がある場合は、`previous_artifact_digest`をたどって中間Manifestをdigestで取得し、各署名とchainを順番に検証する。
+9. 中間revisionが保持されていない場合はhistory gapとして拒否し、high-water markを更新しない。
+10. すべて成功した後にだけageで復号する。
+11. `.env`を書き出した後、Access Audit Eventを生成する。
+
+Registryには、検証対象になり得るimmutable revisionを保持する必要がある。
+
+retention期間より長くofflineだった端末の回復手順は未決定事項とする。
 
 署名検証に失敗したArtifactを復号してはならない。
 
@@ -238,7 +244,7 @@ Sigstore Bundle v0.3はout-of-bandで配布した公開鍵の識別子と、任�
 | Event | 証拠の生成元 | 完全性 |
 |---|---|---|
 | `artifact.publish` | 署名済みSecret Artifactから導出 | Artifactが残る限り再構成可能 |
-| `control.update` | 署名済みControl Stateから導出 | Control Stateが残る限り再構成可能 |
+| `control.update` | 署名済みControl State statementから導出 | Control Stateが残る限り再構成可能 |
 | `artifact.pull` | 復号成功後にクライアントが生成 | OSSではbest effort |
 
 `artifact.publish`と`control.update`のために、同じ事実を表す独立Eventを必須にはしない。
@@ -287,14 +293,18 @@ CloudのRegistry gatewayが生成したEventでは、gatewayが観測した値�
     "project_id": "01JPROJECT...",
     "environment_id": "01JENV...",
     "generation": 42,
-    "control_digest": "sha256:CONTROL...",
-    "policy_digest": "sha256:POLICY...",
+    "authorization_control_digest": "sha256:CONTROL...",
+    "authorization_policy_digest": "sha256:POLICY...",
     "occurred_at": "2026-08-30T02:30:00Z"
   }
 }
 ```
 
 Audit Eventのsubject digestは、取得したOCI Manifest digestとする。
+
+`authorization_control_digest`と`authorization_policy_digest`は、pull時の現在認可に使用したstateを表す。
+
+Artifact発行時のstateは、subjectのSecret Artifact statementから取得する。
 
 EventはDevice Signing KeyでDSSE署名し、Sigstore Bundle v0.3として保存または送信する。
 
@@ -307,6 +317,8 @@ Artifactの順序は`environment_id`ごとのgenerationと`previous_artifact_dig
 受信側が付与する`received_at`や保存先のobject keyは、署名対象Eventとは別のingestion metadataとする。
 
 クライアントの`occurred_at`は署名者が申告した時刻であり、信頼できる時刻証明ではない。
+
+Control State statementの`created_at`も署名者が申告した時刻であり、transparency logまたは信頼できるtimestampがなければ同じ制約を持つ。
 
 ### publish Eventの表示モデル
 
@@ -370,7 +382,9 @@ Artifactの順序は`environment_id`ごとのgenerationと`previous_artifact_dig
 
 Secret名は常に永続監査ログへ記録しない。
 
-CLI表示時だけ、権限を持つ利用者のControl Stateからopaque IDを人間可読名へ解決する。
+CLI表示時だけ、ローカル`enbu.toml`のenvironment ID mappingからopaque IDを人間可読名へ解決する。
+
+mappingが存在しない端末ではopaque IDをそのまま表示する。
 
 ## OSSの保存と保証
 
@@ -511,6 +525,7 @@ opaque IDだけでも、時刻、頻度、Artifact size、digestの外部相関�
 | 項目 | 今決めない理由 | 決定時期 |
 |---|---|---|
 | ローカル`.env`のmaterialization receipt | Artifact整合性とは別の脅威境界である | `enbu verify`実装前 |
+| revision retention後の端末回復 | transparency logまたは信頼できるcheckpointの要件が未確定である | revision storage PoC後 |
 | OSSの標準Audit sink protocol | Cloud以外の運用要件が未検証である | Access Audit実装前 |
 | Public Rekorを利用するCLI option | privacyとRekor v2 client対応を実測していない | Artifact署名PoC後 |
 | Cloudのobject formatと検索index | Cloudは現時点の主対象ではない | Cloud監査基盤設計時 |

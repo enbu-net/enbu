@@ -189,9 +189,14 @@ Control Stateはfull snapshotとして保存し、直前revisionのdigestを署�
         "issuer": "https://example.okta.com/oauth2/default",
         "subject": "00uabc..."
       },
-      "identity_attestation_digest": "sha256:ATTESTATION...",
-      "device_key_ids": ["sha256:DEVICE..."],
-      "age_recipient_ids": ["sha256:AGE..."],
+      "devices": [
+        {
+          "identity_attestation_digest": "sha256:ATTESTATION...",
+          "device_key_id": "sha256:DEVICE...",
+          "age_recipient_id": "sha256:AGE...",
+          "status": "active"
+        }
+      ],
       "status": "active"
     }
   ],
@@ -201,9 +206,42 @@ Control Stateはfull snapshotとして保存し、直前revisionのdigestを署�
 
 Control Stateはproject genesisでpinしたroot keyから検証する。
 
+各device recordは、一つのIdentity Attestation、一つのDevice Signing Key、一つのage recipient keyを対応付ける。
+
+deviceを失効するときはrecord全体を失効し、対応するage recipientを次の暗号化対象から除外する。
+
 Registry tagは最新revisionを探すcacheとして扱い、tagが指す内容自体は信頼しない。
 
 端末は検証済みrevisionとdigestをhigh-water markとして保存し、観測済みrevisionへのrollbackを拒否する。
+
+Control State snapshotは、次のmetadataを持つin-toto Statementへ格納してDSSE署名する。
+
+```json
+{
+  "predicateType": "https://enbu.net/control/v1",
+  "predicate": {
+    "event_id": "0198f8cf-53cb-7b9a-9fd6-4e89c0c7881f",
+    "project_id": "01JPROJECT...",
+    "revision": 12,
+    "previous_control_digest": "sha256:PREVIOUS...",
+    "operation": "member.revoke",
+    "device_key_id": "sha256:DEVICE...",
+    "changes": {
+      "members_added": 0,
+      "members_revoked": 1,
+      "grants_added": 0,
+      "grants_revoked": 2
+    },
+    "created_at": "2026-08-30T02:30:00Z"
+  }
+}
+```
+
+genesis以外の遷移では、検証器が新旧snapshotのdeltaを計算し、署名した`operation`および`changes`と一致することを確認する。
+
+検証器は、署名deviceが更新前のControl StateとPolicy Artifactで、その遷移に対応する`member.grant`、`member.revoke`、`policy.update`のいずれかを許可されていたことも独立して評価する。
+
+genesisだけはpinしたroot keyの署名thresholdを認可根拠とする。
 
 ## Policy Artifact
 
@@ -379,12 +417,20 @@ Policy ArtifactまたはControl Stateを取得または検証できない場合�
 ### Secret read
 
 1. IdPで認証し、PrincipalとDevice Signing Keyのbindingを検証する。
-2. 最新Control StateとPolicy Artifactを取得して署名、chain、digestを検証する。
-3. `secret.read`をOPAで評価する。
+2. 最新Control Stateと、それが参照する現在のPolicy Artifactを取得して署名、chain、digestを検証する。
+3. 現在のControl StateとPolicy Artifactで`secret.read`を評価する。
 4. denyまたは評価errorならRegistryからSecret Artifactを取得せず終了する。
-5. allowならSecret Artifactを取得し、署名、`control_digest`、`policy_digest`、revision chainを検証する。
-6. Identity Attestationにbindingされたage keyで復号する。
-7. 復号成功後に`artifact.pull`監査Eventを生成する。
+5. allowならSecret Artifactを取得する。
+6. Artifactが参照する発行時Control StateとPolicy Artifactをdigestで取得し、署名とchainを検証する。
+7. 署名した`operation`から必要actionを導出し、発行者が発行時点でそのactionを許可されていたことを検証する。
+8. Identity Attestationにbindingされたage keyで復号する。
+9. 復号成功後に`artifact.pull`監査Eventを生成する。
+
+現在のControl StateとPolicy Artifactは、現在のPrincipalにreadを許可するか判断する。
+
+Artifactが参照する過去のControl StateとPolicy Artifactは、そのArtifactの発行provenanceを検証する。
+
+Artifactの`control_digest`と`policy_digest`が現在値と異なることだけを理由に拒否しない。
 
 Registryへの直接アクセスは防げないため、暗号化とArtifact署名をPolicy enforcementから独立して維持する。
 
@@ -443,7 +489,15 @@ Secret Artifact statementには次のfieldを含める。
 
 発行クライアントが実際に同じOPA評価を実行した事実までは証明しない。
 
-Artifact検証器は、署名者が発行時Control Stateで有効な`secret.write`権限を持つことを独立して検証する。
+Artifact検証器は、署名した`operation`から必要actionを導出し、署名者が発行時Control StateとPolicy Artifactでそのactionを許可されていたことを独立して検証する。
+
+| Operation | 必要action |
+|---|---|
+| `secret.add`、`secret.edit`、`secret.delete` | `secret.write` |
+| `secret.sync` | `secret.reencrypt` |
+| `secret.restore` | `secret.restore` |
+
+未知の`operation`はfail-closedで拒否する。
 
 ## 暗号化との関係
 
@@ -471,7 +525,13 @@ enbu上のアクセスを止めるにはControl Stateでmemberまたはdeviceを
 
 IdP account状態を定期的に再確認する場合も、IdP groupは認可inputに使わない。
 
-再認証によってIdentity Attestationの有効期限を更新し、期限切れattestationを持つdeviceをPolicyでdenyする。
+Identity Attestationは署名対象に`expires_at`を含める。
+
+enbu CoreはOPA評価前に、検証端末のclockで`expires_at`をfail-closed検証する。
+
+OPA inputの`actor.status = active`は、署名、binding、失効状態、有効期限の検証にすべて成功した後にだけ設定する。
+
+端末clockを巻き戻せる攻撃者に対する強い期限保証には、transparency logまたは信頼できるtimestampが別途必要になる。
 
 Identity Attestationの有効期間は未決定事項とする。
 
@@ -515,7 +575,8 @@ enbu policy verify
 - 署名、digest、chain、schemaを検証できない。
 - OPA decisionがdeny、未定義、型不正になる。
 - OPA評価がerrorまたはtimeoutになる。
-- Artifactの`control_digest`または`policy_digest`が検証対象と一致しない。
+- Artifactが参照する発行時Control StateまたはPolicy Artifactを取得および検証できない。
+- Artifactの署名operationに対応するactionを、発行者が発行時点で許可されていない。
 - 対象actionまたはresource typeが未知である。
 
 監査Event sinkの障害だけは認可結果を変更せず、[監査設計](./audit.md)に従って警告する。
