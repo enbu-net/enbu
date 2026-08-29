@@ -1,283 +1,544 @@
-# Audit Design: Operation History Recording and Verification
+# Secret Artifactの整合性と監査ログ
 
-## Overview
+## Status
 
-The audit feature records operations on secrets (pull, add, edit, delete, sync, restore) as signed events, providing post-incident traceability and compliance evidence.
+- 状態: Draft
+- 更新日: 2026-08-30
+- 対象: enbu OSS
+- 将来対象: enbu Cloud
 
-The recording infrastructure uses Sigstore (Fulcio + Rekor), consistent with enbu's "keyless" philosophy.
+## 背景
 
-## Goals
+enbuではIdPとOCI Registryを独立して選択する。
 
-In priority order:
+認証した本人とRegistryへ接続した主体は一致するとは限らない。
 
-1. **Incident investigation**: When a secret leaks, trace "who pulled which secret from which environment, and when"
-2. **Compliance**: Produce tamper-proof logs when auditors request evidence (SOC2, ISO27001)
-3. **Operational visibility**: Surface unusual access patterns within the team
+例えば、Oktaで本人認証を行い、AWS IAM RoleでECRへ接続する構成がある。
 
-## Trust Model
+Secret名や環境名は値そのものではないが、利用サービス、インフラ構成、重要なcredentialを推測できる機密metadataである。
 
-```mermaid
-graph TD
-    subgraph "Signing layer (tamper detection)"
-        A[Sigstore keyless] -->|"Fulcio short-lived cert"| B[Sign with OIDC identity]
-        B --> C[Record in Rekor]
-    end
+本設計では、Secret Artifactの整合性と操作監査を別の問題として定義し、必要なmetadataだけを署名する。
 
-    subgraph "Backstop (cannot be bypassed)"
-        D[GHCR access log] -->|"authenticated request"| E[pull/push record]
-    end
+## 目的
 
-    subgraph "enbu CLI (trusted)"
-        F[Generate event after successful operation] --> A
-    end
+優先順位は次のとおりとする。
+
+1. Registryから取得したSecret Artifactが、承認されたPrincipalによって発行され、取得までに改変されていないことを復号前に検証する。
+2. どのPrincipalが、どのArtifact revisionを発行または復号したかを、Secret名を記録せずに調査できるようにする。
+3. IdPとRegistryの組み合わせに依存しないEvent schemaと検証手順を定義する。
+4. OSSとCloudでArtifact形式と検証Coreを共通化し、運用上の保証だけを分ける。
+
+## 対象外
+
+本設計だけでは、次の性質を保証しない。
+
+- 取得後にローカルへ出力された平文`.env`が変更されていないこと
+- OSSクライアントがすべてのアクセスEventを送信したこと
+- 悪意のある承認済み署名者が不正なSecretを発行しないこと
+- 初回利用端末に古いControl StateとArtifactを同時に提示する攻撃の完全な検知
+- 任意の外部Registryが十分なアクセスログを保存すること
+- SOC 2やISO 27001への準拠そのもの
+
+ローカル`.env`の改変検知は、出力時のbyte digestを保持して再検証する別機能として扱う。
+
+Secret Artifactの署名は、取得した暗号化Artifactから生成された`.env`の出所を保証するが、生成後のファイル監視にはならない。
+
+## 用語
+
+**Principal**は、enbu上で操作した本人を表すIdP由来の識別子である。
+
+PrincipalはOIDCの`issuer`と`subject`の組で識別する。
+
+```json
+{
+  "issuer": "https://example.okta.com/oauth2/default",
+  "subject": "00uabc..."
+}
 ```
 
-### Why trust the client
+**Transport Principal**は、Registryへ接続するときにcredentialが表す主体である。
 
-enbu's trust model, as established in policy.md, assumes that anyone holding a decryption key is trusted.
-A modified CLI could skip sending audit events.
-However, pull/push operations to GHCR require authenticated requests, and the server records access logs.
-These logs cannot be erased by client-side modifications.
+Transport Principalは相関用の補助情報であり、アクセス制御と監査上の本人として扱わない。
 
-Two layers provide protection:
-
-- **enbu audit log** (primary): Rich information (environment, secret names, operation result) with Sigstore signatures. Available as long as the CLI behaves honestly.
-- **Registry access log** (backstop): Server-side record of who pulled/pushed which tag and when. Cannot be bypassed by CLI modification.
-
-## Architecture
-
-### Sigstore Stack
-
-| Component | Hosting | Role |
-|-----------|---------|------|
-| Fulcio | Public Sigstore | Issue short-lived certificates from OIDC ID tokens |
-| Rekor | Self-hosted by user organization | Record signed events in a transparency log |
-
-Only the fact that "someone requested a certificate" remains on Public Fulcio.
-The audit event content (which environment, which secrets) stays within the Private Rekor instance.
-
-### OIDC Authentication Flow
-
-Normal enbu operations (pull, add, sync, etc.) use the GitHub OAuth access token obtained through the enbu auth broker with Authorization Code Flow and PKCE.
-The Fulcio signing request uses an additional OIDC flow via the cosign-go library.
-
-```mermaid
-sequenceDiagram
-    participant CLI as enbu CLI
-    participant GHCR as GHCR
-    participant Fulcio as Fulcio (Public)
-    participant Rekor as Rekor (Private)
-
-    CLI->>GHCR: pull (GitHub OAuth token)
-    GHCR-->>CLI: encrypted artifact
-    CLI->>CLI: decrypt → generate .env
-    CLI->>Fulcio: OIDC ID token (browser auth on first use)
-    Fulcio-->>CLI: short-lived certificate
-    CLI->>CLI: generate in-toto attestation + sign
-    CLI->>Rekor: record signed attestation
-    Rekor-->>CLI: inclusion proof
+```json
+{
+  "provider": "aws",
+  "subject": "arn:aws:iam::123456789012:role/enbu-developer"
+}
 ```
 
-The first invocation opens a browser for OIDC authentication.
-Subsequent operations use a refresh token for automatic renewal.
-Users do not notice the audit mechanism during normal development.
+**Device Signing Key**は、Principalに紐づく端末固有の署名鍵である。
 
-## Recorded Events
+Secretの復号に使うage X25519鍵とは用途を分離する。
 
-Only operations that touch secret content are recorded.
+署名鍵には、Rekor v2の`hashedrekord`へ将来登録できるようECDSA P-256を用いる。
 
-| Command | Event type | Description |
-|---------|-----------|-------------|
-| `pull` | `secret.pull` | Retrieve and decrypt secrets |
-| `add` | `secret.add` | Add a secret |
-| `edit` | `secret.edit` | Update a secret |
-| `delete` | `secret.delete` | Delete a secret |
-| `sync` | `secret.sync` | Re-encrypt for all recipients |
-| `history restore` | `secret.restore` | Restore to a previous version |
+**Identity Attestation**は、IdPが認証したPrincipalとDevice Signing Keyを結び付ける署名済みstatementである。
 
-Administrative operations (`auth`, `init`, `switch`) are not recorded.
-They do not touch secret content and are traceable via Registry access logs.
+IdP固有のtokenをSecret ArtifactやAudit Eventへ直接埋め込まず、Control Stateが承認済みIdentity Attestationを参照する。
 
-## Event Format
+**Control State**は、Principal、Device Signing Key、age recipient、権限、失効状態の対応を保持する署名済み状態である。
 
-### in-toto Attestation
+**Secret Artifact**は、暗号化したSecret集合と、その内容およびrevision metadataに対するSigstore Bundleを格納したOCI Artifactである。
 
-Events recorded in Rekor use the in-toto attestation format.
+**Audit Event**は、Artifactの発行、復号、Control Stateの更新など、操作の事実を表す署名済みEventである。
+
+## 設計上の分離
+
+監査で扱う証拠を三つに分ける。
+
+| 証拠 | 答える問い | OSSでの強さ |
+|---|---|---|
+| Secret Artifact署名 | 取得した暗号文は誰が発行し、改変されていないか | 強い |
+| revision chain | 既知の履歴から巻き戻されていないか | 端末が観測した範囲で強い |
+| Access Audit Event | 誰がいつ復号したか | best effort |
+
+Artifactの改変検知をAccess Audit EventやRegistryログへ依存させてはならない。
+
+Registryアクセスログが利用できる場合は補助証拠として相関するが、enbu Coreの保証には含めない。
+
+## 信頼の流れ
+
+```text
+Identity Provider
+      |
+      v
+  Principal
+      |
+      v
+Identity Attestation
+      |
+      v
+signed Control State
+      |
+      +---- Device Signing Key
+      |
+      +---- age recipient
+
+Device Signing Key
+      |
+      +---- signs Secret Artifact statement
+      |
+      +---- signs Access Audit Event
+```
+
+検証者はSigstore Bundle内の鍵識別子だけを手掛かりにし、公開鍵とPrincipalのbindingは信頼済みControl StateおよびIdentity Attestationから解決する。
+
+Bundleに埋め込まれた未検証の公開鍵を、そのまま信頼してはならない。
+
+Control Stateの起点は、プロジェクト初期化時に明示的にpinしたgenesis digestとする。
+
+## Secret Artifactの署名
+
+### OCI Artifact構造
+
+一つのOCI Image Manifestへ、次の二つのlayerを格納する。
+
+| Layer | Media type | 内容 |
+|---|---|---|
+| Secret payload | `application/vnd.enbu.secrets.age.v2` | ageで暗号化したSecret集合 |
+| Signature bundle | `application/vnd.dev.sigstore.bundle.v0.3+json` | DSSE署名と検証material |
+
+OCI Referrers APIはRegistryごとの対応差があるため、必須にしない。
+
+検証器は期待したmedia type、layer数、digest、sizeをすべて検証し、未知の必須layerを無視しない。
+
+### 署名対象
+
+Signature BundleをManifest内へ格納するため、OCI Manifest digest自身を同じBundleから署名すると循環参照になる。
+
+そこで、Secret Artifact statementは暗号化payload layerのdigestをsubjectにする。
+
+Manifest digestはOCI Distributionによる取得時のcontent integrityとrevision chainの識別子として使う。
 
 ```json
 {
   "_type": "https://in-toto.io/Statement/v1",
   "subject": [
     {
-      "name": "ghcr.io/owner/repo-enbu:secrets-production",
+      "name": "enbu:secret-payload",
       "digest": {
         "sha256": "abc123..."
       }
     }
   ],
-  "predicateType": "https://enbu.net/provenance/v1",
+  "predicateType": "https://enbu.net/secret-artifact/v1",
   "predicate": {
-    "event": "secret.pull",
-    "environment": "production",
-    "actor": {
-      "username": "alice",
-      "id": 12345678
+    "project_id": "01JPROJECT...",
+    "environment_id": "01JENV...",
+    "generation": 42,
+    "previous_artifact_digest": "sha256:AAA...",
+    "control_digest": "sha256:CONTROL...",
+    "policy_digest": "sha256:POLICY...",
+    "device_key_id": "sha256:KEY...",
+    "operation": "secret.edit",
+    "changes": {
+      "added": 0,
+      "updated": 2,
+      "deleted": 0
     },
-    "secret_names": ["DB_PASSWORD", "API_TOKEN"],
-    "result": "success",
-    "timestamp": "2026-07-13T14:20:00Z"
+    "created_at": "2026-08-30T02:30:00Z"
   }
 }
 ```
 
-### Subject
+DSSE envelopeの`payloadType`は`application/vnd.in-toto+json`とする。
 
-The subject contains the OCI Artifact involved in the operation.
+Bundleの`verificationMaterial.publicKey.hint`には`device_key_id`を格納する。
 
-- `pull`: digest of the pulled artifact
-- Write operations (`add`, `edit`, `delete`, `sync`, `restore`): digest of the newly pushed artifact
+公開Rekorへの登録やFulcio証明書は、Artifact形式の必須条件にしない。
 
-The name field includes the full Registry ref (`ghcr.io/owner/repo-enbu:secrets-{env}`), enabling environment-based filtering via the Rekor API.
+Sigstore Bundle v0.3はout-of-bandで配布した公開鍵の識別子と、任意のtransparency log entryを表現できる。
 
-### Predicate
+### 発行手順
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `event` | string | Event type (`secret.pull`, etc.) |
-| `environment` | string | Target environment name |
-| `actor.username` | string | GitHub username |
-| `actor.id` | number | GitHub user ID (immutable, unique) |
-| `secret_names` | string[] | Secret names involved (depends on config) |
-| `result` | string | `success` or `failure` |
-| `timestamp` | string | ISO 8601 timestamp |
+1. IdPでPrincipalを認証する。
+2. 最新のControl Stateを取得して署名とchainを検証する。
+3. Control State上でPrincipalの書き込み権限とDevice Signing Keyの有効性を検証する。
+4. Secret集合をage recipient群へ暗号化する。
+5. 暗号化payloadのdigestを計算する。
+6. generation、直前のManifest digest、Control State digestを含むin-toto Statementを生成する。
+7. Device Signing KeyでDSSE署名し、Sigstore Bundle v0.3を生成する。
+8. payloadとBundleを一つのOCI ManifestとしてRegistryへpushする。
+9. push結果のManifest digestを、端末のhigh-water markへ保存する。
 
-Actor authenticity is cryptographically guaranteed by the Fulcio certificate subject.
-Forging the predicate content will fail Fulcio signature verification.
+### 取得手順
 
-### secret_names Protection
+1. RegistryからOCI Manifest、暗号化payload、Sigstore Bundleを取得する。
+2. OCI descriptorと実データのdigestおよびsizeが一致することを検証する。
+3. pin済みgenesisからControl Stateの署名とchainを検証する。
+4. `device_key_id`に対応する公開鍵、Principal、権限、失効状態をControl Stateから解決する。
+5. Sigstore BundleとDSSE署名を検証する。
+6. Statementのpayload digest、project ID、environment ID、generation、Control State digest、Policy Artifact digestが取得対象と一致することを検証する。
+7. generationと`previous_artifact_digest`を端末のhigh-water markと比較する。
+8. すべて成功した後にだけageで復号する。
+9. `.env`を書き出した後、Access Audit Eventを生成する。
 
-The output level for the `secret_names` field is configured in `enbu.toml`.
+署名検証に失敗したArtifactを復号してはならない。
 
-| Setting | Output | Use case |
-|---------|--------|----------|
-| `full` (default) | Plaintext secret names | Prioritize immediate incident investigation |
-| `minimal` | Secret count only | When secret names themselves are confidential |
+監査Eventの送信失敗はArtifactの検証結果を変えない。
 
-Access to the Private Rekor instance is limited to organization members who already know the secret names.
-No additional encryption (HMAC, etc.) is applied.
+## 検知できる改変
 
-## Configuration
+| 事象 | 検知 | 根拠 |
+|---|---|---|
+| 暗号化payloadのbit改変 | できる | OCI digest、age認証、DSSE署名 |
+| Bundle内Statementの改変 | できる | DSSE署名 |
+| 未登録鍵によるArtifactの差し替え | できる | Control Stateによる鍵解決 |
+| 別環境のArtifactへの差し替え | できる | 署名対象の`environment_id`照合 |
+| 観測済みgenerationへの巻き戻し | できる | revision chainとlocal high-water mark |
+| 初回端末への一貫した古い履歴の提示 | 完全にはできない | 外部checkpointがないため |
+| 承認済み署名者による悪意ある更新 | できない | 有効な権限と署名を持つため |
+| 生成後のローカル`.env`の変更 | できない | Artifact検証の境界外であるため |
 
-The `[audit]` section in `enbu.toml`:
+## Audit Event v2
 
-```toml
-[audit]
-rekor_url = "https://rekor.internal.example.com"
-secret_names = "full"  # full | minimal
+### Eventの情報源
+
+| Event | 証拠の生成元 | 完全性 |
+|---|---|---|
+| `artifact.publish` | 署名済みSecret Artifactから導出 | Artifactが残る限り再構成可能 |
+| `control.update` | 署名済みControl Stateから導出 | Control Stateが残る限り再構成可能 |
+| `artifact.pull` | 復号成功後にクライアントが生成 | OSSではbest effort |
+
+`artifact.publish`と`control.update`のために、同じ事実を表す独立Eventを必須にはしない。
+
+検索用indexは署名済みArtifactとControl Stateから再構築できる派生データとする。
+
+`artifact.pull`だけはArtifactから導出できないため、独立した署名済みAudit Eventとして生成する。
+
+### ActorとTransport Principal
+
+アクセス制御と監査上の本人は常に`actor`である。
+
+`transport`はRegistryログとの相関に必要で、credential providerが安定した識別子を取得できる場合だけ記録する。
+
+クライアント生成Eventの`transport`は自己申告である。
+
+CloudのRegistry gatewayが生成したEventでは、gatewayが観測した値として扱える。
+
+### pull Event
+
+```json
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "enbu:environment:01JENV...",
+      "digest": {
+        "sha256": "abc123..."
+      }
+    }
+  ],
+  "predicateType": "https://enbu.net/audit/v2",
+  "predicate": {
+    "event_id": "0198f8cf-53cb-7b9a-9fd6-4e89c0c7881f",
+    "event": "artifact.pull",
+    "source": "client",
+    "actor": {
+      "issuer": "https://example.okta.com/oauth2/default",
+      "subject": "00uabc..."
+    },
+    "transport": {
+      "provider": "aws",
+      "subject": "arn:aws:iam::123456789012:role/enbu-developer"
+    },
+    "device_key_id": "sha256:KEY...",
+    "project_id": "01JPROJECT...",
+    "environment_id": "01JENV...",
+    "generation": 42,
+    "control_digest": "sha256:CONTROL...",
+    "policy_digest": "sha256:POLICY...",
+    "occurred_at": "2026-08-30T02:30:00Z"
+  }
+}
 ```
 
-Audit is enabled only when `rekor_url` is set.
-When absent, no audit events are generated or sent.
+Audit Eventのsubject digestは、取得したOCI Manifest digestとする。
 
-## Timing and Failure Behavior
+EventはDevice Signing KeyでDSSE署名し、Sigstore Bundle v0.3として保存または送信する。
 
-Audit events are sent after the operation succeeds.
-The goal is to record "what actually happened", not intent.
+`event_id`にはUUIDv7を用いる。
 
-If sending to Rekor fails, the operation itself is treated as successful and a warning is displayed:
+全Eventを直列化するためのグローバル連番は導入しない。
 
+Artifactの順序は`environment_id`ごとのgenerationと`previous_artifact_digest`で表現する。
+
+受信側が付与する`received_at`や保存先のobject keyは、署名対象Eventとは別のingestion metadataとする。
+
+クライアントの`occurred_at`は署名者が申告した時刻であり、信頼できる時刻証明ではない。
+
+### publish Eventの表示モデル
+
+検索時はSecret Artifact statementから次の論理Eventを導出する。
+
+```json
+{
+  "event": "artifact.publish",
+  "operation": "secret.edit",
+  "actor": {
+    "issuer": "https://example.okta.com/oauth2/default",
+    "subject": "00uabc..."
+  },
+  "project_id": "01JPROJECT...",
+  "environment_id": "01JENV...",
+  "generation": 42,
+  "previous_artifact_digest": "sha256:AAA...",
+  "result_artifact_digest": "sha256:BBB...",
+  "changes": {
+    "added": 0,
+    "updated": 2,
+    "deleted": 0
+  },
+  "occurred_at": "2026-08-30T02:30:00Z"
+}
 ```
-Warning: audit event recording failed: connection refused
-         The operation completed successfully, but was not recorded in the audit log.
+
+`operation`と`changes`はArtifact statementに署名し、Secret名は記録しない。
+
+`changes`は復号後のSecret mapを比較して得た件数であり、値や名前を含まない。
+
+### 永続化するfield
+
+- Event type
+- Principalの`issuer`と`subject`
+- 任意のTransport Principal
+- Device Signing Key ID
+- project ID
+- environment ID
+- Artifact digest
+- generation
+- Control State digest
+- Policy Artifact digest
+- previous digestとresult digest
+- 変更件数
+- Event発生時刻
+- Event ID
+
+### 永続化しないfield
+
+- Secret value
+- Secret name
+- IdPのusername、display name、email
+- 環境の人間可読名
+- OAuth token
+- Registry credential
+- 不要な完全Registry URL
+- `.env`の平文digest
+
+`secret_names = full | minimal`という設定は設けない。
+
+Secret名は常に永続監査ログへ記録しない。
+
+CLI表示時だけ、権限を持つ利用者のControl Stateからopaque IDを人間可読名へ解決する。
+
+## OSSの保存と保証
+
+enbu OSSは監査基盤をホストしない。
+
+署名済み`artifact.pull` Eventは、設定されたsinkがあれば送信する。
+
+sinkがなければ、組織全体のアクセス履歴が存在するとは主張しない。
+
+送信失敗時はSecret操作自体を成功扱いとし、記録されなかったことを明示的に警告する。
+
+```text
+Warning: the operation succeeded, but the audit event was not recorded.
 ```
 
-Rationale:
+OSSで保証できるのはEvent一件の署名者と内容の非改変であり、Event集合の完全性ではない。
 
-- enbu operations require network connectivity to the OCI Registry. If the network is entirely unavailable, the operation itself fails before reaching the audit step.
-- When the Registry is reachable but Rekor is down, blocking developer work is disproportionate.
-- The Registry access log serves as a backstop even when audit event delivery fails.
+Public FulcioとPublic Rekorは既定の依存にしない。
 
-## CLI Commands
+必要な利用者は、Sigstore Bundleの任意のtransparency log entryとしてPublic Rekorや別のlogを使用できる。
 
-### `enbu audit list`
+ただし、公開logへ登録するdigest、署名、公開鍵、証明書identityが公開情報になる可能性を利用者へ明示する。
 
-Query the Rekor API and display audit events for the current project.
+## Cloudで追加できる保証
+
+Cloudの詳細設計は本Design Docの対象外とする。
+
+同じEvent schemaと検証Coreを使い、将来次の保証を追加できるようにする。
+
+- enbu Cloud IdPがPrincipalを認証する。
+- 管理対象Registryまたはgatewayがpullとpushをサーバー側で観測する。
+- 成功および拒否Eventをサーバー署名する。
+- append-only object storageへ原本Bundleを保存する。
+- transparency logまたは署名checkpointでEvent集合の削除とforkを検知する。
+- 検索indexを原本から再構築できる派生データとして運用する。
+
+Cloudであっても、検索DBを証拠の正本にしない。
+
+採番だけを目的とするRDBは不要である。
+
+Event IDはUUIDv7、Artifact順序はenvironment単位のgeneration、log順序はtransparency logの位置で表現できる。
+
+## CLI
+
+想定する操作は次のとおりとする。
 
 ```bash
-enbu audit list                                    # all events
-enbu audit list --env production                   # filter by environment
-enbu audit list --actor alice                      # filter by actor
-enbu audit list --from 2026-07-01 --to 2026-07-13 # filter by date range
+enbu verify
+enbu audit list
+enbu audit export
+enbu audit verify <bundle>
 ```
 
-### `enbu audit verify`
+`enbu verify`は、取得済みSecret ArtifactのOCI digest、Sigstore Bundle、Control State binding、revision chainを検証する。
 
-Verify the Sigstore signature of a specific audit entry.
-Used to prove "this log has not been tampered with" during compliance audits.
+ローカル`.env`自体のbyte比較はMVPに含めない。
 
-```bash
-enbu audit verify --entry <log-index>
-```
+`enbu audit list`は利用可能なsinkまたはCloud APIを検索し、IDの表示名を権限確認後に解決する。
 
-Verification steps:
+`enbu audit export`は署名済みBundleをそのまま出力する。
 
-1. Rekor inclusion proof (the entry exists in the transparency log)
-2. Fulcio certificate validity (OIDC identity was valid at signing time)
-3. Attestation signature correctness (content has not been modified)
+`enbu audit verify`は保存先を信頼せず、Bundle、署名鍵binding、必要なtransparency proofを検証する。
 
-## No Local Storage
+## 代替案
 
-Audit events are never stored on the local filesystem.
+### 毎回Fulcioでkeyless署名する
 
-If a workstation is compromised, local audit logs would reveal:
+採用しない。
 
-- Which environments were accessed
-- Access frequency and patterns
-- Secret names
+任意のIdPがPublic Fulcioで受理されるとは限らず、通常操作とは別のOIDC flowが必要になる。
 
-To eliminate this risk, the CLI sends events directly to Rekor after generation and discards them from memory.
-Organizations that need search or aggregation query the Rekor API from their own infrastructure.
+短命証明書を期限後に検証するには、署名時刻を裏付けるtransparency log entryまたはRFC 3161 timestampも必要になる。
 
-## Dependencies
+enbuではPrincipalとDevice Signing KeyのbindingをControl Stateで管理し、ArtifactとEventの署名方式をIdPから分離する。
 
-| Library | Purpose |
-|---------|---------|
-| `sigstore/sigstore-go` | Fulcio certificate acquisition, Rekor write, signature verification |
-| `sigstore/cosign` (Go) | OIDC flow, keyless signing |
+### すべてのEventをPublic Rekorへ送る
 
-Expected binary size increase: 15–25 MB on top of the current ~13 MB.
-This is acceptable for enbu's target users (developers). For reference, kubectl exceeds 50 MB.
+既定では採用しない。
 
-## Development Plan
+外部から観測可能なmetadataが増え、公開サービスの可用性と利用規約へ依存するためである。
 
-Implemented in full as part of v0.2:
+また、Public Rekorへ登録しても、改造クライアントがpull Eventを送信しない問題は解決しない。
 
-1. Parse `[audit]` section in `enbu.toml`
-2. Define audit event model (in-toto attestation)
-3. Integrate sigstore-go (Fulcio OIDC + Rekor write)
-4. Add audit hooks to target commands (pull, add, edit, delete, sync, restore)
-5. Implement `enbu audit list` command
-6. Implement `enbu audit verify` command
-7. Documentation (Private Rekor setup guide, docker-compose example)
+### Registryアクセスログをbackstopにする
 
-## Design Decisions Summary
+採用しない。
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Signing method | Sigstore keyless | Consistent with enbu's "keyless" philosophy. No additional key management |
-| Fulcio | Public | Self-hosting Fulcio requires HSM management. Only certificate request facts remain on Public |
-| Rekor | Private (self-hosted by org) | Keep audit content internal. enbu only configures the URL |
-| Client trust | Trusted | Key holders are trusted by design. Registry logs serve as backstop |
-| Recorded events | Secret-touching operations only | Administrative ops are traceable via Registry logs |
-| secret_names protection | Rekor access control | Those who can access Rekor already know the secret names |
-| Storage | Rekor only | Local storage increases risk upon workstation compromise |
-| On send failure | Continue operation, show warning | Do not block developer work |
-| Send timing | After successful operation | Record "what actually happened" |
-| Binary size increase | Accepted | Within acceptable range for modern CLI tools |
+ログ内容、保持期間、契約plan、actor表現、耐改変性がRegistryごとに異なるためである。
 
-## Future Extensions
+利用できる場合だけ相関用の補助証拠として扱う。
 
-- `enbu audit export`: Bulk export for SIEM integration
-- Cross-reference report with GitHub Audit Log (Enterprise environments)
-- Recording of administrative operations
-- Anomaly detection (alerts on unusual access patterns)
+### Secret名をHMAC化して記録する
+
+採用しない。
+
+辞書攻撃が可能で、鍵管理が増え、Artifact単位で調査する設計に不要だからである。
+
+### OCI Referrersで署名を分離する
+
+MVPでは採用しない。
+
+Manifest digest自体を署名できる利点はあるが、Registry互換性、Artifactと署名の取得一貫性、push途中の状態管理が増えるためである。
+
+## 懸念点
+
+### Control Stateが新しい信頼の中心になる
+
+Artifact署名が正しくても、攻撃者がControl Stateを差し替えられると不正な鍵を承認できる。
+
+genesis pin、署名chain、失効、端末high-water markの実装と回復手順を先にPoCする必要がある。
+
+### Registryの更新がatomic compare-and-swapではない
+
+現在のdigest precheck後に競合pushが発生すると、二つの正当なrevisionがforkする可能性がある。
+
+署名とgenerationだけではlost updateを防げないため、対象Registryごとの条件付き更新能力を確認する必要がある。
+
+### Access Audit Eventの完全性はOSSで保証できない
+
+改造クライアント、端末侵害、Event送信失敗によりpull Eventを欠落させられる。
+
+この制約は暗号署名やPublic Rekorだけでは解消できない。
+
+### 署名鍵の窃取
+
+Device Signing Keyが盗まれると、失効が反映されるまで正当なPrincipalとしてArtifactやEventを署名できる。
+
+OS keyring、hardware-backed key、失効伝播時間の要件を実装前に評価する。
+
+### metadataの相関
+
+opaque IDだけでも、時刻、頻度、Artifact size、digestの外部相関から利用状況を推測される可能性がある。
+
+公開transparency logを有効にする場合は、この漏えいを明示的に許容する必要がある。
+
+## 未決定事項
+
+| 項目 | 今決めない理由 | 決定時期 |
+|---|---|---|
+| ローカル`.env`のmaterialization receipt | Artifact整合性とは別の脅威境界である | `enbu verify`実装前 |
+| OSSの標準Audit sink protocol | Cloud以外の運用要件が未検証である | Access Audit実装前 |
+| Public Rekorを利用するCLI option | privacyとRekor v2 client対応を実測していない | Artifact署名PoC後 |
+| Cloudのobject formatと検索index | Cloudは現時点の主対象ではない | Cloud監査基盤設計時 |
+| RFC 3161 timestampの必須化 | 永続Device Keyでは証明書期限の問題がなく、必要な時刻保証が未確定である | compliance要件確定時 |
+| 鍵のhardware-backed化 | OSと企業要件ごとの互換性が未検証である | keystore PoC時 |
+
+未決定事項はArtifact schemaを分岐させない。
+
+追加の証明はSigstore Bundleのverification materialまたはCloudのassurance policyとして表現する。
+
+## 実装順序
+
+1. Principal、Device Signing Key、Control Stateのmodelと検証器を実装する。
+2. 暗号化payloadとSigstore Bundleを同梱するOCI ArtifactをPoCする。
+3. GHCR、ECR、Harbor、GitLab Registryでpush、pull、競合、未知layerの挙動を検証する。
+4. 復号前のArtifact検証を必須化する。
+5. 署名済み`artifact.pull` Eventとsink interfaceを実装する。
+6. ArtifactとControl Stateから監査表示modelを導出する。
+7. rollback、fork、失効、鍵窃取、欠落Eventのscenario testを追加する。
+8. unsigned v1 Artifactからsigned v2 Artifactへの移行規則を実装する。
+
+一度signed v2 Artifactを観測したenvironmentでは、unsigned v1 Artifactへのfallbackを拒否する。
+
+## 参考資料
+
+- [Sigstore Bundle Format](https://docs.sigstore.dev/about/bundle/)
+- [sigstore-go signing](https://github.com/sigstore/sigstore-go/blob/main/docs/signing.md)
+- [Rekor v2 client guidance](https://github.com/sigstore/rekor-tiles/blob/main/CLIENTS.md)
+- [OpenID Connect Core 1.0, Subject Identifier Types](https://openid.net/specs/openid-connect-core-1_0.html#SubjectIDTypes)
+- [DSSE protocol](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md)
+- [OCI Image Manifest Specification](https://github.com/opencontainers/image-spec/blob/main/manifest.md)
