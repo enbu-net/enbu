@@ -17,9 +17,9 @@ packages:
 - name: koki-develop/ghasec@v0.17.0
 - name: pnpm/pnpm@v11.24.0
 - name: suzuki-shunsuke/pinact@v4.1.1
-- name: astral-sh/uv@0.12.6
+- name: astral-sh/uv@0.12.7
 - name: caarlos0/svu@v3.4.1
 - name: pnpm/pnpm@v11.24.0
 - name: suzuki-shunsuke/pinact@v4.1.1
-- name: astral-sh/uv@0.12.6
+- name: astral-sh/uv@0.12.7
 - name: nao1215/atago@v0.21.0
