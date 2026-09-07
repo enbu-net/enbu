@@ -31,8 +31,8 @@
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "@pandacss/dev": "1.12.0",
-    "@pandacss/preset-base": "1.12.0",
+    "@pandacss/dev": "1.12.1",
+    "@pandacss/preset-base": "1.12.1",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.1",
     "@tanstack/router-plugin": "1.168.35",
