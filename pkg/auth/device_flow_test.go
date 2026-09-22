@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
@@ -28,7 +27,7 @@ func TestDeviceLoginEndToEnd(t *testing.T) {
 	t.Cleanup(func() { getGitHubUser = originalUser })
 
 	var tokenRequests int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Header.Get("Accept") != "application/json" {
 			t.Errorf("Accept = %q", r.Header.Get("Accept"))
@@ -69,13 +68,11 @@ func TestDeviceLoginEndToEnd(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer server.Close()
-
 	var waits []time.Duration
 	client := &deviceFlowClient{
 		deviceCodeURL: server.URL + "/device/code",
 		tokenURL:      server.URL + "/access_token",
-		http:          server.Client(),
+		http:          httpClient,
 		wait: func(_ context.Context, duration time.Duration) error {
 			waits = append(waits, duration)
 			return nil
@@ -122,12 +119,11 @@ func TestDeviceLoginErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := newDeviceFlowServer(t, tt.response)
-			defer server.Close()
+			serverURL, httpClient := newDeviceFlowServer(t, tt.response)
 			client := &deviceFlowClient{
-				deviceCodeURL: server.URL + "/device/code",
-				tokenURL:      server.URL + "/access_token",
-				http:          server.Client(),
+				deviceCodeURL: serverURL + "/device/code",
+				tokenURL:      serverURL + "/access_token",
+				http:          httpClient,
 				wait:          func(context.Context, time.Duration) error { return nil },
 			}
 			_, err := client.login(context.Background(), "client-id", func(DeviceAuthorization) error {
@@ -147,12 +143,11 @@ func TestDeviceLoginErrors(t *testing.T) {
 }
 
 func TestDeviceLoginReportsExpiredWhenDeviceDeadlineElapses(t *testing.T) {
-	server := newDeviceFlowServer(t, deviceTokenResponse{})
-	defer server.Close()
+	serverURL, httpClient := newDeviceFlowServer(t, deviceTokenResponse{})
 	client := &deviceFlowClient{
-		deviceCodeURL: server.URL + "/device/code",
-		tokenURL:      server.URL + "/access_token",
-		http:          server.Client(),
+		deviceCodeURL: serverURL + "/device/code",
+		tokenURL:      serverURL + "/access_token",
+		http:          httpClient,
 		wait: func(context.Context, time.Duration) error {
 			return context.DeadlineExceeded
 		},
@@ -164,12 +159,11 @@ func TestDeviceLoginReportsExpiredWhenDeviceDeadlineElapses(t *testing.T) {
 }
 
 func TestDeviceLoginHonorsCancellationBeforePolling(t *testing.T) {
-	server := newDeviceFlowServer(t, deviceTokenResponse{})
-	defer server.Close()
+	serverURL, httpClient := newDeviceFlowServer(t, deviceTokenResponse{})
 	client := &deviceFlowClient{
-		deviceCodeURL: server.URL + "/device/code",
-		tokenURL:      server.URL + "/access_token",
-		http:          server.Client(),
+		deviceCodeURL: serverURL + "/device/code",
+		tokenURL:      serverURL + "/access_token",
+		http:          httpClient,
 		wait: func(ctx context.Context, _ time.Duration) error {
 			<-ctx.Done()
 			return ctx.Err()
@@ -183,9 +177,9 @@ func TestDeviceLoginHonorsCancellationBeforePolling(t *testing.T) {
 	}
 }
 
-func newDeviceFlowServer(t *testing.T, tokenResponse deviceTokenResponse) *httptest.Server {
+func newDeviceFlowServer(t *testing.T, tokenResponse deviceTokenResponse) (string, *http.Client) {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server, httpClient := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/device/code":
@@ -202,6 +196,7 @@ func newDeviceFlowServer(t *testing.T, tokenResponse deviceTokenResponse) *httpt
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
+	return server.URL, httpClient
 }
 
 func assertFormValue(t *testing.T, values url.Values, key, want string) {

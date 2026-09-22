@@ -1,16 +1,10 @@
 name: Preview
 
 on:
-  push:
-    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
 
 permissions: {}
-
-concurrency:
-  group: preview-${{ github.event.pull_request.number || 'main' }}
-  cancel-in-progress: true
 
 jobs:
   build-web:
@@ -33,7 +27,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
         with:
-          aqua_version: v2.62.3
+          aqua_version: v2.63.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -43,17 +37,18 @@ jobs:
         run: pnpm run build:preview
         working-directory: web
         env:
-          PREVIEW_BASE: ${{ github.event_name == 'pull_request' && format('/enbu/pr-{0}/web/', github.event.pull_request.number) || '/enbu/main/web/' }}
+          PREVIEW_BASE: /enbu/web/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: web-preview
           path: web/dist-preview
+          retention-days: 1
 
   build-tui:
     name: Build TUI Preview
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -66,56 +61,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Restore browser VM cache
-        id: browser-vm-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: test/preview/out/tui/out.wasm.gz
-          key: tui-vm-${{ runner.os }}-c2w-v0.8.4-${{ hashFiles('go.mod', 'go.sum', '**/*.go', 'test/preview/Dockerfile.tui') }}
-
-      - name: Build TUI demo binary
-        run: CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o tui-demo ./test/preview/tui-demo
-
-      - name: Build TUI container
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        run: docker build -f test/preview/Dockerfile.tui -t enbu-tui-preview:local .
-
-      - name: Install container2wasm
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        env:
-          C2W_VERSION: v0.8.4
-          C2W_COMMIT: 6ed3d98882a2b22eafc1334f574c364a5b2b8c47
+      - name: Build TUI WASI module
         run: |
-          curl -fsSL "https://github.com/container2wasm/container2wasm/releases/download/${C2W_VERSION}/container2wasm-${C2W_VERSION}-linux-amd64.tar.gz" -o /tmp/c2w.tar.gz
-          echo "1142ab95212578c0c7f666de830de6945f2abbea1713d1e07a7cb04072e00f31  /tmp/c2w.tar.gz" | sha256sum -c -
-          sudo tar -xz -C /usr/local/bin -f /tmp/c2w.tar.gz c2w
-          curl -fsSL "https://github.com/container2wasm/container2wasm/archive/${C2W_COMMIT}.tar.gz" -o /tmp/c2w-assets.tar.gz
-          echo "4815b8923167732ad53a8b60492395c6b0a9ff3d14cc2ac7fa08afab48e47bc5  /tmp/c2w-assets.tar.gz" | sha256sum -c -
-          mkdir -p /tmp/c2w-assets
-          tar -xzf /tmp/c2w-assets.tar.gz -C /tmp/c2w-assets --strip-components=1
-
-      - name: Build browser VM
-        if: steps.browser-vm-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p test/preview/out/tui
-          c2w --assets /tmp/c2w-assets enbu-tui-preview:local test/preview/out/tui/out.wasm
+          ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
           gzip -9 test/preview/out/tui/out.wasm
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tui-preview
           path: test/preview/out
+          retention-days: 1
 
   deploy:
     name: Deploy to GitHub Pages
     needs: [build-web, build-tui]
-    concurrency:
-      group: preview-store
-      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -139,6 +102,7 @@ jobs:
         with:
           sparse-checkout: |
             test/preview/index.html
+            test/preview/preview-metadata.js
             test/preview/coi-serviceworker.min.js
           sparse-checkout-cone-mode: false
           path: src
@@ -146,77 +110,25 @@ jobs:
 
       - run: cp src/test/preview/index.html site/index.html
 
+      - run: cp src/test/preview/preview-metadata.js site/preview-metadata.js
+
+      - name: Write preview environment metadata
+        env:
+          PREVIEW_PR: ${{ github.event.pull_request.number }}
+          PREVIEW_PR_URL: ${{ github.event.pull_request.html_url }}
+          PREVIEW_REF: ${{ github.head_ref }}
+          PREVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          jq -n \
+            --arg pullRequest "$PREVIEW_PR" \
+            --arg pullRequestURL "$PREVIEW_PR_URL" \
+            --arg ref "$PREVIEW_REF" \
+            --arg sha "$PREVIEW_SHA" \
+            '{pullRequest: $pullRequest, pullRequestURL: $pullRequestURL, ref: $ref, sha: $sha}' \
+            > site/preview-metadata.json
+
       - name: Copy cross-origin isolation worker
         run: cp src/test/preview/coi-serviceworker.min.js site/coi-serviceworker.min.js
-
-      - name: Determine deploy path
-        id: path
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            echo "deploy_path=pr-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy_path=main" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Clone or init _preview-store
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code "$REPO_URL" "refs/heads/_preview-store" > /dev/null 2>&1; then
-            git clone --depth 1 --branch _preview-store "$REPO_URL" _preview-store
-          else
-            git init -b _preview-store _preview-store
-            cd _preview-store || exit 1
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git remote add origin "$REPO_URL"
-            git commit --allow-empty -m "chore: init _preview-store"
-          fi
-
-      - name: Update deploy directory in state store
-        env:
-          DEPLOY_PATH: ${{ steps.path.outputs.deploy_path }}
-        run: |
-          rm -rf "_preview-store/${DEPLOY_PATH}"
-          mkdir -p "_preview-store/${DEPLOY_PATH}"
-          cp -r site/. "_preview-store/${DEPLOY_PATH}/"
-
-      - name: Create root index if missing
-        run: |
-          if [ ! -f _preview-store/index.html ]; then
-            cat > _preview-store/index.html <<'HTML'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head><meta charset="UTF-8"><title>enbu Previews</title>
-          <style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;max-width:600px;margin:4rem auto;padding:1rem}a{color:#58a6ff}</style>
-          </head>
-          <body>
-          <h1>enbu Previews</h1>
-          <p><a href="main/">main branch</a></p>
-          </body></html>
-          HTML
-          fi
-
-      - name: Save state store to _preview-store branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEPLOY_PATH: ${{ steps.path.outputs.deploy_path }}
-        run: |
-          cd _preview-store || exit 1
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git remote get-url origin > /dev/null 2>&1; then
-            git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          else
-            git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          fi
-          git add -A
-          git diff --staged --quiet || git commit -m "preview: update ${DEPLOY_PATH}"
-          git push origin _preview-store:_preview-store
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
@@ -224,39 +136,9 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: _preview-store
+          path: site
+          retention-days: 1
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
-
-  comment:
-    name: Post Preview URL
-    needs: deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: github.event_name == 'pull_request'
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Find existing comment
-        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
-        id: find
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: github-actions[bot]
-          body-includes: "<!-- enbu-preview -->"
-
-      - name: Post or update comment
-        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
-        with:
-          comment-id: ${{ steps.find.outputs.comment-id }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            <!-- enbu-preview -->
-            ## Preview
-
-            https://enbu-net.github.io/enbu/pr-${{ github.event.pull_request.number }}/
-
-            > Updated at ${{ github.sha }}
-          edit-mode: replace
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

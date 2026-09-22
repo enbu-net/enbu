@@ -1,0 +1,509 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nao1215/atago/v0.20.0/schema/atago.schema.json
+version: "1"
+
+suite:
+  name: enbu CLI end to end
+  setup:
+    - service:
+        name: github-oauth-stub
+        command: go run ./test/e2e/stub
+        cwd: "${specdir}/../.."
+        ready:
+          port: 127.0.0.1:18080
+          timeout: 30s
+
+scenarios:
+  - name: metadata help version and completions are user-facing contracts
+    tags: [metadata]
+    steps:
+      - run:
+          command: enbu --version
+      - assert:
+          exit_code: 0
+          stderr:
+            equals: enbu version e2e-test
+      - run:
+          command: enbu --help
+      - assert:
+          exit_code: 0
+          stdout:
+            contains: [auth, init, switch, add, edit, delete, pull, sync, history, completion]
+          stderr:
+            empty: true
+      - run:
+          command: enbu --json
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.ok", equals: true}
+              - {path: "$.data.command", equals: enbu}
+              - {path: "$.data.commands", length: 10}
+          stderr:
+            empty: true
+      - run:
+          command: enbu completion bash --no-descriptions
+      - assert:
+          exit_code: 0
+          stdout: {contains: "__start_enbu"}
+      - run:
+          command: enbu completion zsh --no-descriptions
+      - assert:
+          exit_code: 0
+          stdout: {contains: "#compdef enbu"}
+      - run:
+          command: enbu completion fish --no-descriptions
+      - assert:
+          exit_code: 0
+          stdout: {contains: "complete -c enbu"}
+      - run:
+          command: enbu completion powershell --no-descriptions
+      - assert:
+          exit_code: 0
+          stdout: {contains: "Register-ArgumentCompleter"}
+
+  - name: invalid invocations preserve human and JSON error contracts
+    tags: [errors]
+    steps:
+      - run:
+          command: enbu add ONLY_ONE_ARGUMENT
+      - assert:
+          exit_code: 2
+          stdout: {empty: true}
+          stderr: {contains: "Error:"}
+      - run:
+          command: enbu --json add ONLY_ONE_ARGUMENT
+      - assert:
+          exit_code: 2
+          stdout:
+            json:
+              - {path: "$.ok", equals: false}
+              - {path: "$.error.code", equals: invalid_argument}
+          stderr: {empty: true}
+      - run:
+          command: enbu pull --json --stdout
+      - assert:
+          exit_code: 2
+          stdout:
+            json: {path: "$.error.code", equals: invalid_argument}
+          stderr: {empty: true}
+      - run:
+          command: enbu history diff nope 2 --json
+      - assert:
+          exit_code: 2
+          stdout:
+            json: {path: "$.error.code", equals: invalid_argument}
+          stderr: {empty: true}
+
+  - name: authentication status reports logged-out and environment-token states
+    tags: [auth]
+    env:
+      GITHUB_TOKEN: ""
+    steps:
+      - run:
+          command: enbu auth status
+      - assert:
+          exit_code: 0
+          stdout: {empty: true}
+          stderr: {contains: "Auth: not logged in"}
+      - run:
+          command: enbu auth status --json
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.ok", equals: true}
+              - {path: "$.data.authenticated", equals: false}
+          stderr: {empty: true}
+      - run:
+          command: enbu auth logout --json
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.data.logged_out", equals: true}
+              - {path: "$.data.private_key_preserved", equals: true}
+
+  - name: browser PKCE login completes through the loopback callback
+    tags: [auth]
+    env:
+      GITHUB_TOKEN: ""
+      PATH: "${workdir}/bin:${env:PATH}"
+    steps:
+      - fixture:
+          file: bin/xdg-open
+          mode: "0755"
+          content: |
+            #!/usr/bin/env python3
+            import sys
+            import urllib.parse
+            import urllib.request
+
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)
+            redirect = query.get("redirect_uri", [""])[0]
+            state = query.get("state", [""])[0]
+            if redirect:
+                separator = "&" if "?" in redirect else "?"
+                urllib.request.urlopen(redirect + separator + urllib.parse.urlencode({"code": "e2e-code", "state": state}))
+      - run:
+          command: enbu auth login
+          timeout: 15s
+      - assert:
+          exit_code: 0
+          stdout: {contains: ["Initiating GitHub authentication", "Waiting for authorization"]}
+          stderr: {contains: "Authenticated as: e2e-user"}
+      - run:
+          command: enbu auth status --json
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.data.authenticated", equals: true}
+              - {path: "$.data.username", equals: e2e-user}
+      - run:
+          command: enbu auth logout
+      - assert:
+          exit_code: 0
+          stderr: {contains: "Logged out successfully"}
+
+  - name: device flow is driven through a real pseudo-terminal
+    tags: [auth, pty]
+    env:
+      GITHUB_TOKEN: ""
+      PATH: "${workdir}/bin:${env:PATH}"
+    steps:
+      - fixture:
+          file: bin/xdg-open
+          mode: "0755"
+          content: |
+            #!/bin/sh
+            exit 0
+      - pty:
+          command: enbu auth login --device
+          rows: 24
+          cols: 100
+          timeout: 15s
+          session:
+            - expect: "Code: E2E-1234"
+            - expect: "Waiting for authorization"
+            - expect: "Authenticated as: e2e-user"
+      - assert:
+          exit_code: 0
+          stdout: {contains: ["E2E-1234", "Authenticated as: e2e-user"]}
+      - run:
+          command: enbu auth login --device --json
+      - assert:
+          exit_code: 2
+          stdout:
+            json: {path: "$.error.code", equals: invalid_argument}
+
+  - name: init creates config ignore rules key recipient and Git commit
+    tags: [init, registry]
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/e2e/init-human.git}
+      - run:
+          command: enbu init
+          timeout: 15s
+      - assert:
+          exit_code: 0
+          stdout:
+            contains: ["Created enbu.toml", "Updated .gitignore", "Registered user public key", "enbu initialized"]
+          stderr: {empty: true}
+      - assert:
+          file:
+            path: enbu.toml
+            contains: ["version = \"v1alpha1\"", "default_env = \"default\""]
+      - assert:
+          file:
+            path: .gitignore
+            contains: [".env", ".env.*", "!.env.example"]
+      - run: {command: git log -1 --pretty=%s}
+      - assert:
+          stdout: {equals: "chore: add enbu config"}
+      - assert:
+          dir:
+            path: keys
+            contains: [enbu_e2e_init-human]
+
+  - name: JSON init returns structured repository and registry state
+    tags: [init, json, registry]
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/org-e2e/init-json.git}
+      - run:
+          command: enbu init --json
+          timeout: 15s
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.ok", equals: true}
+              - {path: "$.data.mode", equals: initialize}
+              - {path: "$.data.repository.owner", equals: org-e2e}
+              - {path: "$.data.registry", equals: "localhost:5001/org-e2e/init-json-enbu"}
+              - {path: "$.data.key_created", equals: true}
+              - {path: "$.data.recipient_registered", equals: true}
+          stderr: {empty: true}
+
+  - name: environment create switch previous rename list and delete persist state
+    tags: [environment]
+    steps:
+      - fixture:
+          file: enbu.toml
+          content: |
+            version = "v1alpha1"
+            default_env = "default"
+
+            [env.default]
+            output = ".env"
+      - run: {command: git init}
+      - run: {command: git remote add origin https://github.com/e2e/environments.git}
+      - run: {command: enbu switch --create dev}
+      - assert:
+          exit_code: 0
+          stderr: {contains: "Created and switched to 'dev'"}
+      - run: {command: enbu switch default}
+      - assert:
+          stderr: {contains: "Switched to 'default'"}
+      - run: {command: enbu switch -}
+      - assert:
+          stderr: {contains: "Switched to 'dev'"}
+      - run: {command: enbu switch --move dev development}
+      - assert:
+          stderr: {contains: "Renamed 'dev' to 'development'"}
+      - run: {command: enbu switch --list --json}
+      - assert:
+          stdout:
+            json:
+              - {path: "$.data.action", equals: list}
+              - {path: "$.data.environments", length: 2}
+      - run: {command: enbu switch default}
+      - run: {command: enbu switch --delete development}
+      - assert:
+          stderr: {contains: "Deleted environment 'development'"}
+      - assert:
+          file:
+            path: enbu.toml
+            not_contains: development
+
+  - name: secret lifecycle covers human JSON stdout file and special values
+    tags: [secrets, registry]
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/e2e/secrets.git}
+      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu add API_KEY old-secret}
+      - assert:
+          exit_code: 0
+          stderr: {equals: "✓ Added API_KEY"}
+      - run:
+          shell: true
+          command: "enbu add UNICODE '日本語🔑=value with spaces'"
+      - assert:
+          exit_code: 0
+      - run: {command: enbu add API_KEY duplicate --json}
+      - assert:
+          exit_code: 1
+          stdout:
+            json: {path: "$.error.code", equals: secret_already_exists}
+          stderr: {empty: true}
+      - run: {command: enbu edit API_KEY new-secret --json}
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.data.action", equals: edit}
+              - {path: "$.data.key", equals: API_KEY}
+      - run: {command: enbu pull --stdout}
+      - assert:
+          exit_code: 0
+          stdout:
+            contains: ["API_KEY=\"new-secret\"", "UNICODE=\"日本語🔑=value with spaces\""]
+          stderr: {empty: true}
+      - run: {command: enbu pull --json}
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.data.environment", equals: default}
+              - {path: "$.data.count", equals: 2}
+              - {path: "$.data.secrets.API_KEY", equals: new-secret}
+      - run: {command: enbu pull}
+      - assert:
+          exit_code: 0
+          stderr: {contains: "Written .env (2 secrets)"}
+      - assert:
+          file:
+            path: .env
+            contains: ["API_KEY=\"new-secret\"", "UNICODE=\"日本語🔑=value with spaces\""]
+      - run:
+          shell: true
+          command: stat -c %a .env
+      - assert:
+          stdout: {equals: "600"}
+      - run: {command: enbu delete API_KEY}
+      - assert:
+          stderr: {equals: "✓ Deleted API_KEY"}
+      - run: {command: enbu pull --stdout}
+      - assert:
+          stdout:
+            contains: "UNICODE=\"日本語🔑=value with spaces\""
+            not_contains: API_KEY
+
+  - name: history lists diffs and restores encrypted snapshots
+    tags: [history, registry]
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/e2e/history.git}
+      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu add API_KEY first}
+      - run: {command: enbu edit API_KEY second}
+      - run: {command: enbu add EXTRA value}
+      - run: {command: enbu history list --json}
+      - assert:
+          exit_code: 0
+          stdout:
+            json:
+              - {path: "$.data.environment", equals: default}
+              - {path: "$.data.entries", length: 3}
+      - run: {command: enbu history diff 1 3}
+      - assert:
+          exit_code: 0
+          stderr: {contains: ["+ EXTRA", "~ API_KEY"]}
+      - run: {command: enbu history restore 1 --json}
+      - assert:
+          exit_code: 0
+          stdout:
+            json: {path: "$.data.version", equals: 1}
+      - run: {command: enbu pull --stdout}
+      - assert:
+          stdout:
+            contains: "API_KEY=\"first\""
+            not_contains: EXTRA
+      - run: {command: enbu history restore 99 --json}
+      - assert:
+          exit_code: 2
+          stdout:
+            json: {path: "$.error.code", equals: invalid_argument}
+
+  - name: late joining user cannot decrypt before sync and can afterward
+    tags: [multi-user, registry]
+    env:
+      ENBU_TEXT_BACKEND_DIR: "${workdir}/alice-keys"
+      GITHUB_ACTOR: alice
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/e2e/team.git}
+      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu add TEAM_SECRET shared}
+      - run:
+          command: enbu init
+          env:
+            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            GITHUB_ACTOR: bob
+          timeout: 15s
+      - assert:
+          exit_code: 0
+          stdout: {contains: "Existing enbu setup detected"}
+      - run:
+          command: enbu pull --stdout --json
+          env:
+            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            GITHUB_ACTOR: bob
+      - assert:
+          exit_code: 2
+          stdout:
+            json: {path: "$.error.code", equals: invalid_argument}
+      - run:
+          command: enbu pull --stdout
+          env:
+            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            GITHUB_ACTOR: bob
+      - assert:
+          exit_code: 1
+          stderr: {contains: "Error:"}
+      - run: {command: enbu sync}
+      - assert:
+          exit_code: 0
+          stderr: {equals: "✓ Sync complete"}
+      - run:
+          command: enbu pull --stdout
+          env:
+            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            GITHUB_ACTOR: bob
+      - assert:
+          exit_code: 0
+          stdout: {contains: "TEAM_SECRET=\"shared\""}
+
+  - name: TUI renders secrets navigates tabs reveals values and quits
+    tags: [tui, registry]
+    steps:
+      - run: {command: git init}
+      - run: {command: git config user.name "enbu E2E"}
+      - run: {command: git config user.email e2e@example.com}
+      - run: {command: git remote add origin https://github.com/e2e/tui.git}
+      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu add API_KEY tui-secret}
+      - pty:
+          command: enbu
+          rows: 28
+          cols: 110
+          timeout: 20s
+          session:
+            - expect_screen:
+                contains: API_KEY
+                stable_for: 100ms
+            - send: {key: space}
+            - expect_screen: {contains: tui-secret}
+            - send: "2"
+            - expect_screen: {contains: e2e-user}
+            - send: "3"
+            - expect_screen: {contains: "Default env"}
+            - send: "1"
+            - expect_screen: {contains: API_KEY}
+            - send: "q"
+      - assert:
+          exit_code: 0
+          stdout: {contains: [API_KEY, tui-secret, Members, "Default env"]}
+
+  - name: TUI reports small terminal and missing configuration safely
+    tags: [tui, errors]
+    steps:
+      - fixture:
+          file: enbu.toml
+          content: |
+            version = "v1alpha1"
+            default_env = "default"
+
+            [env.default]
+            output = ".env"
+      - pty:
+          command: enbu
+          rows: 10
+          cols: 40
+          timeout: 10s
+          session:
+            - expect_screen: {contains: "terminal of at least"}
+            - send: "q"
+      - assert:
+          exit_code: 0
+      - fixture:
+          file: empty/.keep
+          content: ""
+      - run:
+          command: enbu
+          cwd: empty
+      - assert:
+          exit_code: 1
+          stderr: {contains: "Error:"}

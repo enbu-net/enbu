@@ -1,5 +1,0 @@
-FROM scratch
-
-COPY tui-demo /tui-demo
-
-ENTRYPOINT ["/tui-demo"]

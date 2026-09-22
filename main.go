@@ -7,21 +7,29 @@ import (
 	"os/signal"
 	"runtime/debug"
 
+	"github.com/enbu-net/enbu/app"
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
-var Version string
+var (
+	Version string
+	// registryHost stays private and is overridden only in E2E builds so the
+	// production CLI keeps its fixed registry behavior.
+	registryHost string
+)
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	app := enbucli.New(getVersion())
-	if err := app.ExecuteContext(ctx); err != nil {
+	service := app.New()
+	service.RegistryHost = registryHost
+	command := enbucli.NewWithApp(getVersion(), service)
+	if err := command.ExecuteContext(ctx); err != nil {
 		err = apperr.Normalize(err)
 		log.SetFlags(0)
-		enbucli.RenderExecutionError(app, err, os.Args[1:])
+		enbucli.RenderExecutionError(command, err, os.Args[1:])
 		os.Exit(apperr.ExitCode(err))
 	}
 }

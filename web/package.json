@@ -28,20 +28,19 @@
     "monaco-editor": "^0.56.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "smol-toml": "^1.7.0",
-    "xterm-pty": "0.12.0"
+    "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "@pandacss/dev": "1.12.0",
-    "@pandacss/preset-base": "1.12.0",
+    "@pandacss/dev": "1.12.1",
+    "@pandacss/preset-base": "1.12.1",
     "@park-ui/cli": "1.0.1",
-    "@tanstack/router-devtools": "1.167.0",
-    "@tanstack/router-plugin": "1.168.23",
-    "@types/node": "24.13.3",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.4",
-    "@vitejs/plugin-react": "6.0.5",
-    "jsdom": "30.0.1",
+    "@tanstack/router-devtools": "1.167.2",
+    "@tanstack/router-plugin": "1.168.40",
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "30.1.0",
     "typescript": "7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
@@ -53,5 +52,5 @@
       "onFail": "download"
     }
   },
-  "packageManager": "pnpm@11.19.0"
+  "packageManager": "pnpm@11.27.0"
 }

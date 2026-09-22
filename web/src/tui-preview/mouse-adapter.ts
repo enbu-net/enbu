@@ -56,10 +56,18 @@ export function attachMouseReporting(terminal: Terminal, host: HTMLElement): () 
     throw new Error("Ghostty did not create a terminal canvas");
   }
 
+  let lastMoveCell = "";
   const send = (event: MouseEvent, action: "press" | "release" | "move") => {
     if (!terminal.hasMouseTracking()) return;
     const position = terminalPosition(event, canvas, terminal);
     if (!position) return;
+    if (action === "move") {
+      const cell = `${position.column}:${position.row}`;
+      if (cell === lastMoveCell) return;
+      lastMoveCell = cell;
+    } else {
+      lastMoveCell = "";
+    }
     event.preventDefault();
     terminal.input(encodeMouseEvent(event, position, action), true);
   };

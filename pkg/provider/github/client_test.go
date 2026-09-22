@@ -11,9 +11,9 @@ import (
 
 func newTestClient(t *testing.T, token string, handler http.HandlerFunc) *Client {
 	t.Helper()
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
-	return newClient(token, server.Client(), server.URL+"/")
+	server := httptest.NewTestServer(t, handler)
+	httpClient := server.Client()
+	return newClient(token, httpClient, server.URL+"/")
 }
 
 func TestGetUser(t *testing.T) {

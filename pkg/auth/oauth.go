@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	authEndpoint       = "https://auth.enbu-net.workers.dev"
 	callbackPath       = "/oauth/callback"
 	loginTimeout       = 10 * time.Minute
 	maxResponseBytes   = 4 * 1024
@@ -33,6 +32,9 @@ const (
 	retryBackoffStart  = 100 * time.Millisecond
 	retryBackoffMax    = 5 * time.Second
 )
+
+// authEndpoint is overridden with -ldflags only by local E2E builds.
+var authEndpoint = "https://auth.enbu-net.workers.dev"
 
 var (
 	statePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)

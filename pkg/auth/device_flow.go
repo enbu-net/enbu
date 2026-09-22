@@ -13,12 +13,17 @@ import (
 )
 
 const (
+	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
+	deviceScopes       = "repo read:org write:packages"
+	maxDeviceValueSize = 2048
+)
+
+var (
+	// Keep these private while allowing E2E builds to route the complete device
+	// flow through a local stub with linker flags.
 	githubDeviceCodeURL = "https://github.com/login/device/code"
 	githubTokenURL      = "https://github.com/login/oauth/access_token"
 	githubDeviceURL     = "https://github.com/login/device"
-	deviceGrantType     = "urn:ietf:params:oauth:grant-type:device_code"
-	deviceScopes        = "repo read:org write:packages"
-	maxDeviceValueSize  = 2048
 )
 
 type DeviceAuthorization struct {

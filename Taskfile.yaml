@@ -19,6 +19,7 @@ tasks:
     deps:
       - cli/test/unit
       - cli/test/scenario
+      - cli/test/e2e
 
   cli/test/unit:
     desc: Run unit tests
@@ -48,6 +49,16 @@ tasks:
       CGO_ENABLED: '0'
     cmds:
       - go test -v -shuffle=on ./pkg/artifact/...
+
+  cli/test/e2e:
+    desc: Run CLI end-to-end tests with atago
+    cmds:
+      - docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
+      - docker compose -p enbu-e2e -f test/e2e/compose.yaml up -d --wait
+      - defer: docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
+      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5001/v2/
+      - aqua exec -- atago list test/e2e
+      - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts test/e2e
 
   gui/test:
     desc: Run GUI tests
@@ -126,7 +137,7 @@ tasks:
   gui/check:
     desc: Format and lint GUI code
     deps:
-      - gui/install
+      - gui/build/frontend
     dir: web
     cmds:
       - vp check
@@ -168,6 +179,11 @@ tasks:
     preconditions:
       - sh: command -v vhs
         msg: "VHS not installed. Install with: go install github.com/charmbracelet/vhs@latest"
+
+  cli/preview/wasm:
+    desc: Build the browser TUI as a WASI module
+    cmds:
+      - ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
 
   gui/install:
     internal: true

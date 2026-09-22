@@ -1,0 +1,30 @@
+diff --git a/signals_other.go b/signals_other.go
+new file mode 100644
+index 0000000..047b136
+--- /dev/null
++++ b/signals_other.go
+@@ -0,0 +1,6 @@
++//go:build wasip1 || wasip2
++
++package tea
++
++// listenForResize on WASI: no SIGWINCH; report immediately done.
++func (p *Program) listenForResize(done chan struct{}) { close(done) }
+diff --git a/tty_other.go b/tty_other.go
+new file mode 100644
+index 0000000..3f21469
+--- /dev/null
++++ b/tty_other.go
+@@ -0,0 +1,12 @@
++//go:build wasip1 || wasip2
++
++package tea
++
++// initInput on WASI: there is no raw mode and no /dev/tty; the program
++// runs with non-TTY (pipe) input, which Bubble Tea supports natively.
++func (p *Program) initInput() (err error) { return nil }
++
++// suspendSupported: no SIGTSTP or process groups on WASI.
++const suspendSupported = false
++
++func suspendProcess() {}
