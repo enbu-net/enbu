@@ -19,7 +19,7 @@ require (
 	golang.design/x/clipboard v0.9.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.42.0
 	oras.land/oras-go/v2 v2.6.2
 )
 
