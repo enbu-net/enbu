@@ -84,7 +84,7 @@ jobs:
       - name: Identity E2E with native OS keyring
         if: runner.os != 'Linux'
         run: task identity/test/e2e
-      - name: Native Identity package tests
+      - name: Identity package tests
         run: go test -v ./pkg/identity
 
   check:
