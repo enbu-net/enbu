@@ -10,6 +10,10 @@ import (
 
 type KeyringBackend struct{}
 
+// Probe checks access without writing a key or waiting indefinitely for a
+// locked or missing Secret Service.
+func (k *KeyringBackend) Probe() error { return k.probe() }
+
 func (k *KeyringBackend) probe() error {
 	type result struct{ err error }
 	ch := make(chan result, 1)

@@ -35,7 +35,8 @@ func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]st
 		return nil, err
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +75,8 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error)
 		return err
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return err
 	}
@@ -162,7 +164,8 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error
 		return err
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return err
 	}
@@ -240,7 +243,8 @@ func (a *App) DeleteSecret(ctx context.Context, env, key string) (err error) {
 		return err
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return err
 	}
@@ -360,7 +364,8 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 		return nil, fmt.Errorf("pulling secrets: %w", err)
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +438,8 @@ func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 		return err
 	}
 
-	identities, err := LoadIdentitiesForRepo(a.KeyStore, owner, repo)
+	identities, err := LoadIdentitiesForRepo(a.Identities, owner, repo)
+	defer CloseIdentities(identities)
 	if err != nil {
 		return err
 	}
@@ -477,7 +483,7 @@ func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 	return nil
 }
 
-func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token string, identities []*agecrypto.X25519Identity, pushOpts *oci.PushOptions) error {
+func (a *App) doSync(ctx context.Context, secretsRef, recipientsRef, token string, identities []agecrypto.Identity, pushOpts *oci.PushOptions) error {
 	a.emitStepProgress("sync", "pull_secrets", "start")
 	secrets, baseDigest, err := PullSecretsWithDigest(ctx, a.Registry, secretsRef, token, identities...)
 	if err != nil {

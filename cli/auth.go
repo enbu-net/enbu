@@ -2,14 +2,11 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/spf13/cobra"
 )
 
@@ -22,8 +19,8 @@ type authLoginDeps struct {
 }
 
 type authStatusDeps struct {
-	loadToken   func() (*auth.StoredToken, error)
-	newKeyStore func() (app.KeyStore, error)
+	loadToken     func() (*auth.StoredToken, error)
+	identityStore app.IdentityStore
 }
 
 func newAuthCommand(a *app.App) *cobra.Command {
@@ -132,7 +129,7 @@ func newAuthLogoutCommandWithDelete(deleteToken func() error) *cobra.Command {
 				})
 			}
 			cmd.Println("✓ Logged out successfully.")
-			cmd.Println("  Note: Your age private key remains in the system keystore.")
+			cmd.Println("  Note: Your repository Identity is preserved.")
 			return nil
 		},
 	}
@@ -140,10 +137,8 @@ func newAuthLogoutCommandWithDelete(deleteToken func() error) *cobra.Command {
 
 func newAuthStatusCommand(a *app.App) *cobra.Command {
 	return newAuthStatusCommandWithDeps(a, authStatusDeps{
-		loadToken: auth.LoadToken,
-		newKeyStore: func() (app.KeyStore, error) {
-			return keystore.New()
-		},
+		loadToken:     auth.LoadToken,
+		identityStore: a.Identities,
 	})
 }
 
@@ -185,36 +180,15 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 			}
 			humanPrintf(cmd, "Repo: %s/%s\n", owner, repo)
 
-			backend, err := deps.newKeyStore()
-			if err != nil {
-				if jsonEnabled(cmd) {
-					return writeJSON(cmd, map[string]any{
-						"authenticated": true,
-						"username":      token.Username,
-						"repository": map[string]string{
-							"owner": owner,
-							"name":  repo,
-						},
-						"public_key":         nil,
-						"config_initialized": nil,
-					}, fmt.Sprintf("keystore: %v", err))
-				}
-				cmd.Printf("Keystore: error (%v)\n", err)
-				return nil
-			}
-
-			repoKey := app.RepoKeystoreKey(owner, repo)
-			privBytes, err := backend.Load(app.KeystoreService, repoKey)
 			var publicKey any
-			if err == nil && len(privBytes) > 0 {
-				id, err := agecrypto.ParseX25519Identity(string(privBytes))
+			if deps.identityStore != nil {
+				info, err := deps.identityStore.Info(owner, repo)
 				if err == nil {
-					publicKey = id.Recipient().String()
-					humanPrintf(cmd, "Key: %s\n", publicKey)
+					publicKey = info.Recipient
+					humanPrintf(cmd, "Identity: %s\nKey: %s\n", info.Backend, info.Recipient)
+				} else {
+					humanPrintf(cmd, "Identity: not initialized (%v)\n", err)
 				}
-			} else {
-				humanPrintf(cmd, "Key: not initialized\n")
-				humanPrintf(cmd, "  Run 'enbu init' to generate a key pair\n")
 			}
 
 			configInitialized := false

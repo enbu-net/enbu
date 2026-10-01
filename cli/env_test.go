@@ -98,7 +98,7 @@ output = ".env.prod"
 		Registry:      reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore: &staticKeyStore{
+		Identities: &staticKeyStore{
 			key: []byte(kp.Identity.String()),
 		},
 	}

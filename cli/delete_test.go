@@ -77,7 +77,7 @@ func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
 		Registry:      reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore: &staticKeyStore{
+		Identities: &staticKeyStore{
 			key: []byte(kp.Identity.String()),
 		},
 	}
@@ -100,10 +100,11 @@ type staticKeyStore struct {
 	key []byte
 }
 
-func (s *staticKeyStore) Store(string, string, []byte) error {
+func (s *staticKeyStore) storeSecret(_, _ string, value []byte) error {
+	s.key = value
 	return nil
 }
 
-func (s *staticKeyStore) Load(string, string) ([]byte, error) {
+func (s *staticKeyStore) loadSecret(string, string) ([]byte, error) {
 	return s.key, nil
 }

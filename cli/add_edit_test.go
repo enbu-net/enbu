@@ -162,7 +162,7 @@ func newAddEditApp(kp *age.KeyPair, reg *addEditRegistry) *app.App {
 		Registry:      reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore: &staticKeyStore{
+		Identities: &staticKeyStore{
 			key: []byte(kp.Identity.String()),
 		},
 	}

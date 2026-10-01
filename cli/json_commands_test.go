@@ -115,7 +115,7 @@ func TestJSONHistoryCommands(t *testing.T) {
 		Registry:      registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore:      &staticKeyStore{key: []byte(keyPair.Identity.String())},
+		Identities:    &staticKeyStore{key: []byte(keyPair.Identity.String())},
 	}
 	registryRef := "ghcr.io/owner/repo-enbu"
 	pushEncryptedHistory(t, registry, keyPair, registryRef+":secrets-default-1000", map[string]string{"A": "1"})
@@ -160,7 +160,7 @@ func TestJSONInit(t *testing.T) {
 		Registry:      registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore:      &staticKeyStore{},
+		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
 		Platform:      &jsonInitPlatform{},
 	}
@@ -209,7 +209,7 @@ output = ".env"
 		Registry:      registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore:      &staticKeyStore{},
+		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
 		Platform:      &jsonInitPlatform{},
 	}

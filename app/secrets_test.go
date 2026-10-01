@@ -95,14 +95,14 @@ type memKeyStore struct {
 
 func newMemKeyStore() *memKeyStore { return &memKeyStore{data: make(map[string][]byte)} }
 
-func (m *memKeyStore) Store(_, key string, value []byte) error {
+func (m *memKeyStore) storeSecret(_, key string, value []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[key] = append([]byte(nil), value...)
 	return nil
 }
 
-func (m *memKeyStore) Load(_, key string) ([]byte, error) {
+func (m *memKeyStore) loadSecret(_, key string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]
@@ -121,7 +121,7 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 	ks := newMemKeyStore()
 
 	// store private key
-	if err := ks.Store(KeystoreService, RepoKeystoreKey(owner, repo), []byte(kp.Identity.String())); err != nil {
+	if err := ks.storeSecret(KeystoreService, RepoKeystoreKey(owner, repo), []byte(kp.Identity.String())); err != nil {
 		t.Fatalf("store private key: %v", err)
 	}
 
@@ -129,7 +129,7 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 		Registry:      reg,
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 		RepoDetector:  &staticRepoDetector{owner: owner, repo: repo},
-		KeyStore:      ks,
+		Identities:    ks,
 	}
 
 	// register recipient
@@ -220,7 +220,7 @@ func TestPullSecrets_ErrorWhenNoPrivateKey(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "value"})
 
 	// replace keystore with empty one (no private key)
-	a.KeyStore = newMemKeyStore()
+	a.Identities = newMemKeyStore()
 
 	_, _, _, err := a.PullSecrets(context.Background(), "default")
 	if err == nil {
@@ -235,10 +235,10 @@ func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 	// replace stored key with a different identity (cannot decrypt)
 	other := mustKeyPair(t)
 	ks := newMemKeyStore()
-	if err := ks.Store(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String())); err != nil {
+	if err := ks.storeSecret(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String())); err != nil {
 		t.Fatal(err)
 	}
-	a.KeyStore = ks
+	a.Identities = ks
 
 	_, _, _, err := a.PullSecrets(context.Background(), "default")
 	if err == nil {
@@ -295,8 +295,8 @@ output = ".env.dev"
 
 	other := mustKeyPair(t)
 	ks := newMemKeyStore()
-	_ = ks.Store(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String()))
-	a.KeyStore = ks
+	_ = ks.storeSecret(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String()))
+	a.Identities = ks
 
 	if err := a.PullSecretsToFile(context.Background(), "dev"); err == nil {
 		t.Fatal("expected error when decryption fails")

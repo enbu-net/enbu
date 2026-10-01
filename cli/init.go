@@ -2,9 +2,7 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,32 +96,17 @@ func newInitCommand(a *app.App) *cobra.Command {
 				humanPrintf(cmd, "Entering join mode — registering your key only.\n")
 			}
 
-			repoKey := app.RepoKeystoreKey(owner, repo)
-			var publicKey string
-
-			existingPriv, err := a.KeyStore.Load(app.KeystoreService, repoKey)
-			if err == nil && len(existingPriv) > 0 {
-				id, err := agecrypto.ParseX25519Identity(string(existingPriv))
-				if err != nil {
-					return fmt.Errorf("parsing existing private key: %w", err)
-				}
-				publicKey = id.Recipient().String()
-				humanPrintf(cmd, "Using existing age public key: %s\n", publicKey)
-			} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("loading private key from keystore: %w", err)
-			} else {
-				humanPrintf(cmd, "Generating new age key pair...\n")
-				kp, err := age.GenerateKeyPair()
-				if err != nil {
-					return fmt.Errorf("generating age key pair: %w", err)
-				}
-				publicKey = kp.PublicKey
-				result.KeyCreated = true
-				humanPrintf(cmd, "Generated age public key: %s\n", publicKey)
-
-				if err := a.KeyStore.Store(app.KeystoreService, repoKey, []byte(kp.Identity.String())); err != nil {
-					return fmt.Errorf("storing private key: %w", err)
-				}
+			id, info, warning, err := a.Identities.Create(owner, repo)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = id.Close() }()
+			publicKey := id.Recipient().String()
+			result.KeyCreated = info.Created
+			humanPrintf(cmd, "Identity: %s (%s)\nRecipient: %s\n", info.Backend, info.Algorithm, publicKey)
+			if warning != "" {
+				warnings = append(warnings, warning)
+				humanErrorf(cmd, "%s\n", warning)
 			}
 			result.PublicKey = publicKey
 
@@ -148,13 +131,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 			if joinMode {
 				humanPrintf(cmd, "\nYour key has been registered.\n")
 				if hasSecrets {
-					identities, err := app.LoadIdentitiesForRepo(a.KeyStore, owner, repo)
-					if err != nil || len(identities) == 0 {
-						result.NextSteps = append(result.NextSteps, "Ask an existing member to run 'enbu sync', then run 'enbu pull'.")
-						humanPrintf(cmd, "Could not load decryption keys; run 'enbu pull' after an existing member runs 'enbu sync'.\n")
-						updateGitignore()
-						return finishInit(cmd, result, warnings)
-					}
+					identities := []agecrypto.Identity{id}
 					env := projectCfg.CurrentEnvironment()
 					secretsRef := fmt.Sprintf("%s:secrets-%s", registryRef, oci.CleanTag(env))
 					ok, err := verifyCurrentUserCanDecrypt(ctx, a.Registry, secretsRef, accessToken, identities)
@@ -269,7 +246,7 @@ func registryHost(a *app.App) string {
 	return "ghcr.io"
 }
 
-func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []*agecrypto.X25519Identity) (bool, error) {
+func verifyCurrentUserCanDecrypt(ctx context.Context, reg app.Registry, secretsRef, token string, identities []agecrypto.Identity) (bool, error) {
 	ciphertext, err := reg.Pull(ctx, secretsRef, token)
 	if err != nil {
 		return false, err

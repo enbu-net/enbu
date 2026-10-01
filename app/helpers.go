@@ -26,25 +26,27 @@ func RepoKeystoreKey(owner, repo string) string {
 	return fmt.Sprintf("%s/%s", strings.ToLower(owner), strings.ToLower(repo))
 }
 
-func LoadIdentitiesForRepo(ks KeyStore, owner, repo string) ([]*agecrypto.X25519Identity, error) {
-	if ks == nil {
-		return nil, fmt.Errorf("keystore is not initialized")
+func LoadIdentitiesForRepo(store IdentityStore, owner, repo string) ([]agecrypto.Identity, error) {
+	if store == nil {
+		return nil, fmt.Errorf("identity store is not initialized")
 	}
-	key := RepoKeystoreKey(owner, repo)
-	privKeyBytes, err := ks.Load(KeystoreService, key)
+	id, err := store.Load(owner, repo)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, apperr.New(apperr.CodeNotInitialized, "no private key found (run 'enbu init' first)", nil)
+			return nil, apperr.New(apperr.CodeNotInitialized, "no identity found (run 'enbu init' first)", nil)
 		}
-		return nil, fmt.Errorf("loading private key: %w", err)
+		return nil, fmt.Errorf("loading identity: %w", err)
 	}
+	return []agecrypto.Identity{id}, nil
+}
 
-	id, err := agecrypto.ParseX25519Identity(string(privKeyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("parsing private key: %w", err)
+// CloseIdentities releases native references, TPM objects, sessions and devices.
+func CloseIdentities(ids []agecrypto.Identity) {
+	for _, id := range ids {
+		if c, ok := id.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
 	}
-
-	return []*agecrypto.X25519Identity{id}, nil
 }
 
 func PullAllRecipients(ctx context.Context, reg Registry, ref string, token string) ([]string, error) {
@@ -68,7 +70,7 @@ func PullAllRecipients(ctx context.Context, reg Registry, ref string, token stri
 	return publicKeys, nil
 }
 
-func PullSecretsWithDigest(ctx context.Context, reg Registry, ref, token string, identities ...*agecrypto.X25519Identity) (map[string]string, string, error) {
+func PullSecretsWithDigest(ctx context.Context, reg Registry, ref, token string, identities ...agecrypto.Identity) (map[string]string, string, error) {
 	digest, err := reg.GetDigest(ctx, ref, token)
 	if err != nil {
 		return nil, "", err
