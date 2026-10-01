@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/nao1215/atago/v0.20.0/schema/atago.project.schema.json
 env:
+  ENBU_IDENTITY_BACKEND: keyring
   ENBU_BACKEND: text
   ENBU_TEXT_BACKEND_DIR: "${workdir}/keys"
   XDG_DATA_HOME: "${workdir}/data"

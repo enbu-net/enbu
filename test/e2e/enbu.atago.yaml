@@ -38,7 +38,7 @@ scenarios:
             json:
               - {path: "$.ok", equals: true}
               - {path: "$.data.command", equals: enbu}
-              - {path: "$.data.commands", length: 10}
+              - {path: "$.data.commands", length: 12}
           stderr:
             empty: true
       - run:
@@ -225,8 +225,8 @@ scenarios:
           stdout: {equals: "chore: add enbu config"}
       - assert:
           dir:
-            path: keys
-            contains: [enbu_e2e_init-human]
+            path: data/enbu/identities
+            count: 1
 
   - name: JSON init returns structured repository and registry state
     tags: [init, json, registry]
@@ -398,7 +398,7 @@ scenarios:
   - name: late joining user cannot decrypt before sync and can afterward
     tags: [multi-user, registry]
     env:
-      ENBU_TEXT_BACKEND_DIR: "${workdir}/alice-keys"
+      XDG_DATA_HOME: "${workdir}/alice-data"
       GITHUB_ACTOR: alice
     steps:
       - run: {command: git init}
@@ -410,7 +410,7 @@ scenarios:
       - run:
           command: enbu init
           env:
-            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
           timeout: 15s
       - assert:
@@ -419,7 +419,7 @@ scenarios:
       - run:
           command: enbu pull --stdout --json
           env:
-            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
       - assert:
           exit_code: 2
@@ -428,7 +428,7 @@ scenarios:
       - run:
           command: enbu pull --stdout
           env:
-            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
       - assert:
           exit_code: 1
@@ -440,7 +440,7 @@ scenarios:
       - run:
           command: enbu pull --stdout
           env:
-            ENBU_TEXT_BACKEND_DIR: "${workdir}/bob-keys"
+            XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
       - assert:
           exit_code: 0
