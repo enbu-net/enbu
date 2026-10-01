@@ -78,12 +78,14 @@ func TestManagerFallbackReuseAndMetadata(t *testing.T) {
 		t.Fatalf("invalid metadata: %+v", md)
 	}
 	stat, err := os.Stat(m.Path("owner", "repo"))
- if err != nil { t.Fatal(err) }
- // Windows reports synthesized mode bits; access is controlled by ACLs.
- // Metadata holds only public information, opaque references and TPM blobs.
- if runtime.GOOS != "windows" && stat.Mode().Perm()&0o077 != 0 {
-  t.Fatalf("metadata permissions: %v", stat.Mode())
- }
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows reports synthesized mode bits; access is controlled by ACLs.
+	// Metadata holds only public information, opaque references and TPM blobs.
+	if runtime.GOOS != "windows" && stat.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("metadata permissions: %v", stat.Mode())
+	}
 	ciphertext, err := age.EncryptForPublicKeys([]byte("secret"), []string{info.Recipient})
 	if err != nil {
 		t.Fatal(err)
