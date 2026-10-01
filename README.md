@@ -56,7 +56,7 @@ enbu init
 
 Run once per user per repository. This automatically:
 
-- Generates an X25519 key pair
+- Creates or reuses a hardware Identity, with OS keyring fallback
 - Stores the private key in the OS keychain
 - Registers the public key on GHCR
 - Creates `enbu.toml`
@@ -123,21 +123,44 @@ output = ".env.prod"
 
 Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — access control is handled by OPA/Rego policy at sync time. Without `-e`, enbu uses the environment set by `switch`.
 
-## Key Storage
+## Identity storage
 
-Private keys are stored in the OS secure storage:
+New repository identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
+Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
+X25519 recipients can be included in the same encrypted file.
 
-| OS | Backend |
-|----|---------|
-| macOS | Keychain |
-| Linux | Secret Service (GNOME Keyring / KWallet) |
-| Windows | Credential Manager |
-
-For environments without a keychain (containers, headless servers), specify a fallback via environment variable:
+| OS | Hardware | Fallback for new identities |
+|----|----------|-----------------------------|
+| Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
+| Windows | TPM 2.0 through TBS | Credential Manager |
+| macOS | Secure Enclave | Keychain |
 
 ```bash
-export ENBU_BACKEND=text  # Plaintext file (0600 permissions)
+enbu doctor                  # No authentication or persistent key creation
+enbu identity create         # Create or reuse this repository's local Identity
+enbu identity show           # Backend, algorithm, recipient and device
+export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
+# Other choices: hardware (required), keyring (X25519 stored in the OS keyring)
 ```
+
+Fallback is allowed only when hardware is unavailable before creation begins.
+Creation errors and saved-key load errors never silently replace the key.
+`init` registers the saved recipient and reuses it after a registration failure.
+Hardware identities have no private-key export API. TPM metadata contains encrypted
+child blobs bound to the original TPM; Secure Enclave metadata contains a Keychain
+reference. Secure Enclave keys require the device to be unlocked and do not prompt
+for Touch ID on every use.
+
+Version 1 metadata is stored under `identities/` in enbu's local data directory
+(`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
+Old identities are not migrated or loaded. Plaintext Identity storage is removed.
+`ENBU_BACKEND` configures authentication token storage only and does not select an Identity backend.
+
+Identity E2E runs on Linux, Windows and macOS with a pinned test-only vTPM SDK and
+local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring.
+The normal CLI excludes the software TPM transport. On a real TPM or Secure Enclave
+device, run `ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity` for native integration tests.
+Hardware device validation is separate from the required GitHub-hosted E2E matrix.
 
 ## JSON output
 
@@ -194,7 +217,7 @@ sequenceDiagram
     CLI-->>User: ✓ Authenticated
 
     User->>CLI: enbu init
-    CLI->>CLI: Generate age X25519 key pair
+    CLI->>CLI: Create or load repository Identity
     CLI->>CLI: Store private key in OS keychain
     CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
     Note over GHCR: Recipients are environment-independent
