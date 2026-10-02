@@ -164,10 +164,11 @@ func (m *Manager) Create(owner, repo string) (id Identity, info PublicInfo, warn
 	if err := os.MkdirAll(m.Dir, 0o700); err != nil {
 		return nil, info, "", err
 	}
-	if err := os.Mkdir(path+".lock", 0o700); err != nil {
-		return nil, info, "", fmt.Errorf("identity creation is locked: %w", err)
+	lock, err := acquireCreationLock(path + ".lockfile")
+	if err != nil {
+		return nil, info, "", fmt.Errorf("identity creation lock (%s): %w", path+".lockfile", err)
 	}
-	defer func() { _ = os.Remove(path + ".lock") }()
+	defer func() { _ = lock.Close() }()
 	if _, err := os.Stat(path); err == nil {
 		id, err := m.Load(owner, repo)
 		if err != nil {

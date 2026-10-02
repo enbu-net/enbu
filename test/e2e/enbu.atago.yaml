@@ -226,7 +226,7 @@ scenarios:
       - assert:
           dir:
             path: data/enbu/identities
-            count: 1
+            count: 2 # Version 1 metadata and the retained OS lock file.
 
   - name: JSON init returns structured repository and registry state
     tags: [init, json, registry]
