@@ -194,6 +194,7 @@ export function HomePage() {
       initialized?: boolean;
       has_git?: boolean;
       has_remote?: boolean;
+      storage_configured?: boolean;
     };
   } | null>(null);
   const [repoPath, setRepoPath] = useState("");
@@ -251,10 +252,10 @@ export function HomePage() {
   );
 
   const fetchRepoStatus = useCallback(async () => {
-    if (status?.authenticated) {
+    if (status?.authenticated || status?.workspace_configured) {
       setRepoStatus(await backend.repoStatus());
     }
-  }, [status?.authenticated]);
+  }, [status?.authenticated, status?.workspace_configured]);
 
   useEffect(() => {
     fetchRepoStatus().catch((err) => setRepoError(toDisplayError(err)));
@@ -421,7 +422,7 @@ export function HomePage() {
   }
 
   // Screen 02: Auth start
-  if (!status?.authenticated && !oauthStart) {
+  if (!status?.authenticated && !status?.workspace_configured && !oauthStart) {
     return (
       <PageCenter>
         <VStack gap={5} w="full" maxW="480px" textAlign="center">
@@ -561,7 +562,7 @@ export function HomePage() {
   }
 
   // Screen 05a: Initialize the selected folder as a Git repository.
-  if (!repoStatus.repo?.has_git) {
+  if (!repoStatus.repo?.storage_configured && !repoStatus.repo?.has_git) {
     return (
       <PageCenter>
         <VStack gap={5} w="full" maxW="540px" alignItems="stretch">
@@ -597,7 +598,7 @@ export function HomePage() {
   }
 
   // Screen 05b: Create and attach an origin remote before enbu setup.
-  if (!repoStatus.repo.has_remote) {
+  if (!repoStatus.repo.storage_configured && !repoStatus.repo.has_remote) {
     return (
       <PageCenter>
         <VStack gap={5} w="full" maxW="540px" alignItems="stretch">
@@ -1524,8 +1525,7 @@ export function RecipientsPanel({
 export function MemberRow({ recipient, last = false }: { recipient: Recipient; last?: boolean }) {
   const { t } = useI18n();
   return (
-    <styled.button
-      type="button"
+    <Box
       w="full"
       minH="64px"
       display="grid"
@@ -1539,16 +1539,22 @@ export function MemberRow({ recipient, last = false }: { recipient: Recipient; l
       borderBottomWidth={last ? "0" : "1px"}
       borderColor="border.default"
       textAlign="left"
-      cursor="pointer"
-      _hover={{ bg: "bg.muted" }}
-      _focusVisible={{ outline: "2px solid token(colors.accent.default)", outlineOffset: "-2px" }}
-      aria-label={`${recipient.username} · GitHub`}
-      onClick={() => openURL(`https://github.com/${encodeURIComponent(recipient.username)}`)}
     >
-      <MemberAvatar username={recipient.username} />
+      <Box
+        w="38px"
+        h="38px"
+        borderRadius="full"
+        bg="bg.muted"
+        display="grid"
+        placeItems="center"
+        fontFamily="mono"
+        fontSize="xs"
+      >
+        {recipient.fingerprint.slice(0, 2).toUpperCase()}
+      </Box>
       <Box minW="0">
         <Text fontWeight="semibold" fontSize="sm">
-          {recipient.username}
+          {recipient.fingerprint.slice(0, 8)}
         </Text>
         <Text fontSize="2xs" color="fg.muted" fontFamily="mono" truncate>
           {recipient.fingerprint}
@@ -1566,7 +1572,7 @@ export function MemberRow({ recipient, last = false }: { recipient: Recipient; l
       >
         {t("recipients.member")}
       </Box>
-    </styled.button>
+    </Box>
   );
 }
 
@@ -1604,6 +1610,8 @@ export function MemberAvatar({ username }: { username: string }) {
 export type EnbuConfigDraft = {
   version: string;
   default_env: string;
+  workspace_id?: string;
+  storage?: ReturnType<typeof parseToml>;
   env: Record<string, { output: string }>;
 };
 
@@ -1628,8 +1636,13 @@ export function parseConfigDraft(content: string, environments: Environment[]): 
   const fallback =
     environments.find((item) => item.current)?.name ?? environments[0]?.name ?? "default";
   return {
-    version: typeof parsed.version === "string" ? parsed.version : "v1alpha1",
+    version: typeof parsed.version === "string" ? parsed.version : "v1alpha2",
     default_env: typeof parsed.default_env === "string" ? parsed.default_env : fallback,
+    workspace_id: typeof parsed.workspace_id === "string" ? parsed.workspace_id : undefined,
+    storage:
+      parsed.storage && typeof parsed.storage === "object"
+        ? (parsed.storage as ReturnType<typeof parseToml>)
+        : undefined,
     env,
   };
 }
@@ -1638,6 +1651,7 @@ export function serializeConfigDraft(config: EnbuConfigDraft): string {
   const header = stringifyToml({
     version: config.version,
     default_env: config.default_env,
+    ...(config.workspace_id ? { workspace_id: config.workspace_id } : {}),
   }).trimEnd();
   const environments = Object.entries(config.env)
     .sort(([left], [right]) => left.localeCompare(right))
@@ -1645,7 +1659,8 @@ export function serializeConfigDraft(config: EnbuConfigDraft): string {
       const key = /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
       return `[env.${key}]\n${stringifyToml({ output: environment.output }).trimEnd()}`;
     });
-  return [header, ...environments].join("\n\n") + "\n";
+  const storage = config.storage ? [stringifyToml({ storage: config.storage }).trimEnd()] : [];
+  return [header, ...storage, ...environments].join("\n\n") + "\n";
 }
 
 function ConfigPanel({ environments }: { environments: Environment[] }) {

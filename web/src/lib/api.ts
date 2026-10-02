@@ -93,6 +93,7 @@ export const api = {
 
 export interface AuthStatus {
   authenticated: boolean;
+  workspace_configured?: boolean;
   username?: string;
   repo?: { owner: string; name: string };
 }
@@ -112,6 +113,7 @@ export interface GUIRepoStatus {
     initialized?: boolean;
     has_git?: boolean;
     has_remote?: boolean;
+    storage_configured?: boolean;
   };
 }
 

@@ -1,6 +1,6 @@
 # 💃 enbu
 
-A `.env` management tool that works entirely within GitHub.
+An end-to-end encrypted `.env` manager with independent Identity and Storage backends.
 
 ## Why
 
@@ -20,7 +20,7 @@ Development requires sensitive information like API keys and database passwords,
 
 ## Features
 
-- **GitHub-only** — No dependency on external platforms
+- **Pluggable storage** — OCI registries, S3-compatible object storage, or a local directory
 - **E2E encrypted** — Only each member's local private key can decrypt
 - **Simple CLI** — After setup, just `enbu add` and `enbu pull`
 <!-- Planned -->
@@ -38,28 +38,45 @@ Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
 
 ## Quick Start
 
-### 1. Authenticate
+### 1. Choose storage
+
+For a local workspace, no Git repository or GitHub login is required:
+
+```bash
+mkdir my-workspace
+cd my-workspace
+enbu init --storage local:///absolute/path/to/enbu-store
+```
+
+For GHCR, authenticate and specify the registry repository explicitly:
 
 ```bash
 enbu auth login
+enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
 ```
 
-Log in to GitHub.
-For a headless environment, use `enbu auth login --device` and enter the displayed code on GitHub.
-
-### 2. Initialize the repository
+Any other OCI registry uses Docker credential configuration by default:
 
 ```bash
-cd your-repo
-enbu init
+enbu init --storage oci://registry.example.com/team/secrets
 ```
 
-Run once per user per repository. This automatically:
+For S3, create a bucket first and use the AWS SDK's default credential chain:
 
-- Creates or reuses a hardware Identity, with OS keyring fallback
-- Registers the public key on GHCR
-- Creates `enbu.toml`
-- Updates `.gitignore`
+```bash
+enbu init --storage s3://your-bucket/team/workspace --region ap-northeast-1
+```
+
+For an S3-compatible service, also pass `--endpoint https://s3.example.com --path-style`.
+See [Storage configuration and tests](docs/storage.md).
+
+### 2. Initialize each member's workspace
+
+`init` creates or reuses a local Identity, registers its recipient, saves a generated
+workspace UUID and storage configuration in `enbu.toml`, and updates `.gitignore`.
+Share `enbu.toml` with team members. Each member runs `enbu init` in their own folder.
+The UUID binds local Identity and environment-switch state to the workspace, so
+moving its folder or changing its storage URL does not select a new Identity.
 
 ### 3. Add or edit secrets
 
@@ -110,8 +127,13 @@ enbu switch -m old new      # Rename an environment
 Define environments in `enbu.toml`:
 
 ```toml
-version = "0.1"
-default = "dev"
+version = "v1alpha2"
+workspace_id = "11111111-1111-4111-8111-111111111111"
+default_env = "dev"
+
+[storage]
+url = "oci://ghcr.io/your-org/your-repo-enbu"
+oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
@@ -120,11 +142,11 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — access control is handled by OPA/Rego policy at sync time. Without `-e`, enbu uses the environment set by `switch`.
+Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
 
 ## Identity storage
 
-New repository identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
+New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
 Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
 X25519 recipients can be included in the same encrypted file.
 
@@ -136,7 +158,7 @@ X25519 recipients can be included in the same encrypted file.
 
 ```bash
 enbu doctor                  # No authentication or persistent key creation
-enbu identity create         # Create or reuse this repository's local Identity
+enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
 # Other choices: hardware (required), keyring (X25519 stored in the OS keyring)
@@ -189,19 +211,21 @@ Use `enbu auth login --json` for browser authentication.
 ## How It Works
 
 ```
-GHCR (ghcr.io/{owner}/{repo}-enbu)
-├── recipient-{user}-{fingerprint}      ← Public keys (shared across all environments)
+Storage (OCI registry / S3 prefix / Local directory)
+├── recipient-{sha256-public-key}      ← Public keys (shared across all environments)
 ├── secrets-default                     ← Encrypted secrets for default environment
-└── secrets-dev                         ← Encrypted secrets for dev environment
+├── secrets-dev                         ← Encrypted secrets for dev environment
+├── enbu-workspace                       ← Shared workspace UUID
+└── hist-{env-hash}-{time}-{uuid}       ← Immutable encrypted snapshots
 ```
 
-1. `enbu add` — Creates a new secret, encrypts for all recipients' public keys, and pushes as an OCI image artifact
+1. `enbu add` — Creates a new secret, encrypts for all recipients' public keys, and writes through Storage
 2. `enbu edit` — Updates an existing secret in the encrypted bundle and pushes the updated artifact
 3. `enbu delete` — Removes a secret from the encrypted bundle and pushes the updated artifact
 4. `enbu pull` — Pulls ciphertext, decrypts with your private key, writes to `.env`
 5. `enbu sync` — Re-encrypts with the current recipient list when members are added or removed
 
-### Authentication & Initialization Flow
+### GitHub authentication & initialization flow
 
 ```mermaid
 sequenceDiagram
@@ -209,7 +233,7 @@ sequenceDiagram
     participant CLI as enbu CLI
     participant Auth as auth.enbu.net
     participant GitHub as GitHub OAuth
-    participant GHCR
+    participant GHCR as Storage
 
     User->>CLI: enbu auth login
     CLI->>CLI: Start 127.0.0.1 callback listener
@@ -225,7 +249,7 @@ sequenceDiagram
 
     User->>CLI: enbu init
     CLI->>CLI: Create or load repository Identity
-    CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
+    CLI->>GHCR: Register public key as recipient-{sha256-public-key}
     Note over GHCR: Recipients are environment-independent
     GHCR-->>CLI: Done
     CLI-->>User: ✓ Initialized
@@ -237,7 +261,7 @@ sequenceDiagram
 sequenceDiagram
     participant User
     participant CLI as enbu CLI
-    participant GHCR
+    participant GHCR as Storage
 
     User->>CLI: enbu add KEY VALUE
     CLI->>GHCR: Fetch all recipient public keys
@@ -255,11 +279,11 @@ sequenceDiagram
     participant New as New Member
     participant Member as Existing Member
     participant CLI as enbu CLI
-    participant GHCR
+    participant GHCR as Storage
 
     New->>CLI: enbu init (join mode)
     CLI->>CLI: Create or load repository Identity
-    CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
+    CLI->>GHCR: Register public key as recipient-{sha256-public-key}
     CLI-->>New: ✓ Key registered
 
     Member->>CLI: enbu sync

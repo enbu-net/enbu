@@ -9,6 +9,7 @@ import (
 func TestIdentityCommandsWithoutAuthentication(t *testing.T) {
 	store := &staticKeyStore{}
 	a := &app.App{Identities: store, RepoDetector: &deleteTestRepoDetector{}}
+	prepareCLIApp(t, a)
 	created := executeJSON(t, NewWithApp("test", a), "identity", "create", "--json")
 	shown := executeJSON(t, NewWithApp("test", a), "identity", "show", "--json")
 	if objectField(t, created, "data")["recipient"] != objectField(t, shown, "data")["recipient"] {

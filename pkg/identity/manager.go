@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -73,14 +72,14 @@ func (m *Manager) mode() (string, error) {
 	}
 }
 
-// Path uses a hash so repository names cannot escape the local identity directory.
-func (m *Manager) Path(owner, repo string) string {
-	sum := sha256.Sum256([]byte(strings.ToLower(owner + "/" + repo)))
+// Path uses a hash so workspace IDs cannot escape the local identity directory.
+func (m *Manager) Path(workspaceID string) string {
+	sum := sha256.Sum256([]byte(workspaceID))
 	return filepath.Join(m.Dir, hex.EncodeToString(sum[:])+".json")
 }
 
-func (m *Manager) read(owner, repo string) (*Metadata, error) {
-	b, err := os.ReadFile(m.Path(owner, repo))
+func (m *Manager) read(workspaceID string) (*Metadata, error) {
+	b, err := os.ReadFile(m.Path(workspaceID))
 	if err != nil {
 		return nil, err
 	}
@@ -97,12 +96,12 @@ func (m *Manager) read(owner, repo string) (*Metadata, error) {
 	return &md, nil
 }
 
-func (m *Manager) Load(owner, repo string) (Identity, error) {
+func (m *Manager) Load(workspaceID string) (Identity, error) {
 	mode, err := m.mode()
 	if err != nil {
 		return nil, err
 	}
-	md, err := m.read(owner, repo)
+	md, err := m.read(workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,12 +154,12 @@ func publicKeyMatches(id Identity, public []byte) bool {
 
 // Create reuses only version 1 identities. The warning describes auto fallback.
 // Once creation starts, all failures are returned without selecting another key.
-func (m *Manager) Create(owner, repo string) (id Identity, info PublicInfo, warning string, err error) {
+func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warning string, err error) {
 	mode, err := m.mode()
 	if err != nil {
 		return nil, info, "", err
 	}
-	path := m.Path(owner, repo)
+	path := m.Path(workspaceID)
 	if err := os.MkdirAll(m.Dir, 0o700); err != nil {
 		return nil, info, "", err
 	}
@@ -170,11 +169,11 @@ func (m *Manager) Create(owner, repo string) (id Identity, info PublicInfo, warn
 	}
 	defer func() { _ = lock.Close() }()
 	if _, err := os.Stat(path); err == nil {
-		id, err := m.Load(owner, repo)
+		id, err := m.Load(workspaceID)
 		if err != nil {
 			return nil, info, "", err
 		}
-		md, err := m.read(owner, repo)
+		md, err := m.read(workspaceID)
 		if err != nil {
 			_ = id.Close()
 			return nil, info, "", err
@@ -262,13 +261,13 @@ func saveMetadata(path string, md *Metadata) error {
 }
 
 // Info validates the saved identity before reporting public information.
-func (m *Manager) Info(owner, repo string) (PublicInfo, error) {
-	id, err := m.Load(owner, repo)
+func (m *Manager) Info(workspaceID string) (PublicInfo, error) {
+	id, err := m.Load(workspaceID)
 	if err != nil {
 		return PublicInfo{}, err
 	}
 	defer func() { _ = id.Close() }()
-	md, err := m.read(owner, repo)
+	md, err := m.read(workspaceID)
 	if err != nil {
 		return PublicInfo{}, err
 	}

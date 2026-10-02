@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,11 +12,23 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/google/uuid"
 )
 
-const currentVersion = "v1alpha1"
+const currentVersion = "v1alpha2"
+
+type StorageConfig struct {
+	URL       string `toml:"url"`
+	Region    string `toml:"region,omitempty"`
+	Endpoint  string `toml:"endpoint,omitempty"`
+	PathStyle bool   `toml:"path_style,omitempty"`
+	OCIAuth   string `toml:"oci_auth,omitempty"`
+	PlainHTTP bool   `toml:"plain_http,omitempty"`
+}
 
 type ProjectConfig struct {
+	WorkspaceID  string                       `toml:"workspace_id"`
+	Storage      StorageConfig                `toml:"storage"`
 	Version      string                       `toml:"version"`
 	DefaultEnv   string                       `toml:"default_env,omitempty"`
 	Environments map[string]EnvironmentConfig `toml:"env,omitempty"`
@@ -94,13 +107,20 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 func MarshalProject(cfg *ProjectConfig) ([]byte, error) {
 	var buf bytes.Buffer
 	header := struct {
-		Version    string `toml:"version"`
-		DefaultEnv string `toml:"default_env,omitempty"`
-	}{Version: cfg.Version, DefaultEnv: cfg.DefaultEnv}
+		Version     string `toml:"version"`
+		DefaultEnv  string `toml:"default_env,omitempty"`
+		WorkspaceID string `toml:"workspace_id,omitempty"`
+	}{Version: cfg.Version, DefaultEnv: cfg.DefaultEnv, WorkspaceID: cfg.WorkspaceID}
 	if err := toml.NewEncoder(&buf).Encode(header); err != nil {
 		return nil, err
 	}
 
+	if cfg.Storage.URL != "" {
+		buf.WriteString("\n[storage]\n")
+		if err := toml.NewEncoder(&buf).Encode(cfg.Storage); err != nil {
+			return nil, err
+		}
+	}
 	names := make([]string, 0, len(cfg.Environments))
 	for name := range cfg.Environments {
 		names = append(names, name)
@@ -116,13 +136,13 @@ func MarshalProject(cfg *ProjectConfig) ([]byte, error) {
 }
 
 // LocalStatePath returns the XDG data dir path for per-project local state.
-func LocalStatePath(owner, repo string) string {
-	return filepath.Join(DataDir(), "state", strings.ToLower(owner), strings.ToLower(repo)+".toml")
+func LocalStatePath(workspaceID string) string {
+	return filepath.Join(DataDir(), "state", uuidOrHash(workspaceID)+".toml")
 }
 
 // LoadLocalState loads per-project state from the XDG data directory.
-func LoadLocalState(owner, repo string) (*LocalConfig, error) {
-	path := LocalStatePath(owner, repo)
+func LoadLocalState(workspaceID string) (*LocalConfig, error) {
+	path := LocalStatePath(workspaceID)
 	var cfg LocalConfig
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		if os.IsNotExist(err) {
@@ -134,8 +154,8 @@ func LoadLocalState(owner, repo string) (*LocalConfig, error) {
 }
 
 // SaveLocalState persists per-project state to the XDG data directory.
-func SaveLocalState(owner, repo string, cfg *LocalConfig) error {
-	path := LocalStatePath(owner, repo)
+func SaveLocalState(workspaceID string, cfg *LocalConfig) error {
+	path := LocalStatePath(workspaceID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
@@ -161,6 +181,7 @@ func NewProjectWithEnvironment(name string) *ProjectConfig {
 	}
 	return &ProjectConfig{
 		Version:      currentVersion,
+		WorkspaceID:  uuid.NewString(),
 		DefaultEnv:   name,
 		Environments: envs,
 	}
@@ -363,3 +384,5 @@ func DataDir() string {
 		return filepath.Join(os.Getenv("HOME"), ".local", "share", "enbu")
 	}
 }
+
+func uuidOrHash(id string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(id))) }

@@ -6,8 +6,9 @@ import (
 	"io/fs"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type identityVault map[string][]byte
@@ -26,26 +27,32 @@ func (v identityVault) Load(_, key string) ([]byte, error) {
 func (v identityVault) Delete(_, key string) error { delete(v, key); return nil }
 
 type registrationFailure struct {
-	Registry
+	storage.Storage
 	fail bool
 }
 
-func (r *registrationFailure) Push(ctx context.Context, ref, media string, b []byte, token string, opts *oci.PushOptions) error {
-	if r.fail {
+func (r *registrationFailure) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+	if r.fail && key != workspaceKey {
 		return errors.New("registry offline")
 	}
-	return r.Registry.Push(ctx, ref, media, b, token, opts)
+	return r.Storage.Put(ctx, key, o, v)
 }
 
 func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	manager := &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityVault{}}
-	registry := &registrationFailure{Registry: newMemRegistry(), fail: true}
-	a := &App{Registry: registry, Identities: manager, TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
+	registry := &registrationFailure{Storage: newMemRegistry(), fail: true}
+	a := &App{Storage: registry, Identities: manager, TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 		RepoDetector: &staticRepoDetector{owner: "o", repo: "r"}, RepositoryDir: t.TempDir()}
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.WorkspaceID = testWorkspaceID
+	cfg.Storage.URL = "local:///unused"
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := a.InitializeRepository(context.Background()); err == nil {
 		t.Fatal("registration should fail")
 	}
-	saved, err := manager.Info("o", "r")
+	saved, err := manager.Info(testWorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}
