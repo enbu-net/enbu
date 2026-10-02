@@ -116,6 +116,14 @@ type enclaveBackend struct{}
 
 func (b *enclaveBackend) Probe() Diagnosis {
 	d := Diagnosis{Backend: "secure-enclave", Device: "Secure Enclave"}
+	a, err := loadSecurity()
+	if err == nil {
+		err = a.probeKeychainAccess()
+	}
+	if err != nil {
+		d.Reason = err.Error()
+		return d
+	}
 	k, err := b.generate("", false)
 	if err != nil {
 		d.Reason = err.Error()
@@ -154,6 +162,7 @@ func (b *enclaveBackend) generate(reference string, permanent bool) (*enclaveKey
 		a.set(priv, "kSecAttrIsPermanent", a.constant("kCFBooleanFalse"))
 	}
 	a.set(attrs, "kSecPrivateKeyAttrs", priv)
+	a.set(attrs, "kSecUseDataProtectionKeychain", a.constant("kCFBooleanTrue"))
 	a.set(attrs, "kSecAttrTokenID", a.constant("kSecAttrTokenIDSecureEnclave"))
 	a.set(attrs, "kSecAttrKeyType", a.constant("kSecAttrKeyTypeECSECPrimeRandom"))
 	size := int32(256)
@@ -210,6 +219,7 @@ func (b *enclaveBackend) Create() (Identity, *Metadata, error) {
 
 func (a *securityAPI) keyQuery(reference string) uintptr {
 	q := a.dictionary()
+	a.set(q, "kSecUseDataProtectionKeychain", a.constant("kCFBooleanTrue"))
 	a.set(q, "kSecClass", a.constant("kSecClassKey"))
 	a.set(q, "kSecAttrKeyType", a.constant("kSecAttrKeyTypeECSECPrimeRandom"))
 	a.set(q, "kSecAttrKeyClass", a.constant("kSecAttrKeyClassPrivate"))
@@ -217,6 +227,26 @@ func (a *securityAPI) keyQuery(reference string) uintptr {
 	a.set(q, "kSecAttrApplicationTag", tag)
 	a.release(tag)
 	return q
+}
+
+// Secure Enclave persistence uses the data-protection Keychain, whose access
+// depends on the host executable's signing entitlements. A transient key alone
+// does not test that access. Probe with a read-only query so doctor never leaves
+// a permanent key behind, even if interrupted before cleanup could run.
+func (a *securityAPI) probeKeychainAccess() error {
+	q := a.keyQuery("enbu.identity.probe")
+	defer a.release(q)
+	a.set(q, "kSecUseAuthenticationUI", a.constant("kSecUseAuthenticationUIFail"))
+	a.set(q, "kSecReturnRef", a.constant("kCFBooleanTrue"))
+	var ref uintptr
+	status := a.itemCopy(q, &ref)
+	if ref != 0 {
+		a.release(ref)
+	}
+	if status != 0 && status != -25300 { // errSecItemNotFound still proves query access.
+		return fmt.Errorf("Secure Enclave data-protection Keychain unavailable: OSStatus %d (check code-signing entitlements and login session)", status)
+	}
+	return nil
 }
 
 func (b *enclaveBackend) Load(md *Metadata) (Identity, error) {
