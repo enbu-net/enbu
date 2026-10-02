@@ -52,6 +52,41 @@ jobs:
       - name: Test core
         run: task core/test
 
+  identity-e2e:
+    name: Identity E2E (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.63.0
+      - name: Install Linux Secret Service
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - name: Identity E2E with unlocked Linux keyring
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task identity/test/e2e
+          '
+      - name: Identity E2E with native OS keyring
+        if: runner.os != 'Linux'
+        run: task identity/test/e2e
+      - name: Identity package tests
+        run: go test -v ./pkg/identity
+
   check:
     name: Check
     runs-on: ubuntu-latest
@@ -185,8 +220,16 @@ jobs:
         with:
           aqua_version: v2.63.0
 
+      - name: Install Secret Service
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+
       - name: CLI E2E tests
-        run: task cli/test/e2e
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task cli/test/e2e
+          '
+
 
       - name: Upload atago failure artifacts
         if: failure()

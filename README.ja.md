@@ -58,8 +58,7 @@ enbu init
 各ユーザーごとにそのリポジトリで1度初期化をします  
 以下が自動で行われます  
 
-- X25519鍵ペアの生成
-- 秘密鍵をOSキーチェーンに保存
+- ハードウェアIdentityの作成・再利用（利用不可ならOS keyring）
 - 公開鍵をGHCRに登録
 - `enbu.toml` の作成
 - `.gitignore` の更新
@@ -125,21 +124,45 @@ output = ".env.prod"
 
 `add`、`edit`、`delete`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有され、アクセス制御は sync 時の OPA/Rego ポリシーで行います。`-e` を省略すると `switch` で設定した環境が使われます。
 
-## 鍵の保管
+## Identityの保管
 
-秘密鍵は OS のセキュアストレージに保管されます  
+新規IdentityはLinux／WindowsでTPM 2.0、macOSでSecure Enclaveを優先します。
+ハードウェアのP-256秘密鍵は端末から取り出しません。
+age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号化できます。
 
-| OS | バックエンド |
-|----|-------------|
-| macOS | Keychain |
-| Linux | Secret Service (GNOME Keyring / KWallet) |
-| Windows | Credential Manager |
-
-キーチェーンが利用できない環境（コンテナ、ヘッドレスサーバー等）では、環境変数でフォールバックを指定できます  
+| OS | ハードウェア | 新規作成時のfallback |
+|----|--------------|---------------------|
+| Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
+| Windows | TBS経由のTPM 2.0 | Credential Manager |
+| macOS | Secure Enclave | Keychain |
 
 ```bash
-export ENBU_BACKEND=text  # 平文ファイル (0600) で保存
+enbu doctor                   # 認証不要・永続鍵を作らず検査
+enbu identity create          # 現在のリポジトリ用Identityを作成・再利用
+enbu identity show            # backend、algorithm、recipient、deviceを表示
+export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
+# hardware: ハードウェア必須 / keyring: X25519をOS keyringへ保存
 ```
+
+fallbackは鍵作成前の利用可否検査だけで決めます。
+作成開始後の失敗や保存済みIdentityのロード失敗では、別の鍵を作りません。
+`init`は保存済みrecipientを登録し、登録失敗後の再実行でも同じ鍵を使います。
+TPMでは元の端末でのみロード可能な子鍵blobを、Secure EnclaveではKeychainの参照を保存します。
+Secure Enclave鍵は端末のロック解除中に利用でき、毎回のTouch IDは要求しません。
+macOSでSecure Enclave鍵を永続保存するには、実行ファイルの署名entitlementとユーザーのログインセッションによるdata-protection Keychainへのアクセスが必要です。
+`doctor`は永続鍵を作らずにこのアクセスを検査します。
+署名のない単体ビルドではOS keyringへfallbackする場合があります。
+
+version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
+`XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
+旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
+`ENBU_BACKEND`は認証トークン用の設定で、Identity backendの選択には使いません。
+
+Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtureを使い、3 OSで実行します。
+ロック解除済みOS keyringがある環境で`task identity/test/e2e`を実行できます。
+通常のCLIにはsoftware TPM transportを組み込みません。
+実TPM／Secure Enclaveの実機テストは`ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity`で実行します。
+実機検証はGitHub-hosted runnerの必須E2E matrixとは別です。
 
 ## JSON出力
 
@@ -196,8 +219,7 @@ sequenceDiagram
     CLI-->>User: ✓ Authenticated
 
     User->>CLI: enbu init
-    CLI->>CLI: age X25519 鍵ペア生成
-    CLI->>CLI: 秘密鍵を OS キーチェーンに保存
+    CLI->>CLI: リポジトリのIdentityを作成・読込
     CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
     Note over GHCR: recipient は環境非依存
     GHCR-->>CLI: 完了
@@ -231,7 +253,7 @@ sequenceDiagram
     participant GHCR as GHCR
 
     New->>CLI: enbu init (join mode)
-    CLI->>CLI: age 鍵ペア生成
+    CLI->>CLI: リポジトリのIdentityを作成・読込
     CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
     CLI-->>New: ✓ 鍵を登録しました
 

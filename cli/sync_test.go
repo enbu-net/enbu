@@ -41,7 +41,7 @@ func TestSyncReturnsNonNotFoundSecretPullErrors(t *testing.T) {
 		Registry:      &failingDigestRegistry{err: errors.New("unauthorized")},
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		KeyStore:      &staticKeyStore{key: []byte(kp.Identity.String())},
+		Identities:    &staticKeyStore{key: []byte(kp.Identity.String())},
 	}
 
 	err = a.SyncSecrets(context.Background(), "")

@@ -91,14 +91,14 @@ func newMockKeyStore() *mockKeyStore {
 	return &mockKeyStore{data: make(map[string][]byte)}
 }
 
-func (m *mockKeyStore) Store(_, key string, value []byte) error {
+func (m *mockKeyStore) storeSecret(_, key string, value []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[key] = append([]byte(nil), value...)
 	return nil
 }
 
-func (m *mockKeyStore) Load(_, key string) ([]byte, error) {
+func (m *mockKeyStore) loadSecret(_, key string) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	d, ok := m.data[key]

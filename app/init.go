@@ -2,11 +2,8 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -33,29 +30,15 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		return nil, err
 	}
 
-	repoKey := RepoKeystoreKey(owner, repo)
-	var publicKey string
-
-	existingPriv, err := a.KeyStore.Load(KeystoreService, repoKey)
-	if err == nil && len(existingPriv) > 0 {
-		id, err := agecrypto.ParseX25519Identity(string(existingPriv))
-		if err != nil {
-			return nil, fmt.Errorf("parsing existing private key: %w", err)
-		}
-		publicKey = id.Recipient().String()
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("loading private key from keystore: %w", err)
-	} else {
-		kp, err := age.GenerateKeyPair()
-		if err != nil {
-			return nil, fmt.Errorf("generating age key pair: %w", err)
-		}
-		publicKey = kp.PublicKey
-
-		if err := a.KeyStore.Store(KeystoreService, repoKey, []byte(kp.Identity.String())); err != nil {
-			return nil, fmt.Errorf("storing private key: %w", err)
-		}
+	id, _, warning, err := a.Identities.Create(owner, repo)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = id.Close() }()
+	if warning != "" {
+		a.emit(warning)
+	}
+	publicKey := id.Recipient().String()
 
 	ghClient := a.Platform
 	if ghClient == nil {

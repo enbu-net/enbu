@@ -236,9 +236,7 @@ func TestJSONAuthStatus(t *testing.T) {
 		loadToken: func() (*auth.StoredToken, error) {
 			return &auth.StoredToken{Username: "octo"}, nil
 		},
-		newKeyStore: func() (app.KeyStore, error) {
-			return &staticKeyStore{key: []byte(keyPair.Identity.String())}, nil
-		},
+		identityStore: &staticKeyStore{key: []byte(keyPair.Identity.String())},
 	})
 	envelope := executeJSON(t, jsonTestRoot(status), "status", "--json")
 	data := objectField(t, envelope, "data")

@@ -77,12 +77,12 @@ func (*fakeServiceGit) CommitFiles(context.Context, string, []string, string) er
 
 type desktopKeyStore struct{ values map[string][]byte }
 
-func (s *desktopKeyStore) Store(_, key string, value []byte) error {
+func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
 	s.values[key] = value
 	return nil
 }
 
-func (s *desktopKeyStore) Load(_, key string) ([]byte, error) {
+func (s *desktopKeyStore) loadSecret(_, key string) ([]byte, error) {
 	value, ok := s.values[key]
 	if !ok {
 		return nil, fmt.Errorf("key not found")
@@ -230,7 +230,7 @@ func TestGitCreateRemoteSelectsPersonalOrOrganizationOwner(t *testing.T) {
 
 func TestStartOAuthLogin(t *testing.T) {
 	a := app.New()
-	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	s.ctx = context.Background()
 	s.SetBrowserOpener(func(url string) error {
@@ -338,7 +338,7 @@ func TestSelectRepositoryUpdatesHistory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
 	a := app.New()
-	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	s.ctx = context.Background()
 
@@ -391,7 +391,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 	}
 
 	a := app.New()
-	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)
@@ -416,7 +416,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	}
 	keyStore := &desktopKeyStore{values: make(map[string][]byte)}
 	a := app.New()
-	a.KeyStore = keyStore
+	a.Identities = keyStore
 	s := NewService(a)
 
 	info, err := s.SelectRepository(repoDir)
@@ -448,7 +448,7 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := app.New()
-	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)
@@ -474,7 +474,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := app.New()
-	a.KeyStore = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)

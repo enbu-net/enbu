@@ -55,6 +55,8 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 	rootCmd.AddCommand(
 		newAuthCommand(a),
 		newInitCommand(a),
+		newIdentityCommand(a),
+		newDoctorCommand(a),
 		newSwitchCommand(a),
 		newAddCommand(a),
 		newEditCommand(a),

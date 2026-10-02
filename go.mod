@@ -7,9 +7,13 @@ require (
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
 	filippo.io/age v1.3.2
+	filippo.io/hpke v0.4.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.2
+	github.com/ebitengine/purego v0.10.1
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/google/go-github/v90 v90.0.0
+	github.com/google/go-tpm v0.9.8
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
@@ -24,7 +28,7 @@ require (
 )
 
 require (
-	filippo.io/hpke v0.4.0 // indirect
+	filippo.io/nistec v0.0.4 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
@@ -37,7 +41,6 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/go-querystring v1.2.0 // indirect
@@ -73,4 +76,5 @@ require (
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
 )

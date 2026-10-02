@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/enbu-net/enbu/pkg/provider"
 )
@@ -18,9 +19,11 @@ type TokenProvider interface {
 	LoadToken() (accessToken string, username string, err error)
 }
 
-type KeyStore interface {
-	Store(service, key string, value []byte) error
-	Load(service, key string) ([]byte, error)
+type IdentityStore interface {
+	Create(owner, repo string) (identity.Identity, identity.PublicInfo, string, error)
+	Load(owner, repo string) (identity.Identity, error)
+	Info(owner, repo string) (identity.PublicInfo, error)
+	Doctor() identity.Diagnosis
 }
 
 type RepoDetector interface {

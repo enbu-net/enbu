@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/keystore"
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/oci"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
@@ -16,7 +15,7 @@ import (
 type App struct {
 	Registry      Registry
 	TokenProvider TokenProvider
-	KeyStore      KeyStore
+	Identities    IdentityStore
 	RepoDetector  RepoDetector
 	Git           gitprovider.Client
 	Platform      PlatformClient
@@ -101,17 +100,10 @@ func (a *App) emitStepProgress(op, step, status string) {
 
 func New() *App {
 	gitClient := gitprovider.NewCLIClient()
-	ks, err := keystore.New()
-	var keystoreImpl KeyStore
-	if err != nil {
-		keystoreImpl = &unavailableKeyStore{err: fmt.Errorf("initializing keystore: %w", err)}
-	} else {
-		keystoreImpl = &defaultKeyStore{backend: ks}
-	}
 	return &App{
 		Registry:      &defaultRegistry{},
 		TokenProvider: &defaultTokenProvider{},
-		KeyStore:      keystoreImpl,
+		Identities:    identity.New(),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
 		Git:           gitClient,
 	}
@@ -163,30 +155,6 @@ func (d *defaultRepoDetector) LoadRepo() (string, string, error) {
 		return "", "", fmt.Errorf("git remote not found")
 	}
 	return config.ParseGitRemote(repository.OriginURL)
-}
-
-type defaultKeyStore struct {
-	backend keystore.Backend
-}
-
-func (d *defaultKeyStore) Store(service, key string, value []byte) error {
-	return d.backend.Store(service, key, value)
-}
-
-func (d *defaultKeyStore) Load(service, key string) ([]byte, error) {
-	return d.backend.Load(service, key)
-}
-
-type unavailableKeyStore struct {
-	err error
-}
-
-func (u *unavailableKeyStore) Store(_, _ string, _ []byte) error {
-	return apperr.Wrap(apperr.CodeUnavailable, "keystore is unavailable", u.err, nil)
-}
-
-func (u *unavailableKeyStore) Load(_, _ string) ([]byte, error) {
-	return nil, apperr.Wrap(apperr.CodeUnavailable, "keystore is unavailable", u.err, nil)
 }
 
 func (a *App) sourceRepoURL(owner, repo string) string {
