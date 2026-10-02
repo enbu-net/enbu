@@ -57,7 +57,6 @@ enbu init
 Run once per user per repository. This automatically:
 
 - Creates or reuses a hardware Identity, with OS keyring fallback
-- Stores the private key in the OS keychain
 - Registers the public key on GHCR
 - Creates `enbu.toml`
 - Updates `.gitignore`
@@ -150,6 +149,10 @@ Hardware identities have no private-key export API. TPM metadata contains encryp
 child blobs bound to the original TPM; Secure Enclave metadata contains a Keychain
 reference. Secure Enclave keys require the device to be unlocked and do not prompt
 for Touch ID on every use.
+On macOS, permanent Secure Enclave storage requires access to the data-protection
+Keychain through the executable's signing entitlements and a user login session.
+`doctor` checks this access without creating a permanent key. Unsigned standalone
+builds may use the OS keyring fallback instead.
 
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
@@ -218,7 +221,6 @@ sequenceDiagram
 
     User->>CLI: enbu init
     CLI->>CLI: Create or load repository Identity
-    CLI->>CLI: Store private key in OS keychain
     CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
     Note over GHCR: Recipients are environment-independent
     GHCR-->>CLI: Done
@@ -252,7 +254,7 @@ sequenceDiagram
     participant GHCR
 
     New->>CLI: enbu init (join mode)
-    CLI->>CLI: Generate age key pair
+    CLI->>CLI: Create or load repository Identity
     CLI->>GHCR: Register public key as recipient-{user}-{fingerprint}
     CLI-->>New: ✓ Key registered
 

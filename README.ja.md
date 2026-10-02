@@ -59,7 +59,6 @@ enbu init
 以下が自動で行われます  
 
 - ハードウェアIdentityの作成・再利用（利用不可ならOS keyring）
-- 秘密鍵をOSキーチェーンに保存
 - 公開鍵をGHCRに登録
 - `enbu.toml` の作成
 - `.gitignore` の更新
@@ -150,6 +149,9 @@ fallbackは鍵作成前の利用可否検査だけで決めます。
 `init`は保存済みrecipientを登録し、登録失敗後の再実行でも同じ鍵を使います。
 TPMでは元の端末でのみロード可能な子鍵blobを、Secure EnclaveではKeychainの参照を保存します。
 Secure Enclave鍵は端末のロック解除中に利用でき、毎回のTouch IDは要求しません。
+macOSでSecure Enclave鍵を永続保存するには、実行ファイルの署名entitlementとユーザーのログインセッションによるdata-protection Keychainへのアクセスが必要です。
+`doctor`は永続鍵を作らずにこのアクセスを検査します。
+署名のない単体ビルドではOS keyringへfallbackする場合があります。
 
 version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
@@ -218,7 +220,6 @@ sequenceDiagram
 
     User->>CLI: enbu init
     CLI->>CLI: リポジトリのIdentityを作成・読込
-    CLI->>CLI: 秘密鍵を OS キーチェーンに保存
     CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
     Note over GHCR: recipient は環境非依存
     GHCR-->>CLI: 完了
@@ -252,7 +253,7 @@ sequenceDiagram
     participant GHCR as GHCR
 
     New->>CLI: enbu init (join mode)
-    CLI->>CLI: age 鍵ペア生成
+    CLI->>CLI: リポジトリのIdentityを作成・読込
     CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
     CLI-->>New: ✓ 鍵を登録しました
 
