@@ -164,6 +164,10 @@ local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring
 The normal CLI excludes the software TPM transport. On a real TPM or Secure Enclave
 device, run `ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity` for native integration tests.
 Hardware device validation is separate from the required GitHub-hosted E2E matrix.
+On a real Linux or Windows TPM, run the complete CLI lifecycle against local HTTP
+fixtures with `ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`.
+This uses a production CLI build, temporary repository data and the host TPM,
+covering init/add/pull/edit/sync/history and Identity reload between CLI processes.
 
 ## JSON output
 
