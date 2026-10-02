@@ -60,6 +60,12 @@ supplied to coding agents. `.tmp/coverage/coverage.out` is a standard Go
 coverprofile; `.tmp/coverage/frontend/lcov.info` supports frontend coverage
 integrations.
 
+`@vitest/coverage-v8` must match the Vitest version bundled by `vite-plus`
+exactly. Vite+ rejects mismatched versions before coverage collection starts.
+Renovate does not update the provider independently; when upgrading Vite+,
+check its bundled `vitest` dependency, update the provider and lockfile to that
+version, and run `task gui/test/coverage`.
+
 CI publishes `tobari-report`, `tobari-data`, and `frontend-coverage` artifacts.
 The Go HTML link appears in the job summary. Available raw reports are uploaded
 even after failures; a combined Go report requires data from all four suites.
