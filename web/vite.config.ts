@@ -109,5 +109,13 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: "jsdom",
+    coverage: {
+      provider: "v8",
+      reportsDirectory: "../.tmp/coverage/frontend",
+      reporter: ["text", "html", "lcov", "json-summary"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/routeTree.gen.ts", "src/wailsjs/**"],
+      reportOnFailure: true,
+    },
   },
 }));
