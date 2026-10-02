@@ -11,9 +11,9 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 func TestJSONSecretCommands(t *testing.T) {
@@ -34,7 +34,7 @@ func TestJSONSecretCommands(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			keyPair, registry := newAddEditRegistry(t, tt.initial)
 			commandArgs := append([]string{tt.command, "--json"}, tt.args...)
-			envelope := executeJSON(t, NewWithApp("test", newAddEditApp(keyPair, registry)), commandArgs...)
+			envelope := executeJSON(t, NewWithApp("test", newAddEditApp(t, keyPair, registry)), commandArgs...)
 			data := objectField(t, envelope, "data")
 			if got := stringField(t, data, "action"); got != tt.command {
 				t.Fatalf("action = %q, want %q", got, tt.command)
@@ -58,8 +58,9 @@ func TestJSONPullReturnsSecretsWithoutWritingFile(t *testing.T) {
 		"API_KEY":   "secret",
 		"MULTILINE": "first\nsecond",
 	})
-	a := newAddEditApp(keyPair, registry)
+	a := newAddEditApp(t, keyPair, registry)
 	a.RepositoryDir = dir
+	prepareCLIApp(t, a)
 
 	envelope := executeJSON(t, NewWithApp("test", a), "pull", "--json")
 	data := objectField(t, envelope, "data")
@@ -112,16 +113,17 @@ func TestJSONHistoryCommands(t *testing.T) {
 	}
 	registry := newEnvRegistry()
 	a := &app.App{
-		Registry:      registry,
+		Storage:       registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{key: []byte(keyPair.Identity.String())},
 	}
-	registryRef := "ghcr.io/owner/repo-enbu"
-	pushEncryptedHistory(t, registry, keyPair, registryRef+":secrets-default-1000", map[string]string{"A": "1"})
-	pushEncryptedHistory(t, registry, keyPair, registryRef+":secrets-default-2000", map[string]string{"A": "2", "B": "3"})
-	recipientTag := app.RecipientTagPrefix() + oci.CleanTag(fmt.Sprintf("alice-%s", age.Fingerprint(keyPair.PublicKey)))
-	if err := registry.Push(context.Background(), registryRef+":"+recipientTag, "", []byte(keyPair.PublicKey), "", nil); err != nil {
+	prepareCLIApp(t, a)
+	registryRef := ""
+	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-1000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "1"})
+	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-2000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "2", "B": "3"})
+	recipientTag := app.RecipientKey(keyPair.PublicKey)
+	if err := registry.Put(context.Background(), recipientTag, storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(keyPair.PublicKey)}, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,7 +159,7 @@ func TestJSONInit(t *testing.T) {
 
 	registry := newEnvRegistry()
 	a := &app.App{
-		Registry:      registry,
+		Storage:       registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
@@ -169,15 +171,13 @@ func TestJSONInit(t *testing.T) {
 	if got := stringField(t, data, "mode"); got != "initialize" {
 		t.Fatalf("mode = %q", got)
 	}
-	if registered, _ := data["recipient_registered"].(bool); !registered {
-		t.Fatalf("recipient_registered = %#v", data["recipient_registered"])
-	}
+
 	publicKey := stringField(t, data, "public_key")
 	if publicKey == "" {
 		t.Fatal("public_key is empty")
 	}
-	recipientTag := app.RecipientTagPrefix() + oci.CleanTag(fmt.Sprintf("alice-%s", age.Fingerprint(publicKey)))
-	if _, ok := registry.data["ghcr.io/owner/repo-enbu:"+recipientTag]; !ok {
+	recipientTag := app.RecipientKey(publicKey)
+	if _, ok := registry.data[recipientTag]; !ok {
 		t.Fatalf("recipient tag %q was not registered", recipientTag)
 	}
 }
@@ -192,7 +192,7 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha1"
+	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha2"
 default_env = "default"
 
 [env.default]
@@ -202,25 +202,33 @@ output = ".env"
 	}
 
 	registry := newEnvRegistry()
-	if err := registry.Push(context.Background(), "ghcr.io/owner/repo-enbu:secrets-default", "", []byte("ciphertext"), "", nil); err != nil {
+	other, err := age.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := age.EncryptForPublicKeys([]byte(`{"KEY":"value"}`), []string{other.PublicKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Put(context.Background(), "secrets-default", storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: ciphertext}, ""); err != nil {
 		t.Fatal(err)
 	}
 	a := &app.App{
-		Registry:      registry,
+		Storage:       registry,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
 		Platform:      &jsonInitPlatform{},
 	}
+	a.RepositoryDir = dir
+	prepareCLIApp(t, a)
 	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
 	data := objectField(t, envelope, "data")
 	if got := stringField(t, data, "mode"); got != "join" {
 		t.Fatalf("mode = %q", got)
 	}
-	if updated, _ := data["gitignore_updated"].(bool); !updated {
-		t.Fatalf("gitignore_updated = %#v", data["gitignore_updated"])
-	}
+
 	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +249,7 @@ func enterTempRepository(t *testing.T) string {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	content := `version = "v1alpha1"
+	content := `version = "v1alpha2"
 default_env = "default"
 
 [env.default]
@@ -265,7 +273,7 @@ func pushEncryptedHistory(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.Push(context.Background(), ref, "", ciphertext, "", nil); err != nil {
+	if err := registry.Put(context.Background(), ref, storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: ciphertext}, ""); err != nil {
 		t.Fatalf("push %s: %v", fmt.Sprint(ref), err)
 	}
 }

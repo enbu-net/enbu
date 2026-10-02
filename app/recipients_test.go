@@ -2,102 +2,74 @@ package app
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestListRecipients(t *testing.T) {
-	reg := newMemRegistry()
-	a := &App{
-		Registry:      reg,
-		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
-		RepoDetector:  &staticRepoDetector{owner: "alice", repo: "myrepo"},
-	}
-
-	ref := "ghcr.io/alice/myrepo-enbu"
-	pubKey1 := "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqysqqp"
-	pubKey2 := "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqysqqa"
-	tag1 := "recipient-alice-aabbccdd"
-	tag2 := "recipient-bob-11223344"
-	if err := reg.Push(context.Background(), ref+":"+tag1, "application/vnd.enbu.recipient.age.v1", []byte(pubKey1), "tok", nil); err != nil {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	second := mustKeyPair(t)
+	if err := a.Storage.Put(context.Background(), RecipientKey(second.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(second.PublicKey)}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.Push(context.Background(), ref+":"+tag2, "application/vnd.enbu.recipient.age.v1", []byte(pubKey2), "tok", nil); err != nil {
-		t.Fatal(err)
-	}
-
 	recipients, err := a.ListRecipients(context.Background())
 	if err != nil {
-		t.Fatalf("ListRecipients: %v", err)
+		t.Fatal(err)
 	}
 	if len(recipients) != 2 {
-		t.Fatalf("got %d recipients, want 2", len(recipients))
+		t.Fatalf("recipients=%v", recipients)
 	}
-
-	var aliceFound bool
 	for _, r := range recipients {
-		if r.Username == "alice" {
-			aliceFound = true
-			if r.Fingerprint != "aabbccdd" {
-				t.Fatalf("alice fingerprint = %q, want aabbccdd", r.Fingerprint)
-			}
-			if !strings.Contains(r.PublicKey, "age1") {
-				t.Fatalf("alice public key looks wrong: %q", r.PublicKey)
-			}
+		if RecipientTagPrefix()+r.Fingerprint != RecipientKey(r.PublicKey) {
+			t.Fatal("fingerprint mismatch")
 		}
-	}
-	if !aliceFound {
-		t.Fatal("alice not found in recipients")
 	}
 }
 
 type concurrentRegistry struct {
-	*memRegistry
-	active int32
-	max    int32
+	storage.Storage
+	active atomic.Int32
+	max    atomic.Int32
 }
 
-func (r *concurrentRegistry) Pull(ctx context.Context, ref, token string) ([]byte, error) {
-	active := atomic.AddInt32(&r.active, 1)
-	defer atomic.AddInt32(&r.active, -1)
+func (r *concurrentRegistry) Get(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+	active := r.active.Add(1)
+	defer r.active.Add(-1)
 	for {
-		max := atomic.LoadInt32(&r.max)
-		if active <= max || atomic.CompareAndSwapInt32(&r.max, max, active) {
+		max := r.max.Load()
+		if active <= max || r.max.CompareAndSwap(max, active) {
 			break
 		}
 	}
 	time.Sleep(10 * time.Millisecond)
-	return r.memRegistry.Pull(ctx, ref, token)
+	return r.Storage.Get(ctx, key)
 }
-
 func TestListRecipientsPullsWithBoundedConcurrency(t *testing.T) {
-	base := newMemRegistry()
-	reg := &concurrentRegistry{memRegistry: base}
-	a := &App{
-		Registry:      reg,
-		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
-		RepoDetector:  &staticRepoDetector{owner: "alice", repo: "myrepo"},
-	}
-
-	ref := "ghcr.io/alice/myrepo-enbu"
-	for i := range 12 {
-		tag := fmt.Sprintf("recipient-user-%02d-fingerprint", i)
-		if err := reg.Push(context.Background(), ref+":"+tag, "application/vnd.enbu.recipient.age.v1", []byte("age1key"), "tok", nil); err != nil {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	for range 11 {
+		kp := mustKeyPair(t)
+		if err := a.Storage.Put(context.Background(), RecipientKey(kp.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(kp.PublicKey)}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-
+	reg := &concurrentRegistry{Storage: a.Storage}
+	a.Storage = reg
 	recipients, err := a.ListRecipients(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recipients) != 12 {
-		t.Fatalf("got %d recipients, want 12", len(recipients))
+	if len(recipients) != 12 || reg.max.Load() <= 1 || reg.max.Load() > 8 {
+		t.Fatalf("recipients=%d max=%d", len(recipients), reg.max.Load())
 	}
-	if reg.max <= 1 || reg.max > 8 {
-		t.Fatalf("max concurrent pulls = %d, want 2..8", reg.max)
+}
+func TestListRecipientsRejectsCorruptRegistration(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	if err := a.Storage.Put(context.Background(), "recipient-corrupt", storage.Object{MediaType: recipientMediaType, Data: []byte("bad")}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ListRecipients(context.Background()); err == nil {
+		t.Fatal("corrupt recipient accepted")
 	}
 }

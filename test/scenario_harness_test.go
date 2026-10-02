@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,8 +18,10 @@ import (
 	enbuapp "github.com/enbu-net/enbu/app"
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/provider"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/google/uuid"
 )
 
 type testUser struct {
@@ -58,6 +61,12 @@ func RunScenario(t *testing.T, steps ...Step) {
 	}
 
 	owner, repo := uniqueRepo(t)
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.WorkspaceID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(owner+"/"+repo)).String()
+	cfg.Storage = config.StorageConfig{URL: "oci://localhost:5000/" + owner + "/" + repo + "-enbu", PlainHTTP: true}
+	if err := config.SaveProject(cfg); err != nil {
+		t.Fatal(err)
+	}
 	state := &ScenarioState{
 		ctx:         context.Background(),
 		owner:       owner,
@@ -233,14 +242,32 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 	}
 
 	ks := newMockKeyStore()
-	repoKey := repoKeystoreKey(owner, repo)
+	repoKey := uuid.NewSHA1(uuid.NameSpaceURL, []byte(owner+"/"+repo)).String()
 	if err := ks.storeSecret("enbu", repoKey, []byte(kp.Identity.String())); err != nil {
 		t.Fatalf("storing key for %s: %v", username, err)
 	}
 
+	cfg, err := config.LoadProject()
+	if err != nil {
+		cfg = config.NewProjectWithEnvironment("default")
+		cfg.WorkspaceID = repoKey
+		cfg.Storage.URL = "oci://localhost:5000/" + owner + "/" + repo + "-enbu"
+		cfg.Storage.PlainHTTP = true
+		if err = config.SaveProject(cfg); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := storage.NewOCI("localhost:5000/"+owner+"/"+repo+"-enbu", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = st.Get(context.Background(), "enbu-workspace"); err != nil {
+		if err = st.Put(context.Background(), "enbu-workspace", storage.Object{MediaType: "application/vnd.enbu.workspace.v1", Data: []byte(repoKey)}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
 	svc := &enbuapp.App{
-		RegistryHost:  "localhost:5000",
-		Registry:      &defaultRegistry{},
+		Storage:       st,
 		TokenProvider: &mockTokenProvider{accessToken: "", username: username},
 		Identities:    ks,
 		RepoDetector:  &mockRepoDetector{owner: owner, repo: repo},
@@ -248,24 +275,6 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 	}
 
 	return &testUser{svc: svc, keyPair: kp, name: username}
-}
-
-type defaultRegistry struct{}
-
-func (d *defaultRegistry) Push(ctx context.Context, ref string, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
-	return oci.Push(ctx, ref, mediaType, data, token, opts)
-}
-
-func (d *defaultRegistry) Pull(ctx context.Context, ref string, token string) ([]byte, error) {
-	return oci.Pull(ctx, ref, token)
-}
-
-func (d *defaultRegistry) ListTags(ctx context.Context, ref string, token string) ([]string, error) {
-	return oci.ListTags(ctx, ref, token)
-}
-
-func (d *defaultRegistry) GetDigest(ctx context.Context, ref string, token string) (string, error) {
-	return oci.GetDigest(ctx, ref, token)
 }
 
 type mockTokenProvider struct {
@@ -329,18 +338,11 @@ func (m *mockGitHubClient) SourceRepoURL(owner, repo string) string {
 	return "https://github.com/" + owner + "/" + repo
 }
 
-func repoKeystoreKey(owner, repo string) string {
-	return fmt.Sprintf("%s/%s", strings.ToLower(owner), strings.ToLower(repo))
-}
-
-func registerRecipient(t *testing.T, ctx context.Context, registryRef string, user *testUser, _ string) {
+func registerRecipient(t *testing.T, ctx context.Context, _ string, user *testUser, _ string) {
 	t.Helper()
-	fingerprint := age.Fingerprint(user.keyPair.PublicKey)
-	tag := oci.CleanTag(fmt.Sprintf("%s-%s", user.name, fingerprint))
-	prefix := "recipient-"
-	ref := fmt.Sprintf("%s:%s%s", registryRef, prefix, tag)
-	if err := oci.Push(ctx, ref, "application/vnd.enbu.recipient.age.v1", []byte(user.keyPair.PublicKey), "", nil); err != nil {
-		t.Fatalf("registering recipient %s: %v", user.name, err)
+	err := user.svc.Storage.Put(ctx, enbuapp.RecipientKey(user.keyPair.PublicKey), storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(user.keyPair.PublicKey)}, "")
+	if err != nil && !errors.Is(err, storage.ErrConflict) {
+		t.Fatal(err)
 	}
 }
 

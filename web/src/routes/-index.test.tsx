@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { I18nProvider } from "../lib/i18n";
 import { displayError } from "../lib/app-error";
-import { backend, openURL } from "../lib/backend";
+import { backend } from "../lib/backend";
 import { AccountMenu, AuthContext, RepositoryContextMenu, Sidebar } from "./__root";
 import {
   parseConfigDraft,
@@ -124,6 +124,38 @@ function renderAuthenticatedHome() {
     );
   });
 }
+
+it("opens a configured Local workspace without GitHub login or Git setup", async () => {
+  oauthMocks.repoStatus.mockResolvedValue({
+    selected: true,
+    repo: {
+      path: "/workspace",
+      initialized: true,
+      has_git: false,
+      has_remote: false,
+      storage_configured: true,
+    },
+  });
+  await act(async () => {
+    root.render(
+      <I18nProvider>
+        <AuthContext.Provider
+          value={{
+            status: { authenticated: false, workspace_configured: true },
+            loading: false,
+            repoPath: "/workspace",
+            refresh: async () => {},
+          }}
+        >
+          <HomePage />
+        </AuthContext.Provider>
+      </I18nProvider>,
+    );
+  });
+  expect(backend.listSecrets).toHaveBeenCalled();
+  expect(container.textContent).not.toContain("Continue with GitHub");
+  expect(container.textContent).not.toContain("Initialize Git repository");
+});
 
 function renderSecretRow(props: {
   secretKey: string;
@@ -414,12 +446,12 @@ describe("RepositoryContextMenu", () => {
 describe("enbu config editor", () => {
   it("hydrates missing environment output defaults for the GUI", () => {
     expect(
-      parseConfigDraft('version = "v1alpha1"\ndefault_env = "development"\n', [
+      parseConfigDraft('version = "v1alpha2"\ndefault_env = "development"\n', [
         { name: "development", current: true },
         { name: "production", current: false },
       ]),
     ).toEqual({
-      version: "v1alpha1",
+      version: "v1alpha2",
       default_env: "development",
       env: {
         development: { output: ".env.development" },
@@ -430,19 +462,29 @@ describe("enbu config editor", () => {
 
   it("serializes GUI edits as valid canonical TOML", () => {
     const text = serializeConfigDraft({
-      version: "v1alpha1",
+      version: "v1alpha2",
       default_env: "staging",
       env: { staging: { output: ".env.staging" } },
     });
     expect(text).toBe(
-      'version = "v1alpha1"\ndefault_env = "staging"\n\n[env.staging]\noutput = ".env.staging"\n',
+      'version = "v1alpha2"\ndefault_env = "staging"\n\n[env.staging]\noutput = ".env.staging"\n',
     );
     expect(text).not.toContain("[env]\n");
     expect(parseConfigDraft(text, [])).toMatchObject({ default_env: "staging" });
   });
 
   it("rejects invalid TOML before entering the GUI", () => {
-    expect(() => parseConfigDraft('version = "v1alpha1', [])).toThrow();
+    expect(() => parseConfigDraft('version = "v1alpha2', [])).toThrow();
+  });
+  it("preserves workspace identity and S3 configuration while editing environments", () => {
+    const text =
+      'version = "v1alpha2"\nworkspace_id = "11111111-1111-4111-8111-111111111111"\ndefault_env = "default"\n[storage]\nurl = "s3://bucket/prefix"\nregion = "us-east-1"\nendpoint = "http://localhost:9000"\npath_style = true\n[env.default]\noutput = ".env"\n';
+    const draft = parseConfigDraft(text, []);
+    draft.env.default.output = ".env.changed";
+    const roundtrip = parseConfigDraft(serializeConfigDraft(draft), []);
+    expect(roundtrip.workspace_id).toBe(draft.workspace_id);
+    expect(roundtrip.storage).toEqual(draft.storage);
+    expect(roundtrip.env.default.output).toBe(".env.changed");
   });
 });
 
@@ -462,7 +504,7 @@ describe("MemberAvatar", () => {
 });
 
 describe("MemberRow", () => {
-  it("opens the member's GitHub profile", () => {
+  it("shows a recipient fingerprint without assuming a GitHub account", () => {
     act(() => {
       root.render(
         <I18nProvider>
@@ -472,10 +514,9 @@ describe("MemberRow", () => {
         </I18nProvider>,
       );
     });
-    act(() => {
-      container.querySelector("button")?.click();
-    });
-    expect(vi.mocked(openURL)).toHaveBeenCalledWith("https://github.com/octo%20cat");
+    expect(container.textContent).toContain("fingerpr");
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
   });
 });
 
@@ -803,21 +844,21 @@ describe("dashboard review regressions", () => {
     expect(backendMock.listRecipients).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      resolveB([{ username: "new-repo-user", fingerprint: "b", public_key: "age1b" }]);
+      resolveB([{ username: "new-repo-user", fingerprint: "new-key", public_key: "age1b" }]);
       await Promise.resolve();
     });
     await act(async () => {
       queryButton("Members")?.click();
       await Promise.resolve();
     });
-    expect(container.textContent).toContain("new-repo-user");
+    expect(container.textContent).toContain("new-key");
 
     await act(async () => {
-      resolveA([{ username: "stale-user", fingerprint: "a", public_key: "age1a" }]);
+      resolveA([{ username: "stale-user", fingerprint: "old-key", public_key: "age1a" }]);
       await Promise.resolve();
     });
-    expect(container.textContent).toContain("new-repo-user");
-    expect(container.textContent).not.toContain("stale-user");
+    expect(container.textContent).toContain("new-key");
+    expect(container.textContent).not.toContain("old-key");
   });
 
   it("delegates recipient sync and error dismissal", async () => {

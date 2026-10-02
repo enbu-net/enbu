@@ -30,7 +30,7 @@ var (
 		{Username: "octocat", Fingerprint: "abc123def456"},
 		{Username: "hubot", Fingerprint: "xyz789ghi012"},
 	}
-	demoConfigContent = `version = "v1alpha1"
+	demoConfigContent = `version = "v1alpha2"
 default_env = "development"
 
 [env.development]

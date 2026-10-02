@@ -182,7 +182,8 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 
 			var publicKey any
 			if deps.identityStore != nil {
-				info, err := deps.identityStore.Info(owner, repo)
+				workspaceID, _ := a.WorkspaceID()
+				info, err := deps.identityStore.Info(workspaceID)
 				if err == nil {
 					publicKey = info.Recipient
 					humanPrintf(cmd, "Identity: %s\nKey: %s\n", info.Backend, info.Recipient)

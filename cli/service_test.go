@@ -11,7 +11,7 @@ func TestDefaultAppWithInvalidBackendReturnsKeystoreError(t *testing.T) {
 	t.Setenv("ENBU_IDENTITY_BACKEND", "invalid")
 
 	a := app.New()
-	_, err := app.LoadIdentitiesForRepo(a.Identities, "owner", "repo")
+	_, err := app.LoadIdentities(a.Identities, "owner/repo")
 	if err == nil {
 		t.Fatal("expected keystore initialization error")
 	}
@@ -21,7 +21,7 @@ func TestDefaultAppWithInvalidBackendReturnsKeystoreError(t *testing.T) {
 }
 
 func TestLoadIdentitiesForRepoWithNilKeyStore(t *testing.T) {
-	_, err := app.LoadIdentitiesForRepo(nil, "owner", "repo")
+	_, err := app.LoadIdentities(nil, "owner/repo")
 	if err == nil {
 		t.Fatal("expected error for nil keystore")
 	}

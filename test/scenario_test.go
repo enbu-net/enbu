@@ -4,6 +4,7 @@ package test
 
 import (
 	"fmt"
+	"github.com/enbu-net/enbu/pkg/config"
 	"os"
 	"strings"
 	"sync"
@@ -264,7 +265,7 @@ func TestScenario_SyncBeforeFirstSecretThenTeamCanPull(t *testing.T) {
 func TestScenario_EnvironmentSecretsAreIsolated(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -273,6 +274,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -340,7 +346,7 @@ func TestScenario_FullLifecycleMultiStage(t *testing.T) {
 func TestScenario_MultiEnvironmentSameRecipient(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -352,6 +358,11 @@ output = ".env.staging"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -373,7 +384,7 @@ output = ".env.prod"
 func TestScenario_EnvironmentIndependentEditsAndDeletes(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -382,6 +393,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -426,7 +442,7 @@ output = ".env.prod"
 func TestScenario_SyncReEncryptsForAllRecipients(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -435,6 +451,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -459,7 +480,7 @@ output = ".env.prod"
 func TestScenario_LateJoinerGetsAllEnvironments(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -468,6 +489,11 @@ output = ".env.dev"
 [env.staging]
 output = ".env.staging"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -492,7 +518,7 @@ output = ".env.staging"
 func TestScenario_ConcurrentSyncsOnDifferentEnvironments(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -501,6 +527,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -540,7 +571,7 @@ output = ".env.prod"
 func TestScenario_DefaultEnvironmentUsedWhenNoEnvFlag(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config with dev as default", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -549,6 +580,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -564,7 +600,7 @@ output = ".env.prod"
 func TestScenario_EnvFlagOverridesDefault(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config with dev as default", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -573,6 +609,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -591,7 +632,7 @@ output = ".env.prod"
 func TestScenario_EditInOneEnvDoesNotAffectOther(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -600,6 +641,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -623,7 +669,7 @@ output = ".env.prod"
 func TestScenario_SyncOnEmptyEnvironmentIsNoop(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -632,6 +678,11 @@ output = ".env.dev"
 [env.empty]
 output = ".env.empty"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -649,7 +700,7 @@ output = ".env.empty"
 func TestScenario_ManyUsersAllEnvironments(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -661,6 +712,11 @@ output = ".env.staging"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -686,7 +742,7 @@ output = ".env.prod"
 func TestScenario_DeleteAllSecretsInEnvironment(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
-			content := `version = "v1alpha1"
+			content := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -695,6 +751,11 @@ output = ".env.dev"
 [env.prod]
 output = ".env.prod"
 `
+			cfg, loadErr := config.LoadProject()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			content = "workspace_id = \"" + cfg.WorkspaceID + "\"\n" + content
 			if err := os.WriteFile("enbu.toml", []byte(content), 0o644); err != nil {
 				t.Fatal(err)
 			}

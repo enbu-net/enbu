@@ -133,7 +133,7 @@ function RootLayout() {
         <AccountMenu status={status} loading={loading} />
       </styled.header>
       <Flex minH="calc(100vh - 72px)">
-        {status?.authenticated && <Sidebar activePath={repoPath} />}
+        {!loading && <Sidebar activePath={repoPath} />}
         <Box flex="1" minW="0">
           <Outlet />
         </Box>
@@ -277,7 +277,7 @@ export function Sidebar({ activePath }: { activePath: string }) {
                 fontWeight={isActive ? "semibold" : "normal"}
                 truncate
               >
-                {repo.owner}/{repo.repo}
+                {repo.owner ? `${repo.owner}/${repo.repo}` : repo.path}
               </Text>
             </Flex>
           );
