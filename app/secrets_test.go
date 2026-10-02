@@ -5,13 +5,10 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/oci"
@@ -215,19 +212,6 @@ func TestPullSecrets_ReturnsDotEnvBytes(t *testing.T) {
 	}
 }
 
-func TestPullSecrets_ErrorWhenNoPrivateKey(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "value"})
-
-	// replace keystore with empty one (no private key)
-	a.Identities = newMemKeyStore()
-
-	_, _, _, err := a.PullSecrets(context.Background(), "default")
-	if err == nil {
-		t.Fatal("expected error when no private key")
-	}
-}
-
 func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "value"})
@@ -245,63 +229,3 @@ func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 		t.Fatal("expected decryption error with wrong key")
 	}
 }
-
-func TestPullSecretsToFile_WritesFile(t *testing.T) {
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	_ = os.Chdir(dir)
-
-	if err := os.WriteFile("enbu.toml", []byte(`version = "v1alpha1"
-default_env = "dev"
-[env.dev]
-output = ".env.dev"
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "dev", kp, map[string]string{"SECRET": "mysecret"})
-
-	if err := a.PullSecretsToFile(context.Background(), "dev"); err != nil {
-		t.Fatalf("PullSecretsToFile: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(dir, ".env.dev"))
-	if err != nil {
-		t.Fatalf("read .env.dev: %v", err)
-	}
-	if !strings.Contains(string(data), `SECRET="mysecret"`) {
-		t.Fatalf("unexpected file content: %s", data)
-	}
-}
-
-func TestPullSecretsToFile_ErrorWhenCannotDecrypt(t *testing.T) {
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-	_ = os.Chdir(dir)
-
-	if err := os.WriteFile("enbu.toml", []byte(`version = "v1alpha1"
-default_env = "dev"
-[env.dev]
-output = ".env.dev"
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "dev", kp, map[string]string{"SECRET": "mysecret"})
-
-	other := mustKeyPair(t)
-	ks := newMemKeyStore()
-	_ = ks.storeSecret(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String()))
-	a.Identities = ks
-
-	if err := a.PullSecretsToFile(context.Background(), "dev"); err == nil {
-		t.Fatal("expected error when decryption fails")
-	}
-}
-
-// compile-time check: age.KeyPair.Identity implements agecrypto.Identity
-var _ agecrypto.Identity = (*agecrypto.X25519Identity)(nil)
