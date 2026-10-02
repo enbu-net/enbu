@@ -121,9 +121,12 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 					}
 					writes := 0
 					cause := errors.New("list unavailable")
+					listCalls := 0
 					a.Registry = &hookedRegistry{Registry: base,
 						tags: func(context.Context, string, string) ([]string, error) {
-							if recipients == "list failure" {
+							listCalls++
+							// Restore lists history before it lists recipients.
+							if recipients == "list failure" && (operation.name != "restore" || listCalls > 1) {
 								return nil, cause
 							}
 							tags := []string{entries[0].Tag}
@@ -141,6 +144,13 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 						push: func(context.Context, string, string, []byte, string, *oci.PushOptions) error { writes++; return nil },
 					}
 					err = operation.run(a)
+					wantListCalls := 1
+					if operation.name == "restore" {
+						wantListCalls = 2
+					}
+					if listCalls != wantListCalls {
+						t.Fatalf("ListTags calls = %d, want %d", listCalls, wantListCalls)
+					}
 					if !apperr.Is(err, apperr.CodeInternal) || writes != 0 {
 						t.Fatalf("error=%v writes=%d, want failure without writes", err, writes)
 					}
