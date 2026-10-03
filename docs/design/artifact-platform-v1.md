@@ -240,10 +240,14 @@ labels MUST NOT appear in public OCI metadata.
 
 - Adding a recipient rewrites the Grant and the encrypted references that pin
   it; payload ciphertext remains unchanged.
-- Removing a recipient prevents access only to future Grants. It cannot revoke
-  downloaded identities, old revisions, or materialized plaintext.
-- `access rekey` creates a new identity and re-encrypts the material when old
-  recipient access must be excluded.
+- Removing a wrap from a Grant changes only the declared recipient set. A
+  recipient that retained the Material identity can still decrypt all objects
+  and Grant bodies encrypted to that identity; this operation MUST NOT be
+  presented as revocation or confidentiality narrowing.
+- Any recipient-set narrowing that requires confidentiality MUST run
+  `access rekey`: create a new Material identity, re-encrypt the Revision and every
+  payload stream, and publish a Grant for only the new set. The application host
+  MUST enforce this rule rather than relying on clients to discard old keys.
 - Multi-input transformation output starts with the intersection of all input
   recipient sets. Access may be broadened only by a separate, policy-approved
   access operation.
@@ -253,6 +257,86 @@ Age X25519 remains the only recipient encryption mechanism. An SSH key stored
 as payload is not a recipient key. Device private keys and signing keys belong
 in an explicitly selected OS keystore; production code MUST NOT silently fall
 back to plaintext storage.
+
+### Material wire envelope
+
+The decrypted Material manifest has this logical shape. The canonical manifest
+is itself encrypted with its Material identity before it is stored.
+
+```go
+type MaterialManifest struct {
+	APIVersion string
+	Recipient  string
+	Revision   EncryptedStream
+	Payloads   []MaterialPayload
+}
+
+type EncryptedStream struct {
+	Digest Digest // complete plaintext stream
+	Size   int64  // complete plaintext stream
+	Chunks []ChunkRef
+}
+
+type ChunkRef struct {
+	Offset        int64
+	PlaintextSize int64
+	Ciphertext    Descriptor
+}
+```
+
+The Revision is encrypted as a stream alongside its payload streams. Payloads
+are sorted by name and chunks by plaintext offset. Chunks are independently age
+authenticated and MUST be contiguous from offset zero; their aggregate size
+and digest MUST equal the corresponding complete plaintext stream. An empty
+stream is represented by one authenticated empty chunk. A reader MUST consume
+each age stream to EOF and verify both its ciphertext descriptor and plaintext
+digest before publishing materialized output.
+
+The sealing API MUST reject a manifest whose Revision or payload stream does
+not match the supplied canonical Revision. The opening API MUST take the
+expected Revision digest from the surrounding `SealedRef` and reject a
+substituted manifest before returning it.
+
+The decrypted manifest is limited to 16 MiB, a Revision has at most 1,024
+payload streams, and each stream has at most 10,000 chunks. Implementations MAY
+change chunk size without changing plaintext, Revision, or merge identity.
+
+### Device and AccessGrant wire envelope
+
+Every client installation has a random Device ID, a device-only age X25519 key,
+and an independent Ed25519 signing key. An enrollment assertion binds both
+public keys and the Device ID to a provider-qualified immutable subject. The
+assertion is bounded to 64 KiB and is embedded in the encrypted Grant claims so
+that a verifier can validate the historical binding rather than trusting a
+mutable username or current provider membership.
+
+Enrollment verification MUST be local, deterministic, and bounded. It MUST NOT
+perform network, filesystem, environment, clock, or interactive operations.
+The issuer enrollment and Ed25519 signature are verified before processing the
+remaining recipient assertions, limiting unauthenticated verifier work to one
+bounded assertion.
+
+The public AccessGrant envelope contains only its API version and kind, the
+Material digest, the digest and ciphertext of its signed claims, and an
+unordered set of anonymous age ciphertext wraps. Each wrap contains the same
+Material identity encrypted to one verified device X25519 recipient. Device
+IDs, subjects, public keys, assertions, policy digest, and issuer are present
+only inside the Material-encrypted claims. The recipient count and ciphertext
+sizes are observable; recipient identity is not.
+
+The signed claims bind the Material and policy digests, issuer Device ID, the
+exact recipient set, each recipient's enrollment assertion and digest, and the
+digest of that recipient's anonymous wrap. Opening a Grant MUST verify canonical
+encoding, every wrap digest, age authentication through EOF, the complete wrap
+set, every enrollment binding, the opener's exact device keys, and the issuer's
+Ed25519 signature. A wrap or encrypted claims body copied from another Grant is
+therefore rejected.
+
+Device credentials are a canonical, versioned private object stored under one
+fixed keychain entry. A credential backend MUST explicitly report OS-protected
+storage; a missing, plaintext, or unknown protection level fails closed. The
+native Windows, macOS, and Linux implementations arrive in the platform-
+security stage.
 
 ## Streaming content-addressed storage
 
@@ -453,8 +537,8 @@ stages are present in the current tree.
 
 | Stage | Required implementation | Status at start of refactor |
 | --- | --- | --- |
-| 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | First implementation stage |
-| 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Planned |
+| 1. Artifact contract | Core types, deterministic CBOR, validation, golden vectors, DAG tests | Implemented in the base stack |
+| 2. Crypto and Grants | Streaming age, material manifests, AccessGrant, device enrollment validation | Implemented in this stage |
 | 3. Storage and commits | Local CAS, streaming OCI, announcements, frontier and merge | Planned |
 | 4. Policy and audit | Rego boundary, owner policy, encrypted local journal and dispatcher | Planned |
 | 5. Plugin host | Restricted wazero ABI, trust verification, reference transforms | Planned |
