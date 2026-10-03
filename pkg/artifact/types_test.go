@@ -1,7 +1,9 @@
 package artifact
 
 import (
+	"crypto/sha512"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -73,10 +75,21 @@ func TestMetadataValidation(t *testing.T) {
 	}
 
 	tests := map[string]Metadata{
-		"path separator": {Name: "ssh/key"},
-		"non NFC":        {Name: "e\u0301"},
-		"bad label":      {Name: "name", Labels: map[string]string{"Bad Prefix/key": "value"}},
-		"annotation NUL": {Name: "name", Annotations: map[string]string{"note": "a\x00b"}},
+		"empty name":         {Name: ""},
+		"long name":          {Name: strings.Repeat("x", 254)},
+		"invalid UTF-8 name": {Name: string([]byte{0xff})},
+		"path separator":     {Name: "ssh/key"},
+		"backslash":          {Name: "ssh\\key"},
+		"control character":  {Name: "name\x7f"},
+		"non NFC":            {Name: "e\u0301"},
+		"bad label":          {Name: "name", Labels: map[string]string{"Bad Prefix/key": "value"}},
+		"bad qualified name": {Name: "name", Labels: map[string]string{"example.com/": "value"}},
+		"long label":         {Name: "name", Labels: map[string]string{"key": strings.Repeat("x", 64)}},
+		"bad label value":    {Name: "name", Labels: map[string]string{"key": "has spaces"}},
+		"bad annotation key": {Name: "name", Annotations: map[string]string{"bad/key/extra": "value"}},
+		"annotation NUL":     {Name: "name", Annotations: map[string]string{"note": "a\x00b"}},
+		"annotation UTF-8":   {Name: "name", Annotations: map[string]string{"note": string([]byte{0xff})}},
+		"annotation NFC":     {Name: "name", Annotations: map[string]string{"note": "e\u0301"}},
 	}
 	for name, metadata := range tests {
 		if err := metadata.Validate(); !errors.Is(err, ErrInvalidArtifact) {
@@ -92,6 +105,128 @@ func TestMetadataValidation(t *testing.T) {
 	tooLarge := Metadata{Name: "name", Annotations: map[string]string{"note": strings.Repeat("x", MaxMetadataBytes)}}
 	if err := tooLarge.Validate(); !errors.Is(err, ErrInvalidArtifact) {
 		t.Fatalf("oversized metadata = %v, want ErrInvalidArtifact", err)
+	}
+}
+
+func TestMetadataExtensionNamespace(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		key      string
+		reserved bool
+	}{
+		{"enbu.net/internal", true},
+		{"schemas.enbu.net/internal", true},
+		{"not-enbu.net/internal", false},
+		{"enbu.net.example/internal", false},
+		{"internal", false},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			m := Metadata{Name: "name", Annotations: map[string]string{tc.key: "value"}}
+			err := m.ValidateExtension()
+			if tc.reserved {
+				if !errors.Is(err, ErrReservedNamespace) {
+					t.Fatalf("error = %v, want reserved namespace", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestMetadataEntryLimit(t *testing.T) {
+	t.Parallel()
+	m := Metadata{Name: "name", Labels: make(map[string]string)}
+	for i := range MaxMetadataEntries {
+		m.Labels[fmt.Sprintf("key%d", i)] = ""
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("exact entry limit: %v", err)
+	}
+	m.Annotations = map[string]string{"extra": "value"}
+	if err := m.Validate(); !errors.Is(err, ErrInvalidArtifact) {
+		t.Fatalf("over entry limit: %v", err)
+	}
+}
+
+func TestPayloadValidation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		mutate func(*PayloadRef)
+	}{
+		{"empty name", func(p *PayloadRef) { p.Name = "" }},
+		{"long name", func(p *PayloadRef) { p.Name = strings.Repeat("x", 254) }},
+		{"path name", func(p *PayloadRef) { p.Name = "a/b" }},
+		{"empty media type", func(p *PayloadRef) { p.MediaType = "" }},
+		{"invalid media type", func(p *PayloadRef) { p.MediaType = "text/plain; bad=" }},
+		{"non sha256", func(p *PayloadRef) {
+			sum := sha512.Sum512([]byte("content"))
+			p.Digest = digest.Digest(fmt.Sprintf("sha512:%x", sum))
+		}},
+		{"negative size", func(p *PayloadRef) { p.Size = -1 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := validResource().Payloads[0]
+			tc.mutate(&p)
+			if err := p.Validate(); !errors.Is(err, ErrInvalidArtifact) {
+				t.Fatalf("Validate() = %v", err)
+			}
+		})
+	}
+	p := validResource().Payloads[0]
+	p.Name = strings.Repeat("x", 253)
+	p.Size = 0
+	p.MediaType = "text/plain; charset=utf-8"
+	if err := p.Validate(); err != nil {
+		t.Fatalf("valid boundary payload: %v", err)
+	}
+}
+
+func TestRevisionRejectsInvalidFieldsAndEdges(t *testing.T) {
+	t.Parallel()
+	validEdge := func() Edge {
+		return Edge{ID: testEdgeID, Name: "related", Relation: TypeRef{Group: "example.com", Version: "v1", Kind: "Related"}, Strength: EdgeLogical, Target: testChildUID}
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*Revision)
+	}{
+		{"API version", func(r *Revision) { r.APIVersion = "v2" }},
+		{"kind", func(r *Revision) { r.Kind = "Unknown" }},
+		{"UID", func(r *Revision) { r.UID = "invalid" }},
+		{"schema", func(r *Revision) { r.Schema.Version = "v0" }},
+		{"metadata", func(r *Revision) { r.Metadata.Name = "" }},
+		{"payload count", func(r *Revision) { r.Payloads = make([]PayloadRef, MaxPayloads+1) }},
+		{"edge count", func(r *Revision) { r.Edges = make([]Edge, MaxEdges+1) }},
+		{"payload", func(r *Revision) { r.Payloads[0].Size = -1 }},
+		{"edge ID", func(r *Revision) { r.Edges[0].ID = "invalid" }},
+		{"edge name", func(r *Revision) { r.Edges[0].Name = "" }},
+		{"edge relation", func(r *Revision) { r.Edges[0].Relation.Kind = "invalid" }},
+		{"edge target", func(r *Revision) { r.Edges[0].Target = "invalid" }},
+		{"edge strength", func(r *Revision) { r.Edges[0].Strength = "unknown" }},
+		{"missing pinned ref", func(r *Revision) { r.Edges[0].Strength = EdgePinned }},
+		{"logical pinned ref", func(r *Revision) { r.Edges[0].Pinned = &SealedRef{} }},
+		{"pinned revision", func(r *Revision) { r.Edges[0].Strength = EdgePinned; r.Edges[0].Pinned = &SealedRef{} }},
+		{"pinned material", func(r *Revision) {
+			r.Edges[0].Strength = EdgePinned
+			r.Edges[0].Pinned = &SealedRef{Revision: digest.FromString("r")}
+		}},
+		{"pinned grant", func(r *Revision) {
+			r.Edges[0].Strength = EdgePinned
+			r.Edges[0].Pinned = &SealedRef{Revision: digest.FromString("r"), Material: digest.FromString("m")}
+		}},
+		{"duplicate edge ID", func(r *Revision) { e := validEdge(); e.Name = "other"; r.Edges = append(r.Edges, e) }},
+		{"duplicate edge name", func(r *Revision) { e := validEdge(); e.ID = testResourceUID; r.Edges = append(r.Edges, e) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := validResource()
+			r.Edges = []Edge{validEdge()}
+			tc.mutate(&r)
+			if err := r.Validate(); !errors.Is(err, ErrInvalidArtifact) {
+				t.Fatalf("Validate() = %v", err)
+			}
+		})
 	}
 }
 
