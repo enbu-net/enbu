@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,7 +28,8 @@ func TestStorageURLValidation(t *testing.T) {
 func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	ctx := context.Background()
 	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}}
-	a.StorageURL = (&url.URL{Scheme: "local", Path: t.TempDir()}).String()
+	path := "/" + strings.TrimPrefix(filepath.ToSlash(t.TempDir()), "/")
+	a.StorageURL = (&url.URL{Scheme: "local", Path: path}).String()
 	initialized, err := a.InitializeRepository(ctx)
 	if err != nil {
 		t.Fatal(err)

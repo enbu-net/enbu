@@ -17,6 +17,33 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 )
 
+func localStorageURL(dir string) string {
+	path := "/" + strings.TrimPrefix(filepath.ToSlash(dir), "/")
+	return (&url.URL{Scheme: "local", Path: path}).String()
+}
+
+func TestLocalStorageURL(t *testing.T) {
+	for _, test := range []struct {
+		dir  string
+		path string
+	}{
+		{dir: "/tmp/enbu objects", path: "/tmp/enbu objects"},
+		{dir: "C:/enbu objects", path: "/C:/enbu objects"},
+		{dir: "D:/enbu/objects", path: "/D:/enbu/objects"},
+	} {
+		t.Run(test.dir, func(t *testing.T) {
+			raw := localStorageURL(test.dir)
+			u, err := url.Parse(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if u.Scheme != "local" || u.Host != "" || u.Opaque != "" || u.Path != test.path {
+				t.Fatalf("URL %q parsed as %+v, want empty host and path %q", raw, u, test.path)
+			}
+		})
+	}
+}
+
 // Every operation starts a new production CLI process. These workspaces have
 // neither a Git repository nor GitHub credentials.
 func TestStorageBackendLifecycles(t *testing.T) {
@@ -37,7 +64,7 @@ func TestStorageBackendLifecycles(t *testing.T) {
 			}
 			switch backend {
 			case "local":
-				cfg.Storage = config.StorageConfig{URL: (&url.URL{Scheme: "local", Path: filepath.ToSlash(filepath.Join(t.TempDir(), "objects"))}).String()}
+				cfg.Storage = config.StorageConfig{URL: localStorageURL(filepath.Join(t.TempDir(), "objects"))}
 			case "s3":
 				cfg.Storage = config.StorageConfig{URL: "s3://" + os.Getenv("ENBU_TEST_S3_BUCKET") + "/cli/" + cfg.WorkspaceID, Region: os.Getenv("AWS_REGION"), Endpoint: os.Getenv("ENBU_TEST_S3_ENDPOINT"), PathStyle: os.Getenv("ENBU_TEST_S3_ENDPOINT") != ""}
 				awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
