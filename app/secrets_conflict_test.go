@@ -83,7 +83,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 					}
 					events := &retryEvents{}
 					a.Events = events
-					var cause error = storage.ErrConflict
+					var cause = storage.ErrConflict
 					wantCode := apperr.CodeConflict
 					if failure == "non conflict" || failure == "snapshot failure" {
 						cause = apperr.New(apperr.CodeAccessDenied, "push denied", nil)
