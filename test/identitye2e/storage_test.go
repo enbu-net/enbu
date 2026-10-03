@@ -11,10 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/minio/minio-go/v7"
 )
 
 func localStorageURL(dir string) string {
@@ -67,28 +66,21 @@ func TestStorageBackendLifecycles(t *testing.T) {
 				cfg.Storage = config.StorageConfig{URL: localStorageURL(filepath.Join(t.TempDir(), "objects"))}
 			case "s3":
 				cfg.Storage = config.StorageConfig{URL: "s3://" + os.Getenv("ENBU_TEST_S3_BUCKET") + "/cli/" + cfg.WorkspaceID, Region: os.Getenv("AWS_REGION"), Endpoint: os.Getenv("ENBU_TEST_S3_ENDPOINT"), PathStyle: os.Getenv("ENBU_TEST_S3_ENDPOINT") != ""}
-				awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+				client, err := storage.NewS3Client(cfg.Storage.Endpoint, cfg.Storage.Region, cfg.Storage.PathStyle)
 				if err != nil {
 					t.Fatal(err)
 				}
-				client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-					if cfg.Storage.Endpoint != "" {
-						o.BaseEndpoint = aws.String(cfg.Storage.Endpoint)
-						o.UsePathStyle = true
-					}
-				})
 				t.Cleanup(func() {
-					p := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{Bucket: aws.String(os.Getenv("ENBU_TEST_S3_BUCKET")), Prefix: aws.String("cli/" + cfg.WorkspaceID + "/")})
-					for p.HasMorePages() {
-						page, err := p.NextPage(context.Background())
-						if err != nil {
-							t.Error(err)
+					ctx, cancel := context.WithCancel(context.Background())
+					defer cancel()
+					bucket := os.Getenv("ENBU_TEST_S3_BUCKET")
+					for object := range client.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: "cli/" + cfg.WorkspaceID + "/", Recursive: true}) {
+						if object.Err != nil {
+							t.Error(object.Err)
 							return
 						}
-						for _, o := range page.Contents {
-							if _, err := client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(os.Getenv("ENBU_TEST_S3_BUCKET")), Key: o.Key}); err != nil {
-								t.Error(err)
-							}
+						if err := client.RemoveObject(ctx, bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
+							t.Error(err)
 						}
 					}
 				})
