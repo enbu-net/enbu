@@ -54,7 +54,7 @@ func newManager(t *testing.T) *Manager {
 
 func TestManagerFallbackReuseAndMetadata(t *testing.T) {
 	m := newManager(t)
-	id, info, warning, err := m.Create("Owner", "Repo")
+	id, info, warning, err := m.Create("owner/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestManagerFallbackReuseAndMetadata(t *testing.T) {
 	if info.Backend != "keyring" || !strings.Contains(warning, "no TPM device") {
 		t.Fatalf("%+v %q", info, warning)
 	}
-	id2, info2, warning, err := m.Create("owner", "repo")
+	id2, info2, warning, err := m.Create("owner/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,14 +70,14 @@ func TestManagerFallbackReuseAndMetadata(t *testing.T) {
 	if info2.Recipient != info.Recipient || info2.Created || !info.Created || warning != "" {
 		t.Fatalf("did not reuse: %+v %q", info2, warning)
 	}
-	md, err := m.read("owner", "repo")
+	md, err := m.read("owner/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if md.Version != 1 || md.Reference == "" || strings.Contains(string(md.PublicKey), "SECRET") {
 		t.Fatalf("invalid metadata: %+v", md)
 	}
-	stat, err := os.Stat(m.Path("owner", "repo"))
+	stat, err := os.Stat(m.Path("owner/repo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestManagerFallbackReuseAndMetadata(t *testing.T) {
 	if err != nil || string(out) != "secret" {
 		t.Fatalf("reload: %q %v", out, err)
 	}
-	if _, err := m.Info("owner", "repo"); err != nil {
+	if _, err := m.Info("owner/repo"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -106,17 +106,17 @@ func TestManagerNeverReplacesSavedOrPartiallyCreatedKey(t *testing.T) {
 			m.Mode = mode
 			h := &fakeHardware{available: true, createError: errors.New("creation failed")}
 			m.Hardware = h
-			if _, _, _, err := m.Create("o", "r"); err == nil {
+			if _, _, _, err := m.Create("o/r"); err == nil {
 				t.Fatal("silently fell back after create failure")
 			}
 			if len(m.Vault.(memoryVault)) != 0 {
 				t.Fatal("created fallback key")
 			}
 			md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Recipient: "saved"}, PublicKey: []byte{1}}
-			if err := saveMetadata(m.Path("o", "r"), md); err != nil {
+			if err := saveMetadata(m.Path("o/r"), md); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, _, err := m.Create("o", "r"); err == nil {
+			if _, _, _, err := m.Create("o/r"); err == nil {
 				t.Fatal("silently replaced broken saved key")
 			}
 			if h.creates != 1 || h.loads != 1 {
@@ -130,12 +130,12 @@ func TestManagerDetectsTampering(t *testing.T) {
 	for _, field := range []string{"version", "recipient", "public_key", "reference", "secret", "empty"} {
 		t.Run(field, func(t *testing.T) {
 			m := newManager(t)
-			id, _, _, err := m.Create("o", "r")
+			id, _, _, err := m.Create("o/r")
 			if err != nil {
 				t.Fatal(err)
 			}
 			_ = id.Close()
-			md, err := m.read("o", "r")
+			md, err := m.read("o/r")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,14 +153,14 @@ func TestManagerDetectsTampering(t *testing.T) {
 			case "empty":
 				md.PublicKey = nil
 			}
-			if err := saveMetadata(m.Path("o", "r"), md); err != nil {
+			if err := saveMetadata(m.Path("o/r"), md); err != nil {
 				t.Fatal(err)
 			}
-			before, _ := os.ReadFile(m.Path("o", "r"))
-			if _, _, _, err := m.Create("o", "r"); err == nil {
+			before, _ := os.ReadFile(m.Path("o/r"))
+			if _, _, _, err := m.Create("o/r"); err == nil {
 				t.Fatal("accepted tampered identity")
 			}
-			after, _ := os.ReadFile(m.Path("o", "r"))
+			after, _ := os.ReadFile(m.Path("o/r"))
 			if !bytes.Equal(before, after) {
 				t.Fatal("replaced saved metadata")
 			}
@@ -171,15 +171,15 @@ func TestManagerDetectsTampering(t *testing.T) {
 func TestBackendSelectionAndDoctor(t *testing.T) {
 	m := newManager(t)
 	m.Mode = "hardware"
-	if _, _, _, err := m.Create("o", "r"); err == nil {
+	if _, _, _, err := m.Create("o/r"); err == nil {
 		t.Fatal("hardware mode fell back")
 	}
 	m.Mode = "unknown"
-	if _, _, _, err := m.Create("o", "r"); err == nil {
+	if _, _, _, err := m.Create("o/r"); err == nil {
 		t.Fatal("accepted invalid mode")
 	}
 	m.Mode = "keyring"
-	id, _, warning, err := m.Create("o", "r")
+	id, _, warning, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestBackendSelectionAndDoctor(t *testing.T) {
 		t.Fatalf("explicit keyring warning: %s", warning)
 	}
 	m.Mode = "hardware"
-	if _, err := m.Load("o", "r"); err == nil {
+	if _, err := m.Load("o/r"); err == nil {
 		t.Fatal("hardware mode loaded keyring identity")
 	}
 	d := m.Doctor()
@@ -255,12 +255,12 @@ func TestMixedRecipientsAndMalformedStanzas(t *testing.T) {
 
 func TestMetadataHasNoPrivateKey(t *testing.T) {
 	m := newManager(t)
-	id, _, _, err := m.Create("o", "r")
+	id, _, _, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = id.Close()
-	b, err := os.ReadFile(m.Path("o", "r"))
+	b, err := os.ReadFile(m.Path("o/r"))
 	if err != nil {
 		t.Fatal(err)
 	}
