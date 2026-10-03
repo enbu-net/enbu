@@ -107,7 +107,7 @@ task storage/test/e2e                  # OCI + RustFS via Compose, plus S3 CLI
 ```
 
 Linux CLI E2E needs an unlocked Secret Service; Windows/macOS use the native
-keyring. `minis3` v1.0.0 exercises SDK requests, conditions, pagination and errors
+keyring. `minis3` v1.1.0 exercises SDK requests, conditions, pagination and errors
 without Docker. RustFS tests concurrent create/update races against an actual
 S3 service. CI runs unit tests and Local/OCI CLI E2E on Linux/Windows/macOS, and
 RustFS E2E on Linux. These tests do not claim native hardware validation.
