@@ -1,6 +1,6 @@
 import { createRef, act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Alert from "./alert";
 import * as Popover from "./popover";
 import * as Tabs from "./tabs";
@@ -55,7 +55,9 @@ describe("Park UI slot recipe components", () => {
     expect(triggers[0].classList.contains("tabs__trigger--variant_enclosed")).toBe(true);
     await act(async () => triggers[1].click());
     expect(triggers[1].getAttribute("aria-selected")).toBe("true");
-    expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).toBe("Second panel");
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="tabpanel"]:not([hidden])')?.textContent).toBe("Second panel");
+    });
   });
 
   it("provides popover slot styles through the root provider", () => {

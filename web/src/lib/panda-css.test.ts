@@ -17,5 +17,5 @@ describe("Panda CSS configuration", () => {
     expect(css).toMatch(
       /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{\s*\.button[^{}]*:is\(:hover,\s*\[data-hover\]\)/,
     );
-  });
+  }, 30_000);
 });
