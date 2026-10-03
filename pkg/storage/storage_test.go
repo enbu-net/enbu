@@ -102,6 +102,15 @@ func TestLocalContract(t *testing.T) {
 	s := &Local{Dir: t.TempDir()}
 	contract(t, s)
 	atomicContract(t, s)
+	entries, err := os.ReadDir(s.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".enbu.lock" && filepath.Ext(entry.Name()) != ".json" {
+			t.Fatalf("temporary storage file was not removed: %s", entry.Name())
+		}
+	}
 }
 
 func TestEnvelopeCorruption(t *testing.T) {
