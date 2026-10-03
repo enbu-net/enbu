@@ -6,11 +6,11 @@ import (
 	"context"
 	"os"
 	"testing"
+	"uuid"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/google/uuid"
 )
 
 func TestRemoteStorage(t *testing.T) {
@@ -19,7 +19,7 @@ func TestRemoteStorage(t *testing.T) {
 		if ref == "" {
 			t.Skip("ENBU_TEST_OCI_REF not set")
 		}
-		st, err := NewOCI(ref+"/"+uuid.NewString(), nil, true)
+		st, err := NewOCI(ref+"/"+uuid.NewV4().String(), nil, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func TestRemoteStorage(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		st := &S3{Client: client, Bucket: bucket, Prefix: "storage-contract/" + uuid.NewString()}
+		st := &S3{Client: client, Bucket: bucket, Prefix: "storage-contract/" + uuid.NewV4().String()}
 		t.Cleanup(func() {
 			keys, err := st.List(context.Background(), "")
 			if err != nil {
