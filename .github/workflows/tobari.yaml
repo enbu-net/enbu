@@ -1,0 +1,106 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  coverage:
+    name: Tobari Go coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.63.0
+
+      - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
+        with:
+          version: v0.13.0
+
+      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+        with:
+          run-install: false
+
+      - name: Install Secret Service
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+
+      - name: Collect all Go unit coverage
+        run: task cli/test/coverage
+
+      - name: Collect scenario coverage
+        if: ${{ !cancelled() }}
+        run: task cli/test/coverage/scenario
+
+      - name: Collect CLI E2E coverage
+        if: ${{ !cancelled() }}
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task cli/test/coverage/e2e
+          '
+
+      - name: Collect Identity E2E coverage
+        if: ${{ !cancelled() }}
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task identity/test/coverage
+          '
+
+      - name: Merge coverage suites
+        if: ${{ !cancelled() && hashFiles('.tmp/coverage/unit.json') != '' && hashFiles('.tmp/coverage/scenario.json') != '' && hashFiles('.tmp/coverage/e2e.json') != '' && hashFiles('.tmp/coverage/identity.json') != '' }}
+        run: task coverage/report
+
+      - name: Collect React coverage
+        if: ${{ !cancelled() }}
+        run: task gui/test/coverage
+
+      - name: Upload React coverage
+        if: ${{ !cancelled() && hashFiles('.tmp/coverage/frontend/coverage-summary.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: .tmp/coverage/frontend/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload coverage data
+        if: ${{ !cancelled() && hashFiles('.tmp/coverage/unit/**/*.json', '.tmp/coverage/scenario/**/*.json', '.tmp/coverage/e2e/**/*.json', '.tmp/coverage/identity/**/*.json') != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tobari-data
+          path: |
+            .tmp/coverage/unit/
+            .tmp/coverage/scenario/
+            .tmp/coverage/e2e/
+            .tmp/coverage/identity/
+            .tmp/coverage/unit.json
+            .tmp/coverage/scenario.json
+            .tmp/coverage/e2e.json
+            .tmp/coverage/identity.json
+            .tmp/coverage/merged.json
+            .tmp/coverage/coverage.out
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish HTML report
+        if: ${{ !cancelled() && hashFiles('.tmp/coverage/merged.json') != '' }}
+        uses: goccy/tobari-action/report@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
+        with:
+          tobari-json: .tmp/coverage/merged.json
+          name: tobari-report
