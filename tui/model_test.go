@@ -178,9 +178,9 @@ func TestCopyUsesInjectedClipboard(t *testing.T) {
 func TestSettingsEditorRejectsInvalidOutput(t *testing.T) {
 	m := testModel()
 	m.tab = tabSettings
-	m.configContent = "version = \"v1alpha1\"\n"
+	m.configContent = "version = \"v1alpha2\"\n"
 	_, _ = m.startConfigEdit()
-	m.configInput.SetValue("version = \"v1alpha1\"\n[env.default]\noutput = \"../outside\"\n")
+	m.configInput.SetValue("version = \"v1alpha2\"\n[env.default]\noutput = \"../outside\"\n")
 	_, cmd := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if cmd != nil || m.err == nil || !m.configEditing {
 		t.Fatalf("invalid config state: cmd=%v err=%v editing=%v", cmd != nil, m.err, m.configEditing)
@@ -236,7 +236,7 @@ func TestConfigCancelClearsValidationError(t *testing.T) {
 	t.Run("keyboard", func(t *testing.T) {
 		m := testModel()
 		m.tab = tabSettings
-		m.configContent = "version = \"v1alpha1\"\n"
+		m.configContent = "version = \"v1alpha2\"\n"
 		_, _ = m.startConfigEdit()
 		m.err = errors.New("invalid config")
 		_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
@@ -248,7 +248,7 @@ func TestConfigCancelClearsValidationError(t *testing.T) {
 	t.Run("mouse", func(t *testing.T) {
 		m := testModel()
 		m.tab = tabSettings
-		m.configContent = "version = \"v1alpha1\"\n"
+		m.configContent = "version = \"v1alpha2\"\n"
 		_, _ = m.startConfigEdit()
 		m.err = errors.New("invalid config")
 		_ = m.View()
@@ -263,7 +263,7 @@ func TestConfigCancelClearsValidationError(t *testing.T) {
 func TestMouseTabNavigationCancelsConfigEditing(t *testing.T) {
 	m := testModel()
 	m.tab = tabSettings
-	m.configContent = "version = \"v1alpha1\"\n"
+	m.configContent = "version = \"v1alpha2\"\n"
 	_, _ = m.startConfigEdit()
 	m.configInput.SetValue("unsaved")
 	_ = m.View()
