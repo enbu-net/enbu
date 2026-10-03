@@ -17,6 +17,7 @@ require (
 	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.2
 	github.com/ebitengine/purego v0.11.1
 	github.com/fxamacker/cbor/v2 v2.9.4
+	github.com/goccy/tobari v0.13.0
 	github.com/google/go-github/v90 v90.0.0
 	github.com/google/go-tpm v0.9.8
 	github.com/google/uuid v1.6.0

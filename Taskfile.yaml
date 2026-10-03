@@ -40,6 +40,56 @@ tasks:
       - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
       - go test -v -shuffle=on -race -tags=scenario ./...
 
+  cli/test/coverage:
+    desc: Collect all Go unit tests with tobari, including desktop and TUI
+    deps:
+      - gui/build/frontend
+    cmds:
+      - uv run --project scripts python scripts/tobari.py unit
+
+  cli/test/coverage/scenario:
+    desc: Collect Go scenario coverage with tobari
+    deps:
+      - gui/build/frontend
+    cmds:
+      - docker compose up -d --wait
+      - defer: docker compose down
+      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
+      - uv run --project scripts python scripts/tobari.py scenario
+
+  cli/test/coverage/e2e:
+    desc: Collect subprocess CLI E2E coverage with tobari
+    cmds:
+      - uv run --project scripts python scripts/tobari.py e2e
+
+  identity/test/coverage:
+    desc: Collect Identity E2E and child CLI coverage with tobari
+    cmds:
+      - uv run --project scripts python scripts/tobari.py identity
+
+  coverage/report:
+    desc: Merge all Go coverage suites and generate interactive HTML
+    cmds:
+      - uv run --project scripts python scripts/tobari.py report
+
+  all/coverage:
+    desc: Collect Go unit, scenario, CLI E2E, Identity, and React coverage
+    cmds:
+      - task cli/test/coverage
+      - task cli/test/coverage/scenario
+      - task cli/test/coverage/e2e
+      - task identity/test/coverage
+      - task coverage/report
+      - task gui/test/coverage
+
+  gui/test/coverage:
+    desc: Collect React test coverage with V8
+    deps:
+      - gui/build/frontend
+    dir: web
+    cmds:
+      - vp test --coverage
+
   core/test:
     desc: Run platform-neutral core tests without frontend generation
     deps:

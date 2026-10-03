@@ -15,6 +15,8 @@ suite:
 scenarios:
   - name: metadata help version and completions are user-facing contracts
     tags: [metadata]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/metadata help version and completions are user-facing contracts"
     steps:
       - run:
           command: enbu --version
@@ -64,6 +66,8 @@ scenarios:
 
   - name: invalid invocations preserve human and JSON error contracts
     tags: [errors]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/invalid invocations preserve human and JSON error contracts"
     steps:
       - run:
           command: enbu add ONLY_ONE_ARGUMENT
@@ -98,6 +102,7 @@ scenarios:
   - name: authentication status reports logged-out and environment-token states
     tags: [auth]
     env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/authentication status reports logged-out and environment-token states"
       GITHUB_TOKEN: ""
     steps:
       - run:
@@ -127,6 +132,7 @@ scenarios:
   - name: browser PKCE login completes through the loopback callback
     tags: [auth]
     env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/browser PKCE login completes through the loopback callback"
       GITHUB_TOKEN: ""
       PATH: "${workdir}/bin:${env:PATH}"
     steps:
@@ -169,6 +175,7 @@ scenarios:
   - name: device flow is driven through a real pseudo-terminal
     tags: [auth, pty]
     env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/device flow is driven through a real pseudo-terminal"
       GITHUB_TOKEN: ""
       PATH: "${workdir}/bin:${env:PATH}"
     steps:
@@ -199,6 +206,8 @@ scenarios:
 
   - name: init creates workspace config ignore rules identity and recipient
     tags: [init, registry]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/init creates config ignore rules key recipient and Git commit"
     steps:
       - run: {command: git init}
       - run: {command: git config user.name "enbu E2E"}
@@ -227,6 +236,8 @@ scenarios:
 
   - name: JSON init returns structured repository and registry state
     tags: [init, json, registry]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/JSON init returns structured repository and registry state"
     steps:
       - run: {command: git init}
       - run: {command: git config user.name "enbu E2E"}
@@ -246,6 +257,8 @@ scenarios:
 
   - name: environment create switch previous rename list and delete persist state
     tags: [environment]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/environment create switch previous rename list and delete persist state"
     steps:
       - fixture:
           file: enbu.toml
@@ -288,6 +301,8 @@ scenarios:
 
   - name: secret lifecycle covers human JSON stdout file and special values
     tags: [secrets, registry]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/secret lifecycle covers human JSON stdout file and special values"
     steps:
       - run: {command: git init}
       - run: {command: git config user.name "enbu E2E"}
@@ -354,6 +369,8 @@ scenarios:
 
   - name: history lists diffs and restores encrypted snapshots
     tags: [history, registry]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/history lists diffs and restores encrypted snapshots"
     steps:
       - run: {command: git init}
       - run: {command: git config user.name "enbu E2E"}
@@ -393,6 +410,7 @@ scenarios:
   - name: late joining user cannot decrypt before sync and can afterward
     tags: [multi-user, registry]
     env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/late joining user cannot decrypt before sync and can afterward"
       XDG_DATA_HOME: "${workdir}/alice-data"
       GITHUB_ACTOR: alice
     steps:
@@ -443,6 +461,8 @@ scenarios:
 
   - name: TUI renders secrets navigates tabs reveals values and quits
     tags: [tui, registry]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/TUI renders secrets navigates tabs reveals values and quits"
     steps:
       - run: {command: git init}
       - run: {command: git config user.name "enbu E2E"}
@@ -474,6 +494,8 @@ scenarios:
 
   - name: TUI reports small terminal and missing configuration safely
     tags: [tui, errors]
+    env:
+      ENBU_TEST_COVERAGE_NAME: "Atago/TUI reports small terminal and missing configuration safely"
     steps:
       - fixture:
           file: enbu.toml

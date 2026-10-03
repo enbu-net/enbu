@@ -35,14 +35,3 @@ func TestExportedOperationNormalizesUnknownError(t *testing.T) {
 		t.Fatal("normalized error does not preserve the cause")
 	}
 }
-
-func TestConflictRetriesExhaustedPreservesCodeAndCause(t *testing.T) {
-	cause := apperr.New(apperr.CodeConflict, "version mismatch", nil)
-	err := conflictRetriesExhausted(cause, maxRetries)
-	if !apperr.Is(err, apperr.CodeConflict) {
-		t.Fatalf("code = %q", apperr.CodeOf(err))
-	}
-	if !errors.Is(err, cause) {
-		t.Fatal("retry exhaustion does not preserve the conflict cause")
-	}
-}

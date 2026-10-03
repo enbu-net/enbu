@@ -2,10 +2,15 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 func TestListHistory_Empty(t *testing.T) {
@@ -40,140 +45,105 @@ func TestListHistory_AfterAddSecret(t *testing.T) {
 	}
 }
 
-func TestListHistory_OrderedByTimestamp(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
-
-	// sleep 1 second to ensure different timestamps
-	time.Sleep(1100 * time.Millisecond)
-
-	if err := a.EditSecret(context.Background(), "default", "FOO", "baz"); err != nil {
-		t.Fatalf("EditSecret: %v", err)
-	}
-
+// Fixed snapshots exercise ordering and all diff categories without waiting for
+// the wall clock or repeating the add/edit/delete command tests.
+func TestDiffHistory(t *testing.T) {
+	a := newHistoryTestApp(t)
 	entries, err := a.ListHistory(context.Background(), "default")
 	if err != nil {
-		t.Fatalf("ListHistory: %v", err)
+		t.Fatal(err)
 	}
-	if len(entries) != 2 {
-		t.Fatalf("expected 2 history entries, got %d", len(entries))
+	wantEntries := []HistoryEntry{
+		{Index: 1, Timestamp: time.UnixMilli(1000), Tag: snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111"},
+		{Index: 2, Timestamp: time.UnixMilli(2000), Tag: snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111"},
 	}
-	if !entries[0].Timestamp.Before(entries[1].Timestamp) {
-		t.Fatal("expected entries ordered oldest-first")
+	if !reflect.DeepEqual(entries, wantEntries) {
+		t.Fatalf("history = %#v, want %#v", entries, wantEntries)
 	}
-	if entries[0].Index != 1 || entries[1].Index != 2 {
-		t.Fatalf("unexpected indices: %d, %d", entries[0].Index, entries[1].Index)
+	for _, tc := range []struct {
+		name     string
+		from, to int
+		want     *Diff
+	}{
+		{"forward", 1, 2, &Diff{Added: []string{"A_NEW", "Z_NEW"}, Removed: []string{"A_OLD", "Z_OLD"}, Modified: []string{"A_CHANGED", "Z_CHANGED"}}},
+		{"reverse", 2, 1, &Diff{Added: []string{"A_OLD", "Z_OLD"}, Removed: []string{"A_NEW", "Z_NEW"}, Modified: []string{"A_CHANGED", "Z_CHANGED"}}},
+		{"same version", 1, 1, &Diff{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := a.DiffHistory(context.Background(), "default", tc.from, tc.to)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("diff = %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestDiffHistory_ModifiedKey(t *testing.T) {
+func newHistoryTestApp(t *testing.T) *App {
+	t.Helper()
 	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
-
-	time.Sleep(1100 * time.Millisecond)
-
-	if err := a.EditSecret(context.Background(), "default", "FOO", "baz"); err != nil {
-		t.Fatalf("EditSecret: %v", err)
+	a := newTestApp(t, "owner", "repo", "default", kp, nil)
+	// Insert newest first and include tags which must be ignored.
+	for _, snapshot := range []struct {
+		tag     string
+		secrets map[string]string
+	}{
+		{snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}},
+		{snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"}},
+		{snapshotPrefix("production") + "3000000000-11111111-1111-4111-8111-111111111111", map[string]string{"OTHER_ENV": "value"}},
+		{snapshotPrefix("default") + "invalid", map[string]string{"INVALID_TAG": "value"}},
+	} {
+		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(snapshot.secrets), []string{kp.PublicKey})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := a.Storage.Put(context.Background(), snapshot.tag, storage.Object{MediaType: secretsMediaType, Data: ciphertext}, ""); err != nil {
+			t.Fatal(err)
+		}
 	}
-
-	diff, err := a.DiffHistory(context.Background(), "default", 1, 2)
-	if err != nil {
-		t.Fatalf("DiffHistory: %v", err)
-	}
-	if len(diff.Modified) != 1 || diff.Modified[0] != "FOO" {
-		t.Fatalf("expected Modified=[FOO], got Modified=%v Added=%v Removed=%v", diff.Modified, diff.Added, diff.Removed)
-	}
-	if len(diff.Added) != 0 || len(diff.Removed) != 0 {
-		t.Fatalf("unexpected Added=%v Removed=%v", diff.Added, diff.Removed)
-	}
-}
-
-func TestDiffHistory_AddedAndRemovedKeys(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
-
-	time.Sleep(1100 * time.Millisecond)
-
-	if err := a.AddSecret(context.Background(), "default", "NEW_KEY", "val"); err != nil {
-		t.Fatalf("AddSecret: %v", err)
-	}
-
-	time.Sleep(1100 * time.Millisecond)
-
-	if err := a.DeleteSecret(context.Background(), "default", "FOO"); err != nil {
-		t.Fatalf("DeleteSecret: %v", err)
-	}
-
-	entries, err := a.ListHistory(context.Background(), "default")
-	if err != nil {
-		t.Fatalf("ListHistory: %v", err)
-	}
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 history entries, got %d", len(entries))
-	}
-
-	diff, err := a.DiffHistory(context.Background(), "default", 1, 3)
-	if err != nil {
-		t.Fatalf("DiffHistory: %v", err)
-	}
-	if len(diff.Added) != 1 || diff.Added[0] != "NEW_KEY" {
-		t.Fatalf("expected Added=[NEW_KEY], got %v", diff.Added)
-	}
-	if len(diff.Removed) != 1 || diff.Removed[0] != "FOO" {
-		t.Fatalf("expected Removed=[FOO], got %v", diff.Removed)
-	}
+	return a
 }
 
 func TestRestoreHistory(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "original"})
-
-	time.Sleep(1100 * time.Millisecond)
-
-	if err := a.EditSecret(context.Background(), "default", "FOO", "updated"); err != nil {
-		t.Fatalf("EditSecret: %v", err)
-	}
-
-	// verify current value is "updated"
-	secrets, err := a.ListSecrets(context.Background(), "default")
-	if err != nil {
-		t.Fatalf("ListSecrets: %v", err)
-	}
-	if secrets["FOO"] != "updated" {
-		t.Fatalf("expected FOO=updated, got %q", secrets["FOO"])
-	}
-
-	// restore to version 1
+	a := newHistoryTestApp(t)
+	// Restoration also works when the current secrets artifact is absent.
 	if err := a.RestoreHistory(context.Background(), "default", 1); err != nil {
-		t.Fatalf("RestoreHistory: %v", err)
+		t.Fatal(err)
 	}
-
-	// verify restored value
-	secrets, err = a.ListSecrets(context.Background(), "default")
+	got, err := a.ListSecrets(context.Background(), "default")
 	if err != nil {
-		t.Fatalf("ListSecrets after restore: %v", err)
+		t.Fatal(err)
 	}
-	if secrets["FOO"] != "original" {
-		t.Fatalf("expected FOO=original after restore, got %q", secrets["FOO"])
+	want := map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("restored = %#v, want %#v", got, want)
 	}
-}
-
-func TestDiffHistory_InvalidIndex(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
-
-	_, err := a.DiffHistory(context.Background(), "default", 1, 99)
-	if !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("DiffHistory error = %v, want %q", err, apperr.CodeInvalidArgument)
+	entries, err := a.ListHistory(context.Background(), "default")
+	if err != nil || len(entries) != 3 {
+		t.Fatalf("history after restore = %#v, %v", entries, err)
 	}
 }
 
-func TestRestoreHistory_InvalidIndex(t *testing.T) {
-	kp := mustKeyPair(t)
-	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar"})
-
-	err := a.RestoreHistory(context.Background(), "default", 99)
-	if !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("RestoreHistory error = %v, want %q", err, apperr.CodeInvalidArgument)
+func TestHistoryRejectsInvalidIndices(t *testing.T) {
+	a := newHistoryTestApp(t)
+	for _, index := range []int{-1, 0, 3} {
+		t.Run(fmt.Sprint(index), func(t *testing.T) {
+			for _, operation := range []struct {
+				name string
+				run  func() error
+			}{
+				{"diff from", func() error { _, err := a.DiffHistory(context.Background(), "default", index, 1); return err }},
+				{"diff to", func() error { _, err := a.DiffHistory(context.Background(), "default", 1, index); return err }},
+				{"restore", func() error { return a.RestoreHistory(context.Background(), "default", index) }},
+			} {
+				t.Run(operation.name, func(t *testing.T) {
+					if err := operation.run(); !apperr.Is(err, apperr.CodeInvalidArgument) {
+						t.Fatalf("error = %v, want invalid_argument", err)
+					}
+				})
+			}
+		})
 	}
 }

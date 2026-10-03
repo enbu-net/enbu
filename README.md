@@ -208,6 +208,12 @@ Do not log or persist this response.
 `enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
 Use `enbu auth login --json` for browser authentication.
 
+## Test coverage
+
+The Coverage workflow publishes Tobari reports for all Go unit tests, scenarios,
+CLI E2E, and Identity E2E, plus React coverage. See [test coverage](docs/testing.md)
+for local commands and report usage.
+
 ## How It Works
 
 ```

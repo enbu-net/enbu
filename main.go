@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -22,12 +23,19 @@ func main() {
 
 	service := app.New()
 	command := enbucli.NewWithApp(getVersion(), service)
+	if err := executeCommand(ctx, command); err != nil {
+		os.Exit(apperr.ExitCode(err))
+	}
+}
+
+func runCommand(ctx context.Context, command *cobra.Command) error {
 	if err := command.ExecuteContext(ctx); err != nil {
 		err = apperr.Normalize(err)
 		log.SetFlags(0)
 		enbucli.RenderExecutionError(command, err, os.Args[1:])
-		os.Exit(apperr.ExitCode(err))
+		return err
 	}
+	return nil
 }
 
 func getVersion() string {

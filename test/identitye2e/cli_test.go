@@ -47,6 +47,9 @@ func (h *cliHarness) process(args ...string) ([]byte, []byte, error) {
 	for name, value := range h.env {
 		cmd.Env = append(cmd.Env, name+"="+value)
 	}
+	if os.Getenv("ENBU_TEST_COVERAGE_DIR") != "" {
+		cmd.Env = append(cmd.Env, "ENBU_TEST_COVERAGE_NAME="+h.t.Name())
+	}
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
@@ -131,8 +134,15 @@ func buildCLI(t *testing.T, host string, testTransport bool) string {
 	}
 	binary := filepath.Join(t.TempDir(), name)
 	args := []string{"build", "-buildvcs=false", "-ldflags", "-X main.Version=identity-e2e -X github.com/enbu-net/enbu/pkg/provider/github.apiBaseURL=" + api.URL + "/", "-o", binary}
+	var tags []string
 	if testTransport {
-		args = append(args, "-tags=identitytest")
+		tags = append(tags, "identitytest")
+	}
+	if os.Getenv("ENBU_TEST_COVERAGE_DIR") != "" {
+		tags = append(tags, "enbucoverage")
+	}
+	if len(tags) != 0 {
+		args = append(args, "-tags="+strings.Join(tags, ","))
 	}
 	args = append(args, ".")
 	cmd := exec.Command("go", args...)
