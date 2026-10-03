@@ -114,7 +114,10 @@ func (s *OCI) Put(ctx context.Context, key string, o Object, expected Version) e
 	store := memory.New()
 	push := func(media string, b []byte) (ocispec.Descriptor, error) {
 		d := ocispec.Descriptor{MediaType: media, Digest: digest.FromBytes(b), Size: int64(len(b))}
-		return d, store.Push(ctx, d, bytes.NewReader(b))
+		if err := store.Push(ctx, d, bytes.NewReader(b)); err != nil && !errors.Is(err, errdef.ErrAlreadyExists) {
+			return d, err
+		}
+		return d, nil
 	}
 	layer, err := push(o.MediaType, o.Data)
 	if err != nil {
