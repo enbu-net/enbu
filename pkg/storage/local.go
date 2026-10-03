@@ -102,6 +102,9 @@ func (s *Local) Get(ctx context.Context, key string) (o Object, v Version, err e
 	return
 }
 
+// Put atomically replaces an object. On Unix it also syncs the containing
+// directory. If that sync fails, Put returns an error even though the replacement
+// is already visible; callers must reload its version before retrying.
 func (s *Local) Put(ctx context.Context, key string, o Object, expected Version) error {
 	if err := ValidateKey(key); err != nil {
 		return err
@@ -136,8 +139,18 @@ func (s *Local) Put(ctx context.Context, key string, o Object, expected Version)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return r.Rename(name, key+".json")
+		return commitLocalFile(r, name, key+".json", syncDirectory)
 	})
+}
+
+func commitLocalFile(r *os.Root, pending, name string, syncDir func(*os.Root) error) error {
+	if err := r.Rename(pending, name); err != nil {
+		return err
+	}
+	if err := syncDir(r); err != nil {
+		return fmt.Errorf("syncing storage directory after replacement (update is already visible): %w", err)
+	}
+	return nil
 }
 
 func (s *Local) List(ctx context.Context, prefix string) (keys []string, err error) {
