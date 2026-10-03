@@ -14,6 +14,12 @@
   "platformAutomerge": true,
   "packageRules": [
     {
+      "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@vitest/coverage-v8"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["aquaproj/aqua-registry"],
       "extends": ["schedule:earlyMondays"]
     },
