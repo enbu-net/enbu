@@ -8,9 +8,7 @@ import (
 	"testing"
 	"uuid"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/minio/minio-go/v7"
 )
 
 func TestRemoteStorage(t *testing.T) {
@@ -33,18 +31,12 @@ func TestRemoteStorage(t *testing.T) {
 		if bucket == "" {
 			t.Skip("ENBU_TEST_S3_BUCKET not set")
 		}
-		cfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		client, err := NewS3Client(os.Getenv("ENBU_TEST_S3_ENDPOINT"), "", true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-			if ep := os.Getenv("ENBU_TEST_S3_ENDPOINT"); ep != "" {
-				o.BaseEndpoint = aws.String(ep)
-				o.UsePathStyle = true
-			}
-		})
 		if os.Getenv("ENBU_TEST_CREATE_BUCKET") == "1" {
-			if _, err := client.CreateBucket(context.Background(), &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
+			if err := client.MakeBucket(context.Background(), bucket, minio.MakeBucketOptions{}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -56,7 +48,7 @@ func TestRemoteStorage(t *testing.T) {
 				return
 			}
 			for _, key := range keys {
-				if _, err := client.DeleteObject(context.Background(), &s3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(st.key(key))}); err != nil {
+				if err := client.RemoveObject(context.Background(), bucket, st.key(key), minio.RemoveObjectOptions{}); err != nil {
 					t.Error(err)
 				}
 			}
