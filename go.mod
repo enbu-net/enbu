@@ -14,6 +14,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/goccy/tobari v0.13.0
 	github.com/google/go-github/v90 v90.0.0
+	github.com/google/go-github/v92 v92.0.0
 	github.com/google/go-tpm v0.9.8
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
