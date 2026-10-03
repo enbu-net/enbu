@@ -21,7 +21,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/wailsapp/wails/v2 v2.16.0
-	github.com/yashikota/minis3 v1.0.0
+	github.com/yashikota/minis3 v1.1.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.design/x/clipboard v0.11.0
 	golang.org/x/sync v0.23.0
