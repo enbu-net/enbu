@@ -113,18 +113,20 @@ func (s *Service) SetBrowserOpener(opener BrowserOpener) {
 }
 
 type AuthStatus struct {
-	Authenticated bool      `json:"authenticated"`
-	Username      string    `json:"username,omitempty"`
-	Repo          *RepoInfo `json:"repo,omitempty"`
+	Authenticated       bool      `json:"authenticated"`
+	WorkspaceConfigured bool      `json:"workspace_configured"`
+	Username            string    `json:"username,omitempty"`
+	Repo                *RepoInfo `json:"repo,omitempty"`
 }
 
 type RepoInfo struct {
-	Path        string `json:"path,omitempty"`
-	Owner       string `json:"owner,omitempty"`
-	Repo        string `json:"repo,omitempty"`
-	Initialized bool   `json:"initialized"`
-	HasGit      bool   `json:"has_git"`
-	HasRemote   bool   `json:"has_remote"`
+	Path              string `json:"path,omitempty"`
+	Owner             string `json:"owner,omitempty"`
+	Repo              string `json:"repo,omitempty"`
+	Initialized       bool   `json:"initialized"`
+	HasGit            bool   `json:"has_git"`
+	HasRemote         bool   `json:"has_remote"`
+	StorageConfigured bool   `json:"storage_configured"`
 }
 
 type OAuthStart struct {
@@ -167,6 +169,14 @@ type Recipient struct {
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
 	var status AuthStatus
+	s.repoMu.Lock()
+	path := s.repoPath
+	s.repoMu.Unlock()
+	if path != "" {
+		if cfg, err := config.LoadProjectFrom(path); err == nil {
+			status.WorkspaceConfigured = cfg.Storage.URL != "" && cfg.Storage.OCIAuth != "github"
+		}
+	}
 	token, err := auth.LoadToken()
 	if err != nil {
 		slog.Debug("GetAuthStatus: not authenticated", "err", err)
@@ -649,7 +659,8 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 		HasRemote: repo.HasRemote,
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
-		if _, err := config.LoadProjectFrom(repo.Path); err == nil {
+		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
+			info.StorageConfigured = cfg.Storage.URL != ""
 			identities, identityErr := s.app.LoadWorkspaceIdentities()
 			defer app.CloseIdentities(identities)
 			info.Initialized = identityErr == nil && len(identities) > 0
@@ -671,7 +682,7 @@ func withRepoResult[T any](s *Service, fn func() (T, error)) (T, error) {
 	s.repoMu.Unlock()
 	var zero T
 	if path == "" {
-		return zero, fmt.Errorf("select a Git repository first")
+		return zero, fmt.Errorf("select a workspace folder first")
 	}
 	return withRepoPathResult(s, path, fn)
 }
