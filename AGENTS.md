@@ -10,6 +10,9 @@ Keyless `.env` management powered by GitHub. Encrypts secrets with age, stores c
 
 - After writing code, always write tests for the relevant areas.
 - Force-pushes are prohibited.
+- Before committing, inspect existing human-authored commits and follow their identity convention: author and committer name `kota`, using the existing GitHub noreply address. Never use a personal email address from the environment's Git configuration.
+- Do not add personal email addresses or invent identities in `Co-authored-by` trailers. Existing human-authored commits do not include an agent co-author trailer; follow that convention unless the user explicitly requests otherwise.
+- Before every push, inspect author, committer, and trailers for all new commits and verify that no personal email address was introduced.
 - After changing code, always run `task all/build`, `task all/test`, and `task all/check`.
 - When a Linear task is provided, use a branch name like `feat/enbu-01`.
 
