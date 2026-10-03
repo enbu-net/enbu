@@ -12,12 +12,9 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
-
-type failingRepoDetector struct{ err error }
-
-func (r failingRepoDetector) LoadRepo() (string, string, error) { return "", "", r.err }
 
 func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 	ctx := context.Background()
@@ -35,36 +32,39 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 		{"diff", func(a *App) error { _, err := a.DiffHistory(ctx, "default", 1, 1); return err }},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
-			for _, failure := range []string{"config", "token", "repository", "identity", "registry", "ciphertext", "bundle"} {
+			for _, failure := range []string{"config", "workspace", "identity", "storage", "ciphertext", "bundle"} {
 				t.Run(failure, func(t *testing.T) {
 					kp := mustKeyPair(t)
 					// One existing secret also gives history operations a snapshot.
 					a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "original"})
-					a.RepositoryDir = t.TempDir()
 					cause := errors.New("dependency unavailable")
 					wantCode := apperr.CodeInternal
 					preserveCause := false
-					base := a.Registry
-					hook := &hookedRegistry{Registry: base}
+					base := a.Storage
+					hook := &hookedStorage{Storage: base}
 					writes := 0
-					hook.push = func(context.Context, string, string, []byte, string, *oci.PushOptions) error { writes++; return nil }
-					a.Registry = hook
+					hook.put = func(context.Context, string, storage.Object, storage.Version) error { writes++; return nil }
+					a.Storage = hook
 					switch failure {
 					case "config":
 						if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte("version = ["), 0o600); err != nil {
 							t.Fatal(err)
 						}
-					case "token":
-						a.TokenProvider = failingTokenProvider{err: cause}
-						preserveCause = true
-					case "repository":
-						a.RepoDetector = failingRepoDetector{err: cause}
-						preserveCause = true
+					case "workspace":
+						hook.get = func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+							if key == workspaceKey {
+								return storage.Object{MediaType: workspaceMediaType, Data: []byte("other-workspace")}, "", nil
+							}
+							return base.Get(ctx, key)
+						}
+						wantCode = apperr.CodeInvalidArgument
 					case "identity":
 						a.Identities = newMemKeyStore()
 						wantCode = apperr.CodeNotInitialized
-					case "registry":
-						hook.pull = func(context.Context, string, string) ([]byte, error) { return nil, cause }
+					case "storage":
+						hook.get = func(context.Context, string) (storage.Object, storage.Version, error) {
+							return storage.Object{}, "", cause
+						}
 						preserveCause = true
 					case "ciphertext", "bundle":
 						data := []byte("invalid age ciphertext")
@@ -75,11 +75,11 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						hook.pull = func(ctx context.Context, ref, token string) ([]byte, error) {
-							if strings.HasPrefix(ref, a.registryRef("owner", "repo")+":secrets-default") {
-								return data, nil
+						hook.get = func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+							if key == secretsTag("default") || strings.HasPrefix(key, snapshotPrefix("default")) {
+								return storage.Object{MediaType: secretsMediaType, Data: data}, "corrupt", nil
 							}
-							return base.Pull(ctx, ref, token)
+							return base.Get(ctx, key)
 						}
 					}
 					err := operation.run(a)
@@ -113,43 +113,41 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 			for _, recipients := range []string{"none", "malformed", "list failure"} {
 				t.Run(recipients, func(t *testing.T) {
 					a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
-					a.RepositoryDir = t.TempDir()
-					base := a.Registry
-					entries, err := a.ListHistory(context.Background(), "default")
-					if err != nil {
-						t.Fatal(err)
-					}
+					base := a.Storage
 					writes := 0
 					cause := errors.New("list unavailable")
 					listCalls := 0
-					a.Registry = &hookedRegistry{Registry: base,
-						tags: func(context.Context, string, string) ([]string, error) {
+					malformedKey := RecipientKey("invalid recipient")
+					a.Storage = &hookedStorage{Storage: base,
+						list: func(ctx context.Context, prefix string) ([]string, error) {
 							listCalls++
-							// Restore lists history before it lists recipients.
-							if recipients == "list failure" && (operation.name != "restore" || listCalls > 1) {
+							// History listing succeeds; only recipient listing is intercepted.
+							if prefix != RecipientTagPrefix() {
+								return base.List(ctx, prefix)
+							}
+							if recipients == "list failure" {
 								return nil, cause
 							}
-							tags := []string{entries[0].Tag}
 							if recipients == "malformed" {
-								tags = append(tags, "recipient-alice")
+								return []string{malformedKey}, nil
 							}
-							return tags, nil
+							return nil, nil
 						},
-						pull: func(ctx context.Context, ref, token string) ([]byte, error) {
-							if ref == a.registryRef("owner", "repo")+":recipient-alice" {
-								return []byte("invalid recipient"), nil
+						get: func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+							if key == malformedKey {
+								return storage.Object{MediaType: recipientMediaType, Data: []byte("invalid recipient")}, "", nil
 							}
-							return base.Pull(ctx, ref, token)
+							return base.Get(ctx, key)
 						},
-						push: func(context.Context, string, string, []byte, string, *oci.PushOptions) error { writes++; return nil },
+						put: func(context.Context, string, storage.Object, storage.Version) error { writes++; return nil },
 					}
-					err = operation.run(a)
+					err := operation.run(a)
 					wantListCalls := 1
 					if operation.name == "restore" {
 						wantListCalls = 2
 					}
 					if listCalls != wantListCalls {
-						t.Fatalf("ListTags calls = %d, want %d", listCalls, wantListCalls)
+						t.Fatalf("List calls = %d, want %d", listCalls, wantListCalls)
 					}
 					if !apperr.Is(err, apperr.CodeInternal) || writes != 0 {
 						t.Fatalf("error=%v writes=%d, want failure without writes", err, writes)
@@ -171,7 +169,6 @@ func TestPullSecretsToFilePreservesExistingFileOnFailure(t *testing.T) {
 				secrets = map[string]string{"BAD\nKEY": "value"}
 			}
 			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), secrets)
-			a.RepositoryDir = t.TempDir()
 			output := filepath.Join(a.RepositoryDir, ".env")
 			if err := os.WriteFile(output, []byte("original"), 0o600); err != nil {
 				t.Fatal(err)
@@ -179,16 +176,13 @@ func TestPullSecretsToFilePreservesExistingFileOnFailure(t *testing.T) {
 			if failure == "decryption" {
 				store := newMemKeyStore()
 				other := mustKeyPair(t)
-				if err := store.storeSecret(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String())); err != nil {
+				if err := store.storeSecret(KeystoreService, testWorkspaceID, []byte(other.Identity.String())); err != nil {
 					t.Fatal(err)
 				}
 				a.Identities = store
 			}
 			if failure == "missing output directory" {
-				cfg := "version = \"v1alpha1\"\n[env.default]\noutput = \"missing/.env\"\n"
-				if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte(cfg), 0o600); err != nil {
-					t.Fatal(err)
-				}
+				setSecretTestOutput(t, a, "missing/.env")
 			}
 			if err := a.PullSecretsToFile(context.Background(), "default"); err == nil {
 				t.Fatal("expected failure")
@@ -203,10 +197,7 @@ func TestPullSecretsToFilePreservesExistingFileOnFailure(t *testing.T) {
 
 func TestPullSecretsDataUsesRepositoryOutput(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "value"})
-	a.RepositoryDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n[env.default]\noutput = \"custom.env\"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	setSecretTestOutput(t, a, "custom.env")
 	result, err := a.PullSecretsData(context.Background(), "default")
 	if err != nil {
 		t.Fatal(err)
@@ -221,5 +212,17 @@ func TestPullSecretsDataUsesRepositoryOutput(t *testing.T) {
 	want, marshalErr := bundle.ToDotEnv(result.Secrets)
 	if err != nil || marshalErr != nil || string(got) != string(want) {
 		t.Fatalf("file = %q, %v, want %q", got, err, want)
+	}
+}
+
+func setSecretTestOutput(t *testing.T, a *App, output string) {
+	t.Helper()
+	cfg, err := config.LoadProjectFrom(a.RepositoryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments["default"] = config.EnvironmentConfig{Output: output}
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
 	}
 }

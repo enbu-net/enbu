@@ -1,15 +1,10 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/enbu-net/enbu/app"
-	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 func TestEnsureGitignore_CreatesNewFile(t *testing.T) {
@@ -151,68 +146,4 @@ func TestEnsureGitignore_CustomOutputs(t *testing.T) {
 			t.Errorf("missing custom output %q in .gitignore", want)
 		}
 	}
-}
-
-func TestIsUserRecipientTag(t *testing.T) {
-	tests := []struct {
-		tag  string
-		want bool
-	}{
-		{"recipient-alice-12345678", true},
-		{"recipient-github-actions", false},
-		{"secrets-default", false},
-		{"user-alice", false},
-	}
-
-	for _, tt := range tests {
-		if got := app.IsUserRecipientTag(tt.tag); got != tt.want {
-			t.Errorf("IsUserRecipientTag(%q) = %v, want %v", tt.tag, got, tt.want)
-		}
-	}
-}
-
-func TestGitCommitInitFiles(t *testing.T) {
-	client := &initTestGitClient{}
-	err := gitCommitInitFiles(context.Background(), client, "C:/repo")
-	if err != nil {
-		t.Fatalf("gitCommitInitFiles: %v", err)
-	}
-	if client.commitPath != "C:/repo" || client.commitMessage != "chore: add enbu config" {
-		t.Fatalf("commit = %q, %q", client.commitPath, client.commitMessage)
-	}
-	if strings.Join(client.commitFiles, ",") != "enbu.toml,.gitignore" {
-		t.Fatalf("files = %v", client.commitFiles)
-	}
-
-	client.commitErr = errors.New("commit failed")
-	if err := gitCommitInitFiles(context.Background(), client, "C:/repo"); err == nil {
-		t.Fatal("expected commit error")
-	}
-}
-
-type initTestGitClient struct {
-	commitPath    string
-	commitFiles   []string
-	commitMessage string
-	commitErr     error
-}
-
-func (*initTestGitClient) Inspect(context.Context, string) (gitprovider.Repository, error) {
-	return gitprovider.Repository{}, nil
-}
-
-func (*initTestGitClient) Init(context.Context, string) error { return nil }
-
-func (*initTestGitClient) AddRemote(context.Context, string, string, string) error { return nil }
-
-func (c *initTestGitClient) CommitFiles(
-	_ context.Context,
-	path string,
-	files []string,
-	message string,
-) error {
-	c.commitPath = path
-	c.commitFiles = append([]string(nil), files...)
-	c.commitMessage = message
-	return c.commitErr
 }

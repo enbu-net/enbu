@@ -15,9 +15,6 @@ import (
 
 var (
 	Version string
-	// registryHost stays private and is overridden only in E2E builds so the
-	// production CLI keeps its fixed registry behavior.
-	registryHost string
 )
 
 func main() {
@@ -25,7 +22,6 @@ func main() {
 	defer stop()
 
 	service := app.New()
-	service.RegistryHost = registryHost
 	command := enbucli.NewWithApp(getVersion(), service)
 	if err := executeCommand(ctx, command); err != nil {
 		os.Exit(apperr.ExitCode(err))

@@ -13,8 +13,7 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type envRegistry struct {
@@ -26,45 +25,48 @@ func newEnvRegistry() *envRegistry {
 	return &envRegistry{data: make(map[string][]byte)}
 }
 
-func (e *envRegistry) Push(_ context.Context, ref string, _ string, data []byte, _ string, _ *oci.PushOptions) error {
+func (e *envRegistry) Capabilities() storage.Capabilities {
+	return storage.Capabilities{AtomicUpdates: true}
+}
+func (e *envRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+	if key == "enbu-workspace" {
+		return workspaceObject(), "workspace", nil
+	}
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	data, ok := e.data[key]
+	if !ok {
+		return storage.Object{}, "", storage.ErrNotFound
+	}
+	media := "application/vnd.enbu.secrets.age.v1"
+	if strings.HasPrefix(key, "recipient-") {
+		media = "application/vnd.enbu.recipient.age.v1"
+	}
+	return storage.Object{MediaType: media, Data: append([]byte(nil), data...)}, storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data))), nil
+}
+func (e *envRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.data[ref] = append([]byte(nil), data...)
+	var current storage.Version
+	if data, ok := e.data[key]; ok {
+		current = storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data)))
+	}
+	if current != v {
+		return storage.ErrConflict
+	}
+	e.data[key] = append([]byte(nil), o.Data...)
 	return nil
 }
-
-func (e *envRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, error) {
+func (e *envRegistry) List(_ context.Context, prefix string) ([]string, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	data, ok := e.data[ref]
-	if !ok {
-		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	return append([]byte(nil), data...), nil
-}
-
-func (e *envRegistry) ListTags(_ context.Context, ref string, _ string) ([]string, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	prefix := ref + ":"
-	var tags []string
+	var keys []string
 	for key := range e.data {
 		if strings.HasPrefix(key, prefix) {
-			tags = append(tags, strings.TrimPrefix(key, prefix))
+			keys = append(keys, key)
 		}
 	}
-	return tags, nil
-}
-
-func (e *envRegistry) GetDigest(_ context.Context, ref string, _ string) (string, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	data, ok := e.data[ref]
-	if !ok {
-		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	sum := sha256.Sum256(data)
-	return fmt.Sprintf("sha256:%x", sum), nil
+	return keys, nil
 }
 
 func TestEnvironmentSecretsAreIsolated(t *testing.T) {
@@ -77,7 +79,7 @@ func TestEnvironmentSecretsAreIsolated(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	config := `version = "v1alpha1"
+	config := `version = "v1alpha2"
 
 [env.dev]
 output = ".env.dev"
@@ -95,7 +97,7 @@ output = ".env.prod"
 	}
 	reg := newEnvRegistry()
 	a := &app.App{
-		Registry:      reg,
+		Storage:       reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{
@@ -103,10 +105,10 @@ output = ".env.prod"
 		},
 	}
 
-	registryRef := "ghcr.io/owner/repo-enbu"
-	ref := fmt.Sprintf("%s:%salice", registryRef, app.RecipientTagPrefix())
-	if err := reg.Push(context.Background(), ref, "application/vnd.enbu.recipient.age.v1", []byte(kp.PublicKey), "token", nil); err != nil {
-		t.Fatalf("push recipient: %v", err)
+	a.RepositoryDir = dir
+	prepareCLIApp(t, a)
+	if err := reg.Put(context.Background(), app.RecipientKey(kp.PublicKey), storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(kp.PublicKey)}, ""); err != nil {
+		t.Fatal(err)
 	}
 
 	devCmd := NewWithApp("test", a)

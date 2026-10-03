@@ -650,7 +650,7 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if _, err := config.LoadProjectFrom(repo.Path); err == nil {
-			identities, identityErr := app.LoadIdentitiesForRepo(s.app.Identities, repo.Owner, repo.Repo)
+			identities, identityErr := s.app.LoadWorkspaceIdentities()
 			defer app.CloseIdentities(identities)
 			info.Initialized = identityErr == nil && len(identities) > 0
 		}

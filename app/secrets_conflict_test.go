@@ -9,45 +9,34 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
-// Only the current artifact is intercepted; recipient and snapshot operations
-// continue to use real encryption and the in-memory registry.
-type hookedRegistry struct {
-	Registry
-	push   func(context.Context, string, string, []byte, string, *oci.PushOptions) error
-	digest func(context.Context, string, string) (string, error)
-	pull   func(context.Context, string, string) ([]byte, error)
-	tags   func(context.Context, string, string) ([]string, error)
+// Hooks preserve real encryption and the in-memory Storage contract.
+type hookedStorage struct {
+	storage.Storage
+	put  func(context.Context, string, storage.Object, storage.Version) error
+	get  func(context.Context, string) (storage.Object, storage.Version, error)
+	list func(context.Context, string) ([]string, error)
 }
 
-func (r *hookedRegistry) Push(ctx context.Context, ref, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
-	if r.push != nil {
-		return r.push(ctx, ref, mediaType, data, token, opts)
+func (s *hookedStorage) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+	if s.put != nil {
+		return s.put(ctx, key, o, v)
 	}
-	return r.Registry.Push(ctx, ref, mediaType, data, token, opts)
+	return s.Storage.Put(ctx, key, o, v)
 }
-
-func (r *hookedRegistry) GetDigest(ctx context.Context, ref, token string) (string, error) {
-	if r.digest != nil {
-		return r.digest(ctx, ref, token)
+func (s *hookedStorage) Get(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+	if s.get != nil {
+		return s.get(ctx, key)
 	}
-	return r.Registry.GetDigest(ctx, ref, token)
+	return s.Storage.Get(ctx, key)
 }
-
-func (r *hookedRegistry) Pull(ctx context.Context, ref, token string) ([]byte, error) {
-	if r.pull != nil {
-		return r.pull(ctx, ref, token)
+func (s *hookedStorage) List(ctx context.Context, prefix string) ([]string, error) {
+	if s.list != nil {
+		return s.list(ctx, prefix)
 	}
-	return r.Registry.Pull(ctx, ref, token)
-}
-
-func (r *hookedRegistry) ListTags(ctx context.Context, ref, token string) ([]string, error) {
-	if r.tags != nil {
-		return r.tags(ctx, ref, token)
-	}
-	return r.Registry.ListTags(ctx, ref, token)
+	return s.Storage.List(ctx, prefix)
 }
 
 type retryEvents struct {
@@ -75,9 +64,8 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 				t.Run(failure, func(t *testing.T) {
 					kp := mustKeyPair(t)
 					a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "original"})
-					a.RepositoryDir = t.TempDir()
-					base := a.Registry
-					ref := a.secretsRef("owner", "repo", "default")
+					base := a.Storage
+					ref := secretsTag("default")
 					initial := map[string]string{"KEY": "original"}
 					if operation.name == "restore" {
 						initial = map[string]string{"KEY": "updated"}
@@ -85,35 +73,41 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						if err := base.Push(context.Background(), ref, "application/vnd.enbu.secrets.age.v1", data, "tok", nil); err != nil {
+						_, version, err := base.Get(context.Background(), ref)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := base.Put(context.Background(), ref, storage.Object{MediaType: secretsMediaType, Data: data}, version); err != nil {
 							t.Fatal(err)
 						}
 					}
 					events := &retryEvents{}
 					a.Events = events
-					cause := apperr.New(apperr.CodeConflict, "concurrent update", nil)
+					var cause = storage.ErrConflict
+					wantCode := apperr.CodeConflict
 					if failure == "non conflict" || failure == "snapshot failure" {
 						cause = apperr.New(apperr.CodeAccessDenied, "push denied", nil)
+						wantCode = apperr.CodeAccessDenied
 					}
 					writes, snapshots := 0, 0
-					a.Registry = &hookedRegistry{Registry: base, push: func(ctx context.Context, target, media string, data []byte, token string, opts *oci.PushOptions) error {
+					a.Storage = &hookedStorage{Storage: base, put: func(ctx context.Context, target string, o storage.Object, version storage.Version) error {
 						if target != ref {
 							snapshots++
-							if opts.ExpectedDigest != "" {
+							if version != "" {
 								t.Fatal("snapshot must not use the current artifact's digest")
 							}
 							if failure == "snapshot failure" {
 								return cause
 							}
-							return base.Push(ctx, target, media, data, token, opts)
+							return base.Put(ctx, target, o, version)
 						}
 						writes++
-						current, err := base.GetDigest(ctx, ref, token)
+						_, current, err := base.Get(ctx, ref)
 						if err != nil {
 							t.Fatal(err)
 						}
-						if opts.ExpectedDigest != current {
-							t.Fatalf("expected digest = %q, current = %q", opts.ExpectedDigest, current)
+						if version != current {
+							t.Fatalf("expected digest = %q, current = %q", version, current)
 						}
 						if failure == "exhausted" || failure == "non conflict" {
 							return cause
@@ -125,12 +119,12 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							if err := base.Push(ctx, ref, media, concurrent, token, nil); err != nil {
+							if err := base.Put(ctx, ref, storage.Object{MediaType: secretsMediaType, Data: concurrent}, current); err != nil {
 								t.Fatal(err)
 							}
 							return cause
 						}
-						return base.Push(ctx, target, media, data, token, opts)
+						return base.Put(ctx, target, o, version)
 					}}
 					err := operation.run(a)
 					wantWrites, wantSnapshots := 1, 1
@@ -150,7 +144,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						t.Fatalf("writes=%d snapshots=%d retries=%v, want %d/%d/%v", writes, snapshots, events.retries, wantWrites, wantSnapshots, wantRetries)
 					}
 					if failure == "exhausted" || failure == "non conflict" {
-						if !errors.Is(err, cause) || !apperr.Is(err, cause.Code()) {
+						if !errors.Is(err, cause) || !apperr.Is(err, wantCode) {
 							t.Fatalf("error = %v, want preserved cause and code", err)
 						}
 						got, readErr := a.ListSecrets(context.Background(), "default")
@@ -183,15 +177,14 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 
 func TestSyncSecretsCancellationDuringConflict(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "value"})
-	a.RepositoryDir = t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	base := a.Registry
+	base := a.Storage
 	pushes := 0
-	a.Registry = &hookedRegistry{Registry: base, push: func(context.Context, string, string, []byte, string, *oci.PushOptions) error {
+	a.Storage = &hookedStorage{Storage: base, put: func(context.Context, string, storage.Object, storage.Version) error {
 		pushes++
 		cancel()
-		return apperr.New(apperr.CodeConflict, "digest changed", nil)
+		return storage.ErrConflict
 	}}
 	if err := a.SyncSecrets(ctx, "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want cancellation", err)
@@ -201,27 +194,32 @@ func TestSyncSecretsCancellationDuringConflict(t *testing.T) {
 	}
 }
 
-func TestSyncSecretsDetectsChangeBeforePush(t *testing.T) {
+func TestSyncSecretsPassesReadVersion(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "value"})
-	base := a.Registry
-	reads, pushes := 0, 0
-	a.Registry = &hookedRegistry{Registry: base,
-		digest: func(ctx context.Context, ref, token string) (string, error) {
-			reads++
-			if reads == 2 {
-				return "sha256:changed", nil
+	base := a.Storage
+	reads, writes := 0, 0
+	const version storage.Version = "opaque-version"
+	a.Storage = &hookedStorage{Storage: base,
+		get: func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+			o, v, err := base.Get(ctx, key)
+			if key == secretsTag("default") {
+				reads++
+				v = version
 			}
-			return base.GetDigest(ctx, ref, token)
+			return o, v, err
 		},
-		push: func(context.Context, string, string, []byte, string, *oci.PushOptions) error { pushes++; return nil },
+		put: func(_ context.Context, key string, _ storage.Object, v storage.Version) error {
+			writes++
+			if key != secretsTag("default") || v != version {
+				t.Fatalf("Put(%q) version=%q, want %q", key, v, version)
+			}
+			return nil
+		},
 	}
-	ids, err := LoadIdentitiesForRepo(a.Identities, "owner", "repo")
-	if err != nil {
+	if err := a.SyncSecrets(context.Background(), "default"); err != nil {
 		t.Fatal(err)
 	}
-	defer CloseIdentities(ids)
-	err = a.doSync(context.Background(), a.secretsRef("owner", "repo", "default"), a.registryRef("owner", "repo"), "tok", ids, &oci.PushOptions{})
-	if !apperr.Is(err, apperr.CodeConflict) || pushes != 0 {
-		t.Fatalf("error=%v pushes=%d, want conflict before any push", err, pushes)
+	if reads != 1 || writes != 1 {
+		t.Fatalf("reads=%d writes=%d, want 1/1", reads, writes)
 	}
 }

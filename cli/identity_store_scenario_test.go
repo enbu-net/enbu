@@ -7,11 +7,10 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"io/fs"
-	"strings"
 )
 
-func (s *mockKeyStore) Load(owner, repo string) (identity.Identity, error) {
-	raw, err := s.loadSecret("enbu", strings.ToLower(owner+"/"+repo))
+func (s *mockKeyStore) Load(workspaceID string) (identity.Identity, error) {
+	raw, err := s.loadSecret("enbu", workspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -24,14 +23,14 @@ func (s *mockKeyStore) Load(owner, repo string) (identity.Identity, error) {
 	}
 	return identity.FromX25519(key), nil
 }
-func (s *mockKeyStore) Create(owner, repo string) (identity.Identity, identity.PublicInfo, string, error) {
-	id, err := s.Load(owner, repo)
+func (s *mockKeyStore) Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error) {
+	id, err := s.Load(workspaceID)
 	if errors.Is(err, fs.ErrNotExist) {
 		key, e := agecrypto.GenerateX25519Identity()
 		if e != nil {
 			return nil, identity.PublicInfo{}, "", e
 		}
-		if e = s.storeSecret("enbu", strings.ToLower(owner+"/"+repo), []byte(key.String())); e != nil {
+		if e = s.storeSecret("enbu", workspaceID, []byte(key.String())); e != nil {
 			return nil, identity.PublicInfo{}, "", e
 		}
 		id = identity.FromX25519(key)
@@ -42,8 +41,8 @@ func (s *mockKeyStore) Create(owner, repo string) (identity.Identity, identity.P
 	}
 	return id, identity.PublicInfo{Backend: "keyring", Algorithm: "X25519", Recipient: id.Recipient().String()}, "", nil
 }
-func (s *mockKeyStore) Info(owner, repo string) (identity.PublicInfo, error) {
-	id, err := s.Load(owner, repo)
+func (s *mockKeyStore) Info(workspaceID string) (identity.PublicInfo, error) {
+	id, err := s.Load(workspaceID)
 	if err != nil {
 		return identity.PublicInfo{}, err
 	}
