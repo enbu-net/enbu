@@ -25,6 +25,21 @@ func TestStorageURLValidation(t *testing.T) {
 	}
 }
 
+func TestLocalStorageNativePath(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "objects with spaces")
+	path := "/" + strings.TrimPrefix(filepath.ToSlash(dir), "/")
+	raw := (&url.URL{Scheme: "local", Path: path}).String()
+	a := &App{}
+	store, err := a.openStorage(context.Background(), &config.ProjectConfig{Storage: config.StorageConfig{URL: raw}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, ok := store.(*storage.Local)
+	if !ok || local.Dir != dir {
+		t.Fatalf("storage=%+v, want local directory %q", store, dir)
+	}
+}
+
 func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	ctx := context.Background()
 	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}}

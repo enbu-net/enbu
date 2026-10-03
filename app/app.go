@@ -95,10 +95,11 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		if u.Host != "" {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "local URL must have an empty host", nil)
 		}
-		dir := filepath.FromSlash(u.Path)
-		if len(dir) > 2 && dir[0] == '/' && dir[2] == ':' {
-			dir = dir[1:]
+		path := u.Path
+		if len(path) > 2 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
 		}
+		dir := filepath.FromSlash(path)
 		if !filepath.IsAbs(dir) {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "local storage requires an absolute path", nil)
 		}
