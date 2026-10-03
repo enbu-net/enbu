@@ -3,15 +3,34 @@ import { createPreset } from "@park-ui/panda-preset";
 import blue from "@park-ui/panda-preset/colors/blue";
 import slate from "@park-ui/panda-preset/colors/slate";
 
+const parkPreset = createPreset({ accentColor: blue, grayColor: slate, radius: "sm" });
+
 export default defineConfig({
   preflight: true,
   jsxFramework: "react",
   include: ["./src/**/*.{ts,tsx}"],
   exclude: [],
   outdir: "styled-system",
+  // Wails can run on WebKit versions that do not support CSS @property yet.
+  optimize: { propertyFallback: true },
 
   presets: [
-    createPreset({ accentColor: blue, grayColor: slate, radius: "sm" }),
+    "@pandacss/preset-base",
+    {
+      ...parkPreset,
+      // Park UI 0.43 uses an array condition, which Panda 2 no longer supports.
+      conditions: {
+        ...parkPreset.conditions,
+        extend: {
+          ...parkPreset.conditions?.extend,
+          hover: {
+            "@media (hover: hover) and (pointer: fine)": {
+              "&:is(:hover, [data-hover])": "@slot",
+            },
+          },
+        },
+      },
+    },
   ],
 
   theme: {

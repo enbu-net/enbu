@@ -14,6 +14,20 @@
   "platformAutomerge": true,
   "packageRules": [
     {
+      "description": "Use the same pnpm releases for Aqua and the frontend package manager",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["pnpm"],
+      "overrideDatasource": "github-releases",
+      "overridePackageName": "pnpm/pnpm",
+      "extractVersion": "^v(?<version>.*)$"
+    },
+    {
+      "description": "Update pnpm in Aqua and package.json together",
+      "matchPackageNames": ["pnpm", "pnpm/pnpm"],
+      "groupName": "pnpm",
+      "groupSlug": "pnpm"
+    },
+    {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@vitest/coverage-v8"],

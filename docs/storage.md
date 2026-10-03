@@ -57,8 +57,10 @@ enbu init --storage s3://existing-bucket/team/workspace --region us-east-1 \
 ```
 
 The bucket must already exist. Settings persist as `region`, `endpoint`, and
-`path_style` in `[storage]`. Credentials use the AWS SDK v2 default chain,
-including environment, shared profiles, workload credentials and IAM roles.
+`path_style` in `[storage]`. The S3 backend uses minio-go. Credentials are resolved
+from AWS environment variables, shared AWS profiles, then IAM workload credentials.
+Region uses the saved setting, `AWS_REGION`, then `AWS_DEFAULT_REGION`; when omitted,
+the SDK discovers the bucket region. An omitted endpoint selects Amazon S3.
 No credentials are saved in `enbu.toml` or accepted in storage URLs. Required
 permissions are ListBucket on the workspace prefix and GetObject/PutObject on its
 objects. Normal operations do not delete objects.

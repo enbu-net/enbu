@@ -26,6 +26,25 @@ func TestStorageURLValidation(t *testing.T) {
 	}
 }
 
+func TestS3StorageConfiguration(t *testing.T) {
+	a := &App{}
+	cfg := &config.ProjectConfig{Storage: config.StorageConfig{
+		URL: "s3://enbu-test/team/workspace/", Endpoint: "http://localhost:9000", Region: "us-east-1", PathStyle: true,
+	}}
+	store, err := a.openStorage(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s3Store, ok := store.(*storage.S3)
+	if !ok || s3Store.Bucket != "enbu-test" || s3Store.Prefix != "team/workspace" || s3Store.Client.EndpointURL().String() != "http://localhost:9000" {
+		t.Fatalf("unexpected S3 configuration: %+v", store)
+	}
+	cfg.Storage.Endpoint = "https://example.com/path"
+	if _, err := a.openStorage(context.Background(), cfg); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("invalid S3 endpoint: %v", err)
+	}
+}
+
 func TestLocalStorageNativePath(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "objects with spaces")
 	path := "/" + strings.TrimPrefix(filepath.ToSlash(dir), "/")

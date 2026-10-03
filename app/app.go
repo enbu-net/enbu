@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"net/url"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -108,23 +105,10 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		if u.Host == "" {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 storage requires a bucket", nil)
 		}
-		options := []func(*awsconfig.LoadOptions) error{}
-		if settings.Region != "" {
-			options = append(options, awsconfig.WithRegion(settings.Region))
-		}
-		cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
+		client, err := storage.NewS3Client(settings.Endpoint, settings.Region, settings.PathStyle)
 		if err != nil {
-			return nil, err
+			return nil, apperr.Wrap(apperr.CodeInvalidArgument, "invalid S3 configuration", err, nil)
 		}
-		if cfg.Region == "" {
-			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 region must be configured", nil)
-		}
-		client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-			o.UsePathStyle = settings.PathStyle
-			if settings.Endpoint != "" {
-				o.BaseEndpoint = aws.String(settings.Endpoint)
-			}
-		})
 		return &storage.S3{Client: client, Bucket: u.Host, Prefix: strings.Trim(u.Path, "/")}, nil
 	case "oci":
 		var credential auth.CredentialFunc
