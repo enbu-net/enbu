@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare": "panda codegen --clean",
-    "dev": "(panda codegen --watch & vp dev) > web.log 2>&1",
+    "dev": "(panda dev & vp dev) > web.log 2>&1",
     "build": "panda codegen --clean && vp build",
     "build:preview": "panda codegen --clean && vp build --mode preview",
     "lint": "vp lint",
@@ -52,6 +52,9 @@
       "version": "11.17.0",
       "onFail": "download"
     }
+  },
+  "engines": {
+    "node": ">=22"
   },
   "packageManager": "pnpm@11.28.2"
 }

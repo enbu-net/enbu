@@ -11,8 +11,11 @@ export default defineConfig({
   include: ["./src/**/*.{ts,tsx}"],
   exclude: [],
   outdir: "styled-system",
+  // Wails can run on WebKit versions that do not support CSS @property yet.
+  optimize: { propertyFallback: true },
 
   presets: [
+    "@pandacss/preset-base",
     {
       ...parkPreset,
       // Park UI 0.43 uses an array condition, which Panda 2 no longer supports.
