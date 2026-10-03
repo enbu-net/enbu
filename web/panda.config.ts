@@ -3,6 +3,8 @@ import { createPreset } from "@park-ui/panda-preset";
 import blue from "@park-ui/panda-preset/colors/blue";
 import slate from "@park-ui/panda-preset/colors/slate";
 
+const parkPreset = createPreset({ accentColor: blue, grayColor: slate, radius: "sm" });
+
 export default defineConfig({
   preflight: true,
   jsxFramework: "react",
@@ -11,7 +13,21 @@ export default defineConfig({
   outdir: "styled-system",
 
   presets: [
-    createPreset({ accentColor: blue, grayColor: slate, radius: "sm" }),
+    {
+      ...parkPreset,
+      // Park UI 0.43 uses an array condition, which Panda 2 no longer supports.
+      conditions: {
+        ...parkPreset.conditions,
+        extend: {
+          ...parkPreset.conditions?.extend,
+          hover: {
+            "@media (hover: hover) and (pointer: fine)": {
+              "&:is(:hover, [data-hover])": "@slot",
+            },
+          },
+        },
+      },
+    },
   ],
 
   theme: {
