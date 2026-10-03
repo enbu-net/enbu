@@ -5,13 +5,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"io/fs"
 	"os"
 	"sort"
 	"strings"
 	"time"
+	"uuid"
 )
 
 type Local struct{ Dir string }
@@ -118,7 +118,7 @@ func (s *Local) Put(ctx context.Context, key string, o Object, expected Version)
 		if current != expected {
 			return ErrConflict
 		}
-		name := ".pending-" + uuid.NewString()
+		name := ".pending-" + uuid.NewV4().String()
 		f, err := r.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 		if err != nil {
 			return err
