@@ -8,7 +8,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/google/uuid"
+	"uuid"
 )
 
 type InitResult struct {
@@ -47,7 +47,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	metadata, _, err := store.Get(ctx, workspaceKey)
 	if errors.Is(err, storage.ErrNotFound) {
 		if cfg.WorkspaceID == "" {
-			cfg.WorkspaceID = uuid.NewString()
+			cfg.WorkspaceID = uuid.NewV4().String()
 		}
 		if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 			return nil, err

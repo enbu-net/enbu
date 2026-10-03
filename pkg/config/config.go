@@ -9,10 +9,10 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"uuid"
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/google/uuid"
 )
 
 const currentVersion = "v1alpha2"
@@ -181,7 +181,7 @@ func NewProjectWithEnvironment(name string) *ProjectConfig {
 	}
 	return &ProjectConfig{
 		Version:      currentVersion,
-		WorkspaceID:  uuid.NewString(),
+		WorkspaceID:  uuid.NewV4().String(),
 		DefaultEnv:   name,
 		Environments: envs,
 	}

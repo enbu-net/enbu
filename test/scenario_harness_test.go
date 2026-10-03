@@ -21,7 +21,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/google/uuid"
 )
 
 type testUser struct {
@@ -62,7 +61,6 @@ func RunScenario(t *testing.T, steps ...Step) {
 
 	owner, repo := uniqueRepo(t)
 	cfg := config.NewProjectWithEnvironment("default")
-	cfg.WorkspaceID = uuid.NewSHA1(uuid.NameSpaceURL, []byte(owner+"/"+repo)).String()
 	cfg.Storage = config.StorageConfig{URL: "oci://localhost:5000/" + owner + "/" + repo + "-enbu", PlainHTTP: true}
 	if err := config.SaveProject(cfg); err != nil {
 		t.Fatal(err)
@@ -241,28 +239,21 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 		t.Fatalf("GenerateKeyPair for %s: %v", username, err)
 	}
 
+	cfg, err := config.LoadProject()
+	if err != nil {
+		t.Fatalf("loading scenario workspace: %v", err)
+	}
 	ks := newMockKeyStore()
-	repoKey := uuid.NewSHA1(uuid.NameSpaceURL, []byte(owner+"/"+repo)).String()
-	if err := ks.storeSecret("enbu", repoKey, []byte(kp.Identity.String())); err != nil {
+	if err := ks.storeSecret("enbu", cfg.WorkspaceID, []byte(kp.Identity.String())); err != nil {
 		t.Fatalf("storing key for %s: %v", username, err)
 	}
 
-	cfg, err := config.LoadProject()
-	if err != nil {
-		cfg = config.NewProjectWithEnvironment("default")
-		cfg.WorkspaceID = repoKey
-		cfg.Storage.URL = "oci://localhost:5000/" + owner + "/" + repo + "-enbu"
-		cfg.Storage.PlainHTTP = true
-		if err = config.SaveProject(cfg); err != nil {
-			t.Fatal(err)
-		}
-	}
 	st, err := storage.NewOCI("localhost:5000/"+owner+"/"+repo+"-enbu", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err = st.Get(context.Background(), "enbu-workspace"); err != nil {
-		if err = st.Put(context.Background(), "enbu-workspace", storage.Object{MediaType: "application/vnd.enbu.workspace.v1", Data: []byte(repoKey)}, ""); err != nil {
+		if err = st.Put(context.Background(), "enbu-workspace", storage.Object{MediaType: "application/vnd.enbu.workspace.v1", Data: []byte(cfg.WorkspaceID)}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

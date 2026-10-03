@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"crypto/sha256"
 	agecrypto "filippo.io/age"
@@ -16,7 +17,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -186,7 +186,7 @@ func snapshotPrefix(env string) string {
 }
 
 func snapshotTag(env string) string {
-	return fmt.Sprintf("%s%d-%s", snapshotPrefix(env), time.Now().UnixNano(), uuid.NewString())
+	return fmt.Sprintf("%s%d-%s", snapshotPrefix(env), time.Now().UnixNano(), uuid.NewV4().String())
 }
 
 func IsSnapshotTag(env, tag string) bool { _, ok := snapshotTimestamp(env, tag); return ok }

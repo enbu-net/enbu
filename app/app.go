@@ -8,11 +8,11 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/google/uuid"
 	"net/url"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"path/filepath"
 	"strings"
+	"uuid"
 
 	enbuauth "github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"

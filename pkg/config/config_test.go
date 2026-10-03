@@ -6,7 +6,25 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"uuid"
 )
+
+func TestNewProjectWorkspaceIDs(t *testing.T) {
+	first := NewProjectWithEnvironment("default")
+	second := NewProjectWithEnvironment("default")
+	if first.WorkspaceID == second.WorkspaceID {
+		t.Fatal("different workspaces share an identity")
+	}
+	for _, cfg := range []*ProjectConfig{first, second} {
+		id, err := uuid.Parse(cfg.WorkspaceID)
+		if err != nil {
+			t.Fatalf("invalid workspace UUID %q: %v", cfg.WorkspaceID, err)
+		}
+		if id.String() != cfg.WorkspaceID || id[6]>>4 != 4 || id[8]>>6 != 2 {
+			t.Fatalf("workspace ID is not a canonical RFC 9562 UUID v4: %q", cfg.WorkspaceID)
+		}
+	}
+}
 
 func TestParseGitRemoteSSH(t *testing.T) {
 	owner, repo, err := ParseGitRemote("git@github.com:enbu-net/enbu.git")

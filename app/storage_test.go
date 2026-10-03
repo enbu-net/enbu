@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -49,8 +50,8 @@ func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initialized.WorkspaceID == "" {
-		t.Fatalf("%+v", initialized)
+	if id, err := uuid.Parse(initialized.WorkspaceID); err != nil || id.String() != initialized.WorkspaceID {
+		t.Fatalf("invalid initialized workspace ID: %+v, %v", initialized, err)
 	}
 	if err := a.AddSecret(ctx, "default", "API_KEY", "secret"); err != nil {
 		t.Fatal(err)
@@ -88,6 +89,12 @@ func TestSnapshotKeysAreUnambiguousAndFitOCI(t *testing.T) {
 		}
 		if IsSnapshotTag(env, tag+"-garbage") {
 			t.Fatal("accepted malformed UUID")
+		}
+		prefix, id, _ := strings.Cut(strings.TrimPrefix(tag, snapshotPrefix(env)), "-")
+		for _, nonCanonical := range []string{strings.ReplaceAll(id, "-", ""), "{" + id + "}", "urn:uuid:" + id} {
+			if IsSnapshotTag(env, snapshotPrefix(env)+prefix+"-"+nonCanonical) {
+				t.Fatalf("accepted non-canonical snapshot UUID %q", nonCanonical)
+			}
 		}
 	}
 }
