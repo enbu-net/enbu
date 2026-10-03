@@ -10,71 +10,73 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
-// --- minimal test doubles ---
+const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
 
 type memRegistry struct {
-	mu   sync.RWMutex
-	data map[string][]byte
+	mu    sync.RWMutex
+	data  map[string][]byte
+	media map[string]string
+}
+
+func newMemRegistry() *memRegistry {
+	return &memRegistry{data: map[string][]byte{}, media: map[string]string{}}
+}
+func (r *memRegistry) Capabilities() storage.Capabilities {
+	return storage.Capabilities{AtomicUpdates: true}
+}
+func (r *memRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	d, ok := r.data[key]
+	if !ok {
+		return storage.Object{}, "", storage.ErrNotFound
+	}
+	return storage.Object{MediaType: r.media[key], Data: append([]byte(nil), d...)}, storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(d))), nil
+}
+func (r *memRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var current storage.Version
+	if d, ok := r.data[key]; ok {
+		current = storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(d)))
+	}
+	if current != v {
+		return storage.ErrConflict
+	}
+	r.data[key] = append([]byte(nil), o.Data...)
+	r.media[key] = o.MediaType
+	return nil
+}
+func (r *memRegistry) List(_ context.Context, prefix string) ([]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var keys []string
+	for key := range r.data {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	return keys, nil
 }
 
 type conflictOnceRegistry struct {
-	Registry
+	storage.Storage
 	pushes int
 }
 
-func (r *conflictOnceRegistry) Push(ctx context.Context, ref, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
+func (r *conflictOnceRegistry) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+	if key == "enbu-workspace" {
+		return r.Storage.Put(ctx, key, o, v)
+	}
 	r.pushes++
 	if r.pushes == 1 {
-		return apperr.New(apperr.CodeConflict, "digest mismatch", nil)
+		return storage.ErrConflict
 	}
-	return r.Registry.Push(ctx, ref, mediaType, data, token, opts)
-}
-
-func newMemRegistry() *memRegistry { return &memRegistry{data: make(map[string][]byte)} }
-
-func (r *memRegistry) Push(_ context.Context, ref, _ string, data []byte, _ string, _ *oci.PushOptions) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.data[ref] = append([]byte(nil), data...)
-	return nil
-}
-
-func (r *memRegistry) Pull(_ context.Context, ref, _ string) ([]byte, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	d, ok := r.data[ref]
-	if !ok {
-		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	return append([]byte(nil), d...), nil
-}
-
-func (r *memRegistry) ListTags(_ context.Context, ref, _ string) ([]string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	prefix := ref + ":"
-	var tags []string
-	for k := range r.data {
-		if strings.HasPrefix(k, prefix) {
-			tags = append(tags, strings.TrimPrefix(k, prefix))
-		}
-	}
-	return tags, nil
-}
-
-func (r *memRegistry) GetDigest(_ context.Context, ref, _ string) (string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	d, ok := r.data[ref]
-	if !ok {
-		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	sum := sha256.Sum256(d)
-	return fmt.Sprintf("sha256:%x", sum), nil
+	return r.Storage.Put(ctx, key, o, v)
 }
 
 type staticTokenProvider struct{ token, username string }
@@ -118,22 +120,20 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 	ks := newMemKeyStore()
 
 	// store private key
-	if err := ks.storeSecret(KeystoreService, RepoKeystoreKey(owner, repo), []byte(kp.Identity.String())); err != nil {
+	if err := ks.storeSecret(KeystoreService, testWorkspaceID, []byte(kp.Identity.String())); err != nil {
 		t.Fatalf("store private key: %v", err)
 	}
 
 	a := &App{
-		Registry:      reg,
+		Storage:       reg,
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 		RepoDetector:  &staticRepoDetector{owner: owner, repo: repo},
 		Identities:    ks,
 	}
 
-	// register recipient
-	registryRef := a.registryRef(owner, repo)
-	recipientRef := fmt.Sprintf("%s:%salice", registryRef, RecipientTagPrefix())
-	if err := reg.Push(context.Background(), recipientRef, "application/vnd.enbu.recipient.age.v1", []byte(kp.PublicKey), "tok", nil); err != nil {
-		t.Fatalf("push recipient: %v", err)
+	prepareApp(t, a, env)
+	if err := reg.Put(context.Background(), RecipientKey(kp.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(kp.PublicKey)}, ""); err != nil {
+		t.Fatal(err)
 	}
 
 	// pre-populate secrets if provided
@@ -157,8 +157,8 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 
 func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
 	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
-	registry := &conflictOnceRegistry{Registry: a.Registry}
-	a.Registry = registry
+	registry := &conflictOnceRegistry{Storage: a.Storage}
+	a.Storage = registry
 
 	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
 		t.Fatalf("SyncSecrets: %v", err)
@@ -219,7 +219,7 @@ func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 	// replace stored key with a different identity (cannot decrypt)
 	other := mustKeyPair(t)
 	ks := newMemKeyStore()
-	if err := ks.storeSecret(KeystoreService, RepoKeystoreKey("owner", "repo"), []byte(other.Identity.String())); err != nil {
+	if err := ks.storeSecret(KeystoreService, testWorkspaceID, []byte(other.Identity.String())); err != nil {
 		t.Fatal(err)
 	}
 	a.Identities = ks
@@ -227,5 +227,21 @@ func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 	_, _, _, err := a.PullSecrets(context.Background(), "default")
 	if err == nil {
 		t.Fatal("expected decryption error with wrong key")
+	}
+}
+
+func prepareApp(t *testing.T, a *App, env string) {
+	t.Helper()
+	if a.RepositoryDir == "" {
+		a.RepositoryDir = t.TempDir()
+	}
+	cfg := config.NewProjectWithEnvironment(env)
+	cfg.WorkspaceID = testWorkspaceID
+	cfg.Storage.URL = "local:///unused"
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Storage.Put(context.Background(), workspaceKey, storage.Object{MediaType: workspaceMediaType, Data: []byte(testWorkspaceID)}, ""); err != nil {
+		t.Fatal(err)
 	}
 }

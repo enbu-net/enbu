@@ -17,16 +17,19 @@ import (
 	"time"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/zalando/go-keyring"
 )
 
 type cliHarness struct {
-	t           *testing.T
-	binary, dir string
-	env         map[string]string
+	t                       *testing.T
+	binary, dir             string
+	env                     map[string]string
+	workspaceID, storageURL string
 }
 
 func (h *cliHarness) process(args ...string) ([]byte, []byte, error) {
@@ -93,18 +96,30 @@ func (h *cliHarness) fails(args ...string) {
 func newHarness(t *testing.T, binary, backend string) *cliHarness {
 	t.Helper()
 	dir := t.TempDir()
-	for _, args := range [][]string{{"init"}, {"remote", "add", "origin", "https://github.com/e2e/identity.git"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git: %s %v", out, err)
-		}
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.Storage = config.StorageConfig{URL: "oci://" + binaryHosts[binary] + "/e2e/" + cfg.WorkspaceID, PlainHTTP: true}
+	if err := config.SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
 	}
-	return &cliHarness{t: t, binary: binary, dir: dir, env: map[string]string{
+	h := &cliHarness{t: t, binary: binary, dir: dir, workspaceID: cfg.WorkspaceID, storageURL: cfg.Storage.URL, env: map[string]string{
 		"XDG_DATA_HOME": filepath.Join(dir, "data"), "ENBU_IDENTITY_BACKEND": backend, "ENBU_TEST_TPM_URL": "",
 		"GITHUB_TOKEN": "fixture-token", "GITHUB_ACTOR": "e2e-user", "NO_COLOR": "1",
 	}}
+	t.Cleanup(func() {
+		m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
+		b, err := os.ReadFile(m.Path(h.workspaceID))
+		if err != nil {
+			return
+		}
+		var md identity.Metadata
+		if json.Unmarshal(b, &md) == nil && md.Backend == "keyring" {
+			_ = keyring.Delete("enbu-identity-v1", md.Reference)
+		}
+	})
+	return h
 }
+
+var binaryHosts = map[string]string{}
 
 func buildCLI(t *testing.T, host string, testTransport bool) string {
 	t.Helper()
@@ -118,7 +133,7 @@ func buildCLI(t *testing.T, host string, testTransport bool) string {
 		name += ".exe"
 	}
 	binary := filepath.Join(t.TempDir(), name)
-	args := []string{"build", "-buildvcs=false", "-ldflags", "-X main.Version=identity-e2e -X main.registryHost=" + host + " -X github.com/enbu-net/enbu/pkg/provider/github.apiBaseURL=" + api.URL + "/", "-o", binary}
+	args := []string{"build", "-buildvcs=false", "-ldflags", "-X main.Version=identity-e2e -X github.com/enbu-net/enbu/pkg/provider/github.apiBaseURL=" + api.URL + "/", "-o", binary}
 	var tags []string
 	if testTransport {
 		tags = append(tags, "identitytest")
@@ -136,6 +151,7 @@ func buildCLI(t *testing.T, host string, testTransport bool) string {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %s %v", out, err)
 	}
+	binaryHosts[binary] = host
 	return binary
 }
 
@@ -171,8 +187,8 @@ func TestIdentityCLI(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref := host + "/e2e/identity-enbu"
-		if err := oci.Push(context.Background(), ref+":recipient-software-"+age.Fingerprint(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
+		ref := strings.TrimPrefix(h.storageURL, "oci://")
+		if err := oci.Push(context.Background(), ref+":"+app.RecipientKey(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
 			t.Fatal(err)
 		}
 		h.run("sync")
@@ -195,7 +211,7 @@ func TestIdentityCLI(t *testing.T) {
 		assertSecret(t, h.run("pull"), "first")
 		// Missing TPM and corrupt blobs must not replace a saved identity.
 		m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
-		path := m.Path("e2e", "identity")
+		path := m.Path(h.workspaceID)
 		saved, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -224,11 +240,6 @@ func TestIdentityCLI(t *testing.T) {
 	})
 	t.Run("OSKeyringFallbackAndReload", func(t *testing.T) {
 		h := newHarness(t, binary, "auto")
-		cmd := exec.Command("git", "remote", "set-url", "origin", "https://github.com/e2e/fallback.git")
-		cmd.Dir = h.dir
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git: %s %v", out, err)
-		}
 		h.env["ENBU_TEST_TPM_URL"] = "http://127.0.0.1:1"
 		created := h.run("identity", "create") // Mandatory real keyring, no mocks.
 		if created["backend"] != "keyring" || created["algorithm"] != "X25519" {
@@ -242,7 +253,7 @@ func TestIdentityCLI(t *testing.T) {
 			t.Fatal("keyring creation did not reuse")
 		}
 		m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
-		b, err := os.ReadFile(m.Path("e2e", "fallback"))
+		b, err := os.ReadFile(m.Path(h.workspaceID))
 		if err != nil {
 			t.Fatal(err)
 		}

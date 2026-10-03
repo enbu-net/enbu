@@ -8,20 +8,16 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type deleteTestTokenProvider struct{}
 
-func (d *deleteTestTokenProvider) LoadToken() (string, string, error) {
-	return "token", "alice", nil
-}
+func (*deleteTestTokenProvider) LoadToken() (string, string, error) { return "token", "alice", nil }
 
 type deleteTestRepoDetector struct{}
 
-func (d *deleteTestRepoDetector) LoadRepo() (string, string, error) {
-	return "owner", "repo", nil
-}
+func (*deleteTestRepoDetector) LoadRepo() (string, string, error) { return "owner", "repo", nil }
 
 type deleteExpectedDigestRegistry struct {
 	ciphertext     []byte
@@ -32,29 +28,33 @@ type deleteExpectedDigestRegistry struct {
 	pushErr        error
 }
 
-func (d *deleteExpectedDigestRegistry) Push(_ context.Context, _ string, _ string, _ []byte, _ string, opts *oci.PushOptions) error {
-	d.pushes++
-	if d.pushes == 1 {
-		if opts != nil {
-			d.gotExpected = opts.ExpectedDigest
-		}
+func (r *deleteExpectedDigestRegistry) Capabilities() storage.Capabilities {
+	return storage.Capabilities{}
+}
+func (r *deleteExpectedDigestRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+	if key == "enbu-workspace" {
+		return workspaceObject(), "workspace", nil
 	}
-	return d.pushErr
-}
-
-func (d *deleteExpectedDigestRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, error) {
-	if strings.HasSuffix(ref, ":recipient-alice") {
-		return []byte(d.publicKey), nil
+	if strings.HasPrefix(key, "recipient-") {
+		return storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(r.publicKey)}, "recipient", nil
 	}
-	return d.ciphertext, nil
+	if r.ciphertext == nil {
+		return storage.Object{}, "", storage.ErrNotFound
+	}
+	return storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: r.ciphertext}, storage.Version(r.expectedDigest), nil
 }
-
-func (d *deleteExpectedDigestRegistry) ListTags(context.Context, string, string) ([]string, error) {
-	return []string{"recipient-alice"}, nil
+func (r *deleteExpectedDigestRegistry) List(context.Context, string) ([]string, error) {
+	return []string{app.RecipientKey(r.publicKey)}, nil
 }
-
-func (d *deleteExpectedDigestRegistry) GetDigest(context.Context, string, string) (string, error) {
-	return d.expectedDigest, nil
+func (r *deleteExpectedDigestRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+	if key == "enbu-workspace" {
+		return nil
+	}
+	r.pushes++
+	if r.pushes == 1 {
+		r.gotExpected = string(v)
+	}
+	return r.pushErr
 }
 
 func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
@@ -74,13 +74,14 @@ func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
 		expectedDigest: "sha256:base",
 	}
 	a := &app.App{
-		Registry:      reg,
+		Storage:       reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{
 			key: []byte(kp.Identity.String()),
 		},
 	}
+	prepareCLIApp(t, a)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"delete", "API_KEY"})
 

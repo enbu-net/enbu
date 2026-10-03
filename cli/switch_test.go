@@ -15,7 +15,8 @@ func TestSwitchCreate(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "default"
 
 [env.default]
@@ -45,7 +46,8 @@ func TestSwitchToExisting(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -75,7 +77,8 @@ func TestSwitchNonExistent(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -104,7 +107,8 @@ func TestSwitchPrevious(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -141,7 +145,8 @@ func TestSwitchDelete(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -171,7 +176,8 @@ func TestSwitchDeleteCurrentFails(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -195,7 +201,8 @@ func TestSwitchList(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -220,7 +227,8 @@ func TestSwitchMove(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	content := `version = "v1alpha1"
+	content := `workspace_id = "11111111-1111-4111-8111-111111111111"
+version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -253,7 +261,7 @@ func TestSwitchRejectsTwoArgs(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	_ = os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha1"
+	_ = os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha2"
 default_env = "dev"
 [env.dev]
 output = ".env.dev"

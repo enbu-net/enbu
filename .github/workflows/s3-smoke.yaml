@@ -1,0 +1,53 @@
+name: AWS S3 smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      bucket:
+        description: Existing test bucket (objects in unique test prefixes are removed)
+        required: true
+        type: string
+      region:
+        description: AWS region
+        required: true
+        default: us-east-1
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  s3:
+    runs-on: ubuntu-24.04
+    environment: s3-smoke
+    timeout-minutes: 15
+    env:
+      ENBU_TEST_S3_BUCKET: ${{ inputs.bucket }}
+      AWS_REGION: ${{ inputs.region }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Assume test role using GitHub OIDC
+        env:
+          TEST_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+        run: |
+          token=$(curl --fail --silent --show-error -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" | jq -er .value)
+          printf '%s' "$token" > "$RUNNER_TEMP/aws-oidc-token"
+          chmod 600 "$RUNNER_TEMP/aws-oidc-token"
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/aws-oidc-token" >> "$GITHUB_ENV"
+          echo "AWS_ROLE_ARN=$TEST_ROLE_ARN" >> "$GITHUB_ENV"
+      - name: Test conditional writes against AWS S3
+        run: go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage/S3
+      - name: Install Secret Service
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - name: Test shared CLI lifecycle against AWS S3
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles/s3
+          '

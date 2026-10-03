@@ -12,7 +12,7 @@ import (
 func TestReadWriteConfig(t *testing.T) {
 	dir := t.TempDir()
 	tomlPath := filepath.Join(dir, "enbu.toml")
-	want := "version = \"v1alpha1\"\ndefault_env = \"default\"\n"
+	want := "version = \"v1alpha2\"\ndefault_env = \"default\"\n"
 	if err := os.WriteFile(tomlPath, []byte(want), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestReadWriteConfig(t *testing.T) {
 		t.Fatalf("ReadConfig = %q, want %q", got, want)
 	}
 
-	newContent := "version = \"v1alpha1\"\ndefault_env = \"production\"\n"
+	newContent := "version = \"v1alpha2\"\ndefault_env = \"production\"\n"
 	if err := a.WriteConfig(newContent); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
@@ -44,13 +44,13 @@ func TestReadWriteConfig(t *testing.T) {
 func TestWriteConfigRejectsOutputOutsideRepository(t *testing.T) {
 	dir := t.TempDir()
 	tomlPath := filepath.Join(dir, "enbu.toml")
-	original := "version = \"v1alpha1\"\n"
+	original := "version = \"v1alpha2\"\n"
 	if err := os.WriteFile(tomlPath, []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	a := &App{RepositoryDir: dir}
-	err := a.WriteConfig("version = \"v1alpha1\"\n[env.dev]\noutput = \"../secrets.local\"\n")
+	err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"../secrets.local\"\n")
 	if err == nil {
 		t.Fatal("WriteConfig succeeded for output outside repository")
 	}

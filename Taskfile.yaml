@@ -21,6 +21,7 @@ tasks:
       - cli/test/scenario
       - cli/test/e2e
       - identity/test/e2e
+      - storage/test/e2e
 
   cli/test/unit:
     desc: Run unit tests
@@ -115,6 +116,25 @@ tasks:
     desc: Run Identity CLI E2E with local OCI and persistent vTPM (real OS keyring required)
     cmds:
       - go test -v -count=1 -tags=identitye2e ./test/identitye2e
+
+  storage/test/e2e:
+    desc: Run OCI and S3 contracts plus shared CLI E2E against RustFS
+    env:
+      ENBU_TEST_OCI_REF: localhost:5002/storage-tests
+      ENBU_TEST_S3_ENDPOINT: http://localhost:9002
+      ENBU_TEST_S3_BUCKET: enbu-storage-tests
+      ENBU_TEST_CREATE_BUCKET: '1'
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: enbu-test-access
+      AWS_SECRET_ACCESS_KEY: enbu-test-secret
+    cmds:
+      - docker compose -p enbu-storage -f test/storage/compose.yaml down --volumes --remove-orphans
+      - docker compose -p enbu-storage -f test/storage/compose.yaml up -d --wait
+      - defer: docker compose -p enbu-storage -f test/storage/compose.yaml down --volumes --remove-orphans
+      - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:5002/v2/
+      - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:9002/health
+      - go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage
+      - go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles
 
   gui/test:
     desc: Run GUI tests

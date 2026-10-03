@@ -15,7 +15,7 @@ func TestSwitchEnvironmentWithoutLocalFile(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
 
-	cfg := `version = "v1alpha1"
+	cfg := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]
@@ -47,7 +47,7 @@ func TestSwitchEnvironmentRejectsInvalidName(t *testing.T) {
 
 func TestDeleteEnvironmentRejectsCurrent(t *testing.T) {
 	dir := t.TempDir()
-	cfg := `version = "v1alpha1"
+	cfg := `version = "v1alpha2"
 default_env = "dev"
 
 [env.dev]

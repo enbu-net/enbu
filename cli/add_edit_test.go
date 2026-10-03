@@ -2,15 +2,13 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type addEditRegistry struct {
@@ -21,41 +19,37 @@ type addEditRegistry struct {
 	pushes         int
 }
 
-func (a *addEditRegistry) Push(_ context.Context, _ string, _ string, data []byte, _ string, opts *oci.PushOptions) error {
-	a.pushes++
-	if a.pushes == 1 {
-		if opts != nil {
-			a.gotExpected = opts.ExpectedDigest
-		}
-		a.ciphertext = append([]byte(nil), data...)
+func (r *addEditRegistry) Capabilities() storage.Capabilities { return storage.Capabilities{} }
+func (r *addEditRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+	if key == "enbu-workspace" {
+		return workspaceObject(), "workspace", nil
+	}
+	if strings.HasPrefix(key, "recipient-") {
+		return storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(r.publicKey)}, "recipient", nil
+	}
+	if r.ciphertext == nil {
+		return storage.Object{}, "", storage.ErrNotFound
+	}
+	return storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: r.ciphertext}, storage.Version(r.expectedDigest), nil
+}
+func (r *addEditRegistry) List(context.Context, string) ([]string, error) {
+	return []string{app.RecipientKey(r.publicKey)}, nil
+}
+func (r *addEditRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+	if key == "enbu-workspace" {
+		return nil
+	}
+	r.pushes++
+	if r.pushes == 1 {
+		r.gotExpected = string(v)
+		r.ciphertext = append([]byte(nil), o.Data...)
 	}
 	return nil
 }
 
-func (a *addEditRegistry) Pull(_ context.Context, ref string, _ string) ([]byte, error) {
-	if strings.HasSuffix(ref, ":recipient-alice") {
-		return []byte(a.publicKey), nil
-	}
-	if a.ciphertext == nil {
-		return nil, apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	return append([]byte(nil), a.ciphertext...), nil
-}
-
-func (a *addEditRegistry) ListTags(context.Context, string, string) ([]string, error) {
-	return []string{"recipient-alice"}, nil
-}
-
-func (a *addEditRegistry) GetDigest(_ context.Context, ref string, _ string) (string, error) {
-	if a.ciphertext == nil {
-		return "", apperr.New(apperr.CodeArtifactNotFound, fmt.Sprintf("artifact %s not found", ref), nil)
-	}
-	return a.expectedDigest, nil
-}
-
 func TestAddCommandRejectsExistingSecret(t *testing.T) {
 	kp, reg := newAddEditRegistry(t, map[string]string{"API_KEY": "old"})
-	a := newAddEditApp(kp, reg)
+	a := newAddEditApp(t, kp, reg)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"add", "API_KEY", "new"})
 
@@ -73,7 +67,7 @@ func TestAddCommandRejectsExistingSecret(t *testing.T) {
 
 func TestAddCommandCreatesNewSecret(t *testing.T) {
 	kp, reg := newAddEditRegistry(t, nil)
-	a := newAddEditApp(kp, reg)
+	a := newAddEditApp(t, kp, reg)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"add", "API_KEY", "secret"})
 
@@ -95,7 +89,7 @@ func TestAddCommandCreatesNewSecret(t *testing.T) {
 
 func TestEditCommandUpdatesExistingSecret(t *testing.T) {
 	kp, reg := newAddEditRegistry(t, map[string]string{"API_KEY": "old"})
-	a := newAddEditApp(kp, reg)
+	a := newAddEditApp(t, kp, reg)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"edit", "API_KEY", "new"})
 
@@ -117,7 +111,7 @@ func TestEditCommandUpdatesExistingSecret(t *testing.T) {
 
 func TestEditCommandRejectsMissingSecret(t *testing.T) {
 	kp, reg := newAddEditRegistry(t, map[string]string{"OTHER": "value"})
-	a := newAddEditApp(kp, reg)
+	a := newAddEditApp(t, kp, reg)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"edit", "API_KEY", "secret"})
 
@@ -157,15 +151,17 @@ func newAddEditRegistry(t *testing.T, secrets map[string]string) (*age.KeyPair, 
 	return kp, reg
 }
 
-func newAddEditApp(kp *age.KeyPair, reg *addEditRegistry) *app.App {
-	return &app.App{
-		Registry:      reg,
+func newAddEditApp(t *testing.T, kp *age.KeyPair, reg *addEditRegistry) *app.App {
+	a := &app.App{
+		Storage:       reg,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{
 			key: []byte(kp.Identity.String()),
 		},
 	}
+	prepareCLIApp(t, a)
+	return a
 }
 
 func decryptAddEditSecrets(t *testing.T, kp *age.KeyPair, reg *addEditRegistry) map[string]string {

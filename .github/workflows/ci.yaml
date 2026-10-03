@@ -86,6 +86,32 @@ jobs:
         run: task identity/test/e2e
       - name: Identity package tests
         run: go test -v ./pkg/identity
+      - name: Storage unit tests
+        run: go test -v -race ./pkg/storage
+
+  storage-e2e:
+    name: Storage E2E (OCI / RustFS)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.63.0
+      - name: Install Secret Service
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - name: Storage E2E with unlocked keyring
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task storage/test/e2e
+          '
 
   check:
     name: Check

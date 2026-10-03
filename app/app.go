@@ -2,25 +2,35 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"net/url"
+	"oras.land/oras-go/v2/registry/remote/auth"
+	"path/filepath"
 	"strings"
+	"uuid"
 
-	"github.com/enbu-net/enbu/pkg/auth"
+	enbuauth "github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/oci"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type App struct {
-	Registry      Registry
+	Storage       storage.Storage
+	StorageURL    string
+	InitStorage   *config.StorageConfig
 	TokenProvider TokenProvider
 	Identities    IdentityStore
 	RepoDetector  RepoDetector
 	Git           gitprovider.Client
 	Platform      PlatformClient
 	Events        EventHandler
-	RegistryHost  string
 	RepositoryDir string
 }
 
@@ -40,40 +50,137 @@ func (a *App) saveProject(cfg *config.ProjectConfig) error {
 }
 
 func (a *App) loadLocal() (*config.LocalConfig, error) {
-	if a.RepoDetector == nil {
-		return &config.LocalConfig{}, nil
-	}
-	owner, repo, err := a.RepoDetector.LoadRepo()
+	id, err := a.WorkspaceID()
 	if err != nil {
-		return &config.LocalConfig{}, nil
+		return nil, err
 	}
-	return config.LoadLocalState(owner, repo)
+	return config.LoadLocalState(id)
 }
-
 func (a *App) saveLocal(cfg *config.LocalConfig) error {
-	if a.RepoDetector == nil {
-		return nil
-	}
-	owner, repo, err := a.RepoDetector.LoadRepo()
+	id, err := a.WorkspaceID()
 	if err != nil {
 		return err
 	}
-	return config.SaveLocalState(owner, repo, cfg)
+	return config.SaveLocalState(id, cfg)
 }
-
-func (a *App) registryHost() string {
-	if a.RegistryHost != "" {
-		return a.RegistryHost
+func (a *App) WorkspaceID() (id string, err error) {
+	defer apperr.NormalizeInto(&err)
+	cfg, err := a.loadProject()
+	if err != nil {
+		return "", err
 	}
-	return "ghcr.io"
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		return "", apperr.New(apperr.CodeNotInitialized, "invalid or missing workspace ID (run enbu init)", nil)
+	}
+	return cfg.WorkspaceID, nil
 }
 
-func (a *App) registryRef(owner, repo string) string {
-	return fmt.Sprintf("%s/%s/%s-enbu", a.registryHost(), strings.ToLower(owner), strings.ToLower(repo))
+func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (storage.Storage, error) {
+	if a.Storage != nil {
+		return a.Storage, nil
+	}
+	settings := cfg.Storage
+	if a.StorageURL != "" {
+		settings.URL = a.StorageURL
+	}
+	u, err := url.Parse(settings.URL)
+	if err != nil {
+		return nil, err
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "storage URL cannot contain credentials, query or fragment", nil)
+	}
+	switch u.Scheme {
+	case "local":
+		if u.Host != "" {
+			return nil, apperr.New(apperr.CodeInvalidArgument, "local URL must have an empty host", nil)
+		}
+		path := u.Path
+		if len(path) > 2 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
+		dir := filepath.FromSlash(path)
+		if !filepath.IsAbs(dir) {
+			return nil, apperr.New(apperr.CodeInvalidArgument, "local storage requires an absolute path", nil)
+		}
+		return &storage.Local{Dir: dir}, nil
+	case "s3":
+		if u.Host == "" {
+			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 storage requires a bucket", nil)
+		}
+		options := []func(*awsconfig.LoadOptions) error{}
+		if settings.Region != "" {
+			options = append(options, awsconfig.WithRegion(settings.Region))
+		}
+		cfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.Region == "" {
+			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 region must be configured", nil)
+		}
+		client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+			o.UsePathStyle = settings.PathStyle
+			if settings.Endpoint != "" {
+				o.BaseEndpoint = aws.String(settings.Endpoint)
+			}
+		})
+		return &storage.S3{Client: client, Bucket: u.Host, Prefix: strings.Trim(u.Path, "/")}, nil
+	case "oci":
+		var credential auth.CredentialFunc
+		switch settings.OCIAuth {
+		case "", "docker":
+		case "github":
+			if u.Host != "ghcr.io" {
+				return nil, apperr.New(apperr.CodeInvalidArgument, "GitHub authentication is only supported for ghcr.io", nil)
+			}
+			credential = func(_ context.Context, host string) (auth.Credential, error) {
+				if host != "ghcr.io" {
+					return auth.EmptyCredential, nil
+				}
+				token, username, err := a.TokenProvider.LoadToken()
+				return auth.Credential{Username: username, Password: token}, err
+			}
+		default:
+			return nil, apperr.New(apperr.CodeInvalidArgument, "invalid OCI authentication mode", nil)
+		}
+		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP)
+	default:
+		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with local://, oci:// or s3://", nil)
+	}
 }
 
-func (a *App) secretsRef(owner, repo, env string) string {
-	return a.registryRef(owner, repo) + ":" + secretsTag(env)
+func (a *App) workspaceStorage(ctx context.Context) (storage.Storage, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		return nil, apperr.New(apperr.CodeNotInitialized, "workspace ID missing or invalid", nil)
+	}
+	store, err := a.openStorage(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	o, _, err := store.Get(ctx, workspaceKey)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	if o.MediaType != workspaceMediaType || string(o.Data) != cfg.WorkspaceID {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "storage belongs to a different workspace", nil)
+	}
+	return store, nil
+}
+
+func storageError(err error) error {
+	switch {
+	case errors.Is(err, storage.ErrNotFound):
+		return apperr.Wrap(apperr.CodeArtifactNotFound, "storage object not found", err, nil)
+	case errors.Is(err, storage.ErrConflict):
+		return apperr.Wrap(apperr.CodeConflict, "storage object changed", err, nil)
+	default:
+		return err
+	}
 }
 
 func (a *App) emit(msg string) {
@@ -101,7 +208,6 @@ func (a *App) emitStepProgress(op, step, status string) {
 func New() *App {
 	gitClient := gitprovider.NewCLIClient()
 	return &App{
-		Registry:      &defaultRegistry{},
 		TokenProvider: &defaultTokenProvider{},
 		Identities:    identity.New(),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
@@ -109,28 +215,10 @@ func New() *App {
 	}
 }
 
-type defaultRegistry struct{}
-
-func (d *defaultRegistry) Push(ctx context.Context, ref string, mediaType string, data []byte, token string, opts *oci.PushOptions) error {
-	return oci.Push(ctx, ref, mediaType, data, token, opts)
-}
-
-func (d *defaultRegistry) Pull(ctx context.Context, ref string, token string) ([]byte, error) {
-	return oci.Pull(ctx, ref, token)
-}
-
-func (d *defaultRegistry) ListTags(ctx context.Context, ref string, token string) ([]string, error) {
-	return oci.ListTags(ctx, ref, token)
-}
-
-func (d *defaultRegistry) GetDigest(ctx context.Context, ref string, token string) (string, error) {
-	return oci.GetDigest(ctx, ref, token)
-}
-
 type defaultTokenProvider struct{}
 
 func (d *defaultTokenProvider) LoadToken() (string, string, error) {
-	token, err := auth.LoadToken()
+	token, err := enbuauth.LoadToken()
 	if err != nil {
 		return "", "", err
 	}
@@ -155,11 +243,4 @@ func (d *defaultRepoDetector) LoadRepo() (string, string, error) {
 		return "", "", fmt.Errorf("git remote not found")
 	}
 	return config.ParseGitRemote(repository.OriginURL)
-}
-
-func (a *App) sourceRepoURL(owner, repo string) string {
-	if a.Platform != nil {
-		return a.Platform.SourceRepoURL(owner, repo)
-	}
-	return fmt.Sprintf("https://github.com/%s/%s", owner, repo)
 }

@@ -3,7 +3,6 @@ package cli
 import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/tui"
 	"github.com/spf13/cobra"
 )
@@ -13,6 +12,10 @@ func New(version string) *cobra.Command {
 }
 
 func NewWithApp(version string, a *app.App) *cobra.Command {
+	// Flags belong to one command invocation. Sharing a service between commands
+	// must not mutate another invocation's storage override.
+	commandApp := *a
+	a = &commandApp
 	var (
 		jsonOutput  bool
 		showVersion bool
@@ -20,7 +23,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 
 	rootCmd := &cobra.Command{
 		Use:           "enbu",
-		Short:         "Keyless .env management powered by GitHub",
+		Short:         "Keyless .env management with pluggable Identity and Storage",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -41,6 +44,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 	rootCmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid command options", err, nil)
 	})
+	rootCmd.PersistentFlags().StringVar(&a.StorageURL, "storage", a.StorageURL, "Storage URL (overrides enbu.toml)")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output one JSON response")
 	rootCmd.Flags().BoolVarP(&showVersion, "version", "v", false, "version for enbu")
 	defaultHelp := rootCmd.HelpFunc()
@@ -84,11 +88,4 @@ func invalidArgument(message string, cause error) error {
 		return apperr.New(apperr.CodeInvalidArgument, message, nil)
 	}
 	return apperr.Wrap(apperr.CodeInvalidArgument, message, cause, nil)
-}
-
-func gitClient(a *app.App) gitprovider.Client {
-	if a.Git != nil {
-		return a.Git
-	}
-	return gitprovider.NewCLIClient()
 }

@@ -6,20 +6,23 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
-type failingTokenProvider struct {
-	err error
+type failingStorage struct {
+	storage.Storage
+	cause error
 }
 
-func (p failingTokenProvider) LoadToken() (string, string, error) {
-	return "", "", p.err
+func (s *failingStorage) Get(context.Context, string) (storage.Object, storage.Version, error) {
+	return storage.Object{}, "", s.cause
 }
 
 func TestExportedOperationNormalizesUnknownError(t *testing.T) {
 	cause := errors.New("backend failed")
-	a := &App{TokenProvider: failingTokenProvider{err: cause}}
-
+	a := &App{Storage: newMemRegistry()}
+	prepareApp(t, a, "default")
+	a.Storage = &failingStorage{cause: cause}
 	_, err := a.ListRecipients(context.Background())
 	var appErr *apperr.Error
 	if !errors.As(err, &appErr) {
