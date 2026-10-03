@@ -51,7 +51,7 @@ const mockRepoHistory: NonNullable<GUIRepoStatus["repo"]>[] = [
 ];
 let mockSelectedRepoPath = mockRepoHistory[0]?.path ?? "";
 
-let mockConfig = `version = "v1alpha1"\ndefault_env = "default"\n`;
+let mockConfig = `version = "v1alpha2"\ndefault_env = "default"\n`;
 
 function currentEnvName(): string {
   return mockEnvs.find((e) => e.current)?.name ?? "development";
