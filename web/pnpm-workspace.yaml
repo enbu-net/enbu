@@ -1,4 +1,5 @@
 allowBuilds:
+  "@parcel/watcher": true
   esbuild: true
 minimumReleaseAgeExclude:
   - "@typescript/typescript-aix-ppc64@7.0.2"
