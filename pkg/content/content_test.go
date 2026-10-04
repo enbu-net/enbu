@@ -12,25 +12,18 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-type sourceFunc func(context.Context, digest.Digest) (io.ReadCloser, error)
-
-func (f sourceFunc) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
-	return f(ctx, d)
-}
-
 type trackedStream struct {
 	io.Reader
-	closed   bool
-	closeErr error
+	closed bool
 }
 
-func (s *trackedStream) Close() error { s.closed = true; return s.closeErr }
+func (s *trackedStream) Close() error { s.closed = true; return nil }
 
 func refFor(value string) artifact.PayloadRef {
 	return artifact.PayloadRef{Name: "content", MediaType: "application/octet-stream", Size: uint64(len(value)), Digest: digest.FromString(value)}
 }
 
-func TestCopyVerification(t *testing.T) {
+func TestVerifyCopyVerification(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name   string
@@ -52,19 +45,13 @@ func TestCopyVerification(t *testing.T) {
 				tc.mutate(&ref)
 			}
 			stream := &trackedStream{Reader: bytes.NewBufferString(tc.value)}
-			source := sourceFunc(func(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
-				if d != ref.Digest {
-					t.Fatal("wrong digest requested")
-				}
-				return stream, nil
-			})
 			var dst bytes.Buffer
-			err := Copy(context.Background(), &dst, source, ref)
+			err := VerifyCopy(context.Background(), &dst, stream, ref)
 			if !errors.Is(err, tc.want) {
-				t.Fatalf("Copy = %v, want %v", err, tc.want)
+				t.Fatalf("VerifyCopy = %v, want %v", err, tc.want)
 			}
-			if !stream.closed {
-				t.Fatal("source was not closed")
+			if stream.closed {
+				t.Fatal("borrowed source was closed")
 			}
 			if tc.want == nil && dst.String() != tc.value {
 				t.Fatal("content changed")
@@ -84,45 +71,37 @@ type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
-func TestCopyFailuresAndClose(t *testing.T) {
+func TestVerifyCopyFailuresAndBorrowedStream(t *testing.T) {
 	t.Parallel()
 	failure := errors.New("stream failure")
 	for _, tc := range []struct {
-		name     string
-		reader   io.Reader
-		writer   io.Writer
-		closeErr error
-		want     error
+		name   string
+		reader io.Reader
+		writer io.Writer
+		want   error
 	}{
-		{"read error", readerFunc(func(p []byte) (int, error) { p[0] = 'x'; return 1, failure }), io.Discard, nil, failure},
-		{"write error", bytes.NewBufferString("x"), writerFunc(func([]byte) (int, error) { return 0, failure }), nil, failure},
-		{"short write", bytes.NewBufferString("x"), writerFunc(func([]byte) (int, error) { return 0, nil }), nil, io.ErrShortWrite},
-		{"close error", bytes.NewBufferString("x"), io.Discard, failure, failure},
-		{"no progress", readerFunc(func([]byte) (int, error) { return 0, nil }), io.Discard, nil, io.ErrNoProgress},
+		{"read error", readerFunc(func(p []byte) (int, error) { p[0] = 'x'; return 1, failure }), io.Discard, failure},
+		{"write error", bytes.NewBufferString("x"), writerFunc(func([]byte) (int, error) { return 0, failure }), failure},
+		{"short write", bytes.NewBufferString("x"), writerFunc(func([]byte) (int, error) { return 0, nil }), io.ErrShortWrite},
+		{"no progress", readerFunc(func([]byte) (int, error) { return 0, nil }), io.Discard, io.ErrNoProgress},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			stream := &trackedStream{Reader: tc.reader, closeErr: tc.closeErr}
-			err := Copy(context.Background(), tc.writer, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) { return stream, nil }), refFor("x"))
+			stream := &trackedStream{Reader: tc.reader}
+			err := VerifyCopy(context.Background(), tc.writer, stream, refFor("x"))
 			if !errors.Is(err, tc.want) {
-				t.Fatalf("Copy = %v, want %v", err, tc.want)
+				t.Fatalf("VerifyCopy = %v, want %v", err, tc.want)
 			}
-			if !stream.closed {
-				t.Fatal("source was not closed")
+			if stream.closed {
+				t.Fatal("borrowed source was closed")
 			}
 		})
 	}
-	t.Run("open error", func(t *testing.T) {
-		err := Copy(context.Background(), io.Discard, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) { return nil, failure }), refFor("x"))
-		if !errors.Is(err, failure) {
-			t.Fatal(err)
-		}
-	})
 	t.Run("invalid reference", func(t *testing.T) {
 		ref := refFor("x")
 		ref.Digest = "sha256:bad"
-		err := Copy(context.Background(), io.Discard, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) {
-			t.Fatal("opened invalid reference")
-			return nil, nil
+		err := VerifyCopy(context.Background(), io.Discard, readerFunc(func([]byte) (int, error) {
+			t.Fatal("read invalid reference")
+			return 0, nil
 		}), ref)
 		if !errors.Is(err, artifact.ErrInvalidArtifact) {
 			t.Fatal(err)
@@ -131,41 +110,40 @@ func TestCopyFailuresAndClose(t *testing.T) {
 	t.Run("data and EOF", func(t *testing.T) {
 		stream := &trackedStream{Reader: readerFunc(func(p []byte) (int, error) { p[0] = 'x'; return 1, io.EOF })}
 		var dst bytes.Buffer
-		if err := Copy(context.Background(), &dst, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) { return stream, nil }), refFor("x")); err != nil {
+		if err := VerifyCopy(context.Background(), &dst, stream, refFor("x")); err != nil {
 			t.Fatal(err)
 		}
-		if dst.String() != "x" || !stream.closed {
-			t.Fatal("final bytes lost or stream not closed")
+		if dst.String() != "x" || stream.closed {
+			t.Fatal("final bytes lost or borrowed stream closed")
 		}
 	})
 }
 
-func TestCopyCancellation(t *testing.T) {
+func TestVerifyCopyCancellation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	source := sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) {
-		t.Fatal("opened after cancellation")
-		return nil, nil
+	source := readerFunc(func([]byte) (int, error) {
+		t.Fatal("read after cancellation")
+		return 0, nil
 	})
-	if err := Copy(ctx, io.Discard, source, refFor("x")); !errors.Is(err, context.Canceled) {
+	if err := VerifyCopy(ctx, io.Discard, source, refFor("x")); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 	stream := &trackedStream{Reader: readerFunc(func(p []byte) (int, error) { cancel(); p[0] = 'x'; return 1, nil })}
-	source = sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) { return stream, nil })
 	var dst bytes.Buffer
-	if err := Copy(ctx, &dst, source, refFor("x")); !errors.Is(err, context.Canceled) {
+	if err := VerifyCopy(ctx, &dst, stream, refFor("x")); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if dst.Len() != 0 || !stream.closed {
-		t.Fatal("wrote after cancellation or leaked source")
+	if dst.Len() != 0 || stream.closed {
+		t.Fatal("wrote after cancellation or closed borrowed source")
 	}
 }
 
 // A generated stream and rejecting sink prove memory does not grow with payload
-// size. No payload-sized allocation is used by either fixture or Copy.
+// size. No payload-sized allocation is used by either fixture or VerifyCopy.
 type generatedReader struct {
 	remaining uint64
 	maxRead   int
@@ -187,7 +165,7 @@ func (r *generatedReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-func TestCopyLargeStream(t *testing.T) {
+func TestVerifyCopyLargeStream(t *testing.T) {
 	t.Parallel()
 	const size = 10 * 1024 * 1024
 	hash := digest.SHA256.Digester()
@@ -206,10 +184,10 @@ func TestCopyLargeStream(t *testing.T) {
 		return len(p), nil
 	})
 	ref := artifact.PayloadRef{Name: "large", MediaType: "application/octet-stream", Digest: hash.Digest(), Size: size}
-	if err := Copy(context.Background(), sink, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) { return stream, nil }), ref); err != nil {
+	if err := VerifyCopy(context.Background(), sink, stream, ref); err != nil {
 		t.Fatal(err)
 	}
-	if count != size || reader.maxRead > 32*1024 || !stream.closed {
+	if count != size || reader.maxRead > 32*1024 || stream.closed {
 		t.Fatal("streaming contract violated")
 	}
 }

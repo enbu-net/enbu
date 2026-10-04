@@ -16,31 +16,20 @@ var (
 	ErrDigestMismatch = errors.New("payload digest mismatch")
 )
 
-// BlobSource opens plaintext streams. Implementations own location resolution
-// and must honor ctx; the plaintext digest is not a public storage identifier.
-type BlobSource interface {
-	Open(context.Context, digest.Digest) (io.ReadCloser, error)
-}
-
-// Copy streams a payload to dst and verifies its declared size and SHA-256.
-// It closes the source on every exit after Open succeeds. dst remains caller-owned.
+// VerifyCopy streams plaintext from src to dst and verifies its size and SHA-256.
+// Both streams are borrowed; the caller owns opening and closing them, and
+// resolving or decrypting the source independently of the plaintext digest.
 // Bytes written before success are unverified: callers must stage them and only
-// publish/use the destination after Copy returns nil.
-// Cancellation is checked between reads and writes; a blocking Open/Read must
-// be interrupted by the BlobSource implementation.
-func Copy(ctx context.Context, dst io.Writer, source BlobSource, ref artifact.PayloadRef) (err error) {
+// publish/use the destination after VerifyCopy returns nil.
+// Cancellation is checked between reads and writes. The caller must arrange
+// interruption of blocking I/O when required.
+func VerifyCopy(ctx context.Context, dst io.Writer, src io.Reader, ref artifact.PayloadRef) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	stream, err := source.Open(ctx, ref.Digest)
-	if err != nil {
-		return fmt.Errorf("open payload: %w", err)
-	}
-	defer func() { err = errors.Join(err, stream.Close()) }()
-
 	hash := digest.SHA256.Digester()
 	remaining := ref.Size
 	buffer := make([]byte, 32*1024)
@@ -55,7 +44,7 @@ func Copy(ctx context.Context, dst io.Writer, source BlobSource, ref artifact.Pa
 		if remaining < uint64(len(chunk)) {
 			chunk = chunk[:int(remaining)+1]
 		}
-		n, readErr := stream.Read(chunk)
+		n, readErr := src.Read(chunk)
 		if uint64(n) > remaining {
 			return ErrSizeMismatch
 		}
