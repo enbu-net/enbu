@@ -269,3 +269,25 @@ func TestLocalBlobPutKeepsExistingFile(t *testing.T) {
 		t.Fatalf("existing blob was replaced: %v", err)
 	}
 }
+
+func TestLocalBlobPutRepairsDamagedBlob(t *testing.T) {
+	dir := t.TempDir()
+	s := NewLocal(dir)
+	d := putBlob(t, s, "secret")
+	path := filepath.Join(dir, "blobs", "sha256", d.Encoded())
+	for _, damaged := range []string{"sec", "SECRET"} { // truncated, and same size with other content
+		if err := os.WriteFile(path, []byte(damaged), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		putBlob(t, s, "secret")
+		rc, err := s.Blobs.Open(context.Background(), d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil || string(b) != "secret" {
+			t.Fatalf("after repairing %q: blob=%q %v", damaged, b, err)
+		}
+	}
+}

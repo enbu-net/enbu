@@ -142,12 +142,14 @@ func (s localBlobs) Put(ctx context.Context, src io.Reader) (digest.Digest, erro
 		return "", err
 	}
 	if _, err := root.Lstat(path); err == nil {
-		// Same digest, same content. Renaming over it would fail on Windows
-		// while another process has the blob open.
 		if err := rejectSymlink(root, path); err != nil {
 			return "", err
 		}
-		return d, nil
+		// Same digest, same content: skip the rename, which fails on Windows while
+		// another process has the blob open. A damaged leftover is replaced.
+		if localBlobMatches(root, path, d) {
+			return d, nil
+		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
@@ -155,6 +157,17 @@ func (s localBlobs) Put(ctx context.Context, src io.Reader) (digest.Digest, erro
 		return "", err
 	}
 	return d, commitLocalFile(root, pending, path, func(r *os.Root) error { return syncSubdir(r, blobDir) })
+}
+
+func localBlobMatches(root *os.Root, path string, d digest.Digest) bool {
+	f, err := root.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	v := d.Verifier()
+	n, err := io.Copy(v, io.LimitReader(f, MaxPayloadBytes+1))
+	return err == nil && n <= MaxPayloadBytes && v.Verified()
 }
 
 func (s localBlobs) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {

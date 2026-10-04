@@ -96,15 +96,8 @@ func (s s3Blobs) Put(ctx context.Context, src io.Reader) (digest.Digest, error) 
 	} else if !errors.Is(err, ErrConflict) {
 		return "", err
 	}
-	// The blob already exists. Only its size is checked here (Open verifies the
-	// digest); a truncated leftover is replaced so that Put always repairs it.
-	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
-	if err != nil {
-		return "", s3Error(err, false)
-	}
-	if info.Size == f.Size {
-		return f.Digest, nil
-	}
+	// The blob already exists. Its content may be damaged, and f is known to match
+	// the digest, so rewriting it unconditionally is safe and repairs it.
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
