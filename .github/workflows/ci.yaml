@@ -113,6 +113,26 @@ jobs:
             task storage/test/e2e
           '
 
+  aws-export-e2e:
+    name: AWS Secrets Manager export E2E (Kumo)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+        with:
+          aqua_version: v2.63.0
+      - name: Test core with race detector
+        run: go test -race ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
+      - name: AWS SDK export E2E
+        run: task export/aws/test/e2e
+
   check:
     name: Check
     runs-on: ubuntu-latest
