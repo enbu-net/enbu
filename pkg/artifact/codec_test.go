@@ -160,6 +160,9 @@ func TestDecodeArtifactRejectsWireValues(t *testing.T) {
 		},
 		"short digest":      func(m map[string]any) { m["payloads"].([]any)[0].(map[any]any)["digest"] = "sha256:abc" },
 		"duplicate payload": func(m map[string]any) { p := m["payloads"].([]any); m["payloads"] = append(p, p[0]) },
+		"long media type": func(m map[string]any) {
+			m["payloads"].([]any)[0].(map[any]any)["mediaType"] = "text/plain; note=" + strings.Repeat("a", MaxMediaTypeBytes-16)
+		},
 		"metadata bytes": func(m map[string]any) {
 			m["metadata"].(map[any]any)["annotations"] = map[string]string{"note": strings.Repeat("a", MaxMetadataBytes)}
 		},
@@ -257,22 +260,24 @@ func TestArtifactValidation(t *testing.T) {
 	})
 }
 
-func TestArtifactEncodedSizeLimit(t *testing.T) {
+func TestArtifactMediaTypeSizeBoundary(t *testing.T) {
 	t.Parallel()
 	a := validArtifact()
-	a.Payloads = nil
-	for i := range 65 {
-		a.Payloads = append(a.Payloads, PayloadRef{
-			Name:      fmt.Sprintf("p%d", i),
-			MediaType: "text/plain; note=" + strings.Repeat("a", MaxMetadataBytes-17),
-			Digest:    digest.FromString("content"),
-		})
-	}
-	if err := a.Validate(); err != nil {
+	a.Payloads[0].MediaType = "text/plain; note=" + strings.Repeat("a", MaxMediaTypeBytes-17)
+	data, err := EncodeArtifact(a)
+	if err != nil {
 		t.Fatal(err)
 	}
+	got, err := DecodeArtifact(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, a) {
+		t.Fatal("boundary media type changed")
+	}
+	a.Payloads[0].MediaType += "a"
 	if _, err := EncodeArtifact(a); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("oversized encode = %v", err)
+		t.Fatalf("over-limit media type: %v", err)
 	}
 }
 

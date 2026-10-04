@@ -119,6 +119,7 @@ func TestPayloadValidation(t *testing.T) {
 		{"path name", func(p *PayloadRef) { p.Name = "a/b" }},
 		{"empty media type", func(p *PayloadRef) { p.MediaType = "" }},
 		{"invalid media type", func(p *PayloadRef) { p.MediaType = "text/plain; bad=" }},
+		{"long media type", func(p *PayloadRef) { p.MediaType = "text/plain; note=" + strings.Repeat("a", MaxMediaTypeBytes-16) }},
 		{"non sha256", func(p *PayloadRef) {
 			sum := sha512.Sum512([]byte("content"))
 			p.Digest = digest.Digest(fmt.Sprintf("sha512:%x", sum))

@@ -20,6 +20,7 @@ const (
 
 	MaxMetadataBytes   = 256 * 1024
 	MaxMetadataEntries = 4 * 1024
+	MaxMediaTypeBytes  = 1024
 	MaxPayloads        = 1024
 	MaxArtifactBytes   = 16 * 1024 * 1024
 )
@@ -173,7 +174,7 @@ func (p PayloadRef) Validate() error {
 	if len(p.Name) == 0 || len(p.Name) > 253 || !payloadNamePattern.MatchString(p.Name) {
 		return fmt.Errorf("%w: invalid payload name %q", ErrInvalidArtifact, p.Name)
 	}
-	if p.MediaType == "" || len(p.MediaType) > MaxMetadataBytes || !utf8.ValidString(p.MediaType) || !norm.NFC.IsNormalString(p.MediaType) {
+	if p.MediaType == "" || len(p.MediaType) > MaxMediaTypeBytes || !utf8.ValidString(p.MediaType) || !norm.NFC.IsNormalString(p.MediaType) {
 		return fmt.Errorf("%w: payload %q has invalid media type", ErrInvalidArtifact, p.Name)
 	}
 	if _, _, err := mime.ParseMediaType(p.MediaType); err != nil {
