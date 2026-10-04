@@ -22,6 +22,7 @@ tasks:
       - cli/test/e2e
       - identity/test/e2e
       - storage/test/e2e
+      - export/aws/test/e2e
 
   cli/test/unit:
     desc: Run unit tests
@@ -135,6 +136,22 @@ tasks:
       - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:9002/health
       - go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage
       - go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles
+
+  export/aws/test/e2e:
+    desc: Verify AWS Secrets Manager plans through AWS SDK v2 and Kumo
+    env:
+      ENBU_TEST_KUMO_ENDPOINT: http://localhost:4566
+    cmds:
+      - docker compose -p enbu-aws -f test/aws/compose.yaml down --volumes --remove-orphans
+      - docker compose -p enbu-aws -f test/aws/compose.yaml up -d --wait
+      - defer: docker compose -p enbu-aws -f test/aws/compose.yaml down --volumes --remove-orphans
+      - >-
+        curl --fail --silent --show-error --retry 50 --retry-delay 1
+        --retry-connrefused --retry-max-time 50
+        -H 'Content-Type: application/x-amz-json-1.1'
+        -H 'X-Amz-Target: secretsmanager.ListSecrets'
+        -d '{}' http://localhost:4566
+      - go test -v -race -count=1 -tags=awse2e ./test/aws
 
   gui/test:
     desc: Run GUI tests

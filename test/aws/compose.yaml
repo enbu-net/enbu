@@ -1,0 +1,6 @@
+services:
+  kumo:
+    image: ghcr.io/sivchari/kumo@sha256:9ae3cf4555ec3b4084ae2c822a230b33b6468536c1c834a453383989034bd216
+    environment:
+      KUMO_LOG_LEVEL: warn
+    ports: ["127.0.0.1:4566:4566"]
