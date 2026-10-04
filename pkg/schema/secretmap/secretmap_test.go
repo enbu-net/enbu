@@ -145,11 +145,16 @@ func TestSecretMapBoundsAndSemanticNames(t *testing.T) {
 	}
 }
 
-type sourceFunc func(context.Context, digest.Digest) (io.ReadCloser, error)
+type readerFunc func([]byte) (int, error)
 
-func (f sourceFunc) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
-	return f(ctx, d)
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }
+
+type borrowedStream struct {
+	io.Reader
+	closed bool
 }
+
+func (s *borrowedStream) Close() error { s.closed = true; return nil }
 
 func TestDotenvArtifactSemanticRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -178,13 +183,11 @@ func TestDotenvArtifactSemanticRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := sourceFunc(func(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
-		if d != a.Payloads[0].Digest {
-			t.Fatal("wrong content requested")
-		}
-		return io.NopCloser(bytes.NewReader(payload)), nil
-	})
-	got, err := ReadArtifact(context.Background(), a, source)
+	stream := &borrowedStream{Reader: bytes.NewReader(payload)}
+	got, err := ReadArtifact(context.Background(), a, stream)
+	if stream.closed {
+		t.Fatal("closed borrowed plaintext stream")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +207,7 @@ func TestDotenvArtifactSemanticRoundTrip(t *testing.T) {
 	}
 }
 
-func TestReadArtifactRejectsBeforeOpening(t *testing.T) {
+func TestReadArtifactRejectsBeforeReading(t *testing.T) {
 	t.Parallel()
 	for name, mutate := range map[string]func(*artifact.Artifact){
 		"schema":           func(a *artifact.Artifact) { a.Schema.Kind = "Opaque" },
@@ -221,9 +224,9 @@ func TestReadArtifactRejectsBeforeOpening(t *testing.T) {
 				t.Fatal(err)
 			}
 			mutate(&a)
-			_, err = ReadArtifact(context.Background(), a, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) {
-				t.Fatal("opened rejected artifact")
-				return nil, nil
+			_, err = ReadArtifact(context.Background(), a, readerFunc(func([]byte) (int, error) {
+				t.Fatal("read rejected artifact")
+				return 0, nil
 			}))
 			if err == nil {
 				t.Fatal("accepted invalid artifact")
@@ -245,9 +248,11 @@ func TestReadArtifactRejectsCorruptedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ReadArtifact(context.Background(), a, sourceFunc(func(context.Context, digest.Digest) (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(data)), nil
-	}))
+	stream := &borrowedStream{Reader: bytes.NewReader(data)}
+	_, err = ReadArtifact(context.Background(), a, stream)
+	if stream.closed {
+		t.Fatal("closed borrowed plaintext stream on failure")
+	}
 	if !errors.Is(err, content.ErrDigestMismatch) {
 		t.Fatalf("read corrupted payload: %v", err)
 	}

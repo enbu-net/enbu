@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"unicode/utf8"
 
 	"github.com/enbu-net/enbu/pkg/artifact"
@@ -141,7 +142,8 @@ func NewArtifact(uid artifact.UUID, metadata artifact.Metadata, secrets SecretMa
 
 // ReadArtifact checks schema-specific constraints and verifies content before
 // decoding it. Only this bounded semantic handler materializes a secret map.
-func ReadArtifact(ctx context.Context, a artifact.Artifact, source content.BlobSource) (SecretMap, error) {
+// src is a borrowed plaintext stream; the caller resolves, decrypts and closes it.
+func ReadArtifact(ctx context.Context, a artifact.Artifact, src io.Reader) (SecretMap, error) {
 	if err := a.Validate(); err != nil {
 		return nil, err
 	}
@@ -156,7 +158,7 @@ func ReadArtifact(ctx context.Context, a artifact.Artifact, source content.BlobS
 		return nil, fmt.Errorf("%w: payload too large", ErrInvalidSecretMap)
 	}
 	var buffer bytes.Buffer
-	if err := content.Copy(ctx, &buffer, source, ref); err != nil {
+	if err := content.VerifyCopy(ctx, &buffer, src, ref); err != nil {
 		return nil, err
 	}
 	return Decode(buffer.Bytes())
