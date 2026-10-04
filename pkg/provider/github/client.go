@@ -109,8 +109,8 @@ func (c *Client) CreateRepository(
 		return nil, c.initErr
 	}
 	repository, _, err := c.sdk.Repositories.Create(ctx, organization, &githubsdk.Repository{
-		Name:    githubsdk.Ptr(name),
-		Private: githubsdk.Ptr(private),
+		Name:    &name,
+		Private: &private,
 	})
 	if err != nil {
 		return nil, err
