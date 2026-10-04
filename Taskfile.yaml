@@ -100,7 +100,7 @@ tasks:
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/...
+      - go test -v -shuffle=on ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
 
   cli/test/e2e:
     desc: Run CLI end-to-end tests with atago
