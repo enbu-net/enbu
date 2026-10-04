@@ -63,6 +63,8 @@ type PayloadRef struct {
 
 There is one core artifact shape. Resource/Collection node kinds, graph edges, access grants, and sealed references are intentionally excluded from v2.
 
+The only accepted wire API version is `artifacts.enbu.net/v2alpha1`.
+
 ## Field semantics
 
 ### UID
