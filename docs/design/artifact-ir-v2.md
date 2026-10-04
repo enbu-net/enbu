@@ -189,11 +189,34 @@ Export destinations and credentials come from explicit trusted local configurati
 
 ## Encoding and identity
 
-Normative Artifact objects use deterministic CBOR.
+Normative Artifact objects use the RFC 8949 Core Deterministic Encoding profile for CBOR.
 
-Readers MUST reject non-canonical encodings, duplicate map keys, invalid UTF-8, unsupported fields for the wire version, and values exceeding defined size/count limits.
+The wire representation is fixed as follows:
 
-Artifact revision identity is SHA-256 over the canonical encoded Artifact object.
+- maps use the Core Deterministic bytewise-lexicographic key ordering;
+- integers and lengths use their shortest permitted encoding;
+- all containers use definite lengths;
+- CBOR tags, floating-point values, indefinite-length items, and `null` are forbidden;
+- every text string is valid NFC UTF-8;
+- unknown map keys are rejected;
+- every field listed below is present exactly once, including empty `labels`, `annotations`, and `payloads`; fields are never omitted because they have an empty/default value.
+
+The exact text keys are:
+
+```text
+Artifact:   apiVersion, uid, schema, metadata, payloads
+TypeRef:    group, version, kind
+Metadata:   name, labels, annotations
+PayloadRef: name, mediaType, digest, size
+```
+
+`labels` and `annotations` are CBOR text-to-text maps. `payloads` is an array sorted by `PayloadRef.name` using bytewise order of its NFC UTF-8 encoding, and duplicate payload names are invalid.
+
+`uid` uses one canonical lowercase UUID text representation. `digest` uses `sha256:<64 lowercase hexadecimal characters>`. `size` is an unsigned integer.
+
+Readers MUST reject any encoding that is not byte-for-byte identical to the canonical encoding of its decoded Artifact, including duplicate map keys, invalid UTF-8, non-NFC text, unsupported fields, non-canonical ordering, and values exceeding defined size/count limits.
+
+Artifact revision identity is `sha256(canonical-CBOR(Artifact))`, rendered as a lowercase `sha256:<hex>` digest.
 
 Canonical encoding provides one byte representation for one accepted object and avoids ambiguity in signatures, digests, caches, and future commit protocols.
 
