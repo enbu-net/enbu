@@ -459,6 +459,37 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	}
 }
 
+func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("GITHUB_TOKEN", "")
+	dir := t.TempDir()
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.Storage = config.StorageConfig{URL: "local:///tmp/enbu-desktop-test"}
+	if err := config.SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	s := NewService(app.New())
+	info, err := s.SelectRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.StorageConfigured || info.HasGit || info.HasRemote {
+		t.Fatalf("%+v", info)
+	}
+	status, err := s.GetAuthStatus()
+	if err != nil || !status.WorkspaceConfigured {
+		t.Fatalf("%+v %v", status, err)
+	}
+	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace", OCIAuth: "github"}
+	if err := config.SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	status, err = s.GetAuthStatus()
+	if err != nil || status.WorkspaceConfigured {
+		t.Fatalf("GitHub auth mode bypassed login: %+v %v", status, err)
+	}
+}
+
 func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
