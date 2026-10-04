@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"unicode/utf8"
 
@@ -36,8 +35,8 @@ func mustDecodingMode() cbor.DecMode {
 		UTF8:              cbor.UTF8RejectInvalid,
 		ExtraReturnErrors: cbor.ExtraDecErrorUnknownField,
 		MaxNestedLevels:   32,
-		MaxArrayElements:  MaxEdges,
-		MaxMapPairs:       MaxEdges,
+		MaxArrayElements:  MaxPayloads,
+		MaxMapPairs:       MaxMetadataEntries,
 	}).DecMode()
 	if err != nil {
 		panic(fmt.Sprintf("create strict CBOR decoder: %v", err))
@@ -45,153 +44,117 @@ func mustDecodingMode() cbor.DecMode {
 	return mode
 }
 
-// MarshalCanonical encodes v using RFC 8949 Core Deterministic Encoding.
-// Artifact revisions should normally use EncodeRevision, which additionally
-// validates the contract and canonicalizes set-like slices.
-func MarshalCanonical(v any) ([]byte, error) {
-	if err := validateWireValue(reflect.ValueOf(v), 0); err != nil {
-		return nil, err
+// Validate raw values before typed decoding, which can silently accept null as
+// a zero value. Decoder limits bound both traversals.
+func unmarshalStrict(data []byte, destination any) error {
+	var wire any
+	if err := strictDecMode.Unmarshal(data, &wire); err != nil {
+		return fmt.Errorf("decode artifact CBOR: %w", err)
 	}
-	return canonicalEncMode.Marshal(v)
-}
-
-// UnmarshalStrict rejects duplicate map keys, indefinite-length values, tags,
-// invalid UTF-8, unknown struct fields, excessive nesting, and trailing data.
-func UnmarshalStrict(data []byte, destination any) error {
-	if destination == nil {
-		return errors.New("artifact: nil decode destination")
+	if err := validateWireValue(wire); err != nil {
+		return err
 	}
 	if err := strictDecMode.Unmarshal(data, destination); err != nil {
 		return fmt.Errorf("decode artifact CBOR: %w", err)
 	}
-	if err := validateWireValue(reflect.ValueOf(destination), 0); err != nil {
-		return err
-	}
 	return nil
 }
 
-// EncodeRevision returns the sole canonical wire representation of revision.
-// Payloads are ordered by name and edges by ID without mutating the caller.
-func EncodeRevision(revision Revision) ([]byte, error) {
-	if err := revision.Validate(); err != nil {
+// EncodeArtifact returns the sole canonical wire representation of artifact.
+// Payloads are ordered by name without mutating the caller.
+func EncodeArtifact(artifact Artifact) ([]byte, error) {
+	if err := artifact.Validate(); err != nil {
 		return nil, err
 	}
-	canonical := canonicalRevision(revision)
-	data, err := MarshalCanonical(canonical)
+	canonical := canonicalArtifact(artifact)
+	data, err := canonicalEncMode.Marshal(canonical)
 	if err != nil {
-		return nil, fmt.Errorf("encode revision: %w", err)
+		return nil, fmt.Errorf("encode artifact: %w", err)
 	}
-	if len(data) > MaxRevisionBytes {
-		return nil, fmt.Errorf("%w: revision exceeds %d encoded bytes", ErrInvalidArtifact, MaxRevisionBytes)
+	if len(data) > MaxArtifactBytes {
+		return nil, fmt.Errorf("%w: artifact exceeds %d encoded bytes", ErrInvalidArtifact, MaxArtifactBytes)
 	}
 	return data, nil
 }
 
-// DecodeRevision accepts only the exact canonical representation emitted by
-// EncodeRevision. This prevents alternate encodings from acquiring the same
+// DecodeArtifact accepts only the exact canonical representation emitted by
+// EncodeArtifact. This prevents alternate encodings from acquiring the same
 // semantic meaning while carrying a different content digest.
-func DecodeRevision(data []byte) (Revision, error) {
-	if len(data) > MaxRevisionBytes {
-		return Revision{}, fmt.Errorf("%w: revision exceeds %d encoded bytes", ErrInvalidArtifact, MaxRevisionBytes)
+func DecodeArtifact(data []byte) (Artifact, error) {
+	if len(data) > MaxArtifactBytes {
+		return Artifact{}, fmt.Errorf("%w: artifact exceeds %d encoded bytes", ErrInvalidArtifact, MaxArtifactBytes)
 	}
-	var revision Revision
-	if err := UnmarshalStrict(data, &revision); err != nil {
-		return Revision{}, err
+	var artifact Artifact
+	if err := unmarshalStrict(data, &artifact); err != nil {
+		return Artifact{}, err
 	}
-	canonical, err := EncodeRevision(revision)
+	canonical, err := EncodeArtifact(artifact)
 	if err != nil {
-		return Revision{}, err
+		return Artifact{}, err
 	}
 	if !bytes.Equal(data, canonical) {
-		return Revision{}, ErrNonCanonicalEncoding
+		return Artifact{}, ErrNonCanonicalEncoding
 	}
-	return revision, nil
+	return artifact, nil
 }
 
-// CanonicalDigest returns the SHA-256 digest of EncodeRevision output.
-func CanonicalDigest(revision Revision) (digest.Digest, error) {
-	data, err := EncodeRevision(revision)
+// CanonicalDigest returns the SHA-256 digest of EncodeArtifact output.
+func CanonicalDigest(artifact Artifact) (digest.Digest, error) {
+	data, err := EncodeArtifact(artifact)
 	if err != nil {
 		return "", err
 	}
 	return digest.FromBytes(data), nil
 }
 
-func canonicalRevision(revision Revision) Revision {
-	canonical := revision
-	canonical.Payloads = append([]PayloadRef(nil), revision.Payloads...)
+func canonicalArtifact(artifact Artifact) Artifact {
+	canonical := artifact
+	canonical.Metadata = canonicalMetadata(artifact.Metadata)
+	canonical.Payloads = append([]PayloadRef{}, artifact.Payloads...)
 	sort.Slice(canonical.Payloads, func(i, j int) bool {
 		return canonical.Payloads[i].Name < canonical.Payloads[j].Name
-	})
-	canonical.Edges = append([]Edge(nil), revision.Edges...)
-	sort.Slice(canonical.Edges, func(i, j int) bool {
-		return canonical.Edges[i].ID < canonical.Edges[j].ID
 	})
 	return canonical
 }
 
-func validateWireValue(value reflect.Value, depth int) error {
-	if !value.IsValid() {
-		return nil
-	}
-	if depth > 64 {
-		return fmt.Errorf("%w: wire value exceeds validation depth", ErrInvalidArtifact)
-	}
-	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
-		if value.IsNil() {
-			return nil
-		}
-		value = value.Elem()
-		depth++
-		if depth > 64 {
-			return fmt.Errorf("%w: wire value exceeds validation depth", ErrInvalidArtifact)
-		}
-	}
-
-	switch value.Kind() {
-	case reflect.Float32, reflect.Float64:
-		return fmt.Errorf("%w: floating-point values are not allowed", ErrInvalidArtifact)
-	case reflect.String:
-		text := value.String()
-		if !utf8.ValidString(text) || !norm.NFC.IsNormalString(text) {
+func validateWireValue(value any) error {
+	switch v := value.(type) {
+	case nil:
+		return fmt.Errorf("%w: null is forbidden", ErrInvalidArtifact)
+	case float32, float64:
+		return fmt.Errorf("%w: floating-point values are forbidden", ErrInvalidArtifact)
+	case string:
+		if !utf8.ValidString(v) || !norm.NFC.IsNormalString(v) {
 			return fmt.Errorf("%w: wire text must be valid NFC UTF-8", ErrInvalidArtifact)
 		}
-	case reflect.Map:
-		iterator := value.MapRange()
-		for iterator.Next() {
-			key := iterator.Key()
-			for key.Kind() == reflect.Interface {
-				key = key.Elem()
+	case map[any]any:
+		for key, item := range v {
+			if _, ok := key.(string); !ok {
+				return fmt.Errorf("%w: map keys must be text", ErrInvalidArtifact)
 			}
-			if key.Kind() != reflect.String {
-				return fmt.Errorf("%w: CBOR map keys must be text strings", ErrInvalidArtifact)
-			}
-			if err := validateWireValue(key, depth+1); err != nil {
+			if err := validateWireValue(key); err != nil {
 				return err
 			}
-			if err := validateWireValue(iterator.Value(), depth+1); err != nil {
+			if err := validateWireValue(item); err != nil {
 				return err
 			}
 		}
-	case reflect.Struct:
-		typeOfValue := value.Type()
-		for i := range value.NumField() {
-			if typeOfValue.Field(i).PkgPath != "" {
-				continue
-			}
-			if err := validateWireValue(value.Field(i), depth+1); err != nil {
-				return err
-			}
-		}
-	case reflect.Array, reflect.Slice:
-		if value.Type().Elem().Kind() == reflect.Uint8 {
-			return nil
-		}
-		for i := range value.Len() {
-			if err := validateWireValue(value.Index(i), depth+1); err != nil {
+	case []any:
+		for _, item := range v {
+			if err := validateWireValue(item); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+func canonicalMetadata(m Metadata) Metadata {
+	if m.Labels == nil {
+		m.Labels = map[string]string{}
+	}
+	if m.Annotations == nil {
+		m.Annotations = map[string]string{}
+	}
+	return m
 }

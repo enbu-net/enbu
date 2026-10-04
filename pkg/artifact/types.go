@@ -1,8 +1,4 @@
-// Package artifact defines enbu's encrypted artifact intermediate representation.
-//
-// The representation deliberately has only two node kinds: Resource and
-// Collection. Schema-specific meaning belongs to TypeRef values and to trusted
-// host code or sandboxed transforms, not to additional graph node types.
+// Package artifact describes what data is, without storage or execution semantics.
 package artifact
 
 import (
@@ -20,22 +16,16 @@ import (
 
 const (
 	// APIVersion is the only artifact wire version accepted by this package.
-	APIVersion = "artifacts.enbu.net/v1alpha1"
-
-	// ReservedNamespace is owned by the enbu host. Untrusted extensions must
-	// not create TypeRefs or metadata keys in it or any of its subdomains.
-	ReservedNamespace = "enbu.net"
+	APIVersion = "artifacts.enbu.net/v2alpha1"
 
 	MaxMetadataBytes   = 256 * 1024
 	MaxMetadataEntries = 4 * 1024
 	MaxPayloads        = 1024
-	MaxEdges           = 10_000
-	MaxRevisionBytes   = 16 * 1024 * 1024
+	MaxArtifactBytes   = 16 * 1024 * 1024
 )
 
 var (
-	ErrInvalidArtifact   = errors.New("invalid artifact")
-	ErrReservedNamespace = errors.New("reserved enbu namespace")
+	ErrInvalidArtifact = errors.New("invalid artifact")
 
 	qualifiedNamePartPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
 	labelValuePattern        = regexp.MustCompile(`^(?:[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?)?$`)
@@ -44,23 +34,6 @@ var (
 	kindPattern              = regexp.MustCompile(`^[A-Z][A-Za-z0-9]{0,62}$`)
 	payloadNamePattern       = regexp.MustCompile(`^[A-Za-z0-9](?:[-A-Za-z0-9_.]*[A-Za-z0-9])?$`)
 )
-
-// Kind is a graph node kind. Schema-specific kinds are represented by TypeRef.
-type Kind string
-
-const (
-	KindResource   Kind = "Resource"
-	KindCollection Kind = "Collection"
-)
-
-// MemberRelation returns the host-owned relation used for Collection members.
-func MemberRelation() TypeRef {
-	return TypeRef{
-		Group:   "relations.enbu.net",
-		Version: "v1alpha1",
-		Kind:    "Member",
-	}
-}
 
 // UUID is a canonical, non-nil RFC 9562 UUID string.
 //
@@ -108,7 +81,7 @@ func (u UUID) Validate() error {
 	return err
 }
 
-// TypeRef identifies the schema or relation semantics of an artifact value.
+// TypeRef identifies the schema semantics of an artifact value.
 type TypeRef struct {
 	Group   string `cbor:"group" json:"group"`
 	Version string `cbor:"version" json:"version"`
@@ -135,7 +108,7 @@ func (r TypeRef) Validate() error {
 	if err := validateDNSSubdomain(r.Group); err != nil {
 		return fmt.Errorf("%w: type group: %v", ErrInvalidArtifact, err)
 	}
-	if !versionPattern.MatchString(r.Version) {
+	if len(r.Version) > 63 || !versionPattern.MatchString(r.Version) {
 		return fmt.Errorf("%w: invalid type version %q", ErrInvalidArtifact, r.Version)
 	}
 	if !kindPattern.MatchString(r.Kind) {
@@ -144,23 +117,11 @@ func (r TypeRef) Validate() error {
 	return nil
 }
 
-// ValidateExtension rejects TypeRefs reserved for the enbu host.
-func (r TypeRef) ValidateExtension() error {
-	if err := r.Validate(); err != nil {
-		return err
-	}
-	if IsReservedNamespace(r.Group) {
-		return fmt.Errorf("%w: type group %q", ErrReservedNamespace, r.Group)
-	}
-	return nil
-}
-
-// Metadata contains encrypted, queryable attributes. It is not an access-control
-// boundary; graph position, labels, and annotations never imply authorization.
+// Metadata contains inert human-facing and classification data.
 type Metadata struct {
 	Name        string            `cbor:"name" json:"name"`
-	Labels      map[string]string `cbor:"labels,omitempty" json:"labels,omitempty"`
-	Annotations map[string]string `cbor:"annotations,omitempty" json:"annotations,omitempty"`
+	Labels      map[string]string `cbor:"labels" json:"labels"`
+	Annotations map[string]string `cbor:"annotations" json:"annotations"`
 }
 
 func (m Metadata) Validate() error {
@@ -190,10 +151,7 @@ func (m Metadata) Validate() error {
 			return fmt.Errorf("%w: annotation %q is not NFC", ErrInvalidArtifact, key)
 		}
 	}
-	encoded, err := MarshalCanonical(struct {
-		Labels      map[string]string `cbor:"labels,omitempty"`
-		Annotations map[string]string `cbor:"annotations,omitempty"`
-	}{Labels: m.Labels, Annotations: m.Annotations})
+	encoded, err := canonicalEncMode.Marshal(canonicalMetadata(m))
 	if err != nil {
 		return fmt.Errorf("%w: encode metadata: %v", ErrInvalidArtifact, err)
 	}
@@ -203,50 +161,20 @@ func (m Metadata) Validate() error {
 	return nil
 }
 
-// ValidateExtension additionally prevents an untrusted extension from creating
-// host-owned metadata. Existing host metadata can still be read by an extension.
-func (m Metadata) ValidateExtension() error {
-	if err := m.Validate(); err != nil {
-		return err
-	}
-	for key := range m.Labels {
-		if IsReservedMetadataKey(key) {
-			return fmt.Errorf("%w: label %q", ErrReservedNamespace, key)
-		}
-	}
-	for key := range m.Annotations {
-		if IsReservedMetadataKey(key) {
-			return fmt.Errorf("%w: annotation %q", ErrReservedNamespace, key)
-		}
-	}
-	return nil
-}
-
-func IsReservedNamespace(namespace string) bool {
-	return namespace == ReservedNamespace || strings.HasSuffix(namespace, "."+ReservedNamespace)
-}
-
-func IsReservedMetadataKey(key string) bool {
-	prefix, _, ok := strings.Cut(key, "/")
-	return ok && IsReservedNamespace(prefix)
-}
-
-// PayloadRef describes a named plaintext stream. The surrounding encrypted
-// material manifest maps this logical reference to ciphertext chunks. Digest
-// always uses SHA-256.
+// PayloadRef describes a named plaintext stream; its bytes belong outside the IR.
 type PayloadRef struct {
 	Name      string        `cbor:"name" json:"name"`
 	MediaType string        `cbor:"mediaType" json:"mediaType"`
 	Digest    digest.Digest `cbor:"digest" json:"digest"`
-	Size      int64         `cbor:"size" json:"size"`
+	Size      uint64        `cbor:"size" json:"size"`
 }
 
 func (p PayloadRef) Validate() error {
 	if len(p.Name) == 0 || len(p.Name) > 253 || !payloadNamePattern.MatchString(p.Name) {
 		return fmt.Errorf("%w: invalid payload name %q", ErrInvalidArtifact, p.Name)
 	}
-	if p.MediaType == "" {
-		return fmt.Errorf("%w: payload %q has empty media type", ErrInvalidArtifact, p.Name)
+	if p.MediaType == "" || len(p.MediaType) > MaxMetadataBytes || !utf8.ValidString(p.MediaType) || !norm.NFC.IsNormalString(p.MediaType) {
+		return fmt.Errorf("%w: payload %q has invalid media type", ErrInvalidArtifact, p.Name)
 	}
 	if _, _, err := mime.ParseMediaType(p.MediaType); err != nil {
 		return fmt.Errorf("%w: payload %q media type: %v", ErrInvalidArtifact, p.Name, err)
@@ -254,100 +182,23 @@ func (p PayloadRef) Validate() error {
 	if err := validateDigest(p.Digest); err != nil {
 		return fmt.Errorf("%w: payload %q digest: %w", ErrInvalidArtifact, p.Name, err)
 	}
-	if p.Size < 0 {
-		return fmt.Errorf("%w: payload %q has negative size", ErrInvalidArtifact, p.Name)
-	}
 	return nil
 }
 
-// EdgeStrength determines whether an edge pins an immutable revision or merely
-// relates one stable UID to another. Only pinned edges participate in the DAG.
-type EdgeStrength string
-
-const (
-	EdgePinned  EdgeStrength = "pinned"
-	EdgeLogical EdgeStrength = "logical"
-)
-
-type Edge struct {
-	ID       UUID         `cbor:"id" json:"id"`
-	Name     string       `cbor:"name" json:"name"`
-	Relation TypeRef      `cbor:"relation" json:"relation"`
-	Strength EdgeStrength `cbor:"strength" json:"strength"`
-	Target   UUID         `cbor:"target" json:"target"`
-	Pinned   *SealedRef   `cbor:"pinned,omitempty" json:"pinned,omitempty"`
-}
-
-func (e Edge) Validate() error {
-	if err := e.ID.Validate(); err != nil {
-		return fmt.Errorf("%w: edge ID: %v", ErrInvalidArtifact, err)
-	}
-	if err := validateDisplayName(e.Name); err != nil {
-		return fmt.Errorf("%w: edge name: %v", ErrInvalidArtifact, err)
-	}
-	if err := e.Relation.Validate(); err != nil {
-		return fmt.Errorf("%w: edge relation: %v", ErrInvalidArtifact, err)
-	}
-	if err := e.Target.Validate(); err != nil {
-		return fmt.Errorf("%w: edge target: %v", ErrInvalidArtifact, err)
-	}
-	switch e.Strength {
-	case EdgePinned:
-		if e.Pinned == nil {
-			return fmt.Errorf("%w: pinned edge %q has no sealed reference", ErrInvalidArtifact, e.Name)
-		}
-		if err := e.Pinned.Validate(); err != nil {
-			return fmt.Errorf("%w: pinned edge %q: %v", ErrInvalidArtifact, e.Name, err)
-		}
-	case EdgeLogical:
-		if e.Pinned != nil {
-			return fmt.Errorf("%w: logical edge %q must not pin a revision", ErrInvalidArtifact, e.Name)
-		}
-	default:
-		return fmt.Errorf("%w: edge %q has invalid strength %q", ErrInvalidArtifact, e.Name, e.Strength)
-	}
-	return nil
-}
-
-// SealedRef binds an encrypted revision to its material and access grant.
-type SealedRef struct {
-	Revision digest.Digest `cbor:"revision" json:"revision"`
-	Material digest.Digest `cbor:"material" json:"material"`
-	Grant    digest.Digest `cbor:"grant" json:"grant"`
-}
-
-func (r SealedRef) Validate() error {
-	if err := validateDigest(r.Revision); err != nil {
-		return fmt.Errorf("%w: revision digest: %w", ErrInvalidArtifact, err)
-	}
-	if err := validateDigest(r.Material); err != nil {
-		return fmt.Errorf("%w: material digest: %w", ErrInvalidArtifact, err)
-	}
-	if err := validateDigest(r.Grant); err != nil {
-		return fmt.Errorf("%w: grant digest: %w", ErrInvalidArtifact, err)
-	}
-	return nil
-}
-
-type Revision struct {
+type Artifact struct {
 	APIVersion string       `cbor:"apiVersion" json:"apiVersion"`
-	Kind       Kind         `cbor:"kind" json:"kind"`
 	UID        UUID         `cbor:"uid" json:"uid"`
 	Schema     TypeRef      `cbor:"schema" json:"schema"`
 	Metadata   Metadata     `cbor:"metadata" json:"metadata"`
-	Payloads   []PayloadRef `cbor:"payloads,omitempty" json:"payloads,omitempty"`
-	Edges      []Edge       `cbor:"edges,omitempty" json:"edges,omitempty"`
+	Payloads   []PayloadRef `cbor:"payloads" json:"payloads"`
 }
 
-func (r Revision) Validate() error {
+func (r Artifact) Validate() error {
 	if r.APIVersion != APIVersion {
 		return fmt.Errorf("%w: unsupported API version %q", ErrInvalidArtifact, r.APIVersion)
 	}
-	if r.Kind != KindResource && r.Kind != KindCollection {
-		return fmt.Errorf("%w: unsupported node kind %q", ErrInvalidArtifact, r.Kind)
-	}
 	if err := r.UID.Validate(); err != nil {
-		return fmt.Errorf("%w: revision UID: %v", ErrInvalidArtifact, err)
+		return fmt.Errorf("%w: artifact UID: %v", ErrInvalidArtifact, err)
 	}
 	if err := r.Schema.Validate(); err != nil {
 		return fmt.Errorf("%w: schema: %v", ErrInvalidArtifact, err)
@@ -356,45 +207,18 @@ func (r Revision) Validate() error {
 		return err
 	}
 	if len(r.Payloads) > MaxPayloads {
-		return fmt.Errorf("%w: revision exceeds %d payloads", ErrInvalidArtifact, MaxPayloads)
-	}
-	if len(r.Edges) > MaxEdges {
-		return fmt.Errorf("%w: revision exceeds %d edges", ErrInvalidArtifact, MaxEdges)
-	}
-	if r.Kind == KindResource && len(r.Payloads) == 0 {
-		return fmt.Errorf("%w: Resource requires at least one payload", ErrInvalidArtifact)
-	}
-	if r.Kind == KindCollection && len(r.Payloads) != 0 {
-		return fmt.Errorf("%w: Collection must not contain payloads", ErrInvalidArtifact)
+		return fmt.Errorf("%w: artifact exceeds %d payloads", ErrInvalidArtifact, MaxPayloads)
 	}
 
 	payloadNames := make(map[string]struct{}, len(r.Payloads))
 	for i, payload := range r.Payloads {
 		if err := payload.Validate(); err != nil {
-			return fmt.Errorf("%w: payloads[%d]: %v", ErrInvalidArtifact, i, err)
+			return fmt.Errorf("%w: payloads[%d]: %w", ErrInvalidArtifact, i, err)
 		}
 		if _, exists := payloadNames[payload.Name]; exists {
 			return fmt.Errorf("%w: duplicate payload name %q", ErrInvalidArtifact, payload.Name)
 		}
 		payloadNames[payload.Name] = struct{}{}
-	}
-	edgeIDs := make(map[UUID]struct{}, len(r.Edges))
-	edgeNames := make(map[string]struct{}, len(r.Edges))
-	for i, edge := range r.Edges {
-		if err := edge.Validate(); err != nil {
-			return fmt.Errorf("%w: edges[%d]: %v", ErrInvalidArtifact, i, err)
-		}
-		if _, exists := edgeIDs[edge.ID]; exists {
-			return fmt.Errorf("%w: duplicate edge ID %q", ErrInvalidArtifact, edge.ID)
-		}
-		edgeIDs[edge.ID] = struct{}{}
-		if _, exists := edgeNames[edge.Name]; exists {
-			return fmt.Errorf("%w: duplicate edge name %q", ErrInvalidArtifact, edge.Name)
-		}
-		edgeNames[edge.Name] = struct{}{}
-		if edge.Relation == MemberRelation() && (r.Kind != KindCollection || edge.Strength != EdgePinned) {
-			return fmt.Errorf("%w: Member edge %q must be pinned from a Collection", ErrInvalidArtifact, edge.Name)
-		}
 	}
 	return nil
 }

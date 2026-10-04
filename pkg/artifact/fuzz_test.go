@@ -2,8 +2,8 @@ package artifact
 
 import "testing"
 
-func FuzzDecodeRevision(f *testing.F) {
-	seed, err := EncodeRevision(validResource())
+func FuzzDecodeArtifact(f *testing.F) {
+	seed, err := EncodeArtifact(validArtifact())
 	if err != nil {
 		f.Fatalf("seed: %v", err)
 	}
@@ -11,13 +11,13 @@ func FuzzDecodeRevision(f *testing.F) {
 	f.Add([]byte{0xff})
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		revision, err := DecodeRevision(data)
+		artifact, err := DecodeArtifact(data)
 		if err != nil {
 			return
 		}
-		encoded, err := EncodeRevision(revision)
+		encoded, err := EncodeArtifact(artifact)
 		if err != nil {
-			t.Fatalf("accepted revision no longer encodes: %v", err)
+			t.Fatalf("accepted artifact no longer encodes: %v", err)
 		}
 		if string(encoded) != string(data) {
 			t.Fatal("accepted non-canonical representation")

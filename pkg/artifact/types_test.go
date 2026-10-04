@@ -13,7 +13,7 @@ import (
 func TestParseUUID(t *testing.T) {
 	t.Parallel()
 
-	if got, err := ParseUUID(string(testResourceUID)); err != nil || got != testResourceUID {
+	if got, err := ParseUUID(string(testArtifactUID)); err != nil || got != testArtifactUID {
 		t.Fatalf("ParseUUID(valid) = %q, %v", got, err)
 	}
 
@@ -41,23 +41,13 @@ func TestTypeRefValidation(t *testing.T) {
 	if got.String() != "customer.example/v2beta3/DatabaseDump" {
 		t.Fatalf("String() = %q", got.String())
 	}
-	if err := got.ValidateExtension(); err != nil {
-		t.Fatalf("ValidateExtension(custom): %v", err)
-	}
-
-	reserved, err := ParseTypeRef("schemas.enbu.net/v1alpha1/Opaque")
-	if err != nil {
-		t.Fatalf("ParseTypeRef(reserved): %v", err)
-	}
-	if err := reserved.ValidateExtension(); !errors.Is(err, ErrReservedNamespace) {
-		t.Fatalf("ValidateExtension(reserved) = %v, want ErrReservedNamespace", err)
-	}
 
 	for _, value := range []string{
 		"example.com/v1",
 		"Example.com/v1/Opaque",
 		"example.com/1/Opaque",
 		"example.com/v0/Opaque",
+		"example.com/v" + strings.Repeat("1", 63) + "/Opaque",
 		"example.com/v1/opaque",
 	} {
 		if _, err := ParseTypeRef(value); !errors.Is(err, ErrInvalidArtifact) {
@@ -69,7 +59,7 @@ func TestTypeRefValidation(t *testing.T) {
 func TestMetadataValidation(t *testing.T) {
 	t.Parallel()
 
-	valid := validResource().Metadata
+	valid := validArtifact().Metadata
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid metadata: %v", err)
 	}
@@ -97,40 +87,9 @@ func TestMetadataValidation(t *testing.T) {
 		}
 	}
 
-	extension := Metadata{Name: "name", Labels: map[string]string{"enbu.net/internal": "true"}}
-	if err := extension.ValidateExtension(); !errors.Is(err, ErrReservedNamespace) {
-		t.Fatalf("ValidateExtension() = %v, want ErrReservedNamespace", err)
-	}
-
 	tooLarge := Metadata{Name: "name", Annotations: map[string]string{"note": strings.Repeat("x", MaxMetadataBytes)}}
 	if err := tooLarge.Validate(); !errors.Is(err, ErrInvalidArtifact) {
 		t.Fatalf("oversized metadata = %v, want ErrInvalidArtifact", err)
-	}
-}
-
-func TestMetadataExtensionNamespace(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		key      string
-		reserved bool
-	}{
-		{"enbu.net/internal", true},
-		{"schemas.enbu.net/internal", true},
-		{"not-enbu.net/internal", false},
-		{"enbu.net.example/internal", false},
-		{"internal", false},
-	} {
-		t.Run(tc.key, func(t *testing.T) {
-			m := Metadata{Name: "name", Annotations: map[string]string{tc.key: "value"}}
-			err := m.ValidateExtension()
-			if tc.reserved {
-				if !errors.Is(err, ErrReservedNamespace) {
-					t.Fatalf("error = %v, want reserved namespace", err)
-				}
-			} else if err != nil {
-				t.Fatal(err)
-			}
-		})
 	}
 }
 
@@ -164,118 +123,23 @@ func TestPayloadValidation(t *testing.T) {
 			sum := sha512.Sum512([]byte("content"))
 			p.Digest = digest.Digest(fmt.Sprintf("sha512:%x", sum))
 		}},
-		{"negative size", func(p *PayloadRef) { p.Size = -1 }},
+		{"uppercase digest", func(p *PayloadRef) { p.Digest = digest.Digest("sha256:" + strings.Repeat("A", 64)) }},
+		{"short digest", func(p *PayloadRef) { p.Digest = "sha256:abc" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := validResource().Payloads[0]
+			p := validArtifact().Payloads[0]
 			tc.mutate(&p)
 			if err := p.Validate(); !errors.Is(err, ErrInvalidArtifact) {
 				t.Fatalf("Validate() = %v", err)
 			}
 		})
 	}
-	p := validResource().Payloads[0]
+	p := validArtifact().Payloads[0]
 	p.Name = strings.Repeat("x", 253)
 	p.Size = 0
 	p.MediaType = "text/plain; charset=utf-8"
 	if err := p.Validate(); err != nil {
 		t.Fatalf("valid boundary payload: %v", err)
-	}
-}
-
-func TestRevisionRejectsInvalidFieldsAndEdges(t *testing.T) {
-	t.Parallel()
-	validEdge := func() Edge {
-		return Edge{ID: testEdgeID, Name: "related", Relation: TypeRef{Group: "example.com", Version: "v1", Kind: "Related"}, Strength: EdgeLogical, Target: testChildUID}
-	}
-	for _, tc := range []struct {
-		name   string
-		mutate func(*Revision)
-	}{
-		{"API version", func(r *Revision) { r.APIVersion = "v2" }},
-		{"kind", func(r *Revision) { r.Kind = "Unknown" }},
-		{"UID", func(r *Revision) { r.UID = "invalid" }},
-		{"schema", func(r *Revision) { r.Schema.Version = "v0" }},
-		{"metadata", func(r *Revision) { r.Metadata.Name = "" }},
-		{"payload count", func(r *Revision) { r.Payloads = make([]PayloadRef, MaxPayloads+1) }},
-		{"edge count", func(r *Revision) { r.Edges = make([]Edge, MaxEdges+1) }},
-		{"payload", func(r *Revision) { r.Payloads[0].Size = -1 }},
-		{"edge ID", func(r *Revision) { r.Edges[0].ID = "invalid" }},
-		{"edge name", func(r *Revision) { r.Edges[0].Name = "" }},
-		{"edge relation", func(r *Revision) { r.Edges[0].Relation.Kind = "invalid" }},
-		{"edge target", func(r *Revision) { r.Edges[0].Target = "invalid" }},
-		{"edge strength", func(r *Revision) { r.Edges[0].Strength = "unknown" }},
-		{"missing pinned ref", func(r *Revision) { r.Edges[0].Strength = EdgePinned }},
-		{"logical pinned ref", func(r *Revision) { r.Edges[0].Pinned = &SealedRef{} }},
-		{"pinned revision", func(r *Revision) { r.Edges[0].Strength = EdgePinned; r.Edges[0].Pinned = &SealedRef{} }},
-		{"pinned material", func(r *Revision) {
-			r.Edges[0].Strength = EdgePinned
-			r.Edges[0].Pinned = &SealedRef{Revision: digest.FromString("r")}
-		}},
-		{"pinned grant", func(r *Revision) {
-			r.Edges[0].Strength = EdgePinned
-			r.Edges[0].Pinned = &SealedRef{Revision: digest.FromString("r"), Material: digest.FromString("m")}
-		}},
-		{"duplicate edge ID", func(r *Revision) { e := validEdge(); e.Name = "other"; r.Edges = append(r.Edges, e) }},
-		{"duplicate edge name", func(r *Revision) { e := validEdge(); e.ID = testResourceUID; r.Edges = append(r.Edges, e) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := validResource()
-			r.Edges = []Edge{validEdge()}
-			tc.mutate(&r)
-			if err := r.Validate(); !errors.Is(err, ErrInvalidArtifact) {
-				t.Fatalf("Validate() = %v", err)
-			}
-		})
-	}
-}
-
-func TestRevisionKindAndUniqueness(t *testing.T) {
-	t.Parallel()
-
-	resource := validResource()
-	if err := resource.Validate(); err != nil {
-		t.Fatalf("valid Resource: %v", err)
-	}
-
-	collection := Revision{
-		APIVersion: APIVersion,
-		Kind:       KindCollection,
-		UID:        testChildUID,
-		Schema:     TypeRef{Group: "example.com", Version: "v1", Kind: "Environment"},
-		Metadata:   Metadata{Name: "production"},
-	}
-	if err := collection.Validate(); err != nil {
-		t.Fatalf("valid Collection: %v", err)
-	}
-
-	emptyResource := resource
-	emptyResource.Payloads = nil
-	if err := emptyResource.Validate(); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("empty Resource = %v, want ErrInvalidArtifact", err)
-	}
-
-	collection.Payloads = resource.Payloads
-	if err := collection.Validate(); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("Collection payload = %v, want ErrInvalidArtifact", err)
-	}
-
-	duplicatePayload := resource
-	duplicatePayload.Payloads = append(duplicatePayload.Payloads, duplicatePayload.Payloads[0])
-	if err := duplicatePayload.Validate(); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("duplicate payload = %v, want ErrInvalidArtifact", err)
-	}
-
-	logicalMember := resource
-	logicalMember.Edges = []Edge{{
-		ID:       testEdgeID,
-		Name:     "member",
-		Relation: MemberRelation(),
-		Strength: EdgeLogical,
-		Target:   testChildUID,
-	}}
-	if err := logicalMember.Validate(); !errors.Is(err, ErrInvalidArtifact) {
-		t.Fatalf("logical Member = %v, want ErrInvalidArtifact", err)
 	}
 }
 
@@ -288,8 +152,4 @@ func TestDigestValidationPreservesNestedCause(t *testing.T) {
 		t.Fatalf("PayloadRef.Validate() = %v, want ErrDigestInvalidFormat", err)
 	}
 
-	sealed := SealedRef{Revision: invalid, Material: digest.FromString("material"), Grant: digest.FromString("grant")}
-	if err := sealed.Validate(); !errors.Is(err, digest.ErrDigestInvalidFormat) {
-		t.Fatalf("SealedRef.Validate() = %v, want ErrDigestInvalidFormat", err)
-	}
 }
