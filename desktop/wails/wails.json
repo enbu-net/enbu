@@ -3,7 +3,7 @@
   "name": "enbu-desktop",
   "outputfilename": "enbu-desktop",
   "frontend:dir": "../../web",
-  "frontend:install": "vp install --frozen-lockfile",
+  "frontend:install": "pnpm install --frozen-lockfile",
   "frontend:build": "vp run build",
   "frontend:dev:watcher": "vp run dev",
   "frontend:dev:serverUrl": "http://localhost:5173",

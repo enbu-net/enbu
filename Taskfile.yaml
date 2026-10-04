@@ -246,6 +246,7 @@ tasks:
     run: once
     dir: web
     cmds:
+      - vp env off
       - vp install --frozen-lockfile
 
   gui/build/frontend:
