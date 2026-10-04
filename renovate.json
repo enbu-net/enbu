@@ -11,7 +11,7 @@
   "configMigration": true,
   "minimumReleaseAge": "3 days",
   "automerge": true,
-  "platformAutomerge": true,
+  "platformAutomerge": false,
   "packageRules": [
     {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
