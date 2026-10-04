@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 func TestListHistory_Empty(t *testing.T) {
@@ -53,8 +54,8 @@ func TestDiffHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantEntries := []HistoryEntry{
-		{Index: 1, Timestamp: time.UnixMilli(1000), Tag: "secrets-default-1000"},
-		{Index: 2, Timestamp: time.UnixMilli(2000), Tag: "secrets-default-2000"},
+		{Index: 1, Timestamp: time.UnixMilli(1000), Tag: snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111"},
+		{Index: 2, Timestamp: time.UnixMilli(2000), Tag: snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111"},
 	}
 	if !reflect.DeepEqual(entries, wantEntries) {
 		t.Fatalf("history = %#v, want %#v", entries, wantEntries)
@@ -84,22 +85,21 @@ func newHistoryTestApp(t *testing.T) *App {
 	t.Helper()
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, nil)
-	a.RepositoryDir = t.TempDir()
 	// Insert newest first and include tags which must be ignored.
 	for _, snapshot := range []struct {
 		tag     string
 		secrets map[string]string
 	}{
-		{"secrets-default-2000", map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}},
-		{"secrets-default-1000", map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"}},
-		{"secrets-production-3000", map[string]string{"OTHER_ENV": "value"}},
-		{"secrets-default-invalid", map[string]string{"INVALID_TAG": "value"}},
+		{snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}},
+		{snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"}},
+		{snapshotPrefix("production") + "3000000000-11111111-1111-4111-8111-111111111111", map[string]string{"OTHER_ENV": "value"}},
+		{snapshotPrefix("default") + "invalid", map[string]string{"INVALID_TAG": "value"}},
 	} {
 		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(snapshot.secrets), []string{kp.PublicKey})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := a.Registry.Push(context.Background(), a.registryRef("owner", "repo")+":"+snapshot.tag, "application/vnd.enbu.secrets.age.v1", ciphertext, "tok", nil); err != nil {
+		if err := a.Storage.Put(context.Background(), snapshot.tag, storage.Object{MediaType: secretsMediaType, Data: ciphertext}, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

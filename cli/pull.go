@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
@@ -41,6 +42,9 @@ func newPullCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 
+			if a.RepositoryDir != "" && !filepath.IsAbs(output) {
+				output = filepath.Join(a.RepositoryDir, output)
+			}
 			if err := os.WriteFile(output, dotenv, 0o600); err != nil {
 				return fmt.Errorf("writing %s: %w", output, err)
 			}

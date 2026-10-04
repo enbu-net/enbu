@@ -4,25 +4,17 @@ import (
 	"context"
 
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/enbu-net/enbu/pkg/provider"
 )
-
-type Registry interface {
-	Push(ctx context.Context, ref string, mediaType string, data []byte, token string, opts *oci.PushOptions) error
-	Pull(ctx context.Context, ref string, token string) ([]byte, error)
-	ListTags(ctx context.Context, ref string, token string) ([]string, error)
-	GetDigest(ctx context.Context, ref string, token string) (string, error)
-}
 
 type TokenProvider interface {
 	LoadToken() (accessToken string, username string, err error)
 }
 
 type IdentityStore interface {
-	Create(owner, repo string) (identity.Identity, identity.PublicInfo, string, error)
-	Load(owner, repo string) (identity.Identity, error)
-	Info(owner, repo string) (identity.PublicInfo, error)
+	Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
+	Load(workspaceID string) (identity.Identity, error)
+	Info(workspaceID string) (identity.PublicInfo, error)
 	Doctor() identity.Diagnosis
 }
 

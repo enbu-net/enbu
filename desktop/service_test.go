@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -294,8 +295,25 @@ func TestGetOAuthLoginStatus(t *testing.T) {
 	}
 }
 
+type concurrentLogBuffer struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
+
+func (b *concurrentLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.Write(p)
+}
+
+func (b *concurrentLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buffer.String()
+}
+
 func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
-	var logs bytes.Buffer
+	var logs concurrentLogBuffer
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
@@ -382,7 +400,7 @@ func TestListRepositoriesRemovesLegacyDuplicates(t *testing.T) {
 func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	original, err := os.Getwd()
@@ -411,7 +429,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	keyStore := &desktopKeyStore{values: make(map[string][]byte)}
@@ -431,7 +449,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyStore.values[app.RepoKeystoreKey("octo", "hello")] = []byte(identity.String())
+	keyStore.values["11111111-1111-4111-8111-111111111111"] = []byte(identity.String())
 	info, err = s.GetRepoStatus()
 	if err != nil {
 		t.Fatal(err)
@@ -444,7 +462,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a := app.New()
@@ -454,7 +472,7 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	content := "version = \"v1alpha1\"\n[env.dev]\noutput = \"secrets.local\"\n"
+	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"secrets.local\"\n"
 	if err := s.WriteConfig(content); err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +488,7 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha1\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	a := app.New()
@@ -482,7 +500,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 
 	for _, content := range []string{
 		"not valid toml =",
-		"version = \"v1alpha1\"\n[env.dev]\noutput = \"../outside\"\n",
+		"version = \"v1alpha2\"\n[env.dev]\noutput = \"../outside\"\n",
 	} {
 		err := s.WriteConfig(content)
 		if !apperr.Is(err, apperr.CodeInvalidArgument) {

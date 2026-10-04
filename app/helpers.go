@@ -8,13 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
+	"crypto/sha256"
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/oci"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -22,15 +25,11 @@ const (
 	DefaultEnvironment = "default"
 )
 
-func RepoKeystoreKey(owner, repo string) string {
-	return fmt.Sprintf("%s/%s", strings.ToLower(owner), strings.ToLower(repo))
-}
-
-func LoadIdentitiesForRepo(store IdentityStore, owner, repo string) ([]agecrypto.Identity, error) {
+func LoadIdentities(store IdentityStore, workspaceID string) ([]agecrypto.Identity, error) {
 	if store == nil {
 		return nil, fmt.Errorf("identity store is not initialized")
 	}
-	id, err := store.Load(owner, repo)
+	id, err := store.Load(workspaceID)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, apperr.New(apperr.CodeNotInitialized, "no identity found (run 'enbu init' first)", nil)
@@ -49,72 +48,79 @@ func CloseIdentities(ids []agecrypto.Identity) {
 	}
 }
 
-func PullAllRecipients(ctx context.Context, reg Registry, ref string, token string) ([]string, error) {
-	tags, err := reg.ListTags(ctx, ref, token)
+const (
+	workspaceKey       = "enbu-workspace"
+	workspaceMediaType = "application/vnd.enbu.workspace.v1"
+	secretsMediaType   = "application/vnd.enbu.secrets.age.v1"
+	recipientMediaType = "application/vnd.enbu.recipient.age.v1"
+)
+
+func RecipientKey(publicKey string) string {
+	return fmt.Sprintf("recipient-%x", sha256.Sum256([]byte(strings.TrimSpace(publicKey))))
+}
+
+func PullAllRecipients(ctx context.Context, store storage.Storage) ([]string, error) {
+	keys, err := store.List(ctx, RecipientTagPrefix())
 	if err != nil {
+		return nil, storageError(err)
+	}
+	objects := make([]storage.Object, len(keys))
+	group, ctx := errgroup.WithContext(ctx)
+	group.SetLimit(8)
+	for i, key := range keys {
+		group.Go(func() error { o, _, err := store.Get(ctx, key); objects[i] = o; return storageError(err) })
+	}
+	if err := group.Wait(); err != nil {
 		return nil, err
 	}
-
 	var publicKeys []string
-	for _, tag := range tags {
-		if !IsUserRecipientTag(tag) {
-			continue
+	seen := map[string]bool{}
+	for i, key := range keys {
+		o := objects[i]
+		publicKey := strings.TrimSpace(string(o.Data))
+		if o.MediaType != recipientMediaType || key != RecipientKey(publicKey) {
+			return nil, fmt.Errorf("invalid recipient object %s", key)
 		}
-		tagRef := fmt.Sprintf("%s:%s", ref, tag)
-		data, err := reg.Pull(ctx, tagRef, token)
-		if err != nil {
-			return nil, fmt.Errorf("pulling recipient %s: %w", tag, err)
+		if _, err := age.ParseRecipient(publicKey); err != nil {
+			return nil, err
 		}
-		publicKeys = append(publicKeys, string(data))
+		if !seen[publicKey] {
+			publicKeys = append(publicKeys, publicKey)
+			seen[publicKey] = true
+		}
 	}
 	return publicKeys, nil
 }
 
-func PullSecretsWithDigest(ctx context.Context, reg Registry, ref, token string, identities ...agecrypto.Identity) (map[string]string, string, error) {
-	digest, err := reg.GetDigest(ctx, ref, token)
+func PullSecretsWithVersion(ctx context.Context, store storage.Storage, key string, identities ...agecrypto.Identity) (map[string]string, storage.Version, error) {
+	o, version, err := store.Get(ctx, key)
 	if err != nil {
-		return nil, "", err
+		return nil, "", storageError(err)
 	}
-
-	ciphertext, err := reg.Pull(ctx, ref, token)
-	if err != nil {
-		return nil, "", err
-	}
-
-	plaintext, err := age.Decrypt(ciphertext, identities...)
-	if err != nil {
-		return nil, "", err
-	}
-
-	secrets, err := bundle.Unmarshal(plaintext)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return secrets, digest, nil
+	secrets, err := decryptSecretsObject(o, identities...)
+	return secrets, version, err
 }
 
-func SecretsExists(ctx context.Context, reg Registry, ref, token string) bool {
-	_, err := reg.GetDigest(ctx, ref, token)
-	return err == nil
+func decryptSecretsObject(o storage.Object, identities ...agecrypto.Identity) (map[string]string, error) {
+	if o.MediaType != secretsMediaType {
+		return nil, fmt.Errorf("unexpected secrets media type %q", o.MediaType)
+	}
+	plaintext, err := age.Decrypt(o.Data, identities...)
+	if err != nil {
+		return nil, err
+	}
+	return bundle.Unmarshal(plaintext)
 }
 
 func secretsTag(env string) string {
 	if env == "" {
 		env = DefaultEnvironment
 	}
-	return "secrets-" + oci.CleanTag(env)
+	return "secrets-" + env
 }
 
 func RecipientTagPrefix() string {
 	return "recipient-"
-}
-
-func IsUserRecipientTag(tag string) bool {
-	if tag == "recipient-github-actions" {
-		return false
-	}
-	return strings.HasPrefix(tag, "recipient-")
 }
 
 func IsNotFoundError(err error) bool {
@@ -172,29 +178,34 @@ func IsNotInitializedError(err error) bool {
 		apperr.Is(err, apperr.CodeNotInitialized)
 }
 
-func snapshotTag(env string) string {
+func snapshotPrefix(env string) string {
 	if env == "" {
 		env = DefaultEnvironment
 	}
-	return fmt.Sprintf("secrets-%s-%d", oci.CleanTag(env), time.Now().UnixMilli())
+	return fmt.Sprintf("hist-%x-", sha256.Sum256([]byte(env)))
 }
 
-func IsSnapshotTag(env, tag string) bool {
-	prefix := "secrets-" + oci.CleanTag(env) + "-"
-	if !strings.HasPrefix(tag, prefix) {
-		return false
-	}
-	suffix := strings.TrimPrefix(tag, prefix)
-	_, err := strconv.ParseInt(suffix, 10, 64)
-	return err == nil
+func snapshotTag(env string) string {
+	return fmt.Sprintf("%s%d-%s", snapshotPrefix(env), time.Now().UnixNano(), uuid.NewV4().String())
 }
+
+func IsSnapshotTag(env, tag string) bool { _, ok := snapshotTimestamp(env, tag); return ok }
 
 func snapshotTimestamp(env, tag string) (time.Time, bool) {
-	prefix := "secrets-" + oci.CleanTag(env) + "-"
-	suffix := strings.TrimPrefix(tag, prefix)
-	ts, err := strconv.ParseInt(suffix, 10, 64)
-	if err != nil {
+	prefix := snapshotPrefix(env)
+	if !strings.HasPrefix(tag, prefix) {
 		return time.Time{}, false
 	}
-	return time.UnixMilli(ts), true
+	tsText, id, ok := strings.Cut(strings.TrimPrefix(tag, prefix), "-")
+	if !ok {
+		return time.Time{}, false
+	}
+	if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
+		return time.Time{}, false
+	}
+	ts, err := strconv.ParseInt(tsText, 10, 64)
+	if err != nil || ts < 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(0, ts), true
 }

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -45,7 +46,7 @@ func TestNativeTPMCLI(t *testing.T) {
 		t.Fatalf("init did not save a native TPM Identity: %+v", shown)
 	}
 	m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
-	metadataPath := m.Path("e2e", "identity")
+	metadataPath := m.Path(h.workspaceID)
 	saved, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatal(err)
@@ -63,8 +64,8 @@ func TestNativeTPMCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := host + "/e2e/identity-enbu"
-	if err := oci.Push(context.Background(), ref+":recipient-software-"+age.Fingerprint(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
+	ref := strings.TrimPrefix(h.storageURL, "oci://")
+	if err := oci.Push(context.Background(), ref+":"+app.RecipientKey(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
 		t.Fatal(err)
 	}
 	h.run("sync")

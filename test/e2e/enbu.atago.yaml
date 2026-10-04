@@ -204,7 +204,7 @@ scenarios:
           stdout:
             json: {path: "$.error.code", equals: invalid_argument}
 
-  - name: init creates config ignore rules key recipient and Git commit
+  - name: init creates workspace config ignore rules identity and recipient
     tags: [init, registry]
     env:
       ENBU_TEST_COVERAGE_NAME: "Atago/init creates config ignore rules key recipient and Git commit"
@@ -214,24 +214,21 @@ scenarios:
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/e2e/init-human.git}
       - run:
-          command: enbu init
+          command: enbu init --storage oci://localhost:5001/e2e/scenario-6 --plain-http
           timeout: 15s
       - assert:
           exit_code: 0
           stdout:
-            contains: ["Created enbu.toml", "Updated .gitignore", "Registered user public key", "enbu initialized"]
+            contains: ["Workspace:", "Storage:", "Recipient:"]
           stderr: {empty: true}
       - assert:
           file:
             path: enbu.toml
-            contains: ["version = \"v1alpha1\"", "default_env = \"default\""]
+            contains: ["version = \"v1alpha2\"", "default_env = \"default\""]
       - assert:
           file:
             path: .gitignore
             contains: [".env", ".env.*", "!.env.example"]
-      - run: {command: git log -1 --pretty=%s}
-      - assert:
-          stdout: {equals: "chore: add enbu config"}
       - assert:
           dir:
             path: data/enbu/identities
@@ -247,7 +244,7 @@ scenarios:
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/org-e2e/init-json.git}
       - run:
-          command: enbu init --json
+          command: enbu init --storage oci://localhost:5001/e2e/scenario-7 --plain-http --json
           timeout: 15s
       - assert:
           exit_code: 0
@@ -255,10 +252,7 @@ scenarios:
             json:
               - {path: "$.ok", equals: true}
               - {path: "$.data.mode", equals: initialize}
-              - {path: "$.data.repository.owner", equals: org-e2e}
-              - {path: "$.data.registry", equals: "localhost:5001/org-e2e/init-json-enbu"}
               - {path: "$.data.key_created", equals: true}
-              - {path: "$.data.recipient_registered", equals: true}
           stderr: {empty: true}
 
   - name: environment create switch previous rename list and delete persist state
@@ -269,7 +263,8 @@ scenarios:
       - fixture:
           file: enbu.toml
           content: |
-            version = "v1alpha1"
+            version = "v1alpha2"
+            workspace_id = "11111111-1111-4111-8111-111111111111"
             default_env = "default"
 
             [env.default]
@@ -313,7 +308,7 @@ scenarios:
       - run: {command: git config user.name "enbu E2E"}
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/e2e/secrets.git}
-      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu init --storage oci://localhost:5001/e2e/scenario-9 --plain-http, timeout: 15s}
       - run: {command: enbu add API_KEY old-secret}
       - assert:
           exit_code: 0
@@ -381,7 +376,7 @@ scenarios:
       - run: {command: git config user.name "enbu E2E"}
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/e2e/history.git}
-      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu init --storage oci://localhost:5001/e2e/scenario-10 --plain-http, timeout: 15s}
       - run: {command: enbu add API_KEY first}
       - run: {command: enbu edit API_KEY second}
       - run: {command: enbu add EXTRA value}
@@ -423,17 +418,17 @@ scenarios:
       - run: {command: git config user.name "enbu E2E"}
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/e2e/team.git}
-      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu init --storage oci://localhost:5001/e2e/scenario-11 --plain-http, timeout: 15s}
       - run: {command: enbu add TEAM_SECRET shared}
       - run:
-          command: enbu init
+          command: enbu init --storage oci://localhost:5001/e2e/scenario-11 --plain-http
           env:
             XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
           timeout: 15s
       - assert:
           exit_code: 0
-          stdout: {contains: "Existing enbu setup detected"}
+          stdout: {contains: "Ask an existing member"}
       - run:
           command: enbu pull --stdout --json
           env:
@@ -473,7 +468,7 @@ scenarios:
       - run: {command: git config user.name "enbu E2E"}
       - run: {command: git config user.email e2e@example.com}
       - run: {command: git remote add origin https://github.com/e2e/tui.git}
-      - run: {command: enbu init, timeout: 15s}
+      - run: {command: enbu init --storage oci://localhost:5001/e2e/scenario-12 --plain-http, timeout: 15s}
       - run: {command: enbu add API_KEY tui-secret}
       - pty:
           command: enbu
@@ -487,7 +482,7 @@ scenarios:
             - send: {key: space}
             - expect_screen: {contains: tui-secret}
             - send: "2"
-            - expect_screen: {contains: e2e-user}
+            - expect_screen: {contains: "↻ Refresh"}
             - send: "3"
             - expect_screen: {contains: "Default env"}
             - send: "1"
@@ -505,7 +500,8 @@ scenarios:
       - fixture:
           file: enbu.toml
           content: |
-            version = "v1alpha1"
+            version = "v1alpha2"
+            workspace_id = "11111111-1111-4111-8111-111111111111"
             default_env = "default"
 
             [env.default]

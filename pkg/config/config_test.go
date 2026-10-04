@@ -6,7 +6,25 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"uuid"
 )
+
+func TestNewProjectWorkspaceIDs(t *testing.T) {
+	first := NewProjectWithEnvironment("default")
+	second := NewProjectWithEnvironment("default")
+	if first.WorkspaceID == second.WorkspaceID {
+		t.Fatal("different workspaces share an identity")
+	}
+	for _, cfg := range []*ProjectConfig{first, second} {
+		id, err := uuid.Parse(cfg.WorkspaceID)
+		if err != nil {
+			t.Fatalf("invalid workspace UUID %q: %v", cfg.WorkspaceID, err)
+		}
+		if id.String() != cfg.WorkspaceID || id[6]>>4 != 4 || id[8]>>6 != 2 {
+			t.Fatalf("workspace ID is not a canonical RFC 9562 UUID v4: %q", cfg.WorkspaceID)
+		}
+	}
+}
 
 func TestParseGitRemoteSSH(t *testing.T) {
 	owner, repo, err := ParseGitRemote("git@github.com:enbu-net/enbu.git")
@@ -83,7 +101,7 @@ func TestLoadProjectConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	content := `version = "v1alpha1"` + "\n"
+	content := `version = "v1alpha2"` + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -92,8 +110,8 @@ func TestLoadProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
-	if cfg.Version != "v1alpha1" {
-		t.Fatalf("got version %q, want %q", cfg.Version, "v1alpha1")
+	if cfg.Version != "v1alpha2" {
+		t.Fatalf("got version %q, want %q", cfg.Version, "v1alpha2")
 	}
 	env, err := cfg.Environment("default")
 	if err != nil {
@@ -115,7 +133,7 @@ func TestLoadProjectConfigWithEnvironments(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	content := `version = "v1alpha1"
+	content := `version = "v1alpha2"
 
 [env.dev]
 output = ".env.dev"
@@ -193,7 +211,7 @@ func TestLoadProjectUnsupportedVersion(t *testing.T) {
 }
 
 func TestEnvironmentWithoutSection(t *testing.T) {
-	cfg := &ProjectConfig{Version: "v1alpha1"}
+	cfg := &ProjectConfig{Version: "v1alpha2"}
 	env, err := cfg.Environment("default")
 	if err != nil {
 		t.Fatalf("Environment(default) with no sections: %v", err)
@@ -227,8 +245,8 @@ func TestSaveProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject after save: %v", err)
 	}
-	if loaded.Version != "v1alpha1" {
-		t.Fatalf("got version %q, want %q", loaded.Version, "v1alpha1")
+	if loaded.Version != "v1alpha2" {
+		t.Fatalf("got version %q, want %q", loaded.Version, "v1alpha2")
 	}
 	if loaded.DefaultEnv != "dev" {
 		t.Fatalf("got default %q, want dev", loaded.DefaultEnv)
@@ -248,7 +266,7 @@ func TestMarshalProjectUsesFlatEnvironmentTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalProject: %v", err)
 	}
-	want := "version = \"v1alpha1\"\ndefault_env = \"default\"\n\n[env.default]\noutput = \".env\"\n"
+	want := "version = \"v1alpha2\"\ndefault_env = \"default\"\nworkspace_id = \"" + cfg.WorkspaceID + "\"\n\n[env.default]\noutput = \".env\"\n"
 	if string(content) != want {
 		t.Fatalf("unexpected TOML:\n%s\nwant:\n%s", content, want)
 	}
@@ -256,7 +274,7 @@ func TestMarshalProjectUsesFlatEnvironmentTables(t *testing.T) {
 
 func TestMarshalProjectSortsAndQuotesEnvironmentNames(t *testing.T) {
 	cfg := &ProjectConfig{
-		Version:    "v1alpha1",
+		Version:    "v1alpha2",
 		DefaultEnv: "a.b",
 		Environments: map[string]EnvironmentConfig{
 			"z":   {Output: ".env.z"},
@@ -267,7 +285,7 @@ func TestMarshalProjectSortsAndQuotesEnvironmentNames(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalProject: %v", err)
 	}
-	want := "version = \"v1alpha1\"\ndefault_env = \"a.b\"\n\n[env.\"a.b\"]\noutput = \".env.dotted\"\n\n[env.z]\noutput = \".env.z\"\n"
+	want := "version = \"v1alpha2\"\ndefault_env = \"a.b\"\n\n[env.\"a.b\"]\noutput = \".env.dotted\"\n\n[env.z]\noutput = \".env.z\"\n"
 	if string(content) != want {
 		t.Fatalf("unexpected TOML:\n%s\nwant:\n%s", content, want)
 	}
@@ -381,11 +399,11 @@ func TestLocalState_RoundTrip(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	want := &LocalConfig{Previous: "dev"}
-	if err := SaveLocalState("myorg", "myrepo", want); err != nil {
+	if err := SaveLocalState("myorg/myrepo", want); err != nil {
 		t.Fatalf("SaveLocalState: %v", err)
 	}
 
-	got, err := LoadLocalState("myorg", "myrepo")
+	got, err := LoadLocalState("myorg/myrepo")
 	if err != nil {
 		t.Fatalf("LoadLocalState: %v", err)
 	}
@@ -397,7 +415,7 @@ func TestLocalState_RoundTrip(t *testing.T) {
 func TestLoadLocalState_Missing(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	cfg, err := LoadLocalState("noorg", "norepo")
+	cfg, err := LoadLocalState("noorg/norepo")
 	if err != nil {
 		t.Fatalf("LoadLocalState: %v", err)
 	}
@@ -409,8 +427,8 @@ func TestLoadLocalState_Missing(t *testing.T) {
 func TestLocalStatePath(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", "/tmp/testxdg")
 
-	path := LocalStatePath("MyOrg", "MyRepo")
-	want := "/tmp/testxdg/enbu/state/myorg/myrepo.toml"
+	path := LocalStatePath("MyOrg/MyRepo")
+	want := filepath.Join("/tmp/testxdg/enbu/state", uuidOrHash("MyOrg/MyRepo")+".toml")
 	if path != want {
 		t.Errorf("LocalStatePath = %q, want %q", path, want)
 	}

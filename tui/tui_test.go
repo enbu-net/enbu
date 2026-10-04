@@ -9,7 +9,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 )
 
-const validProject = `version = "v1alpha1"
+const validProject = `version = "v1alpha2"
 default_env = "default"
 
 [env.default]
@@ -64,7 +64,7 @@ func TestPrepareProjectAtValidatesConfig(t *testing.T) {
 	}{
 		{name: "invalid toml", content: "not = [toml"},
 		{name: "unsupported version", content: "version = \"v2\"\n"},
-		{name: "output escapes repository", content: "version = \"v1alpha1\"\n[env.default]\noutput = \"../outside\"\n"},
+		{name: "output escapes repository", content: "version = \"v1alpha2\"\n[env.default]\noutput = \"../outside\"\n"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
