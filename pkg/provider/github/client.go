@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/enbu-net/enbu/pkg/provider"
-	githubsdk "github.com/google/go-github/v90/github"
+	githubsdk "github.com/google/go-github/v92/github"
 )
 
 type Client struct {
