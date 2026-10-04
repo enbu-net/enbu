@@ -9,7 +9,7 @@
 #   - all
 registries:
 - type: standard
-  ref: v4.566.0 # renovate: depName=aquaproj/aqua-registry
+  ref: v4.570.0 # renovate: depName=aquaproj/aqua-registry
 packages:
 - name: nodejs/node@v26.10.0
 - name: go-task/task@v3.53.1
