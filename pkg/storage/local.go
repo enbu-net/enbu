@@ -141,13 +141,19 @@ func (s localBlobs) Put(ctx context.Context, src io.Reader) (digest.Digest, erro
 	if err != nil {
 		return "", err
 	}
-	if err := rejectSymlink(root, path); err != nil {
+	if _, err := root.Lstat(path); err == nil {
+		// Same digest, same content. Renaming over it would fail on Windows
+		// while another process has the blob open.
+		if err := rejectSymlink(root, path); err != nil {
+			return "", err
+		}
+		return d, nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	// Renaming over an existing blob replaces identical content.
 	return d, commitLocalFile(root, pending, path, func(r *os.Root) error { return syncSubdir(r, blobDir) })
 }
 

@@ -91,10 +91,25 @@ func (s s3Blobs) Put(ctx context.Context, src io.Reader) (digest.Digest, error) 
 	opts := minio.PutObjectOptions{ContentType: "application/octet-stream", DisableMultipart: true}
 	opts.SetMatchETagExcept("*")
 	_, err = s.client.PutObject(ctx, s.bucket, key, f, f.Size, opts)
-	if err = s3Error(err, true); err != nil && !errors.Is(err, ErrConflict) {
+	if err = s3Error(err, true); err == nil {
+		return f.Digest, nil
+	} else if !errors.Is(err, ErrConflict) {
 		return "", err
 	}
-	return f.Digest, nil
+	// The blob already exists. Only its size is checked here (Open verifies the
+	// digest); a truncated leftover is replaced so that Put always repairs it.
+	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		return "", s3Error(err, false)
+	}
+	if info.Size == f.Size {
+		return f.Digest, nil
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	_, err = s.client.PutObject(ctx, s.bucket, key, f, f.Size, minio.PutObjectOptions{ContentType: "application/octet-stream", DisableMultipart: true})
+	return f.Digest, s3Error(err, true)
 }
 
 func (s s3Blobs) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {

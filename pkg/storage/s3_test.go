@@ -222,3 +222,24 @@ func TestS3ErrorMapping(t *testing.T) {
 		}
 	}
 }
+
+func TestS3BlobPutRepairsTruncatedBlob(t *testing.T) {
+	st, raw := minis3Store(t)
+	ctx := context.Background()
+	d := digest.FromString("secret")
+	key, _ := raw.blobKey(d)
+	if _, err := raw.client.PutObject(ctx, raw.bucket, key, bytes.NewReader([]byte("sec")), 3, minio.PutObjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := putBlob(t, st, "secret"); got != d {
+		t.Fatalf("digest=%s", got)
+	}
+	rc, err := st.Blobs.Open(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rc.Close() }()
+	if b, err := io.ReadAll(rc); err != nil || string(b) != "secret" {
+		t.Fatalf("blob=%q %v", b, err)
+	}
+}

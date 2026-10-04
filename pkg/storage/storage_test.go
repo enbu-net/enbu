@@ -253,3 +253,19 @@ func TestLocalLockCancellation(t *testing.T) {
 		t.Fatalf("lock cancellation: %v", err)
 	}
 }
+
+func TestLocalBlobPutKeepsExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	s := NewLocal(dir)
+	d := putBlob(t, s, "same")
+	path := filepath.Join(dir, "blobs", "sha256", d.Encoded())
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putBlob(t, s, "same")
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(before, after) {
+		t.Fatalf("existing blob was replaced: %v", err)
+	}
+}
