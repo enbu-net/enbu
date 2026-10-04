@@ -171,6 +171,7 @@ tasks:
       VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
     cmds:
+      - vp env off
       - go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_41 -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
 
   all/check:
