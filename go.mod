@@ -9,6 +9,8 @@ require (
 	filippo.io/age v1.3.2
 	filippo.io/hpke v0.4.0
 	github.com/BurntSushi/toml v1.6.0
+	github.com/aws/aws-sdk-go-v2 v1.47.1
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.1
 	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.2
 	github.com/ebitengine/purego v0.11.1
 	github.com/fxamacker/cbor/v2 v2.9.4
@@ -34,6 +36,9 @@ require (
 	filippo.io/nistec v0.0.4 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.4 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.4 // indirect
+	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
