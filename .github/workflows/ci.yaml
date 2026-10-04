@@ -115,6 +115,8 @@ jobs:
       - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
           run-install: false
+          package-manager: false
+          node-manager: false
 
       - name: Check
         run: task all/check
@@ -156,6 +158,8 @@ jobs:
       - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
           run-install: false
+          package-manager: false
+          node-manager: false
 
       - name: Test
         run: |
@@ -191,6 +195,8 @@ jobs:
       - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
         with:
           run-install: false
+          package-manager: false
+          node-manager: false
 
       - name: Scenario tests
         run: task cli/test/scenario
