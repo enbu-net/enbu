@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/enbu-net/enbu/pkg/provider"
-	githubsdk "github.com/google/go-github/v90/github"
+	githubsdk "github.com/google/go-github/v92/github"
 )
 
 type Client struct {
@@ -109,8 +109,8 @@ func (c *Client) CreateRepository(
 		return nil, c.initErr
 	}
 	repository, _, err := c.sdk.Repositories.Create(ctx, organization, &githubsdk.Repository{
-		Name:    githubsdk.Ptr(name),
-		Private: githubsdk.Ptr(private),
+		Name:    &name,
+		Private: &private,
 	})
 	if err != nil {
 		return nil, err
