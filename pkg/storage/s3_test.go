@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,10 +16,11 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/opencontainers/go-digest"
 	"github.com/yashikota/minis3"
 )
 
-func minis3Store(t *testing.T) *S3 {
+func minis3Store(t *testing.T) (*Store, s3) {
 	t.Helper()
 	server, err := minis3.Run()
 	if err != nil {
@@ -32,37 +34,45 @@ func minis3Store(t *testing.T) *S3 {
 	if err := client.MakeBucket(context.Background(), "enbu-test", minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
 		t.Fatal(err)
 	}
-	return &S3{Client: client, Bucket: "enbu-test", Prefix: "workspace"}
+	return NewS3(client, "enbu-test", "workspace"), s3{client, "enbu-test", "workspace"}
 }
 
-func TestS3Minis3Contract(t *testing.T) { contract(t, minis3Store(t)) }
+func TestS3Minis3Contract(t *testing.T) {
+	st, _ := minis3Store(t)
+	contract(t, st)
+}
 
 func TestS3ListCanceled(t *testing.T) {
-	s := minis3Store(t)
+	st, _ := minis3Store(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := s.List(ctx, ""); !errors.Is(err, context.Canceled) {
+	if _, err := st.Refs.List(ctx, ""); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled list: %v", err)
 	}
 }
 
-func TestS3LargeConditionalWrite(t *testing.T) {
-	s := minis3Store(t)
+func TestS3LargeBlobAndConditionalRef(t *testing.T) {
+	st, _ := minis3Store(t)
 	ctx := context.Background()
-	o := Object{MediaType: "application/test", Data: bytes.Repeat([]byte("x"), MaxPayloadBytes)}
-	if err := s.Put(ctx, "large", o, ""); err != nil {
+	data := bytes.Repeat([]byte("x"), MaxPayloadBytes)
+	d, err := st.Blobs.Put(ctx, bytes.NewReader(data))
+	if err != nil {
 		t.Fatal(err)
 	}
-	got, version, err := s.Get(ctx, "large")
-	if err != nil || !bytes.Equal(got.Data, o.Data) || version == "" {
-		t.Fatalf("large object round trip: version=%q, err=%v", version, err)
+	rc, err := st.Blobs.Open(ctx, d)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := s.Put(ctx, "large", o, "stale"); !errors.Is(err, ErrConflict) {
+	got, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("large blob round trip: %v", err)
+	}
+	if err := st.Refs.Put(ctx, "large", d, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Refs.Put(ctx, "large", d, "stale"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("large stale write: %v", err)
-	}
-	o.Data[0] = 'y'
-	if err := s.Put(ctx, "large", o, version); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -90,12 +100,9 @@ func TestNewS3ClientCredentials(t *testing.T) {
 			} else if err := os.WriteFile(creds, []byte("[enbu-test]\naws_access_key_id=test-key\naws_secret_access_key=test-secret\naws_session_token=test-token\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			body, err := Encode(Object{MediaType: "application/test", Data: []byte("secret")})
-			if err != nil {
-				t.Fatal(err)
-			}
+			target := digest.FromString("secret")
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodGet || r.URL.Path != "/enbu-test/workspace/object.json" {
+				if r.Method != http.MethodGet || r.URL.Path != "/enbu-test/workspace/refs/object" {
 					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 				}
 				if !strings.Contains(r.Header.Get("Authorization"), "Credential=test-key/") ||
@@ -105,17 +112,17 @@ func TestNewS3ClientCredentials(t *testing.T) {
 				}
 				w.Header().Set("ETag", "\"test-etag\"")
 				w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
-				_, _ = w.Write(body)
+				_, _ = w.Write([]byte(target))
 			}))
 			t.Cleanup(server.Close)
 			client, err := NewS3Client(server.URL, "", true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			store := &S3{Client: client, Bucket: "enbu-test", Prefix: "workspace"}
-			got, version, err := store.Get(context.Background(), "object")
-			if err != nil || string(got.Data) != "secret" || version != "test-etag" {
-				t.Fatalf("authenticated read: version=%q, err=%v", version, err)
+			store := NewS3(client, "enbu-test", "workspace")
+			got, version, err := store.Refs.Get(context.Background(), "object")
+			if err != nil || got != target || version != "test-etag" {
+				t.Fatalf("authenticated read: got=%s version=%q, err=%v", got, version, err)
 			}
 		})
 	}
@@ -137,44 +144,58 @@ func TestNewS3ClientEndpointValidation(t *testing.T) {
 }
 
 func TestS3Minis3BucketRoot(t *testing.T) {
-	s := minis3Store(t)
-	s.Prefix = ""
-	if got := s.key("object"); got != "object.json" {
+	st, raw := minis3Store(t)
+	raw.prefix = ""
+	if got := raw.refKey("object"); got != "refs/object" {
 		t.Fatalf("bucket root key = %q", got)
 	}
-	contract(t, s)
+	contract(t, NewS3(raw.client, raw.bucket, ""))
+	_ = st
 }
 
 func TestS3Minis3PrefixAndPagination(t *testing.T) {
-	s := minis3Store(t)
+	st, raw := minis3Store(t)
 	ctx := context.Background()
 	for i := range 1003 {
-		if _, err := s.Client.PutObject(ctx, s.Bucket, s.key(fmt.Sprintf("key-%04d", i)), bytes.NewReader([]byte("test")), 4, minio.PutObjectOptions{}); err != nil {
+		if _, err := raw.client.PutObject(ctx, raw.bucket, raw.refKey(fmt.Sprintf("key-%04d", i)), bytes.NewReader([]byte("test")), 4, minio.PutObjectOptions{}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	other := *s
-	other.Prefix = "workspace-other"
-	if err := other.Put(ctx, "foreign", Object{MediaType: "application/test", Data: []byte("foreign")}, ""); err != nil {
+	other := NewS3(raw.client, raw.bucket, "workspace-other")
+	if err := other.Refs.Put(ctx, "foreign", putBlob(t, other, "foreign"), ""); err != nil {
 		t.Fatal(err)
 	}
-	keys, err := s.List(ctx, "key-")
+	keys, err := st.Refs.List(ctx, "key-")
 	if err != nil || len(keys) != 1003 {
 		t.Fatalf("pagination=%d %v", len(keys), err)
 	}
-	keys, err = other.List(ctx, "")
+	keys, err = other.Refs.List(ctx, "")
 	if err != nil || !reflect.DeepEqual(keys, []string{"foreign"}) {
 		t.Fatalf("prefix=%v %v", keys, err)
 	}
 }
 
 func TestS3Minis3Corruption(t *testing.T) {
-	s := minis3Store(t)
-	if _, err := s.Client.PutObject(context.Background(), s.Bucket, s.key("bad"), bytes.NewReader([]byte("{}")), 2, minio.PutObjectOptions{}); err != nil {
+	st, raw := minis3Store(t)
+	ctx := context.Background()
+	if _, err := raw.client.PutObject(ctx, raw.bucket, raw.refKey("bad"), bytes.NewReader([]byte("{}")), 2, minio.PutObjectOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Get(context.Background(), "bad"); err == nil || errors.Is(err, ErrNotFound) {
-		t.Fatalf("corruption=%v", err)
+	if _, _, err := st.Refs.Get(ctx, "bad"); err == nil || errors.Is(err, ErrNotFound) {
+		t.Fatalf("corrupt ref=%v", err)
+	}
+	d := digest.FromString("secret")
+	key, _ := raw.blobKey(d)
+	if _, err := raw.client.PutObject(ctx, raw.bucket, key, bytes.NewReader([]byte("tampered")), 8, minio.PutObjectOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	rc, err := st.Blobs.Open(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rc.Close() }()
+	if _, err := io.ReadAll(rc); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("tampered blob: %v", err)
 	}
 }
 

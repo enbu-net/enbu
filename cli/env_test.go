@@ -14,6 +14,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type envRegistry struct {
@@ -24,11 +25,7 @@ type envRegistry struct {
 func newEnvRegistry() *envRegistry {
 	return &envRegistry{data: make(map[string][]byte)}
 }
-
-func (e *envRegistry) Capabilities() storage.Capabilities {
-	return storage.Capabilities{AtomicUpdates: true}
-}
-func (e *envRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+func (e *envRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
 	if key == "enbu-workspace" {
 		return workspaceObject(), "workspace", nil
 	}
@@ -36,15 +33,11 @@ func (e *envRegistry) Get(_ context.Context, key string) (storage.Object, storag
 	defer e.mu.RUnlock()
 	data, ok := e.data[key]
 	if !ok {
-		return storage.Object{}, "", storage.ErrNotFound
+		return nil, "", storage.ErrNotFound
 	}
-	media := "application/vnd.enbu.secrets.age.v1"
-	if strings.HasPrefix(key, "recipient-") {
-		media = "application/vnd.enbu.recipient.age.v1"
-	}
-	return storage.Object{MediaType: media, Data: append([]byte(nil), data...)}, storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data))), nil
+	return append([]byte(nil), data...), storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data))), nil
 }
-func (e *envRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+func (e *envRegistry) Put(_ context.Context, key string, o []byte, v storage.Version) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var current storage.Version
@@ -54,7 +47,7 @@ func (e *envRegistry) Put(_ context.Context, key string, o storage.Object, v sto
 	if current != v {
 		return storage.ErrConflict
 	}
-	e.data[key] = append([]byte(nil), o.Data...)
+	e.data[key] = append([]byte(nil), o...)
 	return nil
 }
 func (e *envRegistry) List(_ context.Context, prefix string) ([]string, error) {
@@ -97,7 +90,7 @@ output = ".env.prod"
 	}
 	reg := newEnvRegistry()
 	a := &app.App{
-		Storage:       reg,
+		Storage:       storagetest.FromObjects(reg),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{
@@ -107,7 +100,7 @@ output = ".env.prod"
 
 	a.RepositoryDir = dir
 	prepareCLIApp(t, a)
-	if err := reg.Put(context.Background(), app.RecipientKey(kp.PublicKey), storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(kp.PublicKey)}, ""); err != nil {
+	if err := reg.Put(context.Background(), app.RecipientKey(kp.PublicKey), []byte(kp.PublicKey), ""); err != nil {
 		t.Fatal(err)
 	}
 

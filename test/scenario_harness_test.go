@@ -21,6 +21,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type testUser struct {
@@ -252,8 +253,9 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = st.Get(context.Background(), "enbu-workspace"); err != nil {
-		if err = st.Put(context.Background(), "enbu-workspace", storage.Object{MediaType: "application/vnd.enbu.workspace.v1", Data: []byte(cfg.WorkspaceID)}, ""); err != nil {
+	objects := storagetest.ToObjects(st)
+	if _, _, err = objects.Get(context.Background(), "enbu-workspace"); err != nil {
+		if err = objects.Put(context.Background(), "enbu-workspace", []byte(cfg.WorkspaceID), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -331,7 +333,7 @@ func (m *mockGitHubClient) SourceRepoURL(owner, repo string) string {
 
 func registerRecipient(t *testing.T, ctx context.Context, _ string, user *testUser, _ string) {
 	t.Helper()
-	err := user.svc.Storage.Put(ctx, enbuapp.RecipientKey(user.keyPair.PublicKey), storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(user.keyPair.PublicKey)}, "")
+	err := storagetest.ToObjects(user.svc.Storage).Put(ctx, enbuapp.RecipientKey(user.keyPair.PublicKey), []byte(user.keyPair.PublicKey), "")
 	if err != nil && !errors.Is(err, storage.ErrConflict) {
 		t.Fatal(err)
 	}

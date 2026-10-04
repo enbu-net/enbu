@@ -10,33 +10,34 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 // Hooks preserve real encryption and the in-memory Storage contract.
 type hookedStorage struct {
-	storage.Storage
-	put  func(context.Context, string, storage.Object, storage.Version) error
-	get  func(context.Context, string) (storage.Object, storage.Version, error)
+	storagetest.Objects
+	put  func(context.Context, string, []byte, storage.Version) error
+	get  func(context.Context, string) ([]byte, storage.Version, error)
 	list func(context.Context, string) ([]string, error)
 }
 
-func (s *hookedStorage) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+func (s *hookedStorage) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
 	if s.put != nil {
 		return s.put(ctx, key, o, v)
 	}
-	return s.Storage.Put(ctx, key, o, v)
+	return s.Objects.Put(ctx, key, o, v)
 }
-func (s *hookedStorage) Get(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+func (s *hookedStorage) Get(ctx context.Context, key string) ([]byte, storage.Version, error) {
 	if s.get != nil {
 		return s.get(ctx, key)
 	}
-	return s.Storage.Get(ctx, key)
+	return s.Objects.Get(ctx, key)
 }
 func (s *hookedStorage) List(ctx context.Context, prefix string) ([]string, error) {
 	if s.list != nil {
 		return s.list(ctx, prefix)
 	}
-	return s.Storage.List(ctx, prefix)
+	return s.Objects.List(ctx, prefix)
 }
 
 type retryEvents struct {
@@ -73,11 +74,11 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						_, version, err := base.Get(context.Background(), ref)
+						_, version, err := getRef(context.Background(), base, ref)
 						if err != nil {
 							t.Fatal(err)
 						}
-						if err := base.Put(context.Background(), ref, storage.Object{MediaType: secretsMediaType, Data: data}, version); err != nil {
+						if err := putRef(context.Background(), base, ref, data, version); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -90,7 +91,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						wantCode = apperr.CodeAccessDenied
 					}
 					writes, snapshots := 0, 0
-					a.Storage = &hookedStorage{Storage: base, put: func(ctx context.Context, target string, o storage.Object, version storage.Version) error {
+					a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base), put: func(ctx context.Context, target string, o []byte, version storage.Version) error {
 						if target != ref {
 							snapshots++
 							if version != "" {
@@ -99,10 +100,10 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 							if failure == "snapshot failure" {
 								return cause
 							}
-							return base.Put(ctx, target, o, version)
+							return putRef(ctx, base, target, o, version)
 						}
 						writes++
-						_, current, err := base.Get(ctx, ref)
+						_, current, err := getRef(ctx, base, ref)
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -119,13 +120,13 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
-							if err := base.Put(ctx, ref, storage.Object{MediaType: secretsMediaType, Data: concurrent}, current); err != nil {
+							if err := putRef(ctx, base, ref, concurrent, current); err != nil {
 								t.Fatal(err)
 							}
 							return cause
 						}
-						return base.Put(ctx, target, o, version)
-					}}
+						return putRef(ctx, base, target, o, version)
+					}})
 					err := operation.run(a)
 					wantWrites, wantSnapshots := 1, 1
 					var wantRetries [][2]int
@@ -181,11 +182,11 @@ func TestSyncSecretsCancellationDuringConflict(t *testing.T) {
 	defer cancel()
 	base := a.Storage
 	pushes := 0
-	a.Storage = &hookedStorage{Storage: base, put: func(context.Context, string, storage.Object, storage.Version) error {
+	a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base), put: func(context.Context, string, []byte, storage.Version) error {
 		pushes++
 		cancel()
 		return storage.ErrConflict
-	}}
+	}})
 	if err := a.SyncSecrets(ctx, "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want cancellation", err)
 	}
@@ -199,23 +200,23 @@ func TestSyncSecretsPassesReadVersion(t *testing.T) {
 	base := a.Storage
 	reads, writes := 0, 0
 	const version storage.Version = "opaque-version"
-	a.Storage = &hookedStorage{Storage: base,
-		get: func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
-			o, v, err := base.Get(ctx, key)
+	a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base),
+		get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
+			o, v, err := getRef(ctx, base, key)
 			if key == secretsTag("default") {
 				reads++
 				v = version
 			}
 			return o, v, err
 		},
-		put: func(_ context.Context, key string, _ storage.Object, v storage.Version) error {
+		put: func(_ context.Context, key string, _ []byte, v storage.Version) error {
 			writes++
 			if key != secretsTag("default") || v != version {
 				t.Fatalf("Put(%q) version=%q, want %q", key, v, version)
 			}
 			return nil
 		},
-	}
+	})
 	if err := a.SyncSecrets(context.Background(), "default"); err != nil {
 		t.Fatal(err)
 	}

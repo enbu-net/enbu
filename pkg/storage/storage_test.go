@@ -4,69 +4,134 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/opencontainers/go-digest"
 )
 
-func contract(t *testing.T, s Storage) {
+func putBlob(t *testing.T, s *Store, data string) digest.Digest {
+	t.Helper()
+	d, err := s.Blobs.Put(context.Background(), strings.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func contract(t *testing.T, s *Store) {
+	t.Helper()
+	blobContract(t, s)
+	refContract(t, s)
+}
+
+func blobContract(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
-	if _, _, err := s.Get(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+	data := []byte{0, 1, 2, 255}
+	d := putBlob(t, s, string(data))
+	if d != digest.FromBytes(data) {
+		t.Fatalf("digest=%s", d)
+	}
+	if again := putBlob(t, s, string(data)); again != d {
+		t.Fatalf("second put=%s", again)
+	}
+	rc, err := s.Blobs.Open(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatalf("open=%v %v", got, err)
+	}
+	if _, err := s.Blobs.Open(ctx, digest.FromString("missing")); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
-	o := Object{MediaType: "application/test", Data: []byte{0, 1, 2, 255}}
-	if err := s.Put(ctx, "secret", o, ""); err != nil {
-		t.Fatal(err)
-	}
-	got, v, err := s.Get(ctx, "secret")
-	if err != nil || !reflect.DeepEqual(got, o) || v == "" {
-		t.Fatalf("get=%+v %q %v", got, v, err)
-	}
-	if err := s.Put(ctx, "secret", o, ""); !errors.Is(err, ErrConflict) {
-		t.Fatalf("create existing: %v", err)
-	}
-	if err := s.Put(ctx, "secret", o, "stale"); !errors.Is(err, ErrConflict) {
-		t.Fatalf("stale: %v", err)
-	}
-	o.Data = []byte("new")
-	if err := s.Put(ctx, "secret", o, v); err != nil {
-		t.Fatal(err)
-	}
-	got, v2, err := s.Get(ctx, "secret")
-	if err != nil || !reflect.DeepEqual(got, o) || v == v2 {
-		t.Fatalf("update=%+v %q %v", got, v2, err)
-	}
-	keys, err := s.List(ctx, "sec")
-	if err != nil || !reflect.DeepEqual(keys, []string{"secret"}) {
-		t.Fatalf("list=%v %v", keys, err)
-	}
-	for _, key := range []string{"../escape", "a/b", ".", "..", "", "a:b"} {
-		if err := s.Put(ctx, key, o, ""); err == nil {
-			t.Fatalf("invalid key %q accepted", key)
+	for _, bad := range []digest.Digest{"", "sha256:xyz", "sha512:" + digest.Digest(strings.Repeat("a", 128)), "../escape"} {
+		if _, err := s.Blobs.Open(ctx, bad); err == nil {
+			t.Fatalf("invalid digest %q accepted", bad)
 		}
 	}
-	if err := s.Put(ctx, "large", Object{MediaType: o.MediaType, Data: make([]byte, MaxPayloadBytes+1)}, ""); err == nil {
-		t.Fatal("oversized payload accepted")
+	if _, err := s.Blobs.Put(ctx, bytes.NewReader(make([]byte, MaxPayloadBytes+1))); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("oversized payload: %v", err)
+	}
+	if _, err := s.Blobs.Put(ctx, strings.NewReader("")); !errors.Is(err, ErrEmptyBlob) {
+		t.Fatalf("empty payload: %v", err)
 	}
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, _, err := s.Get(canceled, "secret"); err == nil {
+	if _, err := s.Blobs.Put(canceled, strings.NewReader("x")); err == nil {
+		t.Fatal("canceled put succeeded")
+	}
+}
+
+func refContract(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := context.Background()
+	if _, _, err := s.Refs.Get(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	a, b := putBlob(t, s, "a"), putBlob(t, s, "b")
+	if err := s.Refs.Put(ctx, "secret", a, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, v, err := s.Refs.Get(ctx, "secret")
+	if err != nil || got != a || v == "" {
+		t.Fatalf("get=%s %q %v", got, v, err)
+	}
+	if err := s.Refs.Put(ctx, "secret", b, ""); !errors.Is(err, ErrConflict) {
+		t.Fatalf("create existing: %v", err)
+	}
+	if err := s.Refs.Put(ctx, "secret", b, "stale"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale: %v", err)
+	}
+	if err := s.Refs.Put(ctx, "secret", b, v); err != nil {
+		t.Fatal(err)
+	}
+	got, v2, err := s.Refs.Get(ctx, "secret")
+	if err != nil || got != b || v == v2 {
+		t.Fatalf("update=%s %q %v", got, v2, err)
+	}
+	if err := s.Refs.Put(ctx, "secret-2", b, ""); err != nil {
+		t.Fatal(err)
+	}
+	keys, err := s.Refs.List(ctx, "sec")
+	if err != nil || !reflect.DeepEqual(keys, []string{"secret", "secret-2"}) {
+		t.Fatalf("list=%v %v", keys, err)
+	}
+	keys, err = s.Refs.List(ctx, "none")
+	if err != nil || len(keys) != 0 {
+		t.Fatalf("empty list=%v %v", keys, err)
+	}
+	for _, key := range []string{"../escape", "a/b", ".", "..", "", "a:b"} {
+		if err := s.Refs.Put(ctx, key, a, ""); err == nil {
+			t.Fatalf("invalid key %q accepted", key)
+		}
+	}
+	if err := s.Refs.Put(ctx, "bad-target", "sha256:xyz", ""); err == nil {
+		t.Fatal("invalid target accepted")
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, _, err := s.Refs.Get(canceled, "secret"); err == nil {
 		t.Fatal("canceled get succeeded")
 	}
 }
 
-func atomicContract(t *testing.T, s Storage) {
+func atomicContract(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
-	o := Object{MediaType: "application/test", Data: []byte("base")}
-	if err := s.Put(ctx, "race", o, ""); err != nil {
+	if err := s.Refs.Put(ctx, "race", putBlob(t, s, "base"), ""); err != nil {
 		t.Fatal(err)
 	}
-	_, v, err := s.Get(ctx, "race")
+	_, v, err := s.Refs.Get(ctx, "race")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +142,10 @@ func atomicContract(t *testing.T, s Storage) {
 		start := make(chan struct{})
 		results := make(chan error, 16)
 		for i := range 16 {
+			target := putBlob(t, s, string([]byte{byte(i)}))
 			go func() {
 				<-start
-				results <- s.Put(ctx, test.key, Object{MediaType: o.MediaType, Data: []byte{byte(i)}}, test.version)
+				results <- s.Refs.Put(ctx, test.key, target, test.version)
 			}()
 		}
 		close(start)
@@ -99,64 +165,88 @@ func atomicContract(t *testing.T, s Storage) {
 }
 
 func TestLocalContract(t *testing.T) {
-	s := &Local{Dir: t.TempDir()}
+	dir := t.TempDir()
+	s := NewLocal(dir)
 	contract(t, s)
 	atomicContract(t, s)
-	entries, err := os.ReadDir(s.Dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.Name() != ".enbu.lock" && filepath.Ext(entry.Name()) != ".json" {
-			t.Fatalf("temporary storage file was not removed: %s", entry.Name())
+	for _, sub := range []string{".", "refs", "blobs/sha256"} {
+		entries, err := os.ReadDir(filepath.Join(dir, sub))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".pending-") {
+				t.Fatalf("temporary storage file was not removed: %s/%s", sub, entry.Name())
+			}
 		}
 	}
 }
 
-func TestEnvelopeCorruption(t *testing.T) {
-	b, err := Encode(Object{MediaType: "application/test", Data: []byte("secret")})
+func TestBlobDigestVerification(t *testing.T) {
+	dir := t.TempDir()
+	s := NewLocal(dir)
+	d := putBlob(t, s, "secret")
+	if err := os.WriteFile(filepath.Join(dir, "blobs", "sha256", d.Encoded()), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rc, err := s.Blobs.Open(context.Background(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range [][]byte{[]byte("{}"), bytes.Replace(b, []byte("sha256:"), []byte("sha257:"), 1), bytes.Replace(b, []byte("\"version\":1"), []byte("\"version\":2"), 1)} {
-		if _, err := Decode(bad); err == nil {
-			t.Fatalf("corrupt envelope accepted: %s", bad)
-		}
+	defer func() { _ = rc.Close() }()
+	if _, err := io.ReadAll(rc); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("tampered blob: %v", err)
 	}
 }
 
 func TestLocalRejectsCorruptionAndSymlinks(t *testing.T) {
 	dir := t.TempDir()
-	s := &Local{Dir: dir}
-	if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{}"), 0o600); err != nil {
+	s := NewLocal(dir)
+	ctx := context.Background()
+	target := putBlob(t, s, "x")
+	if err := os.MkdirAll(filepath.Join(dir, "refs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Get(context.Background(), "bad"); err == nil || errors.Is(err, ErrNotFound) {
+	if err := os.WriteFile(filepath.Join(dir, "refs", "bad"), []byte("not a digest"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Refs.Get(ctx, "bad"); err == nil || errors.Is(err, ErrNotFound) {
 		t.Fatalf("corruption=%v", err)
 	}
-	if err := s.Put(context.Background(), "bad", Object{MediaType: "application/test"}, ""); err == nil {
+	if err := s.Refs.Put(ctx, "bad", target, ""); err == nil {
 		t.Fatal("overwrote corruption")
 	}
-	if err := os.Symlink(filepath.Join(dir, "bad.json"), filepath.Join(dir, "link.json")); err != nil {
+	if err := os.Symlink(filepath.Join(dir, "refs", "bad"), filepath.Join(dir, "refs", "link")); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	if _, _, err := s.Get(context.Background(), "link"); err == nil {
-		t.Fatal("followed symlink")
+	if _, _, err := s.Refs.Get(ctx, "link"); err == nil {
+		t.Fatal("followed ref symlink")
+	}
+	blob := filepath.Join(dir, "blobs", "sha256", target.Encoded())
+	if err := os.Remove(blob); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "refs", "bad"), blob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Blobs.Open(ctx, target); err == nil {
+		t.Fatal("followed blob symlink")
 	}
 }
 
 func TestLocalLockCancellation(t *testing.T) {
-	s := &Local{Dir: t.TempDir()}
+	l := local{t.TempDir()}
+	s := NewLocal(l.dir)
 	ready := make(chan struct{})
 	release := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Go(func() {
-		_ = s.withLock(context.Background(), func(*os.Root) error { close(ready); <-release; return nil })
+		_ = l.withLock(context.Background(), func(*os.Root) error { close(ready); <-release; return nil })
 	})
 	<-ready
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, _, err := s.Get(ctx, "key")
+	_, _, err := s.Refs.Get(ctx, "key")
 	close(release)
 	wg.Wait()
 	if !errors.Is(err, context.DeadlineExceeded) {

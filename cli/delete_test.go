@@ -9,6 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type deleteTestTokenProvider struct{}
@@ -28,25 +29,22 @@ type deleteExpectedDigestRegistry struct {
 	pushErr        error
 }
 
-func (r *deleteExpectedDigestRegistry) Capabilities() storage.Capabilities {
-	return storage.Capabilities{}
-}
-func (r *deleteExpectedDigestRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+func (r *deleteExpectedDigestRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
 	if key == "enbu-workspace" {
 		return workspaceObject(), "workspace", nil
 	}
 	if strings.HasPrefix(key, "recipient-") {
-		return storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(r.publicKey)}, "recipient", nil
+		return []byte(r.publicKey), "recipient", nil
 	}
 	if r.ciphertext == nil {
-		return storage.Object{}, "", storage.ErrNotFound
+		return nil, "", storage.ErrNotFound
 	}
-	return storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: r.ciphertext}, storage.Version(r.expectedDigest), nil
+	return r.ciphertext, storage.Version(r.expectedDigest), nil
 }
 func (r *deleteExpectedDigestRegistry) List(context.Context, string) ([]string, error) {
 	return []string{app.RecipientKey(r.publicKey)}, nil
 }
-func (r *deleteExpectedDigestRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+func (r *deleteExpectedDigestRegistry) Put(_ context.Context, key string, o []byte, v storage.Version) error {
 	if key == "enbu-workspace" {
 		return nil
 	}
@@ -74,7 +72,7 @@ func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
 		expectedDigest: "sha256:base",
 	}
 	a := &app.App{
-		Storage:       reg,
+		Storage:       storagetest.FromObjects(reg),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{

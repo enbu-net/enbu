@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 func TestListRecipients(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
 	second := mustKeyPair(t)
-	if err := a.Storage.Put(context.Background(), RecipientKey(second.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(second.PublicKey)}, ""); err != nil {
+	if err := putRef(context.Background(), a.Storage, RecipientKey(second.PublicKey), []byte(second.PublicKey), ""); err != nil {
 		t.Fatal(err)
 	}
 	recipients, err := a.ListRecipients(context.Background())
@@ -29,12 +30,12 @@ func TestListRecipients(t *testing.T) {
 }
 
 type concurrentRegistry struct {
-	storage.Storage
+	storagetest.Objects
 	active atomic.Int32
 	max    atomic.Int32
 }
 
-func (r *concurrentRegistry) Get(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+func (r *concurrentRegistry) Get(ctx context.Context, key string) ([]byte, storage.Version, error) {
 	active := r.active.Add(1)
 	defer r.active.Add(-1)
 	for {
@@ -44,18 +45,18 @@ func (r *concurrentRegistry) Get(ctx context.Context, key string) (storage.Objec
 		}
 	}
 	time.Sleep(10 * time.Millisecond)
-	return r.Storage.Get(ctx, key)
+	return r.Objects.Get(ctx, key)
 }
 func TestListRecipientsPullsWithBoundedConcurrency(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
 	for range 11 {
 		kp := mustKeyPair(t)
-		if err := a.Storage.Put(context.Background(), RecipientKey(kp.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(kp.PublicKey)}, ""); err != nil {
+		if err := putRef(context.Background(), a.Storage, RecipientKey(kp.PublicKey), []byte(kp.PublicKey), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
-	reg := &concurrentRegistry{Storage: a.Storage}
-	a.Storage = reg
+	reg := &concurrentRegistry{Objects: storagetest.ToObjects(a.Storage)}
+	a.Storage = storagetest.FromObjects(reg)
 	recipients, err := a.ListRecipients(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +67,7 @@ func TestListRecipientsPullsWithBoundedConcurrency(t *testing.T) {
 }
 func TestListRecipientsRejectsCorruptRegistration(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
-	if err := a.Storage.Put(context.Background(), "recipient-corrupt", storage.Object{MediaType: recipientMediaType, Data: []byte("bad")}, ""); err != nil {
+	if err := putRef(context.Background(), a.Storage, "recipient-corrupt", []byte("bad"), ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.ListRecipients(context.Background()); err == nil {

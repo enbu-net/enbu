@@ -10,7 +10,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 func TestListHistory_Empty(t *testing.T) {
@@ -99,7 +98,7 @@ func newHistoryTestApp(t *testing.T) *App {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := a.Storage.Put(context.Background(), snapshot.tag, storage.Object{MediaType: secretsMediaType, Data: ciphertext}, ""); err != nil {
+		if err := putRef(context.Background(), a.Storage, snapshot.tag, ciphertext, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

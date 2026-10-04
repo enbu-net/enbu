@@ -30,7 +30,7 @@ func (a *App) ListHistory(ctx context.Context, env string) (history []HistoryEnt
 	if err != nil {
 		return nil, err
 	}
-	keys, err := store.List(ctx, snapshotPrefix(resolved.Name))
+	keys, err := store.Refs.List(ctx, snapshotPrefix(resolved.Name))
 	if err != nil {
 		return nil, storageError(err)
 	}

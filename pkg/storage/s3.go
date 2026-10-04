@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,12 +12,21 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/opencontainers/go-digest"
 )
 
-type S3 struct {
-	Client *minio.Client
-	Bucket string
-	Prefix string
+type s3 struct {
+	client *minio.Client
+	bucket string
+	prefix string
+}
+type s3Blobs struct{ s3 }
+type s3Refs struct{ s3 }
+
+// NewS3 stores blobs under prefix/blobs/sha256 and refs under prefix/refs.
+func NewS3(client *minio.Client, bucket, prefix string) *Store {
+	s := s3{client, bucket, prefix}
+	return &Store{Blobs: s3Blobs{s}, Refs: s3Refs{s}}
 }
 
 // NewS3Client connects to an S3-compatible endpoint using environment, shared
@@ -55,75 +63,107 @@ func NewS3Client(endpoint, region string, pathStyle bool) (*minio.Client, error)
 	})
 }
 
-func (s *S3) Capabilities() Capabilities { return Capabilities{AtomicUpdates: true} }
-func (s *S3) base() string {
-	p := strings.Trim(s.Prefix, "/")
+func (s s3) base() string {
+	p := strings.Trim(s.prefix, "/")
 	if p == "" {
 		return ""
 	}
 	return p + "/"
 }
-func (s *S3) key(key string) string { return s.base() + key + ".json" }
-
-func (s *S3) Get(ctx context.Context, key string) (Object, Version, error) {
-	if err := ValidateKey(key); err != nil {
-		return Object{}, "", err
+func (s s3) blobKey(d digest.Digest) (string, error) {
+	if err := ValidateDigest(d); err != nil {
+		return "", err
 	}
-	resp, err := s.Client.GetObject(ctx, s.Bucket, s.key(key), minio.GetObjectOptions{})
+	return s.base() + "blobs/sha256/" + d.Encoded(), nil
+}
+func (s s3) refKey(name string) string { return s.base() + "refs/" + name }
+
+func (s s3Blobs) Put(ctx context.Context, src io.Reader) (digest.Digest, error) {
+	f, err := spool(ctx, src)
 	if err != nil {
-		return Object{}, "", s3Error(err, false)
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	key, err := s.blobKey(f.Digest)
+	if err != nil {
+		return "", err
+	}
+	opts := minio.PutObjectOptions{ContentType: "application/octet-stream", DisableMultipart: true}
+	opts.SetMatchETagExcept("*")
+	_, err = s.client.PutObject(ctx, s.bucket, key, f, f.Size, opts)
+	if err = s3Error(err, true); err != nil && !errors.Is(err, ErrConflict) {
+		return "", err
+	}
+	return f.Digest, nil
+}
+
+func (s s3Blobs) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
+	key, err := s.blobKey(d)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, s3Error(err, false)
+	}
+	if _, err := resp.Stat(); err != nil {
+		_ = resp.Close()
+		return nil, s3Error(err, false)
+	}
+	return newVerifyReader(resp, d), nil
+}
+
+func (s s3Refs) Get(ctx context.Context, name string) (digest.Digest, Version, error) {
+	if err := ValidateKey(name); err != nil {
+		return "", "", err
+	}
+	resp, err := s.client.GetObject(ctx, s.bucket, s.refKey(name), minio.GetObjectOptions{})
+	if err != nil {
+		return "", "", s3Error(err, false)
 	}
 	defer func() { _ = resp.Close() }()
-	b, err := io.ReadAll(io.LimitReader(resp, MaxEnvelopeBytes+1))
+	b, err := io.ReadAll(io.LimitReader(resp, 256))
 	if err != nil {
-		return Object{}, "", s3Error(err, false)
+		return "", "", s3Error(err, false)
 	}
 	info, err := resp.Stat()
 	if err != nil {
-		return Object{}, "", s3Error(err, false)
-	}
-	o, err := Decode(b)
-	if err != nil {
-		return Object{}, "", err
+		return "", "", s3Error(err, false)
 	}
 	if info.ETag == "" {
-		return Object{}, "", errors.New("S3 response missing ETag")
+		return "", "", errors.New("S3 response missing ETag")
 	}
-	return o, Version(info.ETag), nil
+	d, err := parseRef(b)
+	return d, Version(info.ETag), err
 }
 
-func (s *S3) Put(ctx context.Context, key string, o Object, expected Version) error {
-	if err := ValidateKey(key); err != nil {
+func (s s3Refs) Put(ctx context.Context, name string, target digest.Digest, expected Version) error {
+	if err := ValidateKey(name); err != nil {
 		return err
 	}
-	b, err := Encode(o)
-	if err != nil {
+	if err := ValidateDigest(target); err != nil {
 		return err
 	}
-	opts := minio.PutObjectOptions{ContentType: "application/vnd.enbu.storage.v1+json", DisableMultipart: true}
+	opts := minio.PutObjectOptions{ContentType: "text/plain", DisableMultipart: true}
 	if expected == "" {
 		opts.SetMatchETagExcept("*")
 	} else {
 		opts.SetMatchETag(string(expected))
 	}
-	_, err = s.Client.PutObject(ctx, s.Bucket, s.key(key), bytes.NewReader(b), int64(len(b)), opts)
+	_, err := s.client.PutObject(ctx, s.bucket, s.refKey(name), strings.NewReader(string(target)), int64(len(target)), opts)
 	return s3Error(err, true)
 }
 
-func (s *S3) List(ctx context.Context, prefix string) ([]string, error) {
-	base := s.base()
+func (s s3Refs) List(ctx context.Context, prefix string) ([]string, error) {
+	base := s.base() + "refs/"
 	var keys []string
 	listCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for entry := range s.Client.ListObjects(listCtx, s.Bucket, minio.ListObjectsOptions{Prefix: base + prefix, Recursive: true}) {
+	for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + prefix, Recursive: true}) {
 		if entry.Err != nil {
 			return nil, s3Error(entry.Err, false)
 		}
-		name := entry.Key
-		if !strings.HasPrefix(name, base) || !strings.HasSuffix(name, ".json") {
-			continue
-		}
-		key := strings.TrimSuffix(strings.TrimPrefix(name, base), ".json")
+		key := strings.TrimPrefix(entry.Key, base)
 		if err := ValidateKey(key); err != nil {
 			return nil, err
 		}

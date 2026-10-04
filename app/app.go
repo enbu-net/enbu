@@ -19,7 +19,7 @@ import (
 )
 
 type App struct {
-	Storage       storage.Storage
+	Storage       *storage.Store
 	StorageURL    string
 	InitStorage   *config.StorageConfig
 	TokenProvider TokenProvider
@@ -72,7 +72,7 @@ func (a *App) WorkspaceID() (id string, err error) {
 	return cfg.WorkspaceID, nil
 }
 
-func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (storage.Storage, error) {
+func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (*storage.Store, error) {
 	if a.Storage != nil {
 		return a.Storage, nil
 	}
@@ -100,7 +100,7 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		if !filepath.IsAbs(dir) {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "local storage requires an absolute path", nil)
 		}
-		return &storage.Local{Dir: dir}, nil
+		return storage.NewLocal(dir), nil
 	case "s3":
 		if u.Host == "" {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 storage requires a bucket", nil)
@@ -109,7 +109,7 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		if err != nil {
 			return nil, apperr.Wrap(apperr.CodeInvalidArgument, "invalid S3 configuration", err, nil)
 		}
-		return &storage.S3{Client: client, Bucket: u.Host, Prefix: strings.Trim(u.Path, "/")}, nil
+		return storage.NewS3(client, u.Host, strings.Trim(u.Path, "/")), nil
 	case "oci":
 		var credential auth.CredentialFunc
 		switch settings.OCIAuth {
@@ -134,7 +134,7 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 	}
 }
 
-func (a *App) workspaceStorage(ctx context.Context) (storage.Storage, error) {
+func (a *App) workspaceStorage(ctx context.Context) (*storage.Store, error) {
 	cfg, err := a.loadProject()
 	if err != nil {
 		return nil, err
@@ -146,11 +146,11 @@ func (a *App) workspaceStorage(ctx context.Context) (storage.Storage, error) {
 	if err != nil {
 		return nil, err
 	}
-	o, _, err := store.Get(ctx, workspaceKey)
+	id, _, err := getRef(ctx, store, workspaceKey)
 	if err != nil {
 		return nil, storageError(err)
 	}
-	if o.MediaType != workspaceMediaType || string(o.Data) != cfg.WorkspaceID {
+	if string(id) != cfg.WorkspaceID {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "storage belongs to a different workspace", nil)
 	}
 	return store, nil
