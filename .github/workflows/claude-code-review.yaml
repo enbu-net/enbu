@@ -1,7 +1,7 @@
 name: Claude Code Review
 
 # Reviews run once automatically when a PR is opened (or marked ready), and
-# afterwards only when a maintainer comments "@claude review" on the PR.
+# afterwards only when a maintainer comments "@claude" on the PR.
 on:
   pull_request:
     types: [opened, ready_for_review]
@@ -14,14 +14,14 @@ permissions: {}
 
 # Unrelated comments land in their own group so they cannot cancel a running review.
 concurrency:
-  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name == 'pull_request' || contains(github.event.comment.body, '@claude review') }}
+  group: claude-review-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event_name == 'pull_request' || contains(github.event.comment.body, '@claude') }}
   cancel-in-progress: true
 
 jobs:
   review:
     name: Review
     # Automatic run: skip drafts, forks (no secrets), and Renovate PRs.
-    # Comment run: only trusted users, only on PRs, only "@claude review".
+    # Comment run: only trusted users, only on PRs, only "@claude".
     if: >-
       (
         github.event_name == 'pull_request' &&
@@ -32,11 +32,11 @@ jobs:
       ) || (
         github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&
-        contains(github.event.comment.body, '@claude review') &&
+        contains(github.event.comment.body, '@claude') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
       ) || (
         github.event_name == 'pull_request_review_comment' &&
-        contains(github.event.comment.body, '@claude review') &&
+        contains(github.event.comment.body, '@claude') &&
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
       )
     runs-on: ubuntu-24.04
