@@ -1,0 +1,77 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions: {}
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review
+    # Skip drafts, forks (no secrets), and Renovate PRs.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'renovate[bot]' &&
+      !startsWith(github.event.pull_request.head.ref, 'renovate/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          use_sticky_comment: true
+          claude_args: >-
+            --max-turns 12
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Write all comments in English.
+
+            Before reviewing, read `REVIEW.md` and `AGENTS.md` at the repository
+            root and follow the review criteria and project conventions they
+            describe. If either file is missing, continue without it.
+
+            Use `gh pr view` and `gh pr diff` to inspect the change. Report only
+            concrete problems: correctness bugs, security issues, violations of
+            the rules in AGENTS.md, and missing tests. Do not comment on style
+            that the formatter or linter already enforces. Post findings as
+            inline comments and finish with one short summary comment. If there
+            is nothing to report, say so briefly.
+
+            Start every inline comment with a severity label in bold:
+            **[Critical]** (security issue, data loss, or a bug that breaks
+            core behavior), **[High]** (likely bug or clear violation of
+            AGENTS.md), **[Medium]** (edge-case bug, missing test, or
+            maintainability risk), **[Low]** (minor improvement). In the final
+            summary comment, list the count of findings per severity.
+
+            Whenever a fix can be expressed as a concrete replacement of the
+            lines you are commenting on, include it as a GitHub suggestion
+            block inside the inline comment so the author can apply it with one
+            click:
+
+            ```suggestion
+            <replacement lines>
+            ```
+
+            The suggestion must replace exactly the commented line range, keep
+            the original indentation, and compile. Use plain prose instead when
+            the fix spans multiple files or needs a design decision.
