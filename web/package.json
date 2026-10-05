@@ -31,12 +31,12 @@
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "@pandacss/dev": "2.0.1",
-    "@pandacss/preset-base": "2.0.1",
+    "@pandacss/dev": "2.1.0",
+    "@pandacss/preset-base": "2.1.0",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.2",
     "@tanstack/router-plugin": "1.168.42",
-    "@types/node": "24.19.0",
+    "@types/node": "24.19.1",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
