@@ -21,34 +21,16 @@ consistent and the change is correct.
 
 ## Finding severity
 
-### Blocker
+Every finding starts with one of these labels:
 
-A finding is a blocker when the change can reasonably cause one of the following:
-
-- disclosure of secrets, credentials, private keys, or decrypted values
-- authentication or authorization bypass
-- use of secret material without the intended authorization
-- corruption or irreversible loss of user data
-- writing plaintext secrets to persistent storage unintentionally
-- accepting unauthenticated or integrity-unverified remote data as trusted state
-- a race or partial failure that can silently overwrite another user's changes
-
-### Major
-
-A finding is major when the implementation is functionally incorrect or violates
-a repository contract, including:
-
-- incorrect state transitions
-- broken error handling that changes caller behavior
-- failure paths that leave inconsistent local or remote state
-- incompatible CLI, config, schema, or storage changes without migration
-- platform-specific behavior that breaks a supported platform
-- missing validation at a trust boundary
-
-### Minor
-
-A finding is minor when it causes a limited correctness, maintainability, or UX
-problem but does not invalidate the change.
+- **[Critical]**: security issue, data loss, or a bug that breaks core behavior.
+  For example, disclosure of secrets or private keys, an authentication or
+  authorization bypass, or a race that silently overwrites another user's changes.
+- **[High]**: likely bug or clear violation of `AGENTS.md`. For example, incorrect
+  state transitions, broken error handling that changes caller behavior, or
+  incompatible CLI, config, or storage changes without migration.
+- **[Medium]**: edge-case bug, missing test, or maintainability risk.
+- **[Low]**: minor improvement.
 
 Style preferences and speculative future requirements should not be reported as
 findings unless they create a concrete problem in the current change.
@@ -232,7 +214,7 @@ from findings that block the PR.
 
 ## Approval
 
-Approve when no blocker or major finding remains and the changed behavior is
+Approve when no Critical or High finding remains and the changed behavior is
 covered sufficiently to make regressions detectable.
 
 The reviewer does not need to prove that the entire repository is correct.
