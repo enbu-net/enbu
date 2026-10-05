@@ -1,0 +1,24 @@
+name: Setup coverage toolchain
+description: Install Go, aqua tools, Tobari, and Vite+ for a coverage job
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+
+    - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      with:
+        aqua_version: v2.63.0
+
+    - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
+      with:
+        version: v0.13.0
+
+    - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      with:
+        run-install: false
+        package-manager: false
+        node-manager: false

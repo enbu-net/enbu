@@ -7,11 +7,14 @@ on:
 
 permissions: {}
 
+# Each suite runs on its own runner: the Go tests already saturate the runner's CPUs,
+# so running suites side by side on one runner (parallel steps) was not faster.
+# The report job merges the per-suite Tobari JSON files.
 jobs:
-  coverage:
-    name: Tobari Go coverage
+  unit:
+    name: Go unit coverage
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -19,64 +22,168 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - uses: ./.github/actions/setup-coverage
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
-        with:
-          aqua_version: v2.63.0
+      - name: Collect Go unit coverage
+        run: task cli/test/coverage
 
-      - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
+      - name: Upload unit coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          version: v0.13.0
+          name: coverage-unit
+          path: |
+            .tmp/coverage/unit/
+            .tmp/coverage/unit.json
+          if-no-files-found: error
+          retention-days: 14
 
-      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+  scenario:
+    name: Go scenario coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          run-install: false
-          package-manager: false
-          node-manager: false
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-coverage
+
+      - name: Collect Go scenario coverage
+        run: task cli/test/coverage/scenario
+
+      - name: Upload scenario coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-scenario
+          path: |
+            .tmp/coverage/scenario/
+            .tmp/coverage/scenario.json
+          if-no-files-found: error
+          retention-days: 14
+
+  e2e:
+    name: CLI E2E coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-coverage
 
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
 
-      # Independent suites run concurrently. Unit, scenario and React coverage share the
-      # frontend build, so they go through a single `task` call: its `run: once` dedupes
-      # the build, which separate `task` processes would run (and race on) three times.
-      - parallel:
-          - name: Collect Go unit, scenario and React coverage
-            run: task cli/test/coverage cli/test/coverage/scenario gui/test/coverage --parallel --output prefixed
+      - name: Collect CLI E2E coverage
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task cli/test/coverage/e2e
+          '
 
-          - name: Collect CLI E2E coverage
-            run: |
-              dbus-run-session -- sh -eu -c '
-                printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-                task cli/test/coverage/e2e
-              '
-
-          - name: Collect Identity E2E coverage
-            run: |
-              dbus-run-session -- sh -eu -c '
-                printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-                task identity/test/coverage
-              '
-
-      - name: Merge coverage suites
-        if: ${{ !cancelled() && hashFiles('.tmp/coverage/unit.json') != '' && hashFiles('.tmp/coverage/scenario.json') != '' && hashFiles('.tmp/coverage/e2e.json') != '' && hashFiles('.tmp/coverage/identity.json') != '' }}
-        run: task coverage/report
-
-      - name: Upload React coverage
-        if: ${{ !cancelled() && hashFiles('.tmp/coverage/frontend/coverage-summary.json') != '' }}
+      - name: Upload e2e coverage
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: frontend-coverage
-          path: .tmp/coverage/frontend/
+          name: coverage-e2e
+          path: |
+            .tmp/coverage/e2e/
+            .tmp/coverage/e2e.json
           if-no-files-found: error
           retention-days: 14
 
+  identity:
+    name: Identity E2E coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-coverage
+
+      - name: Install Secret Service
+        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+
+      - name: Collect Identity E2E coverage
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            task identity/test/coverage
+          '
+
+      - name: Upload identity coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-identity
+          path: |
+            .tmp/coverage/identity/
+            .tmp/coverage/identity.json
+          if-no-files-found: error
+          retention-days: 14
+
+  frontend:
+    name: React coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-coverage
+
+      - name: Collect React coverage
+        run: task gui/test/coverage
+
+      - name: Upload frontend coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-frontend
+          path: |
+            .tmp/coverage/frontend/
+          if-no-files-found: error
+          retention-days: 14
+
+  coverage:
+    name: Tobari Go coverage
+    needs: [unit, scenario, e2e, identity, frontend]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-coverage
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: coverage-*
+          path: .tmp/coverage
+          merge-multiple: true
+
+      - name: Merge coverage suites
+        run: task coverage/report
+
       - name: Upload coverage data
-        if: ${{ !cancelled() && hashFiles('.tmp/coverage/unit/**/*.json', '.tmp/coverage/scenario/**/*.json', '.tmp/coverage/e2e/**/*.json', '.tmp/coverage/identity/**/*.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tobari-data
@@ -95,7 +202,6 @@ jobs:
           retention-days: 14
 
       - name: Publish HTML report
-        if: ${{ !cancelled() && hashFiles('.tmp/coverage/merged.json') != '' }}
         uses: goccy/tobari-action/report@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
         with:
           tobari-json: .tmp/coverage/merged.json
