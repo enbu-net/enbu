@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/age"
@@ -142,6 +143,14 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			return fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 		}
 		err = storageError(store.Refs.Put(ctx, secretsTag(resolved.Name), blob, version))
+		if errors.Is(err, storage.ErrNotFound) {
+			// The blob vanished between Blobs.Put and the ref update (registry GC).
+			// Re-run the whole attempt, which uploads it again.
+			if attempt == attempts-1 {
+				return fmt.Errorf("saving encrypted secrets: uploaded blob disappeared before it was referenced: %v", err)
+			}
+			continue
+		}
 		if apperr.Is(err, apperr.CodeConflict) {
 			if attempt == attempts-1 {
 				return conflictRetriesExhausted(err, attempts)

@@ -43,6 +43,12 @@ type Refs interface {
 	List(context.Context, string) ([]string, error)
 }
 
+// LegacyDetector is implemented by Refs backends that can recognise data
+// written in the pre-blob layout, which the current layout cannot read.
+type LegacyDetector interface {
+	HasLegacy(context.Context) (bool, error)
+}
+
 type Store struct {
 	Blobs Blobs
 	Refs  Refs
