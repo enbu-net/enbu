@@ -2,8 +2,11 @@ import { defineConfig } from "@pandacss/dev";
 import { createPreset } from "@park-ui/panda-preset";
 import blue from "@park-ui/panda-preset/colors/blue";
 import slate from "@park-ui/panda-preset/colors/slate";
+import { fixFieldsetSiblingSelector } from "./panda-preset";
 
-const parkPreset = createPreset({ accentColor: blue, grayColor: slate, radius: "sm" });
+const basePreset = createPreset({ accentColor: blue, grayColor: slate, radius: "sm" });
+
+const parkPreset = fixFieldsetSiblingSelector(basePreset);
 
 export default defineConfig({
   preflight: true,
