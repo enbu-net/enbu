@@ -41,36 +41,30 @@ jobs:
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
 
-      - name: Collect all Go unit coverage
-        run: task cli/test/coverage
+      # Independent suites run concurrently. Unit, scenario and React coverage share the
+      # frontend build, so they go through a single `task` call: its `run: once` dedupes
+      # the build, which separate `task` processes would run (and race on) three times.
+      - parallel:
+          - name: Collect Go unit, scenario and React coverage
+            run: task cli/test/coverage cli/test/coverage/scenario gui/test/coverage --parallel --output prefixed
 
-      - name: Collect scenario coverage
-        if: ${{ !cancelled() }}
-        run: task cli/test/coverage/scenario
+          - name: Collect CLI E2E coverage
+            run: |
+              dbus-run-session -- sh -eu -c '
+                printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+                task cli/test/coverage/e2e
+              '
 
-      - name: Collect CLI E2E coverage
-        if: ${{ !cancelled() }}
-        run: |
-          dbus-run-session -- sh -eu -c '
-            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            task cli/test/coverage/e2e
-          '
-
-      - name: Collect Identity E2E coverage
-        if: ${{ !cancelled() }}
-        run: |
-          dbus-run-session -- sh -eu -c '
-            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            task identity/test/coverage
-          '
+          - name: Collect Identity E2E coverage
+            run: |
+              dbus-run-session -- sh -eu -c '
+                printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+                task identity/test/coverage
+              '
 
       - name: Merge coverage suites
         if: ${{ !cancelled() && hashFiles('.tmp/coverage/unit.json') != '' && hashFiles('.tmp/coverage/scenario.json') != '' && hashFiles('.tmp/coverage/e2e.json') != '' && hashFiles('.tmp/coverage/identity.json') != '' }}
         run: task coverage/report
-
-      - name: Collect React coverage
-        if: ${{ !cancelled() }}
-        run: task gui/test/coverage
 
       - name: Upload React coverage
         if: ${{ !cancelled() && hashFiles('.tmp/coverage/frontend/coverage-summary.json') != '' }}
