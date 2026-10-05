@@ -2,38 +2,11 @@ import { defineConfig } from "@pandacss/dev";
 import { createPreset } from "@park-ui/panda-preset";
 import blue from "@park-ui/panda-preset/colors/blue";
 import slate from "@park-ui/panda-preset/colors/slate";
+import { fixFieldsetSiblingSelector } from "./panda-preset";
 
 const basePreset = createPreset({ accentColor: blue, grayColor: slate, radius: "sm" });
 
-// Park UI 0.43 writes the fieldset legend sibling selector as `"+ *"`, which Panda 2.1
-// treats as a CSS property (nested_property warning) so the style never applies.
-// Rewrite it to the explicit `"& + *"` selector.
-const fieldset = basePreset.theme?.extend?.slotRecipes?.fieldset;
-const parkPreset = {
-  ...basePreset,
-  theme: {
-    ...basePreset.theme,
-    extend: {
-      ...basePreset.theme?.extend,
-      slotRecipes: {
-        ...basePreset.theme?.extend?.slotRecipes,
-        fieldset: {
-          ...fieldset,
-          base: {
-            ...fieldset?.base,
-            legend: renameSiblingSelector(fieldset?.base?.legend),
-          },
-        } as NonNullable<typeof fieldset>,
-      },
-    },
-  },
-};
-
-function renameSiblingSelector(styles: Record<string, unknown> = {}): Record<string, unknown> {
-  if (!("+ *" in styles)) return styles;
-  const { "+ *": sibling, ...rest } = styles;
-  return { ...rest, "& + *": sibling };
-}
+const parkPreset = fixFieldsetSiblingSelector(basePreset);
 
 export default defineConfig({
   preflight: true,
