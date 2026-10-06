@@ -104,6 +104,21 @@ export interface Recipient {
   public_key: string;
 }
 
+export interface Member {
+  device_id: string;
+  fingerprint: string;
+  algorithm: string;
+  admin: boolean;
+  self: boolean;
+}
+
+export interface JoinRequest {
+  device_id: string;
+  fingerprint: string;
+  algorithm: string;
+  requested_at: string;
+}
+
 export interface GUIRepoStatus {
   selected: boolean;
   repo?: {
@@ -127,6 +142,10 @@ export interface InitResult {
   public_key: string;
   username: string;
   environment: string;
+  device_id?: string;
+  fingerprint?: string;
+  /** True while an admin has yet to approve this device. */
+  pending?: boolean;
 }
 
 export interface Environment {

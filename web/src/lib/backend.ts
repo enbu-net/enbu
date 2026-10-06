@@ -4,6 +4,8 @@ import {
   type Environment,
   type GUIRepoStatus,
   type InitResult,
+  type JoinRequest,
+  type Member,
   type Recipient,
   type SecretsResponse,
 } from "./api";
@@ -67,6 +69,10 @@ type DesktopService = {
   ListRecipients: () => Promise<
     Array<{ username: string; fingerprint: string; public_key: string }>
   >;
+  ListMembers: () => Promise<Member[]>;
+  ListJoinRequests: () => Promise<JoinRequest[]>;
+  ApproveMember: (deviceID: string) => Promise<void>;
+  RemoveMember: (deviceID: string) => Promise<void>;
   ReadConfig: () => Promise<string>;
   WriteConfig: (content: string) => Promise<void>;
   GitInit: (path: string) => Promise<GUIRepoStatus["repo"]>;
@@ -330,6 +336,45 @@ const realBackend = {
       fingerprint: r.fingerprint,
       public_key: r.public_key,
     }));
+  },
+  async listMembers(): Promise<Member[]> {
+    const svc = service();
+    if (!svc) return [];
+    const items = await svc.ListMembers();
+    return (items ?? [])
+      .filter((m) => m != null)
+      .map((m) => ({
+        device_id: m.device_id,
+        fingerprint: m.fingerprint,
+        algorithm: m.algorithm,
+        admin: m.admin,
+        self: m.self,
+      }));
+  },
+  async listJoinRequests(): Promise<JoinRequest[]> {
+    const svc = service();
+    if (!svc) return [];
+    const items = await svc.ListJoinRequests();
+    return (items ?? [])
+      .filter((r) => r != null)
+      .map((r) => ({
+        device_id: r.device_id,
+        fingerprint: r.fingerprint,
+        algorithm: r.algorithm,
+        requested_at: r.requested_at,
+      }));
+  },
+  // These change who can read every secret, so a missing service must fail
+  // loudly: resolving would show an approval or removal that never happened.
+  async approveMember(deviceID: string): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.ApproveMember(deviceID);
+  },
+  async removeMember(deviceID: string): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.RemoveMember(deviceID);
   },
   async readConfig(): Promise<string> {
     const svc = service();
