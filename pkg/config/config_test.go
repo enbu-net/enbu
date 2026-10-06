@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"uuid"
 )
@@ -431,5 +432,31 @@ func TestLocalStatePath(t *testing.T) {
 	want := filepath.Join("/tmp/testxdg/enbu/state", uuidOrHash("MyOrg/MyRepo")+".toml")
 	if path != want {
 		t.Errorf("LocalStatePath = %q, want %q", path, want)
+	}
+}
+
+func TestControlGenesisSurvivesSaveAndLoad(t *testing.T) {
+	cfg := NewProjectWithEnvironment("default")
+	cfg.ControlGenesis = "sha256:" + strings.Repeat("a", 64)
+	dir := t.TempDir()
+	if err := SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadProjectFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ControlGenesis != cfg.ControlGenesis || loaded.WorkspaceID != cfg.WorkspaceID {
+		t.Fatalf("loaded %+v, want genesis %s", loaded, cfg.ControlGenesis)
+	}
+}
+
+func TestProjectWithoutControlGenesisOmitsTheKey(t *testing.T) {
+	b, err := MarshalProject(NewProjectWithEnvironment("default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "control_genesis") {
+		t.Fatalf("empty genesis was written:\n%s", b)
 	}
 }
