@@ -12,5 +12,9 @@
   "secret_already_exists": "シークレット「{key}」はすでに存在します。",
   "artifact_not_found": "対象のシークレットが見つかりません。",
   "conflict": "リモートのシークレットが変更されました。もう一度お試しください。",
-  "unavailable": "必要なサービスを利用できません。"
+  "unavailable": "必要なサービスを利用できません。",
+  "not_member": "このデバイスはまだ承認されていません。管理者に承認を依頼してください。",
+  "untrusted_state": "保存されたデータの署名検証に失敗したため使用しませんでした。",
+  "rollback_detected": "このデバイスが受け入れ済みのデータより古いデータがストレージから返されました。",
+  "incompatible_storage": "このストレージはWorkspace Controlなしで作成されています。空の場所を使用してください。"
 }
