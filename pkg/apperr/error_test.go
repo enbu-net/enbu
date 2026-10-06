@@ -106,3 +106,27 @@ func TestPayloadOfInternalHidesParams(t *testing.T) {
 		t.Fatalf("internal error payload must not expose params, got %#v", payload.Params)
 	}
 }
+
+func TestWorkspaceSecurityCodes(t *testing.T) {
+	for _, code := range []Code{CodeNotMember, CodeUntrusted, CodeRollback, CodeIncompatibleStorage} {
+		if !IsKnownCode(code) {
+			t.Fatalf("%q is not a known code", code)
+		}
+		if got := PayloadOf(New(code, "message", nil)).Code; got != code {
+			t.Fatalf("payload code = %q, want %q", got, code)
+		}
+	}
+}
+
+func TestIntegrityFailuresHaveTheirOwnExitStatus(t *testing.T) {
+	// A device that is not approved and an integrity failure each get a status
+	// scripts can tell apart from an ordinary error.
+	if ExitCode(New(CodeNotMember, "pending", nil)) != 3 {
+		t.Fatal("not_member exit code is not 3")
+	}
+	for _, code := range []Code{CodeUntrusted, CodeRollback} {
+		if ExitCode(New(code, "integrity", nil)) != 5 {
+			t.Fatalf("%s exit code is not 5", code)
+		}
+	}
+}

@@ -12,5 +12,9 @@
   "secret_already_exists": "Secret \"{key}\" already exists.",
   "artifact_not_found": "The requested secrets were not found.",
   "conflict": "Secrets changed remotely. Try again.",
-  "unavailable": "The required service is unavailable."
+  "unavailable": "The required service is unavailable.",
+  "not_member": "This device has not been approved yet. Ask an admin to approve it.",
+  "untrusted_state": "Stored data failed signature verification and was not used.",
+  "rollback_detected": "Storage returned older data than this device already accepted.",
+  "incompatible_storage": "This storage was created without a workspace control. Use an empty location."
 }
