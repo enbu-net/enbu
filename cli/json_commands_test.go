@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -32,9 +31,9 @@ func TestJSONSecretCommands(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keyPair, registry := newAddEditRegistry(t, tt.initial)
+			a, _ := newSeededApp(t, tt.initial)
 			commandArgs := append([]string{tt.command, "--json"}, tt.args...)
-			envelope := executeJSON(t, NewWithApp("test", newAddEditApp(t, keyPair, registry)), commandArgs...)
+			envelope := executeJSON(t, NewWithApp("test", a), commandArgs...)
 			data := objectField(t, envelope, "data")
 			if got := stringField(t, data, "action"); got != tt.command {
 				t.Fatalf("action = %q, want %q", got, tt.command)
@@ -54,13 +53,10 @@ func TestJSONSecretCommands(t *testing.T) {
 
 func TestJSONPullReturnsSecretsWithoutWritingFile(t *testing.T) {
 	dir := enterTempRepository(t)
-	keyPair, registry := newAddEditRegistry(t, map[string]string{
+	a, _ := newSeededApp(t, map[string]string{
 		"API_KEY":   "secret",
 		"MULTILINE": "first\nsecond",
 	})
-	a := newAddEditApp(t, keyPair, registry)
-	a.RepositoryDir = dir
-	prepareCLIApp(t, a)
 
 	envelope := executeJSON(t, NewWithApp("test", a), "pull", "--json")
 	data := objectField(t, envelope, "data")
@@ -68,8 +64,10 @@ func TestJSONPullReturnsSecretsWithoutWritingFile(t *testing.T) {
 	if got := stringField(t, secrets, "MULTILINE"); got != "first\nsecond" {
 		t.Fatalf("multiline secret = %q", got)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".env")); !os.IsNotExist(err) {
-		t.Fatalf("pull --json wrote .env: %v", err)
+	for _, d := range []string{dir, a.RepositoryDir} {
+		if _, err := os.Stat(filepath.Join(d, ".env")); !os.IsNotExist(err) {
+			t.Fatalf("pull --json wrote .env in %s: %v", d, err)
+		}
 	}
 }
 
@@ -107,33 +105,26 @@ func TestJSONSwitchOperations(t *testing.T) {
 
 func TestJSONHistoryCommands(t *testing.T) {
 	enterTempRepository(t)
-	keyPair, err := age.GenerateKeyPair()
-	if err != nil {
-		t.Fatal(err)
-	}
-	registry := newEnvRegistry()
-	a := &app.App{
-		Storage:       storagetest.FromObjects(registry),
-		TokenProvider: &deleteTestTokenProvider{},
-		RepoDetector:  &deleteTestRepoDetector{},
-		Identities:    &staticKeyStore{key: []byte(keyPair.Identity.String())},
-	}
-	prepareCLIApp(t, a)
-	registryRef := ""
-	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-1000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "1"})
-	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-2000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "2", "B": "3"})
-	recipientTag := app.RecipientKey(keyPair.PublicKey)
-	if err := registry.Put(context.Background(), recipientTag, []byte(keyPair.PublicKey), ""); err != nil {
-		t.Fatal(err)
+	a, _ := newSeededApp(t, nil)
+	ctx := context.Background()
+	// Each change leaves a signed history snapshot.
+	for _, step := range []func() error{
+		func() error { return a.AddSecret(ctx, "default", "A", "1") },
+		func() error { return a.EditSecret(ctx, "default", "A", "2") },
+		func() error { return a.AddSecret(ctx, "default", "B", "3") },
+	} {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	list := executeJSON(t, NewWithApp("test", a), "history", "list", "--json")
 	entries, ok := objectField(t, list, "data")["entries"].([]any)
-	if !ok || len(entries) != 2 {
+	if !ok || len(entries) != 3 {
 		t.Fatalf("entries = %#v", objectField(t, list, "data")["entries"])
 	}
 
-	diff := executeJSON(t, NewWithApp("test", a), "history", "diff", "1", "2", "--json")
+	diff := executeJSON(t, NewWithApp("test", a), "history", "diff", "2", "3", "--json")
 	diffData := objectField(t, diff, "data")
 	added, ok := diffData["added"].([]any)
 	if !ok || len(added) != 1 || added[0] != "B" {
@@ -143,6 +134,9 @@ func TestJSONHistoryCommands(t *testing.T) {
 	restore := executeJSON(t, NewWithApp("test", a), "history", "restore", "1", "--json")
 	if got := objectField(t, restore, "data")["version"]; got != float64(1) {
 		t.Fatalf("version = %#v", got)
+	}
+	if got := secretsOf(t, a); !reflect.DeepEqual(got, map[string]string{"A": "1"}) {
+		t.Fatalf("restored secrets = %v", got)
 	}
 }
 
@@ -157,9 +151,9 @@ func TestJSONInit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry := newEnvRegistry()
+	store := storagetest.NewMemory()
 	a := &app.App{
-		Storage:       storagetest.FromObjects(registry),
+		Storage:       store,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
@@ -171,14 +165,22 @@ func TestJSONInit(t *testing.T) {
 	if got := stringField(t, data, "mode"); got != "initialize" {
 		t.Fatalf("mode = %q", got)
 	}
-
-	publicKey := stringField(t, data, "public_key")
-	if publicKey == "" {
-		t.Fatal("public_key is empty")
+	if stringField(t, data, "public_key") == "" || stringField(t, data, "device_id") == "" || stringField(t, data, "fingerprint") == "" {
+		t.Fatalf("missing key material in %v", data)
 	}
-	recipientTag := app.RecipientKey(publicKey)
-	if _, ok := registry.data[recipientTag]; !ok {
-		t.Fatalf("recipient tag %q was not registered", recipientTag)
+	if data["pending"] != false {
+		t.Fatalf("the founder must not be pending: %v", data["pending"])
+	}
+	// The workspace is rooted in a signed Control, not a recipient object.
+	if _, _, err := store.Refs.Get(context.Background(), "control-head"); err != nil {
+		t.Fatalf("control-head: %v", err)
+	}
+	if recipients, err := store.Refs.List(context.Background(), "recipient-"); err != nil || len(recipients) != 0 {
+		t.Fatalf("recipient objects written: %v %v", recipients, err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
+	if err != nil || !strings.Contains(string(content), "control_genesis") {
+		t.Fatalf("enbu.toml lacks the trusted genesis: %s %v", content, err)
 	}
 }
 
@@ -192,41 +194,40 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(`version = "v1alpha2"
-default_env = "default"
 
-[env.default]
-output = ".env"
-`), 0o644); err != nil {
+	// Another device already created the workspace and stored a secret. Its
+	// enbu.toml, with the trusted genesis, is what the repository shares.
+	store := storagetest.NewMemory()
+	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &staticKeyStore{}, RepositoryDir: t.TempDir()}
+	bootstrapCLIApp(t, founder, store)
+	if err := founder.AddSecret(context.Background(), "default", "KEY", "value"); err != nil {
 		t.Fatal(err)
 	}
-
-	registry := newEnvRegistry()
-	other, err := age.GenerateKeyPair()
+	shared, err := os.ReadFile(filepath.Join(founder.RepositoryDir, "enbu.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := age.EncryptForPublicKeys([]byte(`{"KEY":"value"}`), []string{other.PublicKey})
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), shared, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.Put(context.Background(), "secrets-default", ciphertext, ""); err != nil {
-		t.Fatal(err)
-	}
+
 	a := &app.App{
-		Storage:       storagetest.FromObjects(registry),
+		Storage:       store,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
 		Platform:      &jsonInitPlatform{},
+		CheckpointDir: t.TempDir(),
 	}
 	a.RepositoryDir = dir
-	prepareCLIApp(t, a)
 	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
 	data := objectField(t, envelope, "data")
 	if got := stringField(t, data, "mode"); got != "join" {
 		t.Fatalf("mode = %q", got)
+	}
+	if data["pending"] != true {
+		t.Fatalf("a new device must wait for approval: %v", data["pending"])
 	}
 
 	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -259,23 +260,6 @@ output = ".env"
 		t.Fatal(err)
 	}
 	return dir
-}
-
-func pushEncryptedHistory(
-	t *testing.T,
-	registry *envRegistry,
-	keyPair *age.KeyPair,
-	ref string,
-	secrets map[string]string,
-) {
-	t.Helper()
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), []string{keyPair.PublicKey})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := registry.Put(context.Background(), ref, ciphertext, ""); err != nil {
-		t.Fatalf("push %s: %v", fmt.Sprint(ref), err)
-	}
 }
 
 type jsonInitGit struct {

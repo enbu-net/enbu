@@ -2,54 +2,24 @@ package cli
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
-type addEditRegistry struct {
-	ciphertext     []byte
-	publicKey      string
-	expectedDigest string
-	gotExpected    string
-	pushes         int
-}
-
-func (r *addEditRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
-	if key == "enbu-workspace" {
-		return workspaceObject(), "workspace", nil
+func secretsOf(t *testing.T, a interface {
+	ListSecrets(context.Context, string) (map[string]string, error)
+}) map[string]string {
+	t.Helper()
+	got, err := a.ListSecrets(context.Background(), "default")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.HasPrefix(key, "recipient-") {
-		return []byte(r.publicKey), "recipient", nil
-	}
-	if r.ciphertext == nil {
-		return nil, "", storage.ErrNotFound
-	}
-	return r.ciphertext, storage.Version(r.expectedDigest), nil
-}
-func (r *addEditRegistry) List(context.Context, string) ([]string, error) {
-	return []string{app.RecipientKey(r.publicKey)}, nil
-}
-func (r *addEditRegistry) Put(_ context.Context, key string, o []byte, v storage.Version) error {
-	if key == "enbu-workspace" {
-		return nil
-	}
-	r.pushes++
-	if r.pushes == 1 {
-		r.gotExpected = string(v)
-		r.ciphertext = append([]byte(nil), o...)
-	}
-	return nil
+	return got
 }
 
 func TestAddCommandRejectsExistingSecret(t *testing.T) {
-	kp, reg := newAddEditRegistry(t, map[string]string{"API_KEY": "old"})
-	a := newAddEditApp(t, kp, reg)
+	a, rec := newSeededApp(t, map[string]string{"API_KEY": "old"})
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"add", "API_KEY", "new"})
 
@@ -60,58 +30,53 @@ func TestAddCommandRejectsExistingSecret(t *testing.T) {
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected duplicate error, got %v", err)
 	}
-	if reg.pushes != 0 {
-		t.Fatalf("expected duplicate add not to push, got %d pushes", reg.pushes)
+	if got := rec.secretPuts(); len(got) != 0 {
+		t.Fatalf("expected duplicate add not to push, got %d pushes", len(got))
 	}
 }
 
 func TestAddCommandCreatesNewSecret(t *testing.T) {
-	kp, reg := newAddEditRegistry(t, nil)
-	a := newAddEditApp(t, kp, reg)
+	a, rec := newSeededApp(t, nil)
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"add", "API_KEY", "secret"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if reg.pushes != 2 {
-		t.Fatalf("expected 2 push (main + snapshot), got %d", reg.pushes)
+	puts := rec.secretPuts()
+	if len(puts) != 2 {
+		t.Fatalf("expected 2 push (main + snapshot), got %d", len(puts))
 	}
-	if reg.gotExpected != "" {
-		t.Fatalf("expected empty base digest for initial add, got %q", reg.gotExpected)
+	if puts[0].expected != "" {
+		t.Fatalf("expected empty base version for initial add, got %q", puts[0].expected)
 	}
-
-	secrets := decryptAddEditSecrets(t, kp, reg)
-	if secrets["API_KEY"] != "secret" {
-		t.Fatalf("expected API_KEY to be created, got %q", secrets["API_KEY"])
+	if got := secretsOf(t, a); !reflect.DeepEqual(got, map[string]string{"API_KEY": "secret"}) {
+		t.Fatalf("secrets = %v", got)
 	}
 }
 
 func TestEditCommandUpdatesExistingSecret(t *testing.T) {
-	kp, reg := newAddEditRegistry(t, map[string]string{"API_KEY": "old"})
-	a := newAddEditApp(t, kp, reg)
+	a, rec := newSeededApp(t, map[string]string{"API_KEY": "old"})
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"edit", "API_KEY", "new"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
-	if reg.pushes != 2 {
-		t.Fatalf("expected 2 push (main + snapshot), got %d", reg.pushes)
+	puts := rec.secretPuts()
+	if len(puts) != 2 {
+		t.Fatalf("expected 2 push (main + snapshot), got %d", len(puts))
 	}
-	if reg.gotExpected != "sha256:base" {
-		t.Fatalf("expected base digest to be passed to push, got %q", reg.gotExpected)
+	if puts[0].expected == "" || puts[0].expected != puts[0].lastRead {
+		t.Fatalf("push must be based on the version that was read: expected=%q read=%q", puts[0].expected, puts[0].lastRead)
 	}
-
-	secrets := decryptAddEditSecrets(t, kp, reg)
-	if secrets["API_KEY"] != "new" {
-		t.Fatalf("expected API_KEY to be edited, got %q", secrets["API_KEY"])
+	if got := secretsOf(t, a); got["API_KEY"] != "new" {
+		t.Fatalf("API_KEY = %q", got["API_KEY"])
 	}
 }
 
 func TestEditCommandRejectsMissingSecret(t *testing.T) {
-	kp, reg := newAddEditRegistry(t, map[string]string{"OTHER": "value"})
-	a := newAddEditApp(t, kp, reg)
+	a, rec := newSeededApp(t, map[string]string{"OTHER": "value"})
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"edit", "API_KEY", "secret"})
 
@@ -122,58 +87,7 @@ func TestEditCommandRejectsMissingSecret(t *testing.T) {
 	if !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("expected missing error, got %v", err)
 	}
-	if reg.pushes != 0 {
-		t.Fatalf("expected missing edit not to push, got %d pushes", reg.pushes)
+	if got := rec.secretPuts(); len(got) != 0 {
+		t.Fatalf("expected missing edit not to push, got %d pushes", len(got))
 	}
-}
-
-func newAddEditRegistry(t *testing.T, secrets map[string]string) (*age.KeyPair, *addEditRegistry) {
-	t.Helper()
-
-	kp, err := age.GenerateKeyPair()
-	if err != nil {
-		t.Fatalf("GenerateKeyPair: %v", err)
-	}
-
-	reg := &addEditRegistry{
-		publicKey:      kp.PublicKey,
-		expectedDigest: "sha256:base",
-	}
-	if secrets != nil {
-		plaintext := bundle.Marshal(secrets)
-		ciphertext, err := age.EncryptForPublicKeys(plaintext, []string{kp.PublicKey})
-		if err != nil {
-			t.Fatalf("EncryptForPublicKeys: %v", err)
-		}
-		reg.ciphertext = ciphertext
-	}
-
-	return kp, reg
-}
-
-func newAddEditApp(t *testing.T, kp *age.KeyPair, reg *addEditRegistry) *app.App {
-	a := &app.App{
-		Storage:       storagetest.FromObjects(reg),
-		TokenProvider: &deleteTestTokenProvider{},
-		RepoDetector:  &deleteTestRepoDetector{},
-		Identities: &staticKeyStore{
-			key: []byte(kp.Identity.String()),
-		},
-	}
-	prepareCLIApp(t, a)
-	return a
-}
-
-func decryptAddEditSecrets(t *testing.T, kp *age.KeyPair, reg *addEditRegistry) map[string]string {
-	t.Helper()
-
-	plaintext, err := age.Decrypt(reg.ciphertext, kp.Identity)
-	if err != nil {
-		t.Fatalf("Decrypt: %v", err)
-	}
-	secrets, err := bundle.Unmarshal(plaintext)
-	if err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	return secrets
 }

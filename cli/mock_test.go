@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/enbu-net/enbu/app/apptest"
 	"io/fs"
 	"sync"
 
@@ -83,6 +84,7 @@ func (m *mockRepoDetector) LoadRepo() (string, string, error) {
 }
 
 type mockKeyStore struct {
+	apptest.Signers
 	mu   sync.RWMutex
 	data map[string][]byte
 }

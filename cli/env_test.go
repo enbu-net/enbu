@@ -2,65 +2,14 @@ package cli
 
 import (
 	"bytes"
-	"context"
-	"crypto/sha256"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
-
-type envRegistry struct {
-	mu   sync.RWMutex
-	data map[string][]byte
-}
-
-func newEnvRegistry() *envRegistry {
-	return &envRegistry{data: make(map[string][]byte)}
-}
-func (e *envRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
-	if key == "enbu-workspace" {
-		return workspaceObject(), "workspace", nil
-	}
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	data, ok := e.data[key]
-	if !ok {
-		return nil, "", storage.ErrNotFound
-	}
-	return append([]byte(nil), data...), storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data))), nil
-}
-func (e *envRegistry) Put(_ context.Context, key string, o []byte, v storage.Version) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	var current storage.Version
-	if data, ok := e.data[key]; ok {
-		current = storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(data)))
-	}
-	if current != v {
-		return storage.ErrConflict
-	}
-	e.data[key] = append([]byte(nil), o...)
-	return nil
-}
-func (e *envRegistry) List(_ context.Context, prefix string) ([]string, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	var keys []string
-	for key := range e.data {
-		if strings.HasPrefix(key, prefix) {
-			keys = append(keys, key)
-		}
-	}
-	return keys, nil
-}
 
 func TestEnvironmentSecretsAreIsolated(t *testing.T) {
 	dir := t.TempDir()
@@ -84,25 +33,13 @@ output = ".env.prod"
 		t.Fatal(err)
 	}
 
-	kp, err := age.GenerateKeyPair()
-	if err != nil {
-		t.Fatalf("GenerateKeyPair: %v", err)
-	}
-	reg := newEnvRegistry()
 	a := &app.App{
-		Storage:       storagetest.FromObjects(reg),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		Identities: &staticKeyStore{
-			key: []byte(kp.Identity.String()),
-		},
+		Identities:    &staticKeyStore{},
+		RepositoryDir: dir,
 	}
-
-	a.RepositoryDir = dir
-	prepareCLIApp(t, a)
-	if err := reg.Put(context.Background(), app.RecipientKey(kp.PublicKey), []byte(kp.PublicKey), ""); err != nil {
-		t.Fatal(err)
-	}
+	bootstrapCLIApp(t, a, storagetest.NewMemory())
 
 	devCmd := NewWithApp("test", a)
 	devCmd.SetArgs([]string{"add", "--env", "dev", "API_KEY", "dev-secret"})
