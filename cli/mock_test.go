@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"sync"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/enbu-net/enbu/pkg/provider"
@@ -83,6 +84,7 @@ func (m *mockRepoDetector) LoadRepo() (string, string, error) {
 }
 
 type mockKeyStore struct {
+	apptest.Signers
 	mu   sync.RWMutex
 	data map[string][]byte
 }
