@@ -5,6 +5,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/provider"
+	"github.com/enbu-net/enbu/pkg/signing"
 )
 
 type TokenProvider interface {
@@ -16,6 +17,10 @@ type IdentityStore interface {
 	Load(workspaceID string) (identity.Identity, error)
 	Info(workspaceID string) (identity.PublicInfo, error)
 	Doctor() identity.Diagnosis
+	// The signing key is a separate keypair from the encryption identity.
+	CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error)
+	LoadSigner(workspaceID string) (signing.Signer, error)
+	SignerInfo(workspaceID string) (identity.SignerInfo, error)
 }
 
 type RepoDetector interface {
