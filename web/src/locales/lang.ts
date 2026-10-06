@@ -92,13 +92,26 @@ export interface Messages {
     navigation: string;
     repositoryOptions: string;
   };
-  recipients: {
+  members: {
     title: string;
-    members: string;
+    pendingTitle: string;
+    pendingHint: string;
+    pendingEmpty: string;
+    approve: string;
+    approveTitle: string;
+    approveWarning: string;
+    fingerprintMatches: string;
+    remove: string;
+    removeTitle: string;
+    removeHint: string;
+    admin: string;
     member: string;
+    you: string;
     empty: string;
-    username: string;
     fingerprint: string;
+    requestedAt: string;
+    cancel: string;
+    pendingNotice: string;
   };
   config: {
     title: string;

@@ -9,7 +9,11 @@ type workspaceLoadedMsg struct {
 	repository string
 }
 
-type recipientsLoadedMsg struct{ recipients []app.RecipientInfo }
+type recipientsLoadedMsg struct {
+	recipients []app.RecipientInfo
+	requests   []app.JoinRequestInfo
+}
+type memberApprovedMsg struct{ message string }
 type configLoadedMsg struct{ content string }
 type configSavedMsg struct{}
 type operationDoneMsg struct{ message string }

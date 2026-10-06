@@ -4,7 +4,8 @@ import {
   type Environment,
   type GUIRepoStatus,
   type InitResult,
-  type Recipient,
+  type JoinRequest,
+  type Member,
   type SecretsResponse,
 } from "./api";
 import {
@@ -64,9 +65,10 @@ type DesktopService = {
     Array<{ path: string; owner: string; repo: string; initialized: boolean }>
   >;
   RemoveRepository: (path: string) => Promise<void>;
-  ListRecipients: () => Promise<
-    Array<{ username: string; fingerprint: string; public_key: string }>
-  >;
+  ListMembers: () => Promise<Member[]>;
+  ListJoinRequests: () => Promise<JoinRequest[]>;
+  ApproveMember: (deviceID: string) => Promise<void>;
+  RemoveMember: (deviceID: string) => Promise<void>;
   ReadConfig: () => Promise<string>;
   WriteConfig: (content: string) => Promise<void>;
   GitInit: (path: string) => Promise<GUIRepoStatus["repo"]>;
@@ -321,15 +323,34 @@ const realBackend = {
   async removeRepository(path: string): Promise<void> {
     await service()?.RemoveRepository(path);
   },
-  async listRecipients(): Promise<Recipient[]> {
+  async listMembers(): Promise<Member[]> {
     const svc = service();
     if (!svc) return [];
-    const items = await svc.ListRecipients();
-    return items.map((r) => ({
-      username: r.username,
-      fingerprint: r.fingerprint,
-      public_key: r.public_key,
+    const items = await svc.ListMembers();
+    return (items ?? []).map((m) => ({
+      device_id: m.device_id,
+      fingerprint: m.fingerprint,
+      algorithm: m.algorithm,
+      admin: m.admin,
+      self: m.self,
     }));
+  },
+  async listJoinRequests(): Promise<JoinRequest[]> {
+    const svc = service();
+    if (!svc) return [];
+    const items = await svc.ListJoinRequests();
+    return (items ?? []).map((r) => ({
+      device_id: r.device_id,
+      fingerprint: r.fingerprint,
+      algorithm: r.algorithm,
+      requested_at: r.requested_at,
+    }));
+  },
+  async approveMember(deviceID: string): Promise<void> {
+    await service()?.ApproveMember(deviceID);
+  },
+  async removeMember(deviceID: string): Promise<void> {
+    await service()?.RemoveMember(deviceID);
   },
   async readConfig(): Promise<string> {
     const svc = service();

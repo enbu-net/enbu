@@ -94,13 +94,28 @@ export const ja = {
     navigation: "ナビゲーション",
     repositoryOptions: "リポジトリの操作",
   },
-  recipients: {
-    title: "受信者一覧",
-    members: "メンバー",
+  members: {
+    title: "メンバー",
+    pendingTitle: "承認待ち",
+    pendingHint: "承認する前に、新しい端末に表示されているフィンガープリントと照合してください。",
+    pendingEmpty: "承認待ちの端末はありません。",
+    approve: "承認",
+    approveTitle: "この端末を承認しますか?",
+    approveWarning: "承認した端末は、このワークスペースのすべてのシークレットを読み取れます。",
+    fingerprintMatches: "フィンガープリントが新しい端末のものと一致しています。",
+    remove: "削除",
+    removeTitle: "{fingerprint} を削除しますか?",
+    removeHint:
+      "この端末を除いてシークレットを再暗号化します。すでに読み取られたシークレットはローテーションしてください。",
+    admin: "管理者",
     member: "メンバー",
-    empty: "受信者が見つかりません。",
-    username: "ユーザー名",
+    you: "あなた",
+    empty: "メンバーが見つかりません。",
     fingerprint: "フィンガープリント",
+    requestedAt: "{time} に申請",
+    cancel: "キャンセル",
+    pendingNotice:
+      "この端末は承認待ちです。管理者にフィンガープリント {fingerprint} の承認を依頼してください。",
   },
   config: {
     title: "enbu.toml",

@@ -167,6 +167,23 @@ type Recipient struct {
 	PublicKey   string `json:"public_key"`
 }
 
+// Member is a device trusted by the workspace's signed Control.
+type Member struct {
+	DeviceID    string `json:"device_id"`
+	Fingerprint string `json:"fingerprint"`
+	Algorithm   string `json:"algorithm"`
+	Admin       bool   `json:"admin"`
+	Self        bool   `json:"self"`
+}
+
+// JoinRequest is a device waiting for an admin to approve it.
+type JoinRequest struct {
+	DeviceID    string    `json:"device_id"`
+	Fingerprint string    `json:"fingerprint"`
+	Algorithm   string    `json:"algorithm"`
+	RequestedAt time.Time `json:"requested_at"`
+}
+
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
 	var status AuthStatus
 	s.repoMu.Lock()
@@ -454,6 +471,44 @@ func (s *Service) ListRecipients() ([]Recipient, error) {
 	})
 }
 
+func (s *Service) ListMembers() ([]Member, error) {
+	return withRepoResult(s, func() ([]Member, error) {
+		infos, err := s.app.ListMembers(s.context())
+		if err != nil {
+			return nil, err
+		}
+		out := make([]Member, len(infos))
+		for i, m := range infos {
+			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self}
+		}
+		return out, nil
+	})
+}
+
+func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
+	return withRepoResult(s, func() ([]JoinRequest, error) {
+		infos, err := s.app.ListJoinRequests(s.context())
+		if err != nil {
+			return nil, err
+		}
+		out := make([]JoinRequest, len(infos))
+		for i, r := range infos {
+			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt}
+		}
+		return out, nil
+	})
+}
+
+// ApproveMember is called after the admin has compared the device's
+// fingerprint with the person who owns it.
+func (s *Service) ApproveMember(deviceID string) error {
+	return s.withRepo(func() error { return s.app.ApproveMember(s.context(), deviceID) })
+}
+
+func (s *Service) RemoveMember(deviceID string) error {
+	return s.withRepo(func() error { return s.app.RemoveMember(s.context(), deviceID) })
+}
+
 func (s *Service) ReadConfig() (string, error) {
 	return withRepoResult(s, func() (string, error) {
 		return s.app.ReadConfig()
@@ -529,6 +584,9 @@ func (s *Service) Initialize() (map[string]any, error) {
 			"public_key":  result.PublicKey,
 			"username":    result.Username,
 			"environment": result.Environment,
+			"device_id":   result.DeviceID,
+			"fingerprint": result.Fingerprint,
+			"pending":     result.Pending,
 		}, nil
 	})
 }

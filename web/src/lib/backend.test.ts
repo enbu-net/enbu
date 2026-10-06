@@ -74,7 +74,10 @@ beforeEach(() => {
         }),
         ListRepositories: vi.fn(async () => ok([])),
         RemoveRepository: vi.fn(async () => ok(undefined)),
-        ListRecipients: vi.fn(async () => ok([])),
+        ListMembers: vi.fn(async () => ok([])),
+        ListJoinRequests: vi.fn(async () => ok([])),
+        ApproveMember: vi.fn(async () => ok(undefined)),
+        RemoveMember: vi.fn(async () => ok(undefined)),
         ReadConfig: vi.fn(async () => ok("")),
         WriteConfig: vi.fn(async () => ok(undefined)),
         GitInit: vi.fn(async (path: string) =>

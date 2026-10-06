@@ -13,7 +13,8 @@ import {
   MemberAvatar,
   MemberRow,
   RepositoryOwnerSelect,
-  RecipientsPanel,
+  MembersPanel,
+  PendingRow,
   resolveWorkspaceEnvironment,
   SecretRow,
   serializeConfigDraft,
@@ -46,7 +47,10 @@ vi.mock("../lib/backend", () => ({
     syncSecrets: vi.fn(),
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(),
-    listRecipients: vi.fn(async () => []),
+    listMembers: vi.fn(async () => []),
+    listJoinRequests: vi.fn(async () => []),
+    approveMember: vi.fn(),
+    removeMember: vi.fn(),
     readConfig: vi.fn(async () => ""),
     writeConfig: vi.fn(),
     appVersion: vi.fn(async () => ""),
@@ -503,20 +507,48 @@ describe("MemberAvatar", () => {
   });
 });
 
+const sampleMember = {
+  device_id: "d".repeat(64),
+  fingerprint: "abcd-efgh-ijkl-mnop-qrst",
+  algorithm: "p256",
+  admin: false,
+  self: false,
+};
+
 describe("MemberRow", () => {
-  it("shows a recipient fingerprint without assuming a GitHub account", () => {
+  it("shows a device fingerprint without assuming a GitHub account", () => {
     act(() => {
       root.render(
         <I18nProvider>
+          <MemberRow member={sampleMember} />
+        </I18nProvider>,
+      );
+    });
+    expect(container.textContent).toContain("abcd-efgh-ijkl-mnop-qrst");
+    expect(container.textContent).toContain("Member");
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
+  });
+
+  it("offers removal for others but never for this device", () => {
+    const onRemove = vi.fn();
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <MemberRow member={sampleMember} onRemove={onRemove} />
           <MemberRow
-            recipient={{ username: "octo cat", fingerprint: "fingerprint", public_key: "age1" }}
+            member={{ ...sampleMember, fingerprint: "self-self", self: true, admin: true }}
+            onRemove={onRemove}
           />
         </I18nProvider>,
       );
     });
-    expect(container.textContent).toContain("fingerpr");
-    expect(container.querySelector("img")).toBeNull();
-    expect(container.querySelector("button")).toBeNull();
+    const buttons = container.querySelectorAll("button");
+    expect(buttons).toHaveLength(1);
+    act(() => buttons[0]?.click());
+    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Admin");
+    expect(container.textContent).toContain("You");
   });
 });
 
@@ -736,17 +768,20 @@ describe("accessibility: CreateEnvironmentModal focus", () => {
 
 describe("accessibility: live regions", () => {
   it("loading state has role=status", async () => {
-    vi.spyOn(backend, "listRecipients").mockImplementation(
+    vi.spyOn(backend, "listMembers").mockImplementation(
       () => new Promise(() => {}), // never resolves
     );
     act(() => {
       root.render(
         <I18nProvider>
-          <RecipientsPanel
-            recipients={[]}
+          <MembersPanel
+            members={[]}
+            requests={[]}
             loading={true}
             error={null}
             onSync={() => {}}
+            onApprove={async () => {}}
+            onRemove={async () => {}}
             onErrorDismiss={() => {}}
           />
         </I18nProvider>,
@@ -781,7 +816,7 @@ describe("dashboard review regressions", () => {
 
   it("trims duplicate keys before validation and does not call the backend", async () => {
     oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
-    backendMock.listRecipients.mockResolvedValue([]);
+    backendMock.listMembers.mockResolvedValue([]);
     backendMock.addSecret.mockClear();
     renderAuthenticatedHome();
     await act(async () => {
@@ -804,47 +839,40 @@ describe("dashboard review regressions", () => {
     expect(container.textContent).toContain('Secret "KEY" already exists.');
   });
 
-  it("reloads recipients by repository path and ignores stale completions", async () => {
-    let resolveA!: (
-      value: Array<{ username: string; fingerprint: string; public_key: string }>,
-    ) => void;
-    let resolveB!: (
-      value: Array<{ username: string; fingerprint: string; public_key: string }>,
-    ) => void;
-    const recipientsA = new Promise<
-      Array<{ username: string; fingerprint: string; public_key: string }>
-    >((resolve) => {
+  it("reloads members by repository path and ignores stale completions", async () => {
+    type Members = Awaited<ReturnType<typeof backend.listMembers>>;
+    let resolveA!: (value: Members) => void;
+    let resolveB!: (value: Members) => void;
+    const membersA = new Promise<Members>((resolve) => {
       resolveA = resolve;
     });
-    const recipientsB = new Promise<
-      Array<{ username: string; fingerprint: string; public_key: string }>
-    >((resolve) => {
+    const membersB = new Promise<Members>((resolve) => {
       resolveB = resolve;
     });
     oauthMocks.repoStatus
       .mockResolvedValueOnce(initializedRepo("/a"))
       .mockResolvedValue(initializedRepo("/b"));
-    backendMock.listRecipients.mockReset();
-    backendMock.listRecipients
-      .mockImplementationOnce(() => recipientsA)
-      .mockImplementationOnce(() => recipientsB);
+    backendMock.listMembers.mockReset();
+    backendMock.listMembers
+      .mockImplementationOnce(() => membersA)
+      .mockImplementationOnce(() => membersB);
 
     renderAuthenticatedHome();
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(backendMock.listRecipients).toHaveBeenCalledTimes(1);
+    expect(backendMock.listMembers).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       window.dispatchEvent(new Event("enbu-auth-changed"));
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(backendMock.listRecipients).toHaveBeenCalledTimes(2);
+    expect(backendMock.listMembers).toHaveBeenCalledTimes(2);
 
     await act(async () => {
-      resolveB([{ username: "new-repo-user", fingerprint: "new-key", public_key: "age1b" }]);
+      resolveB([{ ...sampleMember, fingerprint: "new-key" }]);
       await Promise.resolve();
     });
     await act(async () => {
@@ -854,24 +882,27 @@ describe("dashboard review regressions", () => {
     expect(container.textContent).toContain("new-key");
 
     await act(async () => {
-      resolveA([{ username: "stale-user", fingerprint: "old-key", public_key: "age1a" }]);
+      resolveA([{ ...sampleMember, fingerprint: "old-key" }]);
       await Promise.resolve();
     });
     expect(container.textContent).toContain("new-key");
     expect(container.textContent).not.toContain("old-key");
   });
 
-  it("delegates recipient sync and error dismissal", async () => {
+  it("delegates member sync and error dismissal", async () => {
     const onSync = vi.fn();
     const onErrorDismiss = vi.fn();
     act(() => {
       root.render(
         <I18nProvider>
-          <RecipientsPanel
-            recipients={[]}
+          <MembersPanel
+            members={[]}
+            requests={[]}
             loading={false}
             error={displayError("internal")}
             onSync={onSync}
+            onApprove={async () => {}}
+            onRemove={async () => {}}
             onErrorDismiss={onErrorDismiss}
           />
         </I18nProvider>,
@@ -881,5 +912,144 @@ describe("dashboard review regressions", () => {
     expect(onSync).toHaveBeenCalledTimes(1);
     act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Close"]')?.click());
     expect(onErrorDismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("MembersPanel approval", () => {
+  const request = {
+    device_id: "e".repeat(64),
+    fingerprint: "1111-2222-3333-4444-5555",
+    algorithm: "ed25519",
+    requested_at: "2026-10-06T09:30:00Z",
+  };
+
+  function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <MembersPanel
+            members={[{ ...sampleMember, self: true, admin: true }, sampleMember]}
+            requests={[request]}
+            loading={false}
+            error={null}
+            onSync={() => {}}
+            onApprove={async () => {}}
+            onRemove={async () => {}}
+            onErrorDismiss={() => {}}
+            {...props}
+          />
+        </I18nProvider>,
+      );
+    });
+  }
+
+  it("lists devices that are waiting for approval", () => {
+    renderPanel();
+    expect(container.textContent).toContain("Waiting for approval");
+    expect(container.textContent).toContain(request.fingerprint);
+    expect(queryButton("Approve")).toBeTruthy();
+  });
+
+  it("shows nothing about approval when no device is waiting", () => {
+    renderPanel({ requests: [] });
+    expect(container.textContent).not.toContain("Waiting for approval");
+  });
+
+  it("makes the admin compare the fingerprint before approving", async () => {
+    const onApprove = vi.fn(async () => {});
+    renderPanel({ onApprove });
+    act(() => queryButton("Approve")?.click());
+
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('[data-testid="fingerprint"]')?.textContent).toBe(
+      request.fingerprint,
+    );
+    const confirm = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+      (b) => b.textContent?.trim() === "Approve",
+    );
+    expect(confirm?.hasAttribute("disabled")).toBe(true);
+    act(() => confirm?.click());
+    expect(onApprove).not.toHaveBeenCalled();
+
+    const checkbox = dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    await act(async () => {
+      checkbox?.click();
+    });
+    expect(confirm?.hasAttribute("disabled")).toBe(false);
+    await act(async () => {
+      confirm?.click();
+      await Promise.resolve();
+    });
+    expect(onApprove).toHaveBeenCalledWith(request.device_id);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("can be cancelled without approving", () => {
+    const onApprove = vi.fn(async () => {});
+    renderPanel({ onApprove });
+    act(() => queryButton("Approve")?.click());
+    act(() => queryButton("Cancel")?.click());
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(onApprove).not.toHaveBeenCalled();
+  });
+
+  it("removes a member only after confirmation", async () => {
+    const onRemove = vi.fn(async () => {});
+    renderPanel({ onRemove, requests: [] });
+    const trigger = container.querySelector<HTMLButtonElement>(
+      `button[aria-label^="Remove: ${sampleMember.fingerprint}"]`,
+    );
+    act(() => trigger?.click());
+    expect(onRemove).not.toHaveBeenCalled();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label^="Remove:"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onRemove).toHaveBeenCalledWith(sampleMember.device_id);
+  });
+
+  it("reports a failed approval as a displayable error", async () => {
+    renderPanel({
+      onApprove: async () => {
+        throw new Error("boom");
+      },
+    });
+    act(() => queryButton("Approve")?.click());
+    const dialog = container.querySelector('[role="dialog"]');
+    await act(async () => {
+      dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click();
+    });
+    await act(async () => {
+      Array.from(dialog?.querySelectorAll("button") ?? [])
+        .find((b) => b.textContent?.trim() === "Approve")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(container.textContent).not.toContain("boom");
+    expect(container.textContent).toContain("An unexpected error occurred.");
+  });
+});
+
+describe("PendingRow", () => {
+  it("shows the algorithm and request time", () => {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <PendingRow
+            request={{
+              device_id: "f".repeat(64),
+              fingerprint: "aaaa-bbbb",
+              algorithm: "p256",
+              requested_at: "not a date",
+            }}
+            onApprove={() => {}}
+          />
+        </I18nProvider>,
+      );
+    });
+    expect(container.textContent).toContain("P256");
+    expect(container.textContent).not.toContain("Invalid Date");
   });
 });

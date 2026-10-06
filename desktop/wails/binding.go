@@ -149,6 +149,24 @@ func (s *DesktopService) ListRecipients() BindingResponse {
 	return bindingResult(value, err)
 }
 
+func (s *DesktopService) ListMembers() BindingResponse {
+	value, err := s.service.ListMembers()
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) ListJoinRequests() BindingResponse {
+	value, err := s.service.ListJoinRequests()
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) ApproveMember(deviceID string) BindingResponse {
+	return bindingError(s.service.ApproveMember(deviceID))
+}
+
+func (s *DesktopService) RemoveMember(deviceID string) BindingResponse {
+	return bindingError(s.service.RemoveMember(deviceID))
+}
+
 func (s *DesktopService) ReadConfig() BindingResponse {
 	value, err := s.service.ReadConfig()
 	return bindingResult(value, err)

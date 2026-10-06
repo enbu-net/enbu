@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"github.com/enbu-net/enbu/app/apptest"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -76,7 +77,10 @@ func (f *fakeServiceGit) AddRemote(_ context.Context, _, _, url string) error {
 
 func (*fakeServiceGit) CommitFiles(context.Context, string, []string, string) error { return nil }
 
-type desktopKeyStore struct{ values map[string][]byte }
+type desktopKeyStore struct {
+	apptest.Signers
+	values map[string][]byte
+}
 
 func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
 	s.values[key] = value
@@ -86,7 +90,7 @@ func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
 func (s *desktopKeyStore) loadSecret(_, key string) ([]byte, error) {
 	value, ok := s.values[key]
 	if !ok {
-		return nil, fmt.Errorf("key not found")
+		return nil, fs.ErrNotExist
 	}
 	return value, nil
 }
@@ -624,4 +628,82 @@ func runGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %s: %v", args, out, err)
 	}
 	return string(bytes.TrimSpace(out))
+}
+
+func TestMembersApprovalFlow(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("GITHUB_TOKEN", "")
+	storageDir := t.TempDir()
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.Storage = config.StorageConfig{URL: "local://" + filepath.ToSlash(storageDir)}
+	if !strings.HasPrefix(cfg.Storage.URL, "local:///") {
+		cfg.Storage.URL = "local:///" + strings.TrimPrefix(filepath.ToSlash(storageDir), "/")
+	}
+	newDevice := func(dir string) *Service {
+		if err := config.SaveProjectTo(dir, cfg); err != nil {
+			t.Fatal(err)
+		}
+		a := app.New()
+		a.Identities = &desktopKeyStore{values: map[string][]byte{}}
+		a.CheckpointDir = t.TempDir()
+		s := NewService(a)
+		s.repoPath = dir
+		return s
+	}
+	alice := newDevice(t.TempDir())
+	first, err := alice.Initialize()
+	if err != nil || first["pending"] != false {
+		t.Fatalf("founder init: %v %v", first, err)
+	}
+	// The founder's enbu.toml now carries the trusted genesis; the other
+	// device receives it through the repository.
+	shared, err := os.ReadFile(filepath.Join(alice.repoPath, "enbu.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bobDir, "enbu.toml"), shared, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bob := newDevice(bobDir)
+	if err := os.WriteFile(filepath.Join(bobDir, "enbu.toml"), shared, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	joined, err := bob.Initialize()
+	if err != nil || joined["pending"] != true {
+		t.Fatalf("join: %v %v", joined, err)
+	}
+
+	requests, err := alice.ListJoinRequests()
+	if err != nil || len(requests) != 1 || requests[0].DeviceID != joined["device_id"] || requests[0].Fingerprint != joined["fingerprint"] {
+		t.Fatalf("requests: %+v %v", requests, err)
+	}
+	if err := alice.ApproveMember(requests[0].DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	members, err := alice.ListMembers()
+	if err != nil || len(members) != 2 {
+		t.Fatalf("members: %+v %v", members, err)
+	}
+	var self, admins int
+	for _, m := range members {
+		if m.Self {
+			self++
+		}
+		if m.Admin {
+			admins++
+		}
+	}
+	if self != 1 || admins != 1 {
+		t.Fatalf("flags: %+v", members)
+	}
+	if err := alice.RemoveMember(requests[0].DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	if members, _ = alice.ListMembers(); len(members) != 1 {
+		t.Fatalf("after removal: %+v", members)
+	}
+	if err := bob.ApproveMember(requests[0].DeviceID); err == nil {
+		t.Fatal("a removed device approved a member")
+	}
 }
