@@ -3,9 +3,12 @@ import type {
   Environment,
   GUIRepoStatus,
   InitResult,
+  JoinRequest,
+  Member,
   Recipient,
   SecretsResponse,
 } from "./api";
+import { createAppError } from "./app-error";
 import type { OAuthStart, OAuthStatus } from "./backend";
 
 const previewUsername = "yashikota";
@@ -43,6 +46,32 @@ const mockRecipients: Recipient[] = [
     username: "collaborator",
     fingerprint: "11223344",
     public_key: "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqysqqa",
+  },
+];
+
+let mockMembers: Member[] = [
+  {
+    device_id: "aabbccdd".repeat(8),
+    fingerprint: "aabb-ccdd-aabb-ccdd-aabb",
+    algorithm: "p256",
+    admin: true,
+    self: true,
+  },
+  {
+    device_id: "11223344".repeat(8),
+    fingerprint: "1122-3344-1122-3344-1122",
+    algorithm: "ed25519",
+    admin: false,
+    self: false,
+  },
+];
+
+let mockJoinRequests: JoinRequest[] = [
+  {
+    device_id: "55667788".repeat(8),
+    fingerprint: "5566-7788-5566-7788-5566",
+    algorithm: "p256",
+    requested_at: "2026-10-06T09:30:00Z",
   },
 ];
 
@@ -205,6 +234,32 @@ export const mockBackend = {
   },
   async listRecipients(): Promise<Recipient[]> {
     return [...mockRecipients];
+  },
+  async listMembers(): Promise<Member[]> {
+    return [...mockMembers];
+  },
+  async listJoinRequests(): Promise<JoinRequest[]> {
+    return [...mockJoinRequests];
+  },
+  async approveMember(deviceID: string): Promise<void> {
+    const request = mockJoinRequests.find((r) => r.device_id === deviceID);
+    if (!request) throw createAppError("invalid_argument");
+    mockJoinRequests = mockJoinRequests.filter((r) => r.device_id !== deviceID);
+    mockMembers = [
+      ...mockMembers,
+      {
+        device_id: request.device_id,
+        fingerprint: request.fingerprint,
+        algorithm: request.algorithm,
+        admin: false,
+        self: false,
+      },
+    ];
+  },
+  async removeMember(deviceID: string): Promise<void> {
+    if (!mockMembers.some((m) => m.device_id === deviceID))
+      throw createAppError("invalid_argument");
+    mockMembers = mockMembers.filter((m) => m.device_id !== deviceID);
   },
   async readConfig(): Promise<string> {
     return mockConfig;

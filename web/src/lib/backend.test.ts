@@ -75,6 +75,24 @@ beforeEach(() => {
         ListRepositories: vi.fn(async () => ok([])),
         RemoveRepository: vi.fn(async () => ok(undefined)),
         ListRecipients: vi.fn(async () => ok([])),
+        ListMembers: vi.fn(async () =>
+          // Wails can hand back null entries; the adapter must drop them.
+          ok([
+            { device_id: "d1", fingerprint: "aaaa", algorithm: "p256", admin: true, self: true },
+            null,
+          ] as never),
+        ),
+        ListJoinRequests: vi.fn(async () =>
+          ok([{ device_id: "d2", fingerprint: "bbbb", algorithm: "ed25519", requested_at: "t" }]),
+        ),
+        ApproveMember: vi.fn(async (id: string) => {
+          window.calls?.push(["approve", id]);
+          return ok(undefined);
+        }),
+        RemoveMember: vi.fn(async (id: string) => {
+          window.calls?.push(["remove", id]);
+          return ok(undefined);
+        }),
         ReadConfig: vi.fn(async () => ok("")),
         WriteConfig: vi.fn(async () => ok(undefined)),
         GitInit: vi.fn(async (path: string) =>
@@ -163,5 +181,53 @@ describe("backend desktop adapter", () => {
       repo: { owner: "octo-org", repo: "example", has_remote: true },
     });
     expect(window.calls).toContainEqual(["createRemote", "C:/repo", "octo-org", "example", true]);
+  });
+});
+
+describe("backend member operations", () => {
+  it("maps members and join requests from the desktop service", async () => {
+    await expect(backend.listMembers()).resolves.toEqual([
+      { device_id: "d1", fingerprint: "aaaa", algorithm: "p256", admin: true, self: true },
+    ]);
+    await expect(backend.listJoinRequests()).resolves.toEqual([
+      { device_id: "d2", fingerprint: "bbbb", algorithm: "ed25519", requested_at: "t" },
+    ]);
+  });
+
+  it("passes the device id to approve and remove", async () => {
+    await backend.approveMember("d2");
+    await backend.removeMember("d1");
+    expect(window.calls).toEqual([
+      ["approve", "d2"],
+      ["remove", "d1"],
+    ]);
+  });
+
+  it("treats an empty result as no members", async () => {
+    window.go!.main!.DesktopService!.ListMembers = vi.fn(async () => ok(null as never));
+    window.go!.main!.DesktopService!.ListJoinRequests = vi.fn(async () => ok(null as never));
+    await expect(backend.listMembers()).resolves.toEqual([]);
+    await expect(backend.listJoinRequests()).resolves.toEqual([]);
+  });
+
+  it("fails instead of pretending when the desktop service is missing", async () => {
+    window.go = undefined;
+    await expect(backend.listMembers()).resolves.toEqual([]);
+    await expect(backend.listJoinRequests()).resolves.toEqual([]);
+    await expect(backend.approveMember("d2")).rejects.toMatchObject({
+      payload: { code: "unavailable" },
+    });
+    await expect(backend.removeMember("d1")).rejects.toMatchObject({
+      payload: { code: "unavailable" },
+    });
+  });
+
+  it("propagates a refusal from the desktop service", async () => {
+    window.go!.main!.DesktopService!.ApproveMember = vi.fn(async () => ({
+      error: { code: "access_denied", message: "no", params: {} },
+    }));
+    await expect(backend.approveMember("d2")).rejects.toMatchObject({
+      payload: { code: "access_denied" },
+    });
   });
 });
