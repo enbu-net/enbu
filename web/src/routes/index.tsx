@@ -30,11 +30,12 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { Environment, Recipient, SecretsResponse } from "../lib/api";
+import type { Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";
 import { ConfirmDeleteDialog } from "../components/confirm-delete-dialog";
+import { FingerprintConfirmDialog } from "../components/fingerprint-confirm-dialog";
 import { TransferModal } from "../components/transfer-modal";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { LanguageSelector } from "../components/language-selector";
@@ -223,10 +224,11 @@ export function HomePage() {
   const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
   const [environmentCreateLoading, setEnvironmentCreateLoading] = useState(false);
   const [now, setNow] = useState(() => Date.now());
-  const [recipients, setRecipients] = useState<Recipient[]>([]);
-  const [recipientsLoading, setRecipientsLoading] = useState(false);
-  const [recipientsError, setRecipientsError] = useState<DisplayError | null>(null);
-  const recipientsRequestRef = useRef(0);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState<DisplayError | null>(null);
+  const membersRequestRef = useRef(0);
   const addEnvironmentTriggerRef = useRef<HTMLButtonElement>(null);
   const [transferModal, setTransferModal] = useState<{
     open: boolean;
@@ -312,23 +314,27 @@ export function HomePage() {
     [environments, secrets?.environment],
   );
 
-  const recipientRepoPath = repoStatus?.repo?.path ?? "";
-  const fetchRecipients = useCallback(async () => {
-    if (!recipientRepoPath) return;
-    const request = ++recipientsRequestRef.current;
-    setRecipientsLoading(true);
-    setRecipientsError(null);
+  const membersRepoPath = repoStatus?.repo?.path ?? "";
+  const fetchMembers = useCallback(async () => {
+    if (!membersRepoPath) return;
+    const request = ++membersRequestRef.current;
+    setMembersLoading(true);
+    setMembersError(null);
     try {
-      const list = await backend.listRecipients();
-      if (request !== recipientsRequestRef.current) return;
-      setRecipients((list ?? []).filter((r): r is Recipient => r != null));
+      const [memberList, requestList] = await Promise.all([
+        backend.listMembers(),
+        backend.listJoinRequests(),
+      ]);
+      if (request !== membersRequestRef.current) return;
+      setMembers((memberList ?? []).filter((m): m is Member => m != null));
+      setJoinRequests((requestList ?? []).filter((r): r is JoinRequest => r != null));
     } catch (err) {
-      if (request !== recipientsRequestRef.current) return;
-      setRecipientsError(toDisplayError(err));
+      if (request !== membersRequestRef.current) return;
+      setMembersError(toDisplayError(err));
     } finally {
-      if (request === recipientsRequestRef.current) setRecipientsLoading(false);
+      if (request === membersRequestRef.current) setMembersLoading(false);
     }
-  }, [recipientRepoPath]);
+  }, [membersRepoPath]);
 
   async function refreshWorkspace(env = currentEnvironment) {
     setWorkspaceLoading(true);
@@ -350,14 +356,15 @@ export function HomePage() {
   }, [repoStatus?.selected, repoStatus?.repo?.initialized]);
 
   useEffect(() => {
-    if (repoStatus?.selected && repoStatus.repo?.initialized && recipientRepoPath) {
-      void fetchRecipients();
+    if (repoStatus?.selected && repoStatus.repo?.initialized && membersRepoPath) {
+      void fetchMembers();
       return;
     }
-    recipientsRequestRef.current++;
-    setRecipients([]);
-    setRecipientsLoading(false);
-  }, [repoStatus?.selected, repoStatus?.repo?.initialized, recipientRepoPath, fetchRecipients]);
+    membersRequestRef.current++;
+    setMembers([]);
+    setJoinRequests([]);
+    setMembersLoading(false);
+  }, [repoStatus?.selected, repoStatus?.repo?.initialized, membersRepoPath, fetchMembers]);
 
   useEffect(() => {
     const path = repoStatus?.repo?.path?.replace(/[\\/]+$/, "");
@@ -744,11 +751,7 @@ export function HomePage() {
               icon={<KeyRound size={16} />}
               label={t("dashboard.secrets")}
             />
-            <DashboardTab
-              value="members"
-              icon={<Users size={16} />}
-              label={t("recipients.members")}
-            />
+            <DashboardTab value="members" icon={<Users size={16} />} label={t("members.title")} />
             <DashboardTab
               value="settings"
               icon={<SlidersHorizontal size={16} />}
@@ -903,24 +906,33 @@ export function HomePage() {
           </DashboardTabContent>
 
           <DashboardTabContent value="members">
-            <RecipientsPanel
-              recipients={recipients}
-              loading={recipientsLoading}
-              error={recipientsError}
+            <MembersPanel
+              members={members}
+              requests={joinRequests}
+              loading={membersLoading}
+              error={membersError}
               onSync={async () => {
-                setRecipientsLoading(true);
+                setMembersLoading(true);
                 try {
                   await runWithTransferAnimation("sync", async () => {
                     await backend.syncSecrets(currentEnvironment);
-                    await fetchRecipients();
+                    await fetchMembers();
                   });
                 } catch (err) {
-                  setRecipientsError(toDisplayError(err));
+                  setMembersError(toDisplayError(err));
                 } finally {
-                  setRecipientsLoading(false);
+                  setMembersLoading(false);
                 }
               }}
-              onErrorDismiss={() => setRecipientsError(null)}
+              onApprove={async (deviceID) => {
+                await backend.approveMember(deviceID);
+                await fetchMembers();
+              }}
+              onRemove={async (deviceID) => {
+                await backend.removeMember(deviceID);
+                await fetchMembers();
+              }}
+              onErrorDismiss={() => setMembersError(null)}
             />
           </DashboardTabContent>
           <DashboardTabContent value="settings">
@@ -1464,24 +1476,53 @@ export function SecretRow({
   );
 }
 
-export function RecipientsPanel({
-  recipients,
+export function MembersPanel({
+  members,
+  requests,
   loading,
   error,
   onSync,
+  onApprove,
+  onRemove,
   onErrorDismiss,
 }: {
-  recipients: Recipient[];
+  members: Member[];
+  requests: JoinRequest[];
   loading: boolean;
   error: DisplayError | null;
   onSync: () => void | Promise<void>;
+  onApprove: (deviceID: string) => Promise<void>;
+  onRemove: (deviceID: string) => Promise<void>;
   onErrorDismiss: () => void;
 }) {
   const { t } = useI18n();
+  const [approving, setApproving] = useState<JoinRequest | null>(null);
+  const [removing, setRemoving] = useState<Member | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<DisplayError | null>(null);
+  const approveTriggerRef = useRef<HTMLElement | null>(null);
+  const removeTriggerRef = useRef<HTMLElement | null>(null);
 
+  // The dialog closes whether or not the action worked; a failure is shown in
+  // the panel, so the admin starts again from a fresh list instead of retrying
+  // on a stale dialog.
+  async function run(action: () => Promise<void>, close: () => void) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await action();
+    } catch (err) {
+      setActionError(toDisplayError(err));
+    } finally {
+      close();
+      setBusy(false);
+    }
+  }
+
+  const shownError = actionError ?? error;
   return (
     <>
-      <SectionHeader title={t("recipients.members")}>
+      <SectionHeader title={t("members.title")}>
         <Button
           size="sm"
           variant="outline"
@@ -1493,9 +1534,15 @@ export function RecipientsPanel({
           {t("dashboard.sync")}
         </Button>
       </SectionHeader>
-      {error && (
+      {shownError && (
         <Box mb="4">
-          <ErrorAlert error={error} onDismiss={onErrorDismiss} />
+          <ErrorAlert
+            error={shownError}
+            onDismiss={() => {
+              setActionError(null);
+              onErrorDismiss();
+            }}
+          />
         </Box>
       )}
       {loading ? (
@@ -1503,27 +1550,100 @@ export function RecipientsPanel({
           <Spinner size="sm" aria-hidden="true" />
           <Text color="fg.muted">{t("common.loading")}</Text>
         </HStack>
-      ) : recipients.length === 0 ? (
-        <Text color="fg.muted" textAlign="center" py="8">
-          {t("recipients.empty")}
-        </Text>
       ) : (
-        <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
-          {recipients.map((recipient, index) => (
-            <MemberRow
-              key={recipient.fingerprint}
-              recipient={recipient}
-              last={index === recipients.length - 1}
-            />
-          ))}
-        </Box>
+        <>
+          {requests.length > 0 && (
+            <Box mb="6">
+              <Heading as="h3" size="md" fontWeight="bold" mb="1">
+                {t("members.pendingTitle")}
+              </Heading>
+              <Text fontSize="sm" color="fg.muted" mb="3">
+                {t("members.pendingHint")}
+              </Text>
+              <Box
+                overflow="hidden"
+                borderWidth="1px"
+                borderColor="border.default"
+                borderRadius="xl"
+              >
+                {requests.map((request, index) => (
+                  <PendingRow
+                    key={request.device_id}
+                    request={request}
+                    last={index === requests.length - 1}
+                    onApprove={(trigger) => {
+                      approveTriggerRef.current = trigger;
+                      setApproving(request);
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+          {members.length === 0 ? (
+            <Text color="fg.muted" textAlign="center" py="8">
+              {t("members.empty")}
+            </Text>
+          ) : (
+            <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
+              {members.map((member, index) => (
+                <MemberRow
+                  key={member.device_id}
+                  member={member}
+                  last={index === members.length - 1}
+                  onRemove={(trigger) => {
+                    removeTriggerRef.current = trigger;
+                    setRemoving(member);
+                  }}
+                />
+              ))}
+            </Box>
+          )}
+        </>
       )}
+      <FingerprintConfirmDialog
+        open={approving !== null}
+        title={t("members.approveTitle")}
+        fingerprint={approving?.fingerprint ?? ""}
+        warning={t("members.approveWarning")}
+        acknowledgeLabel={t("members.fingerprintMatches")}
+        cancelLabel={t("members.cancel")}
+        confirmLabel={t("members.approve")}
+        loading={busy}
+        triggerRef={approveTriggerRef}
+        onClose={() => setApproving(null)}
+        onConfirm={() => {
+          const target = approving;
+          if (!target) return;
+          return run(
+            () => onApprove(target.device_id),
+            () => setApproving(null),
+          );
+        }}
+      />
+      <ConfirmDeleteDialog
+        open={removing !== null}
+        title={t("members.removeTitle", { fingerprint: removing?.fingerprint ?? "" })}
+        description={t("members.removeHint")}
+        cancelLabel={t("members.cancel")}
+        confirmLabel={t("members.remove")}
+        loading={busy}
+        triggerRef={removeTriggerRef}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          const target = removing;
+          if (!target) return;
+          return run(
+            () => onRemove(target.device_id),
+            () => setRemoving(null),
+          );
+        }}
+      />
     </>
   );
 }
 
-export function MemberRow({ recipient, last = false }: { recipient: Recipient; last?: boolean }) {
-  const { t } = useI18n();
+function RowShell({ last, children }: { last: boolean; children: React.ReactNode }) {
   return (
     <Box
       w="full"
@@ -1540,39 +1660,106 @@ export function MemberRow({ recipient, last = false }: { recipient: Recipient; l
       borderColor="border.default"
       textAlign="left"
     >
-      <Box
-        w="38px"
-        h="38px"
-        borderRadius="full"
-        bg="bg.muted"
-        display="grid"
-        placeItems="center"
-        fontFamily="mono"
-        fontSize="xs"
-      >
-        {recipient.fingerprint.slice(0, 2).toUpperCase()}
-      </Box>
-      <Box minW="0">
-        <Text fontWeight="semibold" fontSize="sm">
-          {recipient.fingerprint.slice(0, 8)}
-        </Text>
-        <Text fontSize="2xs" color="fg.muted" fontFamily="mono" truncate>
-          {recipient.fingerprint}
-        </Text>
-      </Box>
-      <Box
-        px="2"
-        py="1"
-        bg="bg.muted"
-        borderWidth="1px"
-        borderColor="border.default"
-        borderRadius="full"
-        color="fg.muted"
-        fontSize="2xs"
-      >
-        {t("recipients.member")}
-      </Box>
+      {children}
     </Box>
+  );
+}
+
+function FingerprintAvatar({ fingerprint }: { fingerprint: string }) {
+  return (
+    <Box
+      w="38px"
+      h="38px"
+      borderRadius="full"
+      bg="bg.muted"
+      display="grid"
+      placeItems="center"
+      fontFamily="mono"
+      fontSize="xs"
+    >
+      {fingerprint.slice(0, 2).toUpperCase()}
+    </Box>
+  );
+}
+
+export function PendingRow({
+  request,
+  last = false,
+  onApprove,
+}: {
+  request: JoinRequest;
+  last?: boolean;
+  onApprove: (trigger: HTMLElement) => void;
+}) {
+  const { t } = useI18n();
+  const requested = new Date(request.requested_at);
+  const time = Number.isNaN(requested.getTime()) ? "" : requested.toLocaleString();
+  return (
+    <RowShell last={last}>
+      <FingerprintAvatar fingerprint={request.fingerprint} />
+      <Box minW="0">
+        <Text fontWeight="semibold" fontSize="sm" fontFamily="mono">
+          {request.fingerprint}
+        </Text>
+        <Text fontSize="2xs" color="fg.muted">
+          {request.algorithm.toUpperCase()}
+          {time ? ` · ${t("members.requestedAt", { time })}` : ""}
+        </Text>
+      </Box>
+      <Button size="sm" onClick={(event) => onApprove(event.currentTarget)}>
+        {t("members.approve")}
+      </Button>
+    </RowShell>
+  );
+}
+
+export function MemberRow({
+  member,
+  last = false,
+  onRemove,
+}: {
+  member: Member;
+  last?: boolean;
+  onRemove?: (trigger: HTMLElement) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <RowShell last={last}>
+      <FingerprintAvatar fingerprint={member.fingerprint} />
+      <Box minW="0">
+        <Text fontWeight="semibold" fontSize="sm" fontFamily="mono">
+          {member.fingerprint}
+        </Text>
+        <Text fontSize="2xs" color="fg.muted">
+          {member.algorithm.toUpperCase()}
+          {member.self ? ` · ${t("members.you")}` : ""}
+        </Text>
+      </Box>
+      <HStack gap="2">
+        <Box
+          px="2"
+          py="1"
+          bg="bg.muted"
+          borderWidth="1px"
+          borderColor="border.default"
+          borderRadius="full"
+          color="fg.muted"
+          fontSize="2xs"
+        >
+          {member.admin ? t("members.admin") : t("members.member")}
+        </Box>
+        {onRemove && !member.self && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`${t("members.remove")}: ${member.fingerprint}`}
+            onClick={(event) => onRemove(event.currentTarget)}
+          >
+            <Trash2 size={14} aria-hidden="true" />
+          </Button>
+        )}
+      </HStack>
+    </RowShell>
   );
 }
 

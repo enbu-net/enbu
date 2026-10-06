@@ -1,12 +1,13 @@
 import { type RefObject, useEffect, useId, useRef } from "react";
 import { Box, HStack } from "styled-system/jsx";
-import { Button, Heading } from "./ui";
+import { Button, Heading, Text } from "./ui";
 import { Trash2 } from "lucide-react";
 import { useFocusTrap } from "../lib/use-focus-trap";
 
 export function ConfirmDeleteDialog({
   open,
   title,
+  description,
   cancelLabel,
   confirmLabel,
   loading,
@@ -16,6 +17,8 @@ export function ConfirmDeleteDialog({
 }: {
   open: boolean;
   title: string;
+  /** Extra text shown under the title, such as what the action cannot undo. */
+  description?: string;
   cancelLabel: string;
   confirmLabel: string;
   loading: boolean;
@@ -24,6 +27,7 @@ export function ConfirmDeleteDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const titleId = useId();
+  const descriptionId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(open, dialogRef, triggerRef);
 
@@ -55,6 +59,7 @@ export function ConfirmDeleteDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         w="full"
         maxW="440px"
         p="5"
@@ -67,6 +72,11 @@ export function ConfirmDeleteDialog({
         <Heading id={titleId} size="lg" fontWeight="extrabold">
           {title}
         </Heading>
+        {description && (
+          <Text id={descriptionId} mt="3" fontSize="sm" color="fg.muted">
+            {description}
+          </Text>
+        )}
         <HStack justify="end" gap="2" mt="6">
           <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
             {cancelLabel}

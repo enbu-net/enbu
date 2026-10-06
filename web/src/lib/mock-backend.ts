@@ -5,7 +5,6 @@ import type {
   InitResult,
   JoinRequest,
   Member,
-  Recipient,
   SecretsResponse,
 } from "./api";
 import { createAppError } from "./app-error";
@@ -35,19 +34,6 @@ let mockSecretsByEnv: Record<string, { key: string; value: string }[]> = {
     { key: "DATABASE_URL", value: "postgres://staging.example.com:5432/enbu" },
   ],
 };
-
-const mockRecipients: Recipient[] = [
-  {
-    username: previewUsername,
-    fingerprint: "aabbccdd",
-    public_key: "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqysqqp",
-  },
-  {
-    username: "collaborator",
-    fingerprint: "11223344",
-    public_key: "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqysqqa",
-  },
-];
 
 let mockMembers: Member[] = [
   {
@@ -231,9 +217,6 @@ export const mockBackend = {
     const idx = mockRepoHistory.findIndex((r) => r.path === path);
     if (idx >= 0) mockRepoHistory.splice(idx, 1);
     if (mockSelectedRepoPath === path) mockSelectedRepoPath = "";
-  },
-  async listRecipients(): Promise<Recipient[]> {
-    return [...mockRecipients];
   },
   async listMembers(): Promise<Member[]> {
     return [...mockMembers];
