@@ -35,6 +35,7 @@ type securityAPI struct {
 	keyAttributes  func(uintptr) uintptr
 	keyWithData    func(uintptr, uintptr, *uintptr) uintptr
 	keyExchange    func(uintptr, uintptr, uintptr, uintptr, *uintptr) uintptr
+	keySign        func(uintptr, uintptr, uintptr, *uintptr) uintptr
 	keySupported   func(uintptr, int64, uintptr) bool
 	itemCopy       func(uintptr, *uintptr) int32
 	itemDelete     func(uintptr) int32
@@ -59,7 +60,7 @@ var loadSecurity = sync.OnceValues(func() (*securityAPI, error) {
 		{&a.release, c, "CFRelease"}, {&a.dataCreate, c, "CFDataCreate"}, {&a.dataLength, c, "CFDataGetLength"}, {&a.dataBytes, c, "CFDataGetBytePtr"},
 		{&a.dictCreate, c, "CFDictionaryCreateMutable"}, {&a.dictSet, c, "CFDictionarySetValue"}, {&a.dictGet, c, "CFDictionaryGetValue"}, {&a.equal, c, "CFEqual"}, {&a.numberCreate, c, "CFNumberCreate"},
 		{&a.accessCreate, s, "SecAccessControlCreateWithFlags"}, {&a.keyCreate, s, "SecKeyCreateRandomKey"}, {&a.keyPublic, s, "SecKeyCopyPublicKey"}, {&a.keyExternal, s, "SecKeyCopyExternalRepresentation"},
-		{&a.keyAttributes, s, "SecKeyCopyAttributes"}, {&a.keyWithData, s, "SecKeyCreateWithData"}, {&a.keyExchange, s, "SecKeyCopyKeyExchangeResult"}, {&a.keySupported, s, "SecKeyIsAlgorithmSupported"},
+		{&a.keyAttributes, s, "SecKeyCopyAttributes"}, {&a.keyWithData, s, "SecKeyCreateWithData"}, {&a.keyExchange, s, "SecKeyCopyKeyExchangeResult"}, {&a.keySign, s, "SecKeyCreateSignature"}, {&a.keySupported, s, "SecKeyIsAlgorithmSupported"},
 		{&a.itemCopy, s, "SecItemCopyMatching"}, {&a.itemDelete, s, "SecItemDelete"},
 		{&a.errorCode, c, "CFErrorGetCode"},
 	} {
@@ -253,11 +254,24 @@ func (b *enclaveBackend) Load(md *Metadata) (Identity, error) {
 	if md.Backend != "secure-enclave" || md.Algorithm != "P-256" || md.Reference == "" {
 		return nil, errors.New("invalid Secure Enclave metadata")
 	}
+	k, err := b.loadKey(md.Reference)
+	if err != nil {
+		return nil, err
+	}
+	id, err := NewHardwareIdentity(k)
+	if err != nil {
+		_ = k.Close()
+	}
+	return id, err
+}
+
+// loadKey returns the Secure Enclave key saved under a Keychain reference.
+func (b *enclaveBackend) loadKey(reference string) (*enclaveKey, error) {
 	a, err := loadSecurity()
 	if err != nil {
 		return nil, err
 	}
-	q := a.keyQuery(md.Reference)
+	q := a.keyQuery(reference)
 	defer a.release(q)
 	a.set(q, "kSecReturnRef", a.constant("kCFBooleanTrue"))
 	var ref uintptr
@@ -276,15 +290,7 @@ func (b *enclaveBackend) Load(md *Metadata) (Identity, error) {
 		a.release(ref)
 		return nil, errors.New("saved key is not a Secure Enclave key")
 	}
-	k, err := a.wrapKey(ref)
-	if err != nil {
-		return nil, err
-	}
-	id, err := NewHardwareIdentity(k)
-	if err != nil {
-		_ = k.Close()
-	}
-	return id, err
+	return a.wrapKey(ref)
 }
 
 // Delete is used only to roll back an unsaved Keychain reference and by native

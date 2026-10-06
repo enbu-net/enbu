@@ -33,6 +33,10 @@ type PublicInfo struct {
 	Algorithm string `json:"algorithm"`
 	Recipient string `json:"recipient"`
 	Device    string `json:"device,omitempty"`
+	// DeviceID and Fingerprint describe the separate signing key. They are
+	// filled in by the app layer, not stored with the encryption identity.
+	DeviceID    string `json:"device_id,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // HardwareKey has deliberately no private-key export method.
