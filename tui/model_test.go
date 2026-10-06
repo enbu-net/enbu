@@ -7,7 +7,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/enbu-net/enbu/app"
 )
+
+func appJoinRequest(id, fingerprint string) app.JoinRequestInfo {
+	return app.JoinRequestInfo{DeviceID: id, Fingerprint: fingerprint, Algorithm: "ed25519"}
+}
 
 func testModel() *model {
 	m := newModel(nil)
@@ -284,5 +289,168 @@ func TestTruncateHandlesLongAndWideValues(t *testing.T) {
 	got := truncate(value, 12)
 	if lipgloss.Width(got) > 12 || !strings.HasSuffix(got, "…") {
 		t.Fatalf("truncate result has display width %d: %q", lipgloss.Width(got), got)
+	}
+}
+
+func membersModel() *model {
+	m := testModel()
+	m.tab = tabMembers
+	m.recipients = append(m.recipients, demoRecipients...)
+	m.requests = append(m.requests, demoRequests...)
+	m.requests = append(m.requests, appJoinRequest("second-device", "aaaa-bbbb-cccc-dddd-eeee"))
+	return m
+}
+
+func TestMembersShowDevicesWaitingForApproval(t *testing.T) {
+	m := membersModel()
+	view := m.View().Content
+	for _, want := range []string{"Waiting for approval", demoRequests[0].Fingerprint, "aaaa-bbbb-cccc-dddd-eeee", "Approve"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("members view lacks %q:\n%s", want, view)
+		}
+	}
+	m.requests = nil
+	if view := m.View().Content; strings.Contains(view, "Waiting for approval") {
+		t.Fatalf("approval section shown with nothing waiting:\n%s", view)
+	}
+}
+
+func TestApproveNeedsConfirmationAndShowsFingerprint(t *testing.T) {
+	m := membersModel()
+	_ = m.View()
+	_, _ = m.Update(keyMsg("j")) // select the second request
+	_, _ = m.Update(keyMsg("a"))
+	if m.overlay != overlayApprove {
+		t.Fatalf("overlay = %v, want approve", m.overlay)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "aaaa-bbbb-cccc-dddd-eeee") || !strings.Contains(view, "Compare it with") {
+		t.Fatalf("dialog does not show the fingerprint to compare:\n%s", view)
+	}
+
+	// Escape cancels without approving anything.
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.overlay != overlayNone || cmd != nil || len(m.requests) != 2 {
+		t.Fatalf("cancel: overlay=%v cmd=%v requests=%d", m.overlay, cmd != nil, len(m.requests))
+	}
+
+	_, _ = m.Update(keyMsg("a"))
+	_, cmd = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil || !m.loading {
+		t.Fatalf("confirm did not start the approval: cmd=%v loading=%v", cmd != nil, m.loading)
+	}
+	done, ok := cmd().(memberApprovedMsg)
+	if !ok || !strings.Contains(done.message, "aaaa-bbbb-cccc-dddd-eeee") {
+		t.Fatalf("approval message = %#v", done)
+	}
+	_, reload := m.Update(done)
+	if m.overlay != overlayNone || reload == nil || !strings.Contains(m.status, "Approved") {
+		t.Fatalf("after approval: overlay=%v reload=%v status=%q", m.overlay, reload != nil, m.status)
+	}
+}
+
+func TestApproveByMouseOpensTheSameConfirmation(t *testing.T) {
+	m := membersModel()
+	_ = m.View()
+	hit := findHit(t, m, hitApprove, 1)
+	_, _ = m.Update(click(hit))
+	if m.overlay != overlayApprove || m.requestCursor != 1 {
+		t.Fatalf("overlay=%v cursor=%d", m.overlay, m.requestCursor)
+	}
+}
+
+func TestApproveDoesNothingWhenNobodyIsWaiting(t *testing.T) {
+	m := membersModel()
+	m.requests = nil
+	_, _ = m.Update(keyMsg("a"))
+	if m.overlay != overlayNone {
+		t.Fatalf("overlay = %v with no requests", m.overlay)
+	}
+}
+
+func TestRequestCursorStaysInRangeAfterReload(t *testing.T) {
+	m := membersModel()
+	m.requestCursor = 1
+	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requests: m.requests[:1]})
+	if m.requestCursor != 0 {
+		t.Fatalf("cursor = %d after the list shrank", m.requestCursor)
+	}
+	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients})
+	if m.requestCursor != 0 {
+		t.Fatalf("cursor = %d with no requests", m.requestCursor)
+	}
+}
+
+// The list can be reloaded while the dialog is open; the dialog is about the
+// device whose fingerprint the admin was shown.
+func TestApprovalDialogKeepsItsTargetWhenTheListChanges(t *testing.T) {
+	m := membersModel()
+	_ = m.View()
+	_, _ = m.Update(keyMsg("j")) // the second request
+	_, _ = m.Update(keyMsg("a"))
+	shown := m.requests[1]
+
+	for name, reloaded := range map[string][]app.JoinRequestInfo{
+		"emptied":   nil,
+		"reordered": {m.requests[1], m.requests[0]},
+		"replaced":  {appJoinRequest("someone-else", "9999-9999-9999-9999-9999")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := membersModel()
+			_ = m.View()
+			_, _ = m.Update(keyMsg("j"))
+			_, _ = m.Update(keyMsg("a"))
+			_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requests: reloaded})
+			view := m.View().Content // must not panic on an emptied list
+			if !strings.Contains(view, shown.Fingerprint) {
+				t.Fatalf("the dialog stopped showing %s:\n%s", shown.Fingerprint, view)
+			}
+			_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("confirmation did nothing")
+			}
+			done, ok := cmd().(memberApprovedMsg)
+			if !ok || !strings.Contains(done.message, shown.Fingerprint) {
+				t.Fatalf("approved %#v, want the device that was shown (%s)", done, shown.Fingerprint)
+			}
+		})
+	}
+}
+
+func TestMembersStayWhenOnlyTheRequestsFailToLoad(t *testing.T) {
+	m := membersModel()
+	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requestsErr: errors.New("requests unavailable")})
+	if len(m.recipients) == 0 {
+		t.Fatal("the member list was discarded")
+	}
+	if m.err == nil || !strings.Contains(m.View().Content, "requests unavailable") {
+		t.Fatalf("the failure was not shown: %v", m.err)
+	}
+	if m.loading {
+		t.Fatal("still loading after the load finished")
+	}
+}
+
+func TestFailedApprovalIsShownAndStopsLoading(t *testing.T) {
+	m := membersModel()
+	_ = m.View()
+	_, _ = m.Update(keyMsg("a"))
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if !m.loading {
+		t.Fatal("approval did not start")
+	}
+	_, _ = m.Update(errMsg{errors.New("not allowed")})
+	if m.loading || m.err == nil || !strings.Contains(m.View().Content, "not allowed") {
+		t.Fatalf("loading=%v err=%v", m.loading, m.err)
+	}
+}
+
+func TestClosingTheDialogForgetsItsTarget(t *testing.T) {
+	m := membersModel()
+	_ = m.View()
+	_, _ = m.Update(keyMsg("a"))
+	_, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.approving != nil || m.overlay != overlayNone {
+		t.Fatalf("approving=%v overlay=%v", m.approving, m.overlay)
 	}
 }

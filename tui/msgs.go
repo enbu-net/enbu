@@ -9,7 +9,13 @@ type workspaceLoadedMsg struct {
 	repository string
 }
 
-type recipientsLoadedMsg struct{ recipients []app.RecipientInfo }
+type recipientsLoadedMsg struct {
+	recipients []app.RecipientInfo
+	requests   []app.JoinRequestInfo
+	// requestsErr is set when only the join requests could not be loaded.
+	requestsErr error
+}
+type memberApprovedMsg struct{ message string }
 type configLoadedMsg struct{ content string }
 type configSavedMsg struct{}
 type operationDoneMsg struct{ message string }

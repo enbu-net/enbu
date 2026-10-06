@@ -30,6 +30,9 @@ var (
 		{Username: "octocat", Fingerprint: "abc123def456"},
 		{Username: "hubot", Fingerprint: "xyz789ghi012"},
 	}
+	demoRequests = []app.JoinRequestInfo{
+		{DeviceID: "demo-device", Fingerprint: "5566-7788-5566-7788-5566", Algorithm: "p256"},
+	}
 	demoConfigContent = `version = "v1alpha2"
 default_env = "development"
 
@@ -63,6 +66,7 @@ func newDemoModel() *model {
 	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
 	m.envs = append([]envItem(nil), demoEnvs...)
 	m.recipients = append([]app.RecipientInfo(nil), demoRecipients...)
+	m.requests = append([]app.JoinRequestInfo(nil), demoRequests...)
 	m.configContent = demoConfigContent
 	m.configDraft = demoConfigContent
 	return m
