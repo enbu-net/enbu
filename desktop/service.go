@@ -584,6 +584,9 @@ func (s *Service) Initialize() (map[string]any, error) {
 			"public_key":  result.PublicKey,
 			"username":    result.Username,
 			"environment": result.Environment,
+			"device_id":   result.DeviceID,
+			"fingerprint": result.Fingerprint,
+			"pending":     result.Pending,
 		}, nil
 	})
 }

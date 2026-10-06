@@ -232,7 +232,7 @@ scenarios:
       - assert:
           dir:
             path: data/enbu/identities
-            count: 2 # Version 1 metadata and the retained OS lock file.
+            count: 4 # Encryption and signing metadata, each with its retained OS lock file.
 
   - name: JSON init returns structured repository and registry state
     tags: [init, json, registry]
@@ -407,10 +407,10 @@ scenarios:
           stdout:
             json: {path: "$.error.code", equals: invalid_argument}
 
-  - name: late joining user cannot decrypt before sync and can afterward
+  - name: late joining user waits for approval and can read afterward
     tags: [multi-user, registry]
     env:
-      ENBU_TEST_COVERAGE_NAME: "Atago/late joining user cannot decrypt before sync and can afterward"
+      ENBU_TEST_COVERAGE_NAME: "Atago/late joining user waits for approval and can read afterward"
       XDG_DATA_HOME: "${workdir}/alice-data"
       GITHUB_ACTOR: alice
     steps:
@@ -428,7 +428,7 @@ scenarios:
           timeout: 15s
       - assert:
           exit_code: 0
-          stdout: {contains: "Ask an existing member"}
+          stdout: {contains: "Waiting for approval"}
       - run:
           command: enbu pull --stdout --json
           env:
@@ -439,17 +439,22 @@ scenarios:
           stdout:
             json: {path: "$.error.code", equals: invalid_argument}
       - run:
-          command: enbu pull --stdout
+          command: enbu pull --json
           env:
             XDG_DATA_HOME: "${workdir}/bob-data"
             GITHUB_ACTOR: bob
       - assert:
-          exit_code: 1
-          stderr: {contains: "Error:"}
-      - run: {command: enbu sync}
+          exit_code: 3
+          stdout:
+            json: {path: "$.error.code", equals: not_member}
+      - run:
+          command: >-
+            sh -c 'enbu member approve --json --device
+            "$(enbu member requests --json | grep -o "[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}-[0-9a-f]\{4\}" | head -1)"'
       - assert:
           exit_code: 0
-          stderr: {equals: "✓ Sync complete"}
+          stdout:
+            json: {path: "$.data.action", equals: approve}
       - run:
           command: enbu pull --stdout
           env:

@@ -4,7 +4,6 @@ package identitye2e
 
 import (
 	"bytes"
-	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -12,11 +11,8 @@ import (
 	"testing"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/oci"
 )
 
 // This opt-in test builds the production CLI without identitytest. It uses the
@@ -64,20 +60,10 @@ func TestNativeTPMCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := strings.TrimPrefix(h.storageURL, "oci://")
-	if err := oci.Push(context.Background(), ref+":"+app.RecipientKey(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
-		t.Fatal(err)
-	}
+	approveX25519(t, h, x)
 	h.run("sync")
 	assertSecret(t, h.run("pull"), "second")
-	ciphertext, err := oci.Pull(context.Background(), ref+":secrets-default", "fixture-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	plaintext, err := age.Decrypt(ciphertext, x)
-	if err != nil {
-		t.Fatalf("sync did not include X25519 recipient: %v", err)
-	}
+	plaintext := decryptCurrent(t, h, x)
 	secrets, err := bundle.Unmarshal(plaintext)
 	if err != nil || secrets["DATABASE_URL"] != "second" {
 		t.Fatalf("software recipient recovered wrong bundle: %v %v", secrets, err)

@@ -22,14 +22,16 @@ func TestScenario_SingleUserAddPull(t *testing.T) {
 	)
 }
 
-func TestScenario_JoinFlowRequiresSync(t *testing.T) {
+func TestScenario_JoinFlowRequiresApproval(t *testing.T) {
 	RunScenario(t,
 		Users("alice", "bob"),
 		Register("alice"),
 		Add("alice", "SECRET", "only-for-alice"),
-		Register("bob"),
+		Join("bob"),
 		PullFails("bob"),
-		Sync("alice"),
+		AddFails("bob", "BOB_ONLY", "not-yet"),
+		Approve("alice", "bob"),
+		// Approval re-encrypts, so no separate sync is needed.
 		PullContains("bob", "only-for-alice"),
 	)
 }
@@ -39,15 +41,15 @@ func TestScenario_ThreeUsersSequentialJoin(t *testing.T) {
 		Users("alice", "bob", "charlie"),
 		Register("alice"),
 		Add("alice", "SHARED_KEY", "initial-value"),
-		Register("bob"),
+		Join("bob"),
 		PullFails("bob"),
-		Sync("alice"),
+		Approve("alice", "bob"),
 		PullContains("bob", "initial-value"),
 		Add("alice", "NEW_KEY", "after-bob-joined"),
 		PullContains("bob", "after-bob-joined"),
-		Register("charlie"),
+		Join("charlie"),
 		PullFails("charlie"),
-		Sync("bob"),
+		Approve("alice", "charlie"),
 		PullContainsAll("charlie", "initial-value", "after-bob-joined"),
 	)
 }
@@ -237,17 +239,32 @@ func TestScenario_AddAfterSyncPreservesRecipients(t *testing.T) {
 	)
 }
 
-func TestScenario_NewRecipientCannotAddUntilSynced(t *testing.T) {
+func TestScenario_PendingDeviceCannotAddUntilApproved(t *testing.T) {
 	RunScenario(t,
 		Users("alice", "bob"),
 		Register("alice"),
 		Add("alice", "DATABASE_URL", "postgres://prod/app"),
-		Register("bob"),
+		Join("bob"),
 		AddFails("bob", "BOB_ONLY", "not-yet"),
-		Sync("alice"),
-		Add("bob", "BOB_ONLY", "after-sync"),
-		PullContainsAll("alice", "DATABASE_URL", "BOB_ONLY", "after-sync"),
-		PullContainsAll("bob", "DATABASE_URL", "BOB_ONLY", "after-sync"),
+		Approve("alice", "bob"),
+		Add("bob", "BOB_ONLY", "after-approval"),
+		PullContainsAll("alice", "DATABASE_URL", "BOB_ONLY", "after-approval"),
+		PullContainsAll("bob", "DATABASE_URL", "BOB_ONLY", "after-approval"),
+	)
+}
+
+func TestScenario_RemovedMemberLosesAccess(t *testing.T) {
+	RunScenario(t,
+		Users("alice", "bob"),
+		Register("alice"),
+		Register("bob"),
+		Add("alice", "KEY", "before-removal"),
+		PullContains("bob", "before-removal"),
+		Remove("alice", "bob"),
+		PullFails("bob"),
+		AddFails("bob", "LATE", "after-removal"),
+		Add("alice", "AFTER", "after-removal"),
+		PullContainsAll("alice", "before-removal", "after-removal"),
 	)
 }
 
@@ -323,9 +340,9 @@ func TestScenario_FullLifecycleMultiStage(t *testing.T) {
 		Register("founder"),
 		Add("founder", "DB_URL", "postgres://prod:5432/app"),
 		Add("founder", "STRIPE_KEY", "sk_live_xxx"),
-		Register("early-hire"),
+		Join("early-hire"),
 		PullFails("early-hire"),
-		Sync("founder"),
+		Approve("founder", "early-hire"),
 		PullContains("early-hire", "sk_live_xxx"),
 		Add("early-hire", "REDIS_URL", "redis://cache:6379"),
 		Add("early-hire", "SENTRY_DSN", "https://sentry.io/xxx"),
@@ -439,7 +456,7 @@ output = ".env.prod"
 	)
 }
 
-func TestScenario_SyncReEncryptsForAllRecipients(t *testing.T) {
+func TestScenario_ApprovalReEncryptsEveryEnvironment(t *testing.T) {
 	RunScenario(t,
 		StepFunc("environment config exists", func(t *testing.T, s *ScenarioState) {
 			content := `version = "v1alpha2"
@@ -464,12 +481,12 @@ output = ".env.prod"
 		Register("alice"),
 		AddEnv("alice", "dev", "SECRET", "dev-value"),
 		AddEnv("alice", "prod", "SECRET", "prod-value"),
-		Register("bob"),
-		Register("charlie"),
+		Join("bob"),
+		Join("charlie"),
 		PullFailsEnv("bob", "dev"),
 		PullFailsEnv("charlie", "prod"),
-		SyncEnv("alice", "dev"),
-		SyncEnv("alice", "prod"),
+		Approve("alice", "bob"),
+		Approve("alice", "charlie"),
 		PullEnvContainsAll("bob", "dev", "dev-value"),
 		PullEnvContainsAll("bob", "prod", "prod-value"),
 		PullEnvContainsAll("charlie", "dev", "dev-value"),
@@ -506,10 +523,9 @@ output = ".env.staging"
 		Sync("alice"),
 		PullEnvContainsAll("bob", "dev", "dev-val"),
 		PullEnvContainsAll("bob", "staging", "staging-val"),
-		Register("charlie"),
+		Join("charlie"),
 		PullFailsEnv("charlie", "dev"),
-		SyncEnv("bob", "dev"),
-		SyncEnv("bob", "staging"),
+		Approve("alice", "charlie"),
 		PullEnvContainsAll("charlie", "dev", "dev-val"),
 		PullEnvContainsAll("charlie", "staging", "staging-val"),
 	)

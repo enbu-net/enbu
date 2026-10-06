@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -26,9 +25,10 @@ import (
 )
 
 type testUser struct {
-	svc     *enbuapp.App
-	keyPair *age.KeyPair
-	name    string
+	svc      *enbuapp.App
+	keyPair  *age.KeyPair
+	name     string
+	deviceID string
 }
 
 type ScenarioState struct {
@@ -37,6 +37,9 @@ type ScenarioState struct {
 	repo        string
 	registryRef string
 	users       map[string]*testUser
+	// founder created the workspace and is its first admin. Later users join
+	// and are approved by the founder.
+	founder *testUser
 }
 
 type Step struct {
@@ -95,16 +98,74 @@ func Users(names ...string) Step {
 	})
 }
 
+// Register makes user a member: the first user creates the workspace, and every
+// later user requests to join and is approved by the founder.
 func Register(user string) Step {
-	return StepFunc(fmt.Sprintf("%s registers recipient", user), func(t *testing.T, s *ScenarioState) {
-		registerRecipient(t, s.ctx, s.registryRef, s.user(t, user), "default")
+	return StepFunc(fmt.Sprintf("%s registers", user), func(t *testing.T, s *ScenarioState) {
+		s.register(t, s.user(t, user))
 	})
 }
 
-func RegisterEnv(user, env string) Step {
-	return StepFunc(fmt.Sprintf("%s registers recipient for %s", user, env), func(t *testing.T, s *ScenarioState) {
-		registerRecipient(t, s.ctx, s.registryRef, s.user(t, user), env)
+// Join makes user request to join without anyone approving it.
+func Join(user string) Step {
+	return StepFunc(fmt.Sprintf("%s requests to join", user), func(t *testing.T, s *ScenarioState) {
+		u := s.user(t, user)
+		res, err := u.svc.InitializeRepository(s.ctx)
+		if err != nil {
+			t.Fatalf("%s init: %v", user, err)
+		}
+		if !res.Pending {
+			t.Fatalf("%s should be waiting for approval", user)
+		}
+		u.deviceID = res.DeviceID
 	})
+}
+
+// Approve has admin approve user's pending join request.
+func Approve(admin, user string) Step {
+	return StepFunc(fmt.Sprintf("%s approves %s", admin, user), func(t *testing.T, s *ScenarioState) {
+		u := s.user(t, user)
+		if err := s.user(t, admin).svc.ApproveMember(s.ctx, u.deviceID); err != nil {
+			t.Fatalf("%s approves %s: %v", admin, user, err)
+		}
+		if _, err := u.svc.InitializeRepository(s.ctx); err != nil {
+			t.Fatalf("%s init after approval: %v", user, err)
+		}
+	})
+}
+
+// Remove has admin remove user from the workspace.
+func Remove(admin, user string) Step {
+	return StepFunc(fmt.Sprintf("%s removes %s", admin, user), func(t *testing.T, s *ScenarioState) {
+		if err := s.user(t, admin).svc.RemoveMember(s.ctx, s.user(t, user).deviceID); err != nil {
+			t.Fatalf("%s removes %s: %v", admin, user, err)
+		}
+	})
+}
+
+func (s *ScenarioState) register(t *testing.T, u *testUser) {
+	t.Helper()
+	res, err := u.svc.InitializeRepository(s.ctx)
+	if err != nil {
+		t.Fatalf("%s init: %v", u.name, err)
+	}
+	u.deviceID = res.DeviceID
+	if s.founder == nil {
+		if res.Pending {
+			t.Fatalf("%s should have created the workspace", u.name)
+		}
+		s.founder = u
+		return
+	}
+	if !res.Pending {
+		return
+	}
+	if err := s.founder.svc.ApproveMember(s.ctx, res.DeviceID); err != nil {
+		t.Fatalf("%s approves %s: %v", s.founder.name, u.name, err)
+	}
+	if res, err = u.svc.InitializeRepository(s.ctx); err != nil || res.Pending {
+		t.Fatalf("%s init after approval: pending=%v err=%v", u.name, res != nil && res.Pending, err)
+	}
 }
 
 func Add(user, key, value string) Step {
@@ -331,14 +392,6 @@ func (m *mockGitHubClient) IsOrganization(_ context.Context, login string) bool 
 
 func (m *mockGitHubClient) SourceRepoURL(owner, repo string) string {
 	return "https://github.com/" + owner + "/" + repo
-}
-
-func registerRecipient(t *testing.T, ctx context.Context, _ string, user *testUser, _ string) {
-	t.Helper()
-	err := storagetest.ToObjects(user.svc.Storage).Put(ctx, enbuapp.RecipientKey(user.keyPair.PublicKey), []byte(user.keyPair.PublicKey), "")
-	if err != nil && !errors.Is(err, storage.ErrConflict) {
-		t.Fatal(err)
-	}
 }
 
 func captureStdout(t *testing.T, fn func()) string {

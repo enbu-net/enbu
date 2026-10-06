@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,8 +15,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -50,52 +47,6 @@ func CloseIdentities(ids []agecrypto.Identity) {
 
 const workspaceKey = "enbu-workspace"
 
-func RecipientKey(publicKey string) string {
-	return fmt.Sprintf("recipient-%x", sha256.Sum256([]byte(strings.TrimSpace(publicKey))))
-}
-
-func PullAllRecipients(ctx context.Context, store *storage.Store) ([]string, error) {
-	keys, err := store.Refs.List(ctx, RecipientTagPrefix())
-	if err != nil {
-		return nil, storageError(err)
-	}
-	objects := make([][]byte, len(keys))
-	group, ctx := errgroup.WithContext(ctx)
-	group.SetLimit(8)
-	for i, key := range keys {
-		group.Go(func() error { o, _, err := getRef(ctx, store, key); objects[i] = o; return storageError(err) })
-	}
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-	var publicKeys []string
-	seen := map[string]bool{}
-	for i, key := range keys {
-		o := objects[i]
-		publicKey := strings.TrimSpace(string(o))
-		if key != RecipientKey(publicKey) {
-			return nil, fmt.Errorf("invalid recipient object %s", key)
-		}
-		if _, err := age.ParseRecipient(publicKey); err != nil {
-			return nil, err
-		}
-		if !seen[publicKey] {
-			publicKeys = append(publicKeys, publicKey)
-			seen[publicKey] = true
-		}
-	}
-	return publicKeys, nil
-}
-
-func PullSecretsWithVersion(ctx context.Context, store *storage.Store, key string, identities ...agecrypto.Identity) (map[string]string, storage.Version, error) {
-	o, version, err := getRef(ctx, store, key)
-	if err != nil {
-		return nil, "", storageError(err)
-	}
-	secrets, err := decryptSecretsObject(o, identities...)
-	return secrets, version, err
-}
-
 func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (map[string]string, error) {
 	plaintext, err := age.Decrypt(ciphertext, identities...)
 	if err != nil {
@@ -109,10 +60,6 @@ func secretsTag(env string) string {
 		env = DefaultEnvironment
 	}
 	return "secrets-" + env
-}
-
-func RecipientTagPrefix() string {
-	return "recipient-"
 }
 
 func IsNotFoundError(err error) bool {

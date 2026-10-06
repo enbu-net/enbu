@@ -98,7 +98,8 @@ func newHistoryTestApp(t *testing.T) *App {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := putRef(context.Background(), a.Storage, snapshot.tag, ciphertext, ""); err != nil {
+		signed := stateBlob(t, a, a.Storage, snapshot.tag, "default", ciphertext)
+		if err := putRef(context.Background(), a.Storage, snapshot.tag, signed, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

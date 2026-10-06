@@ -2,9 +2,8 @@ package app
 
 import (
 	"context"
-	"github.com/enbu-net/enbu/pkg/age"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"strings"
 )
 
 type RecipientInfo struct {
@@ -13,18 +12,16 @@ type RecipientInfo struct {
 	PublicKey   string
 }
 
+// ListRecipients returns the encryption recipients of the verified Control.
+// Objects in storage never contribute to this list.
 func (a *App) ListRecipients(ctx context.Context) (recipients []RecipientInfo, err error) {
 	defer apperr.NormalizeInto(&err)
-	store, err := a.workspaceStorage(ctx)
+	s, err := a.openControl(ctx)
 	if err != nil {
 		return nil, err
 	}
-	keys, err := PullAllRecipients(ctx, store)
-	if err != nil {
-		return nil, err
-	}
-	for _, key := range keys {
-		recipients = append(recipients, RecipientInfo{Username: age.Fingerprint(key), Fingerprint: strings.TrimPrefix(RecipientKey(key), RecipientTagPrefix()), PublicKey: key})
+	for _, p := range s.head.Principals {
+		recipients = append(recipients, RecipientInfo{Username: p.ID.Fingerprint(), Fingerprint: p.ID.Fingerprint(), PublicKey: p.Recipient})
 	}
 	return recipients, nil
 }

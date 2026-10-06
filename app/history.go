@@ -63,20 +63,24 @@ func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (
 	if toIdx < 1 || toIdx > len(entries) {
 		return nil, invalidHistoryIndexError(toIdx, len(entries))
 	}
-	store, ids, err := a.secretContext(ctx)
+	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return nil, err
 	}
-	defer CloseIdentities(ids)
-	from, _, err := PullSecretsWithVersion(ctx, store, entries[fromIdx-1].Tag, ids...)
+	s, err := a.openSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-	to, _, err := PullSecretsWithVersion(ctx, store, entries[toIdx-1].Tag, ids...)
+	defer s.Close()
+	from, err := s.readState(ctx, entries[fromIdx-1].Tag, resolved.Name, false)
 	if err != nil {
 		return nil, err
 	}
-	return diffSecrets(from, to), nil
+	to, err := s.readState(ctx, entries[toIdx-1].Tag, resolved.Name, false)
+	if err != nil {
+		return nil, err
+	}
+	return diffSecrets(from.secrets, to.secrets), nil
 }
 func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err error) {
 	defer apperr.NormalizeInto(&err)
@@ -87,18 +91,22 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err erro
 	if idx < 1 || idx > len(entries) {
 		return invalidHistoryIndexError(idx, len(entries))
 	}
-	store, ids, err := a.secretContext(ctx)
+	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
 	}
-	defer CloseIdentities(ids)
-	snapshot, _, err := PullSecretsWithVersion(ctx, store, entries[idx-1].Tag, ids...)
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	snapshot, err := s.readState(ctx, entries[idx-1].Tag, resolved.Name, false)
 	if err != nil {
 		return err
 	}
 	return a.changeSecret(ctx, env, "restore", func(current map[string]string) error {
 		clear(current)
-		for k, v := range snapshot {
+		for k, v := range snapshot.secrets {
 			current[k] = v
 		}
 		return nil

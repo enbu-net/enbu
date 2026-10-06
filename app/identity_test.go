@@ -8,6 +8,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
@@ -65,7 +66,11 @@ func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	if result.PublicKey != saved.Recipient {
 		t.Fatal("registration retry changed identity")
 	}
-	if len(manager.Vault.(identityVault)) != 1 {
+	// One encryption key and one signing key: a retry must create neither again.
+	if len(manager.Vault.(identityVault)) != 2 {
 		t.Fatal("registration retry created another key")
+	}
+	if got, err := manager.SignerInfo(testWorkspaceID); err != nil || got.DeviceID != signing.DeviceID(result.DeviceID) {
+		t.Fatalf("registration retry changed the signing key: %v", err)
 	}
 }
