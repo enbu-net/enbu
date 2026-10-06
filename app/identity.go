@@ -16,8 +16,18 @@ func (a *App) CreateIdentity() (info identity.PublicInfo, warning string, err er
 	if err != nil {
 		return info, warning, err
 	}
-	err = id.Close()
-	return info, warning, err
+	if err := id.Close(); err != nil {
+		return info, warning, err
+	}
+	signer, signerInfo, signerWarning, err := a.Identities.CreateSigner(workspaceID)
+	if err != nil {
+		return info, warning, err
+	}
+	info.DeviceID, info.Fingerprint = string(signerInfo.DeviceID), signerInfo.Fingerprint
+	if warning == "" {
+		warning = signerWarning
+	}
+	return info, warning, signer.Close()
 }
 
 func (a *App) IdentityInfo() (info identity.PublicInfo, err error) {
@@ -26,7 +36,16 @@ func (a *App) IdentityInfo() (info identity.PublicInfo, err error) {
 	if err != nil {
 		return info, err
 	}
-	return a.Identities.Info(workspaceID)
+	info, err = a.Identities.Info(workspaceID)
+	if err != nil {
+		return info, err
+	}
+	signerInfo, err := a.Identities.SignerInfo(workspaceID)
+	if err != nil {
+		return info, err
+	}
+	info.DeviceID, info.Fingerprint = string(signerInfo.DeviceID), signerInfo.Fingerprint
+	return info, nil
 }
 
 func (a *App) DiagnoseIdentity() identity.Diagnosis { return a.Identities.Doctor() }

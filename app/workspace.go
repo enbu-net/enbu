@@ -1,0 +1,235 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"path/filepath"
+
+	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
+)
+
+// session is a workspace opened for use: its Control chain has been verified
+// against the trusted genesis and the local checkpoint, so everything derived
+// from it (principals, recipients) is authoritative. Nothing read from storage
+// outside this verification is trusted.
+type session struct {
+	app       *App
+	store     *storage.Store
+	cfg       *config.ProjectConfig
+	workspace string
+	head      *wsp.Head
+	cps       *wsp.Checkpoints
+	ids       []agecrypto.Identity
+	signer    signing.Signer
+}
+
+func (s *session) Close() {
+	CloseIdentities(s.ids)
+	if s.signer != nil {
+		_ = s.signer.Close()
+	}
+}
+
+func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
+	dir := a.CheckpointDir
+	if dir == "" {
+		dir = filepath.Join(config.DataDir(), "checkpoints")
+	}
+	return wsp.OpenCheckpoints(dir, workspace, digest.Digest(genesis))
+}
+
+// wspError classifies verification failures so callers can tell an attack or
+// rollback from an ordinary failure.
+func wspError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, wsp.ErrRollback):
+		return apperr.Wrap(apperr.CodeRollback, "storage returned data older than this device already accepted", err, nil)
+	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrDigestMismatch):
+		return apperr.Wrap(apperr.CodeUntrusted, "stored data failed verification", err, nil)
+	default:
+		return storageError(err)
+	}
+}
+
+// openControl verifies the Control chain without loading any key.
+func (a *App) openControl(ctx context.Context) (*session, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	store, err := a.workspaceStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID}
+	s.head, err = a.verifyControl(ctx, s)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (a *App) verifyControl(ctx context.Context, s *session) (*wsp.Head, error) {
+	if s.cfg.ControlGenesis == "" {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml has no control_genesis; use the enbu.toml shared by an admin and run enbu init", nil)
+	}
+	// The checkpoint belongs to this trust root; the genesis may have just been created.
+	s.cps = a.checkpoints(s.workspace, s.cfg.ControlGenesis)
+	cp, err := s.cps.Control()
+	if err != nil {
+		return nil, err
+	}
+	head, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), cp)
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, apperr.Wrap(apperr.CodeIncompatibleStorage, "storage has no workspace control; use an empty location", err, nil)
+	}
+	if err != nil {
+		return nil, wspError(err)
+	}
+	if err := s.cps.AcceptControl(head.Verified); err != nil {
+		return nil, wspError(err)
+	}
+	return head, nil
+}
+
+// openSession also loads the encryption identity and the signing key, and
+// requires this device to be a principal of the verified Control.
+func (a *App) openSession(ctx context.Context) (*session, error) {
+	s, err := a.openControl(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if a.Identities == nil {
+		return nil, fmt.Errorf("identity store is not initialized")
+	}
+	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, apperr.New(apperr.CodeNotInitialized, "no signing key found (run 'enbu init' first)", nil)
+		}
+		return nil, fmt.Errorf("loading signing key: %w", err)
+	}
+	if _, ok := s.head.Principal(s.signer.Public().DeviceID()); !ok {
+		s.Close()
+		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.signer.Public().DeviceID().Fingerprint()})
+	}
+	if s.ids, err = LoadIdentities(a.Identities, s.workspace); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *session) self() signing.DeviceID { return s.signer.Public().DeviceID() }
+
+func secretsResource(env string) string {
+	if env == "" {
+		env = DefaultEnvironment
+	}
+	return "secrets/" + env
+}
+
+type stateRead struct {
+	state   *wsp.VerifiedState
+	secrets map[string]string
+	version storage.Version
+}
+
+// readState loads and verifies the SignedState a ref names, then decrypts its
+// ciphertext. With current set the state must not be older than what this
+// device accepted, and is recorded as accepted; history snapshots are older by
+// design and skip that check.
+func (s *session) readState(ctx context.Context, ref, env string, current bool) (*stateRead, error) {
+	d, version, err := s.store.Refs.Get(ctx, ref)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	blob, err := s.readBlob(ctx, ref, d)
+	if err != nil {
+		return nil, err
+	}
+	st, err := wsp.VerifyState(s.head.Verified, s.workspace, secretsResource(env), blob)
+	if err != nil {
+		return nil, wspError(err)
+	}
+	if current {
+		if err := s.cps.CheckState(st); err != nil {
+			return nil, wspError(err)
+		}
+	}
+	ciphertext, err := s.readBlob(ctx, ref, st.Ciphertext)
+	if err != nil {
+		return nil, err
+	}
+	secrets, err := decryptSecretsObject(ciphertext, s.ids...)
+	if err != nil {
+		return nil, err
+	}
+	if current {
+		if err := s.cps.AcceptState(st); err != nil {
+			return nil, wspError(err)
+		}
+	}
+	return &stateRead{state: st, secrets: secrets, version: version}, nil
+}
+
+func (s *session) readBlob(ctx context.Context, ref string, d digest.Digest) ([]byte, error) {
+	data, err := readBlob(ctx, s.store, d)
+	if errors.Is(err, storage.ErrNotFound) {
+		// A missing blob behind an existing ref is corruption, not an absent ref.
+		return nil, fmt.Errorf("ref %s points to missing blob %s", ref, d)
+	}
+	if err != nil {
+		return nil, wspError(err)
+	}
+	return data, nil
+}
+
+// writeState encrypts secrets for the verified recipient set, signs a State
+// for it and points ref at that State. cur is the state being replaced.
+func (s *session) writeState(ctx context.Context, ref, env string, secrets map[string]string, cur *stateRead, expected storage.Version) (digest.Digest, error) {
+	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
+	if err != nil {
+		return "", err
+	}
+	ct, err := s.store.Blobs.Put(ctx, bytes.NewReader(ciphertext))
+	if err != nil {
+		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
+	}
+	next := wsp.State{Workspace: s.workspace, Resource: secretsResource(env), Sequence: 1,
+		ControlGeneration: s.head.Generation, Control: s.head.Digest, Ciphertext: ct, Author: s.self()}
+	if cur != nil {
+		next.Sequence, next.Previous = cur.state.Sequence+1, cur.state.Digest
+	}
+	blob, err := wsp.SignState(next, s.signer)
+	if err != nil {
+		return "", err
+	}
+	stateDigest, err := s.store.Blobs.Put(ctx, bytes.NewReader(blob))
+	if err != nil {
+		return "", fmt.Errorf("saving signed state: %w", storageError(err))
+	}
+	if err := storageError(s.store.Refs.Put(ctx, ref, stateDigest, expected)); err != nil {
+		return "", err
+	}
+	st, err := wsp.VerifyState(s.head.Verified, s.workspace, next.Resource, blob)
+	if err != nil {
+		return "", err
+	}
+	if err := s.cps.AcceptState(st); err != nil {
+		return "", wspError(err)
+	}
+	return stateDigest, nil
+}

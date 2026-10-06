@@ -14,6 +14,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 func TestStorageURLValidation(t *testing.T) {
@@ -149,16 +150,18 @@ func TestHistoryOrdersRapidUpdates(t *testing.T) {
 }
 
 func TestInitializeRejectsCorruptStorageRecords(t *testing.T) {
-	for _, kind := range []string{"recipient", "secrets"} {
+	for _, kind := range []string{"control", "secrets"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx := context.Background()
 			a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
 			prepareApp(t, a, "default")
-			initialized, err := a.InitializeRepository(ctx)
-			if err != nil {
+			if _, err := a.InitializeRepository(ctx); err != nil {
 				t.Fatal(err)
 			}
-			key := RecipientKey(initialized.PublicKey)
+			if err := a.AddSecret(ctx, "default", "KEY", "value"); err != nil {
+				t.Fatal(err)
+			}
+			key := wsp.ControlRef
 			if kind == "secrets" {
 				key = secretsTag("default")
 			}

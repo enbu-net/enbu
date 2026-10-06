@@ -29,6 +29,9 @@ type App struct {
 	Platform      PlatformClient
 	Events        EventHandler
 	RepositoryDir string
+	// CheckpointDir holds the local rollback checkpoints. Empty means the
+	// per-user data directory.
+	CheckpointDir string
 }
 
 func (a *App) SetRepositoryDir(dir string) {

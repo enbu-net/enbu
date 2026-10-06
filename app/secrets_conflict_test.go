@@ -70,7 +70,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 					initial := map[string]string{"KEY": "original"}
 					if operation.name == "restore" {
 						initial = map[string]string{"KEY": "updated"}
-						data, err := age.EncryptForPublicKeys(bundle.Marshal(initial), []string{kp.PublicKey})
+						ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(initial), []string{kp.PublicKey})
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -78,6 +78,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
+						data := stateBlob(t, a, base, ref, "default", ciphertext)
 						if err := putRef(context.Background(), base, ref, data, version); err != nil {
 							t.Fatal(err)
 						}
@@ -91,7 +92,7 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						wantCode = apperr.CodeAccessDenied
 					}
 					writes, snapshots := 0, 0
-					a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base), put: func(ctx context.Context, target string, o []byte, version storage.Version) error {
+					a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base), put: func(ctx context.Context, target string, o []byte, version storage.Version) error {
 						if target != ref {
 							snapshots++
 							if version != "" {
@@ -116,10 +117,11 @@ func TestSecretWritesHandleConflicts(t *testing.T) {
 						if failure == "retry succeeds" && writes == 1 {
 							// Another user changes the artifact before the retry. The next
 							// attempt must re-read its contents and its new digest.
-							concurrent, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "original", "CONCURRENT": "keep"}), []string{kp.PublicKey})
+							ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "original", "CONCURRENT": "keep"}), []string{kp.PublicKey})
 							if err != nil {
 								t.Fatal(err)
 							}
+							concurrent := stateBlob(t, a, base, ref, "default", ciphertext)
 							if err := putRef(ctx, base, ref, concurrent, current); err != nil {
 								t.Fatal(err)
 							}
@@ -182,7 +184,7 @@ func TestSyncSecretsCancellationDuringConflict(t *testing.T) {
 	defer cancel()
 	base := a.Storage
 	pushes := 0
-	a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base), put: func(context.Context, string, []byte, storage.Version) error {
+	a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base), put: func(context.Context, string, []byte, storage.Version) error {
 		pushes++
 		cancel()
 		return storage.ErrConflict
@@ -200,7 +202,7 @@ func TestSyncSecretsPassesReadVersion(t *testing.T) {
 	base := a.Storage
 	reads, writes := 0, 0
 	const version storage.Version = "opaque-version"
-	a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base),
+	a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
 		get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
 			o, v, err := getRef(ctx, base, key)
 			if key == secretsTag("default") {

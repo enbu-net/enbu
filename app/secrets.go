@@ -1,12 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	agecrypto "filippo.io/age"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -21,35 +18,25 @@ const maxRetries = 3
 
 var errNoChange = fmt.Errorf("secret unchanged")
 
-func (a *App) secretContext(ctx context.Context) (*storage.Store, []agecrypto.Identity, error) {
-	store, err := a.workspaceStorage(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	id, err := a.WorkspaceID()
-	if err != nil {
-		return nil, nil, err
-	}
-	ids, err := LoadIdentities(a.Identities, id)
-	return store, ids, err
-}
-
 func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]string, err error) {
 	defer apperr.NormalizeInto(&err)
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return nil, err
 	}
-	store, ids, err := a.secretContext(ctx)
+	s, err := a.openSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer CloseIdentities(ids)
-	secrets, _, err := PullSecretsWithVersion(ctx, store, secretsTag(resolved.Name), ids...)
+	defer s.Close()
+	read, err := s.readState(ctx, secretsTag(resolved.Name), resolved.Name, true)
 	if IsNotFoundError(err) {
 		return map[string]string{}, nil
 	}
-	return secrets, err
+	if err != nil {
+		return nil, err
+	}
+	return read.secrets, nil
 }
 
 func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error) {
@@ -92,18 +79,21 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 	if err != nil {
 		return err
 	}
-	store, ids, err := a.secretContext(ctx)
+	s, err := a.openSession(ctx)
 	if err != nil {
 		return err
 	}
-	defer CloseIdentities(ids)
+	defer s.Close()
 	attempts := maxRetries
 	if op == "sync" {
 		attempts = 5
 	}
+	ref := secretsTag(resolved.Name)
 	for attempt := 0; attempt < attempts; attempt++ {
 		a.emitStepProgress(op, "pull_secrets", "start")
-		secrets, version, err := PullSecretsWithVersion(ctx, store, secretsTag(resolved.Name), ids...)
+		cur, err := s.readState(ctx, ref, resolved.Name, true)
+		var secrets map[string]string
+		var version storage.Version
 		if err != nil {
 			if !IsNotFoundError(err) {
 				return fmt.Errorf("pulling secrets: %w", err)
@@ -115,7 +105,9 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			if op == "edit" {
 				return err
 			}
-			secrets = map[string]string{}
+			cur, secrets = nil, map[string]string{}
+		} else {
+			secrets, version = cur.secrets, cur.version
 		}
 		if err := change(secrets); err != nil {
 			if err == errNoChange {
@@ -124,27 +116,11 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			}
 			return err
 		}
-		a.emitStepProgress(op, "pull_recipients", "start")
-		publicKeys, err := PullAllRecipients(ctx, store)
-		if err != nil {
-			return err
-		}
-		if len(publicKeys) == 0 {
-			return fmt.Errorf("no recipients found")
-		}
 		a.emitStepProgress(op, "encrypt", "start")
-		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), publicKeys)
-		if err != nil {
-			return err
-		}
 		a.emitStepProgress(op, "push", "start")
-		blob, err := store.Blobs.Put(ctx, bytes.NewReader(ciphertext))
-		if err != nil {
-			return fmt.Errorf("saving encrypted secrets: %w", storageError(err))
-		}
-		err = storageError(store.Refs.Put(ctx, secretsTag(resolved.Name), blob, version))
+		stateDigest, err := s.writeState(ctx, ref, resolved.Name, secrets, cur, version)
 		if errors.Is(err, storage.ErrNotFound) {
-			// The blob vanished between Blobs.Put and the ref update (registry GC).
+			// A blob vanished between its upload and the ref update (registry GC).
 			// Re-run the whole attempt, which uploads it again.
 			if attempt == attempts-1 {
 				return fmt.Errorf("saving encrypted secrets: uploaded blob disappeared before it was referenced: %v", err)
@@ -171,7 +147,7 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
 		if op != "sync" {
-			a.saveSnapshot(ctx, store, resolved.Name, blob)
+			a.saveSnapshot(ctx, s.store, resolved.Name, stateDigest)
 		}
 		a.emitStepProgress(op, "push", "done")
 		return nil
@@ -179,7 +155,7 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 	return nil
 }
 
-// saveSnapshot records a history entry as another ref to the secrets blob.
+// saveSnapshot records a history entry as another ref to the signed state.
 func (a *App) saveSnapshot(ctx context.Context, store *storage.Store, env string, blob digest.Digest) {
 	if err := store.Refs.Put(ctx, snapshotTag(env), blob, ""); err != nil {
 		a.emit(fmt.Sprintf("Secrets saved, but history snapshot failed: %v", err))
@@ -220,17 +196,18 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 	if err != nil {
 		return nil, err
 	}
-	store, ids, err := a.secretContext(ctx)
+	s, err := a.openSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer CloseIdentities(ids)
+	defer s.Close()
 	a.emitStepProgress("pull", "pull_secrets", "start")
 	a.emitStepProgress("pull", "decrypt", "start")
-	secrets, _, err := PullSecretsWithVersion(ctx, store, secretsTag(resolved.Name), ids...)
+	read, err := s.readState(ctx, secretsTag(resolved.Name), resolved.Name, true)
 	if err != nil {
 		return nil, fmt.Errorf("pulling secrets: %w", err)
 	}
+	secrets := read.secrets
 	if emitDone {
 		a.emitStepProgress("pull", "decrypt", "done")
 	}

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"github.com/enbu-net/enbu/app/apptest"
 	"io/fs"
 	"strings"
 	"sync"
@@ -42,6 +43,7 @@ type staticRepoDetector struct{ owner, repo string }
 func (s *staticRepoDetector) LoadRepo() (string, string, error) { return s.owner, s.repo, nil }
 
 type memKeyStore struct {
+	apptest.Signers
 	mu   sync.RWMutex
 	data map[string][]byte
 }
@@ -83,11 +85,14 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 		RepoDetector:  &staticRepoDetector{owner: owner, repo: repo},
 		Identities:    ks,
+		CheckpointDir: t.TempDir(),
 	}
 
 	prepareApp(t, a, env)
-	if err := putRef(context.Background(), reg, RecipientKey(kp.PublicKey), []byte(kp.PublicKey), ""); err != nil {
-		t.Fatal(err)
+	// Bootstrap the workspace the way a real first device does: this creates the
+	// signing key and the genesis Control, with kp as the founder's recipient.
+	if _, err := a.InitializeRepository(context.Background()); err != nil {
+		t.Fatalf("initialize workspace: %v", err)
 	}
 
 	// pre-populate secrets if provided
@@ -112,7 +117,7 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
 	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
 	registry := &conflictOnceRegistry{Objects: storagetest.ToObjects(a.Storage)}
-	a.Storage = storagetest.FromObjects(registry)
+	a.Storage = storagetest.Wrap(a.Storage, registry)
 
 	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
 		t.Fatalf("SyncSecrets: %v", err)
