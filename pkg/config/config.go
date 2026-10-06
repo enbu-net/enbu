@@ -27,11 +27,14 @@ type StorageConfig struct {
 }
 
 type ProjectConfig struct {
-	WorkspaceID  string                       `toml:"workspace_id"`
-	Storage      StorageConfig                `toml:"storage"`
-	Version      string                       `toml:"version"`
-	DefaultEnv   string                       `toml:"default_env,omitempty"`
-	Environments map[string]EnvironmentConfig `toml:"env,omitempty"`
+	WorkspaceID string `toml:"workspace_id"`
+	// ControlGenesis is the trusted digest of the workspace's first signed
+	// Control. It is the bootstrap anchor shared through the repository.
+	ControlGenesis string                       `toml:"control_genesis,omitempty"`
+	Storage        StorageConfig                `toml:"storage"`
+	Version        string                       `toml:"version"`
+	DefaultEnv     string                       `toml:"default_env,omitempty"`
+	Environments   map[string]EnvironmentConfig `toml:"env,omitempty"`
 }
 
 type EnvironmentConfig struct {
@@ -107,10 +110,11 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 func MarshalProject(cfg *ProjectConfig) ([]byte, error) {
 	var buf bytes.Buffer
 	header := struct {
-		Version     string `toml:"version"`
-		DefaultEnv  string `toml:"default_env,omitempty"`
-		WorkspaceID string `toml:"workspace_id,omitempty"`
-	}{Version: cfg.Version, DefaultEnv: cfg.DefaultEnv, WorkspaceID: cfg.WorkspaceID}
+		Version        string `toml:"version"`
+		DefaultEnv     string `toml:"default_env,omitempty"`
+		WorkspaceID    string `toml:"workspace_id,omitempty"`
+		ControlGenesis string `toml:"control_genesis,omitempty"`
+	}{Version: cfg.Version, DefaultEnv: cfg.DefaultEnv, WorkspaceID: cfg.WorkspaceID, ControlGenesis: cfg.ControlGenesis}
 	if err := toml.NewEncoder(&buf).Encode(header); err != nil {
 		return nil, err
 	}

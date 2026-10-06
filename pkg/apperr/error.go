@@ -22,6 +22,12 @@ const (
 	CodeArtifactNotFound   Code = "artifact_not_found"
 	CodeConflict           Code = "conflict"
 	CodeUnavailable        Code = "unavailable"
+
+	// Workspace security protocol.
+	CodeNotMember           Code = "not_member"           // device is not (yet) in the verified Control
+	CodeUntrusted           Code = "untrusted_state"      // signature, author or encoding failed verification
+	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
+	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
 )
 
 var knownCodes = map[Code]struct{}{
@@ -39,6 +45,11 @@ var knownCodes = map[Code]struct{}{
 	CodeArtifactNotFound:   {},
 	CodeConflict:           {},
 	CodeUnavailable:        {},
+
+	CodeNotMember:           {},
+	CodeUntrusted:           {},
+	CodeRollback:            {},
+	CodeIncompatibleStorage: {},
 }
 
 type Params map[string]string
@@ -161,6 +172,10 @@ func ExitCode(err error) int {
 		return 3
 	case CodeConflict:
 		return 4
+	case CodeNotMember:
+		return 3
+	case CodeUntrusted, CodeRollback:
+		return 5
 	default:
 		return 1
 	}
