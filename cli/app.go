@@ -60,6 +60,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		newAuthCommand(a),
 		newInitCommand(a),
 		newIdentityCommand(a),
+		newMemberCommand(a),
 		newDoctorCommand(a),
 		newSwitchCommand(a),
 		newAddCommand(a),
