@@ -6,7 +6,6 @@ import {
   type InitResult,
   type JoinRequest,
   type Member,
-  type Recipient,
   type SecretsResponse,
 } from "./api";
 import {
@@ -66,9 +65,6 @@ type DesktopService = {
     Array<{ path: string; owner: string; repo: string; initialized: boolean }>
   >;
   RemoveRepository: (path: string) => Promise<void>;
-  ListRecipients: () => Promise<
-    Array<{ username: string; fingerprint: string; public_key: string }>
-  >;
   ListMembers: () => Promise<Member[]>;
   ListJoinRequests: () => Promise<JoinRequest[]>;
   ApproveMember: (deviceID: string) => Promise<void>;
@@ -326,16 +322,6 @@ const realBackend = {
   },
   async removeRepository(path: string): Promise<void> {
     await service()?.RemoveRepository(path);
-  },
-  async listRecipients(): Promise<Recipient[]> {
-    const svc = service();
-    if (!svc) return [];
-    const items = await svc.ListRecipients();
-    return items.map((r) => ({
-      username: r.username,
-      fingerprint: r.fingerprint,
-      public_key: r.public_key,
-    }));
   },
   async listMembers(): Promise<Member[]> {
     const svc = service();

@@ -74,7 +74,6 @@ beforeEach(() => {
         }),
         ListRepositories: vi.fn(async () => ok([])),
         RemoveRepository: vi.fn(async () => ok(undefined)),
-        ListRecipients: vi.fn(async () => ok([])),
         ListMembers: vi.fn(async () =>
           // Wails can hand back null entries; the adapter must drop them.
           ok([
