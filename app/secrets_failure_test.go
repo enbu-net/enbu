@@ -15,6 +15,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
@@ -45,7 +46,7 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 					hook := &hookedStorage{Objects: storagetest.ToObjects(base)}
 					writes := 0
 					hook.put = func(context.Context, string, []byte, storage.Version) error { writes++; return nil }
-					a.Storage = storagetest.FromObjects(hook)
+					a.Storage = storagetest.Wrap(base, hook)
 					switch failure {
 					case "config":
 						if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte("version = ["), 0o600); err != nil {
@@ -76,9 +77,12 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
+						// A legitimately signed state whose ciphertext is bad: signatures
+						// pass, so the failure is the decrypt or bundle parse itself.
+						signed := stateBlob(t, a, base, secretsTag("default"), "default", data)
 						hook.get = func(ctx context.Context, key string) ([]byte, storage.Version, error) {
 							if key == secretsTag("default") || strings.HasPrefix(key, snapshotPrefix("default")) {
-								return data, "corrupt", nil
+								return signed, "corrupt", nil
 							}
 							return getRef(ctx, base, key)
 						}
@@ -99,7 +103,7 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 	}
 }
 
-func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
+func TestSecretWritesRejectUntrustedControl(t *testing.T) {
 	for _, operation := range []struct {
 		name string
 		run  func(*App) error
@@ -111,52 +115,26 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 		{"restore", func(a *App) error { return a.RestoreHistory(context.Background(), "default", 1) }},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
-			for _, recipients := range []string{"none", "malformed", "list failure"} {
-				t.Run(recipients, func(t *testing.T) {
-					a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
-					base := a.Storage
-					writes := 0
-					cause := errors.New("list unavailable")
-					listCalls := 0
-					malformedKey := RecipientKey("invalid recipient")
-					a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base),
-						list: func(ctx context.Context, prefix string) ([]string, error) {
-							listCalls++
-							// History listing succeeds; only recipient listing is intercepted.
-							if prefix != RecipientTagPrefix() {
-								return base.Refs.List(ctx, prefix)
-							}
-							if recipients == "list failure" {
-								return nil, cause
-							}
-							if recipients == "malformed" {
-								return []string{malformedKey}, nil
-							}
-							return nil, nil
-						},
-						get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-							if key == malformedKey {
-								return []byte("invalid recipient"), "", nil
-							}
-							return getRef(ctx, base, key)
-						},
-						put: func(context.Context, string, []byte, storage.Version) error { writes++; return nil },
-					})
-					err := operation.run(a)
-					wantListCalls := 1
-					if operation.name == "restore" {
-						wantListCalls = 2
+			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
+			base := a.Storage
+			writes := 0
+			// The control-head ref now names a blob that is not a signed control.
+			junk, err := base.Blobs.Put(context.Background(), strings.NewReader("not a control"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
+				get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
+					if key == wsp.ControlRef {
+						return []byte(junk), "v", nil
 					}
-					if listCalls != wantListCalls {
-						t.Fatalf("List calls = %d, want %d", listCalls, wantListCalls)
-					}
-					if !apperr.Is(err, apperr.CodeInternal) || writes != 0 {
-						t.Fatalf("error=%v writes=%d, want failure without writes", err, writes)
-					}
-					if recipients == "list failure" && !errors.Is(err, cause) {
-						t.Fatalf("error = %v, lost cause", err)
-					}
-				})
+					return getRef(ctx, base, key)
+				},
+				put: func(context.Context, string, []byte, storage.Version) error { writes++; return nil },
+			})
+			err = operation.run(a)
+			if !apperr.Is(err, apperr.CodeUntrusted) || writes != 0 {
+				t.Fatalf("error=%v writes=%d, want untrusted_state without writes", err, writes)
 			}
 		})
 	}

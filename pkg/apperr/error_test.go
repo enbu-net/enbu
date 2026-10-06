@@ -116,11 +116,8 @@ func TestWorkspaceSecurityCodes(t *testing.T) {
 			t.Fatalf("payload code = %q, want %q", got, code)
 		}
 	}
-}
-
-func TestIntegrityFailuresHaveTheirOwnExitStatus(t *testing.T) {
-	// A device that is not approved and an integrity failure each get a status
-	// scripts can tell apart from an ordinary error.
+	// Integrity failures and a device that is not approved each get their own
+	// exit status so scripts can tell them from ordinary errors.
 	if ExitCode(New(CodeNotMember, "pending", nil)) != 3 {
 		t.Fatal("not_member exit code is not 3")
 	}

@@ -17,11 +17,8 @@ import (
 	"time"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/oci"
 	"github.com/zalando/go-keyring"
 )
 
@@ -182,22 +179,15 @@ func TestIdentityCLI(t *testing.T) {
 		h.run("add", "DATABASE_URL", "first")
 		assertSecret(t, h.run("pull"), "first")
 		h.run("edit", "DATABASE_URL", "second")
-		// Add a real X25519 recipient through the production OCI client.
+		// Add a real X25519 member through the signed Control.
 		x, err := agecrypto.GenerateX25519Identity()
 		if err != nil {
 			t.Fatal(err)
 		}
-		ref := strings.TrimPrefix(h.storageURL, "oci://")
-		if err := oci.Push(context.Background(), ref+":"+app.RecipientKey(x.Recipient().String()), "application/vnd.enbu.recipient.age.v1", []byte(x.Recipient().String()), "fixture-token", nil); err != nil {
-			t.Fatal(err)
-		}
+		approveX25519(t, h, x)
 		h.run("sync")
-		ciphertext, err := oci.Pull(context.Background(), ref+":secrets-default", "fixture-token")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := age.Decrypt(ciphertext, x); err != nil {
-			t.Fatalf("sync did not include X25519 recipient: %v", err)
+		if plaintext := decryptCurrent(t, h, x); !bytes.Contains(plaintext, []byte("second")) {
+			t.Fatalf("X25519 member recovered the wrong bundle: %s", plaintext)
 		}
 		stop()
 		endpoint, _ = startVTPM(t, state)

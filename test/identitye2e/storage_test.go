@@ -100,16 +100,21 @@ func TestStorageBackendLifecycles(t *testing.T) {
 			bob := newHarness(t, binary, "keyring")
 			bob.env["GITHUB_TOKEN"] = ""
 			bob.env["GITHUB_ACTOR"] = ""
-			if err := config.SaveProjectTo(bob.dir, cfg); err != nil {
+			// Bob receives alice's enbu.toml, which now carries the trusted genesis.
+			shared, err := config.LoadProjectFrom(alice.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := config.SaveProjectTo(bob.dir, shared); err != nil {
 				t.Fatal(err)
 			}
 			bob.workspaceID = cfg.WorkspaceID
 			joined := bob.run("init")
-			if joined["can_decrypt"] != false {
+			if joined["pending"] != true {
 				t.Fatalf("joining member: %+v", joined)
 			}
 			bob.fails("pull")
-			alice.run("sync")
+			alice.run("member", "approve", "--device", joined["device_id"].(string))
 			assertSecret(t, bob.run("pull"), "first")
 			bob.run("delete", "DATABASE_URL")
 			if data := alice.run("pull"); len(data["secrets"].(map[string]any)) != 0 {

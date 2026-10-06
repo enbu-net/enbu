@@ -165,11 +165,22 @@ func TestJSONInit(t *testing.T) {
 	if got := stringField(t, data, "mode"); got != "initialize" {
 		t.Fatalf("mode = %q", got)
 	}
-	if stringField(t, data, "public_key") == "" {
-		t.Fatal("public_key is empty")
+	if stringField(t, data, "public_key") == "" || stringField(t, data, "device_id") == "" || stringField(t, data, "fingerprint") == "" {
+		t.Fatalf("missing key material in %v", data)
 	}
-	if recipients, err := store.Refs.List(context.Background(), "recipient-"); err != nil || len(recipients) != 1 {
-		t.Fatalf("recipient was not registered: %v %v", recipients, err)
+	if data["pending"] != false {
+		t.Fatalf("the founder must not be pending: %v", data["pending"])
+	}
+	// The workspace is rooted in a signed Control, not a recipient object.
+	if _, _, err := store.Refs.Get(context.Background(), "control-head"); err != nil {
+		t.Fatalf("control-head: %v", err)
+	}
+	if recipients, err := store.Refs.List(context.Background(), "recipient-"); err != nil || len(recipients) != 0 {
+		t.Fatalf("recipient objects written: %v %v", recipients, err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
+	if err != nil || !strings.Contains(string(content), "control_genesis") {
+		t.Fatalf("enbu.toml lacks the trusted genesis: %s %v", content, err)
 	}
 }
 
@@ -184,7 +195,8 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Another device already created the workspace and stored a secret.
+	// Another device already created the workspace and stored a secret. Its
+	// enbu.toml, with the trusted genesis, is what the repository shares.
 	store := storagetest.NewMemory()
 	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &staticKeyStore{}, RepositoryDir: t.TempDir()}
 	bootstrapCLIApp(t, founder, store)
@@ -206,12 +218,16 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
 		Platform:      &jsonInitPlatform{},
+		CheckpointDir: t.TempDir(),
 	}
 	a.RepositoryDir = dir
 	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
 	data := objectField(t, envelope, "data")
 	if got := stringField(t, data, "mode"); got != "join" {
 		t.Fatalf("mode = %q", got)
+	}
+	if data["pending"] != true {
+		t.Fatalf("a new device must wait for approval: %v", data["pending"])
 	}
 
 	content, err := os.ReadFile(filepath.Join(dir, ".gitignore"))

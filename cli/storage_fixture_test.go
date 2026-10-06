@@ -98,6 +98,7 @@ func bootstrapCLIApp(t *testing.T, a *app.App, store *storage.Store) *refRecorde
 	t.Helper()
 	rec := &refRecorder{Objects: storagetest.ToObjects(store), lastGet: map[string]storage.Version{}, failGet: map[string]error{}}
 	a.Storage = storagetest.Wrap(store, rec)
+	a.CheckpointDir = t.TempDir()
 	prepareCLIApp(t, a)
 	if err := rec.Objects.Put(context.Background(), "enbu-workspace", []byte(testWorkspaceID), ""); err != nil {
 		t.Fatal(err)

@@ -55,7 +55,9 @@ func newInitCommand(a *app.App) *cobra.Command {
 		for _, warning := range result.Warnings {
 			cmd.PrintErrln(warning)
 		}
-		if result.CanDecrypt != nil && !*result.CanDecrypt {
+		if result.Pending {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Waiting for approval. Ask an admin to run 'enbu member approve' and confirm this fingerprint:\n  %s\n", result.Fingerprint)
+		} else if result.CanDecrypt != nil && !*result.CanDecrypt {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Ask an existing member to run 'enbu sync', then run 'enbu pull'.")
 		}
 		return nil
