@@ -108,7 +108,7 @@ func TestPayloadOfInternalHidesParams(t *testing.T) {
 }
 
 func TestWorkspaceSecurityCodes(t *testing.T) {
-	for _, code := range []Code{CodeNotMember, CodeUntrusted, CodeRollback, CodeIncompatibleStorage} {
+	for _, code := range []Code{CodeNotMember, CodeUntrusted, CodeRollback, CodeIncompatibleStorage, CodeReencryptIncomplete} {
 		if !IsKnownCode(code) {
 			t.Fatalf("%q is not a known code", code)
 		}

@@ -16,5 +16,6 @@
   "not_member": "このデバイスはまだ承認されていません。管理者に承認を依頼してください。",
   "untrusted_state": "保存されたデータの署名検証に失敗したため使用しませんでした。",
   "rollback_detected": "このデバイスが受け入れ済みのデータより古いデータがストレージから返されました。",
-  "incompatible_storage": "このストレージはWorkspace Controlなしで作成されています。空の場所を使用してください。"
+  "incompatible_storage": "このストレージはWorkspace Controlなしで作成されています。空の場所を使用してください。",
+  "reencrypt_incomplete": "メンバーは変更されましたが、一部のシークレットが再暗号化されていません。sync を実行して完了してください。"
 }

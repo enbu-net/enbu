@@ -28,6 +28,7 @@ const (
 	CodeUntrusted           Code = "untrusted_state"      // signature, author or encoding failed verification
 	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
 	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
+	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
 )
 
 var knownCodes = map[Code]struct{}{
@@ -50,6 +51,7 @@ var knownCodes = map[Code]struct{}{
 	CodeUntrusted:           {},
 	CodeRollback:            {},
 	CodeIncompatibleStorage: {},
+	CodeReencryptIncomplete: {},
 }
 
 type Params map[string]string
