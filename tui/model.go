@@ -32,6 +32,7 @@ const (
 	overlayEdit
 	overlayDelete
 	overlayCreateEnvironment
+	overlayApprove
 )
 
 type hitKind int
@@ -50,6 +51,7 @@ const (
 	hitDelete
 	hitAdd
 	hitRefreshMembers
+	hitApprove
 	hitSettingsView
 	hitSettingsEdit
 	hitInputKey
@@ -83,6 +85,14 @@ type model struct {
 	envCursor   int
 
 	recipients []app.RecipientInfo
+	// requests are devices waiting for an admin to approve them.
+	requests      []app.JoinRequestInfo
+	requestCursor int
+	// approving is the device the open approval dialog is about. It is copied
+	// when the dialog opens: the list behind it can be reloaded at any time, and
+	// Enter must approve the fingerprint the admin was shown, not whatever is at
+	// the cursor by then.
+	approving *app.JoinRequestInfo
 
 	configContent string
 	configDraft   string
@@ -192,8 +202,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case recipientsLoadedMsg:
 		m.loading = false
 		m.recipients = msg.recipients
-		m.err = nil
+		m.requests = msg.requests
+		m.requestCursor = max(0, min(m.requestCursor, len(m.requests)-1))
+		m.err = msg.requestsErr
 		return m, nil
+	case memberApprovedMsg:
+		m.status = msg.message
+		m.err = nil
+		m.overlay = overlayNone
+		m.approving = nil
+		m.loading = true
+		return m, m.loadRecipients()
 	case configLoadedMsg:
 		m.loading = false
 		m.configContent = msg.content
@@ -289,9 +308,16 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case tabSecrets:
 		return m.handleSecretsKey(msg)
 	case tabMembers:
-		if key.Matches(msg, keys.Refresh) {
+		switch {
+		case key.Matches(msg, keys.Refresh):
 			m.loading = true
 			return m, m.loadRecipients()
+		case key.Matches(msg, keys.Up):
+			m.requestCursor = max(0, m.requestCursor-1)
+		case key.Matches(msg, keys.Down):
+			m.requestCursor = max(0, min(len(m.requests)-1, m.requestCursor+1))
+		case key.Matches(msg, keys.Add):
+			m.openApprove()
 		}
 	case tabSettings:
 		switch {
@@ -365,6 +391,12 @@ func (m *model) handleOverlayKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if key.Matches(msg, keys.Enter) && len(m.secrets) > 0 {
 			m.loading = true
 			return m, m.deleteSecret(m.secrets[m.cursor].key)
+		}
+		return m, nil
+	}
+	if m.overlay == overlayApprove {
+		if key.Matches(msg, keys.Enter) {
+			return m.confirmOverlay()
 		}
 		return m, nil
 	}
@@ -492,6 +524,9 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		case hitRefreshMembers:
 			m.loading = true
 			return m, m.loadRecipients()
+		case hitApprove:
+			m.requestCursor = hit.index
+			m.openApprove()
 		case hitSettingsView:
 			m.configCode = !m.configCode
 		case hitSettingsEdit:
@@ -696,6 +731,21 @@ func (m *model) renderSecrets(startY int) []string {
 func (m *model) renderMembers(startY int) []string {
 	lines := []string{sectionStyle.Render(" Members ") + "  " + buttonStyle.Render(" ↻ Refresh "), ""}
 	m.addHit(hitRefreshMembers, 11, startY, 11, 1, 0, "")
+	help := "r refresh  1/2/3 switch tab  q quit"
+	if len(m.requests) > 0 {
+		lines = append(lines, dimStyle.Render("  Waiting for approval"))
+		for i, request := range m.requests {
+			marker := "  "
+			if i == m.requestCursor {
+				marker = "> "
+			}
+			approve := buttonPrimaryStyle.Render(" Approve ")
+			lines = append(lines, fmt.Sprintf("%s%s  %s  %s", marker, selectedStyle.Render(request.Fingerprint), dimStyle.Render(strings.ToUpper(request.Algorithm)), approve))
+			m.addHit(hitApprove, lipgloss.Width(fmt.Sprintf("%s%s  %s  ", marker, request.Fingerprint, strings.ToUpper(request.Algorithm))), startY+len(lines)-1, lipgloss.Width(approve), 1, i, "")
+		}
+		lines = append(lines, "")
+		help = "j/k select  a approve  r refresh  1/2/3 switch tab  q quit"
+	}
 	if len(m.recipients) == 0 {
 		lines = append(lines, dimStyle.Render("  No recipients found."))
 	} else {
@@ -703,7 +753,7 @@ func (m *model) renderMembers(startY int) []string {
 			lines = append(lines, fmt.Sprintf("  %s  %s", selectedStyle.Render(recipient.Username), dimStyle.Render(recipient.Fingerprint)))
 		}
 	}
-	lines = append(lines, "", helpStyle.Render("r refresh  1/2/3 switch tab  q quit"))
+	lines = append(lines, "", helpStyle.Render(help))
 	return lines
 }
 
@@ -759,6 +809,8 @@ func (m *model) renderOverlay(startY int) []string {
 		title = "Delete secret"
 	case overlayCreateEnvironment:
 		title = "Create environment"
+	case overlayApprove:
+		title = "Approve device"
 	}
 	lines = append(lines, dialogTitleStyle.Render("  "+title))
 	baseY := startY + len(lines)
@@ -772,6 +824,11 @@ func (m *model) renderOverlay(startY int) []string {
 		m.addHit(hitInputValue, 9, baseY, max(1, m.valueInput.Width()), 1, 0, "")
 	case overlayDelete:
 		lines = append(lines, fmt.Sprintf("  Delete %s? This cannot be undone.", selectedStyle.Render(m.secrets[m.cursor].key)))
+	case overlayApprove:
+		lines = append(lines,
+			fmt.Sprintf("  Fingerprint  %s", selectedStyle.Render(m.approving.Fingerprint)),
+			dimStyle.Render("  Compare it with the one shown on the new device."),
+			dimStyle.Render("  An approved device can read every secret in this workspace."))
 	case overlayCreateEnvironment:
 		lines = append(lines, "  Name   "+m.envInput.View())
 		m.addHit(hitInputKey, 9, baseY, max(1, m.envInput.Width()), 1, 0, "")
@@ -821,6 +878,15 @@ func (m *model) openEdit() {
 	m.err = nil
 }
 
+func (m *model) openApprove() {
+	if len(m.requests) > 0 && m.requestCursor < len(m.requests) {
+		target := m.requests[m.requestCursor]
+		m.approving = &target
+		m.overlay = overlayApprove
+		m.err = nil
+	}
+}
+
 func (m *model) openDelete() {
 	if len(m.secrets) > 0 {
 		m.overlay = overlayDelete
@@ -839,6 +905,7 @@ func (m *model) openCreateEnvironment() {
 
 func (m *model) closeOverlay() {
 	m.overlay = overlayNone
+	m.approving = nil
 	m.keyInput.Blur()
 	m.valueInput.Blur()
 	m.envInput.Blur()
@@ -868,6 +935,12 @@ func (m *model) confirmOverlay() (tea.Model, tea.Cmd) {
 		if len(m.secrets) > 0 {
 			m.loading = true
 			return m, m.deleteSecret(m.secrets[m.cursor].key)
+		}
+	case overlayApprove:
+		if m.approving != nil {
+			target := *m.approving
+			m.loading = true
+			return m, m.approveMember(target)
 		}
 	case overlayCreateEnvironment:
 		name := strings.TrimSpace(m.envInput.Value())
@@ -998,13 +1071,28 @@ func (m *model) loadWorkspace() tea.Cmd {
 func (m *model) loadRecipients() tea.Cmd {
 	return func() tea.Msg {
 		if m.app == nil {
-			return recipientsLoadedMsg{recipients: demoRecipients}
+			return recipientsLoadedMsg{recipients: demoRecipients, requests: demoRequests}
 		}
 		list, err := m.app.ListRecipients(context.Background())
 		if err != nil {
 			return errMsg{err}
 		}
-		return recipientsLoadedMsg{recipients: list}
+		// Keep the member list when only the request list fails to load.
+		requests, rerr := m.app.ListJoinRequests(context.Background())
+		return recipientsLoadedMsg{recipients: list, requests: requests, requestsErr: rerr}
+	}
+}
+
+// approveMember runs after the admin has seen the fingerprint in the dialog.
+func (m *model) approveMember(request app.JoinRequestInfo) tea.Cmd {
+	return func() tea.Msg {
+		if m.app == nil {
+			return memberApprovedMsg{message: "Approved " + request.Fingerprint}
+		}
+		if err := m.app.ApproveMember(context.Background(), request.DeviceID); err != nil {
+			return errMsg{err}
+		}
+		return memberApprovedMsg{message: "Approved " + request.Fingerprint}
 	}
 }
 
