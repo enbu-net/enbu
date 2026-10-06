@@ -1,13 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -18,7 +21,7 @@ const maxRetries = 3
 
 var errNoChange = fmt.Errorf("secret unchanged")
 
-func (a *App) secretContext(ctx context.Context) (storage.Storage, []agecrypto.Identity, error) {
+func (a *App) secretContext(ctx context.Context) (*storage.Store, []agecrypto.Identity, error) {
 	store, err := a.workspaceStorage(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -135,7 +138,19 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			return err
 		}
 		a.emitStepProgress(op, "push", "start")
-		err = storageError(store.Put(ctx, secretsTag(resolved.Name), storage.Object{MediaType: secretsMediaType, Data: ciphertext}, version))
+		blob, err := store.Blobs.Put(ctx, bytes.NewReader(ciphertext))
+		if err != nil {
+			return fmt.Errorf("saving encrypted secrets: %w", storageError(err))
+		}
+		err = storageError(store.Refs.Put(ctx, secretsTag(resolved.Name), blob, version))
+		if errors.Is(err, storage.ErrNotFound) {
+			// The blob vanished between Blobs.Put and the ref update (registry GC).
+			// Re-run the whole attempt, which uploads it again.
+			if attempt == attempts-1 {
+				return fmt.Errorf("saving encrypted secrets: uploaded blob disappeared before it was referenced: %v", err)
+			}
+			continue
+		}
 		if apperr.Is(err, apperr.CodeConflict) {
 			if attempt == attempts-1 {
 				return conflictRetriesExhausted(err, attempts)
@@ -156,7 +171,7 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
 		if op != "sync" {
-			a.saveSnapshot(ctx, store, resolved.Name, ciphertext)
+			a.saveSnapshot(ctx, store, resolved.Name, blob)
 		}
 		a.emitStepProgress(op, "push", "done")
 		return nil
@@ -164,8 +179,9 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 	return nil
 }
 
-func (a *App) saveSnapshot(ctx context.Context, store storage.Storage, env string, ciphertext []byte) {
-	if err := store.Put(ctx, snapshotTag(env), storage.Object{MediaType: secretsMediaType, Data: ciphertext}, ""); err != nil {
+// saveSnapshot records a history entry as another ref to the secrets blob.
+func (a *App) saveSnapshot(ctx context.Context, store *storage.Store, env string, blob digest.Digest) {
+	if err := store.Refs.Put(ctx, snapshotTag(env), blob, ""); err != nil {
 		a.emit(fmt.Sprintf("Secrets saved, but history snapshot failed: %v", err))
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
@@ -41,29 +42,29 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 					wantCode := apperr.CodeInternal
 					preserveCause := false
 					base := a.Storage
-					hook := &hookedStorage{Storage: base}
+					hook := &hookedStorage{Objects: storagetest.ToObjects(base)}
 					writes := 0
-					hook.put = func(context.Context, string, storage.Object, storage.Version) error { writes++; return nil }
-					a.Storage = hook
+					hook.put = func(context.Context, string, []byte, storage.Version) error { writes++; return nil }
+					a.Storage = storagetest.FromObjects(hook)
 					switch failure {
 					case "config":
 						if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte("version = ["), 0o600); err != nil {
 							t.Fatal(err)
 						}
 					case "workspace":
-						hook.get = func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+						hook.get = func(ctx context.Context, key string) ([]byte, storage.Version, error) {
 							if key == workspaceKey {
-								return storage.Object{MediaType: workspaceMediaType, Data: []byte("other-workspace")}, "", nil
+								return []byte("other-workspace"), "", nil
 							}
-							return base.Get(ctx, key)
+							return getRef(ctx, base, key)
 						}
 						wantCode = apperr.CodeInvalidArgument
 					case "identity":
 						a.Identities = newMemKeyStore()
 						wantCode = apperr.CodeNotInitialized
 					case "storage":
-						hook.get = func(context.Context, string) (storage.Object, storage.Version, error) {
-							return storage.Object{}, "", cause
+						hook.get = func(context.Context, string) ([]byte, storage.Version, error) {
+							return nil, "", cause
 						}
 						preserveCause = true
 					case "ciphertext", "bundle":
@@ -75,11 +76,11 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						hook.get = func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+						hook.get = func(ctx context.Context, key string) ([]byte, storage.Version, error) {
 							if key == secretsTag("default") || strings.HasPrefix(key, snapshotPrefix("default")) {
-								return storage.Object{MediaType: secretsMediaType, Data: data}, "corrupt", nil
+								return data, "corrupt", nil
 							}
-							return base.Get(ctx, key)
+							return getRef(ctx, base, key)
 						}
 					}
 					err := operation.run(a)
@@ -118,12 +119,12 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 					cause := errors.New("list unavailable")
 					listCalls := 0
 					malformedKey := RecipientKey("invalid recipient")
-					a.Storage = &hookedStorage{Storage: base,
+					a.Storage = storagetest.FromObjects(&hookedStorage{Objects: storagetest.ToObjects(base),
 						list: func(ctx context.Context, prefix string) ([]string, error) {
 							listCalls++
 							// History listing succeeds; only recipient listing is intercepted.
 							if prefix != RecipientTagPrefix() {
-								return base.List(ctx, prefix)
+								return base.Refs.List(ctx, prefix)
 							}
 							if recipients == "list failure" {
 								return nil, cause
@@ -133,14 +134,14 @@ func TestSecretWritesRejectInvalidRecipients(t *testing.T) {
 							}
 							return nil, nil
 						},
-						get: func(ctx context.Context, key string) (storage.Object, storage.Version, error) {
+						get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
 							if key == malformedKey {
-								return storage.Object{MediaType: recipientMediaType, Data: []byte("invalid recipient")}, "", nil
+								return []byte("invalid recipient"), "", nil
 							}
-							return base.Get(ctx, key)
+							return getRef(ctx, base, key)
 						},
-						put: func(context.Context, string, storage.Object, storage.Version) error { writes++; return nil },
-					}
+						put: func(context.Context, string, []byte, storage.Version) error { writes++; return nil },
+					})
 					err := operation.run(a)
 					wantListCalls := 1
 					if operation.name == "restore" {

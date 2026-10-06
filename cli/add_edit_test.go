@@ -9,6 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type addEditRegistry struct {
@@ -19,30 +20,29 @@ type addEditRegistry struct {
 	pushes         int
 }
 
-func (r *addEditRegistry) Capabilities() storage.Capabilities { return storage.Capabilities{} }
-func (r *addEditRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+func (r *addEditRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
 	if key == "enbu-workspace" {
 		return workspaceObject(), "workspace", nil
 	}
 	if strings.HasPrefix(key, "recipient-") {
-		return storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(r.publicKey)}, "recipient", nil
+		return []byte(r.publicKey), "recipient", nil
 	}
 	if r.ciphertext == nil {
-		return storage.Object{}, "", storage.ErrNotFound
+		return nil, "", storage.ErrNotFound
 	}
-	return storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: r.ciphertext}, storage.Version(r.expectedDigest), nil
+	return r.ciphertext, storage.Version(r.expectedDigest), nil
 }
 func (r *addEditRegistry) List(context.Context, string) ([]string, error) {
 	return []string{app.RecipientKey(r.publicKey)}, nil
 }
-func (r *addEditRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
+func (r *addEditRegistry) Put(_ context.Context, key string, o []byte, v storage.Version) error {
 	if key == "enbu-workspace" {
 		return nil
 	}
 	r.pushes++
 	if r.pushes == 1 {
 		r.gotExpected = string(v)
-		r.ciphertext = append([]byte(nil), o.Data...)
+		r.ciphertext = append([]byte(nil), o...)
 	}
 	return nil
 }
@@ -153,7 +153,7 @@ func newAddEditRegistry(t *testing.T, secrets map[string]string) (*age.KeyPair, 
 
 func newAddEditApp(t *testing.T, kp *age.KeyPair, reg *addEditRegistry) *app.App {
 	a := &app.App{
-		Storage:       reg,
+		Storage:       storagetest.FromObjects(reg),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities: &staticKeyStore{

@@ -48,27 +48,22 @@ func CloseIdentities(ids []agecrypto.Identity) {
 	}
 }
 
-const (
-	workspaceKey       = "enbu-workspace"
-	workspaceMediaType = "application/vnd.enbu.workspace.v1"
-	secretsMediaType   = "application/vnd.enbu.secrets.age.v1"
-	recipientMediaType = "application/vnd.enbu.recipient.age.v1"
-)
+const workspaceKey = "enbu-workspace"
 
 func RecipientKey(publicKey string) string {
 	return fmt.Sprintf("recipient-%x", sha256.Sum256([]byte(strings.TrimSpace(publicKey))))
 }
 
-func PullAllRecipients(ctx context.Context, store storage.Storage) ([]string, error) {
-	keys, err := store.List(ctx, RecipientTagPrefix())
+func PullAllRecipients(ctx context.Context, store *storage.Store) ([]string, error) {
+	keys, err := store.Refs.List(ctx, RecipientTagPrefix())
 	if err != nil {
 		return nil, storageError(err)
 	}
-	objects := make([]storage.Object, len(keys))
+	objects := make([][]byte, len(keys))
 	group, ctx := errgroup.WithContext(ctx)
 	group.SetLimit(8)
 	for i, key := range keys {
-		group.Go(func() error { o, _, err := store.Get(ctx, key); objects[i] = o; return storageError(err) })
+		group.Go(func() error { o, _, err := getRef(ctx, store, key); objects[i] = o; return storageError(err) })
 	}
 	if err := group.Wait(); err != nil {
 		return nil, err
@@ -77,8 +72,8 @@ func PullAllRecipients(ctx context.Context, store storage.Storage) ([]string, er
 	seen := map[string]bool{}
 	for i, key := range keys {
 		o := objects[i]
-		publicKey := strings.TrimSpace(string(o.Data))
-		if o.MediaType != recipientMediaType || key != RecipientKey(publicKey) {
+		publicKey := strings.TrimSpace(string(o))
+		if key != RecipientKey(publicKey) {
 			return nil, fmt.Errorf("invalid recipient object %s", key)
 		}
 		if _, err := age.ParseRecipient(publicKey); err != nil {
@@ -92,8 +87,8 @@ func PullAllRecipients(ctx context.Context, store storage.Storage) ([]string, er
 	return publicKeys, nil
 }
 
-func PullSecretsWithVersion(ctx context.Context, store storage.Storage, key string, identities ...agecrypto.Identity) (map[string]string, storage.Version, error) {
-	o, version, err := store.Get(ctx, key)
+func PullSecretsWithVersion(ctx context.Context, store *storage.Store, key string, identities ...agecrypto.Identity) (map[string]string, storage.Version, error) {
+	o, version, err := getRef(ctx, store, key)
 	if err != nil {
 		return nil, "", storageError(err)
 	}
@@ -101,11 +96,8 @@ func PullSecretsWithVersion(ctx context.Context, store storage.Storage, key stri
 	return secrets, version, err
 }
 
-func decryptSecretsObject(o storage.Object, identities ...agecrypto.Identity) (map[string]string, error) {
-	if o.MediaType != secretsMediaType {
-		return nil, fmt.Errorf("unexpected secrets media type %q", o.MediaType)
-	}
-	plaintext, err := age.Decrypt(o.Data, identities...)
+func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (map[string]string, error) {
+	plaintext, err := age.Decrypt(ciphertext, identities...)
 	if err != nil {
 		return nil, err
 	}

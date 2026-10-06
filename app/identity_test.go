@@ -9,6 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type identityVault map[string][]byte
@@ -27,21 +28,21 @@ func (v identityVault) Load(_, key string) ([]byte, error) {
 func (v identityVault) Delete(_, key string) error { delete(v, key); return nil }
 
 type registrationFailure struct {
-	storage.Storage
+	storagetest.Objects
 	fail bool
 }
 
-func (r *registrationFailure) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+func (r *registrationFailure) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
 	if r.fail && key != workspaceKey {
 		return errors.New("registry offline")
 	}
-	return r.Storage.Put(ctx, key, o, v)
+	return r.Objects.Put(ctx, key, o, v)
 }
 
 func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	manager := &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityVault{}}
-	registry := &registrationFailure{Storage: newMemRegistry(), fail: true}
-	a := &App{Storage: registry, Identities: manager, TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
+	registry := &registrationFailure{Objects: storagetest.ToObjects(newMemRegistry()), fail: true}
+	a := &App{Storage: storagetest.FromObjects(registry), Identities: manager, TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 		RepoDetector: &staticRepoDetector{owner: "o", repo: "r"}, RepositoryDir: t.TempDir()}
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.WorkspaceID = testWorkspaceID

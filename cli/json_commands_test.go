@@ -13,7 +13,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
-	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 func TestJSONSecretCommands(t *testing.T) {
@@ -113,7 +113,7 @@ func TestJSONHistoryCommands(t *testing.T) {
 	}
 	registry := newEnvRegistry()
 	a := &app.App{
-		Storage:       registry,
+		Storage:       storagetest.FromObjects(registry),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{key: []byte(keyPair.Identity.String())},
@@ -123,7 +123,7 @@ func TestJSONHistoryCommands(t *testing.T) {
 	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-1000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "1"})
 	pushEncryptedHistory(t, registry, keyPair, registryRef+"hist-37a8eec1ce19687d132fe29051dca629d164e2c4958ba141d5f4133a33f0688f-2000-11111111-1111-4111-8111-111111111111", map[string]string{"A": "2", "B": "3"})
 	recipientTag := app.RecipientKey(keyPair.PublicKey)
-	if err := registry.Put(context.Background(), recipientTag, storage.Object{MediaType: "application/vnd.enbu.recipient.age.v1", Data: []byte(keyPair.PublicKey)}, ""); err != nil {
+	if err := registry.Put(context.Background(), recipientTag, []byte(keyPair.PublicKey), ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -159,7 +159,7 @@ func TestJSONInit(t *testing.T) {
 
 	registry := newEnvRegistry()
 	a := &app.App{
-		Storage:       registry,
+		Storage:       storagetest.FromObjects(registry),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
@@ -210,11 +210,11 @@ output = ".env"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.Put(context.Background(), "secrets-default", storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: ciphertext}, ""); err != nil {
+	if err := registry.Put(context.Background(), "secrets-default", ciphertext, ""); err != nil {
 		t.Fatal(err)
 	}
 	a := &app.App{
-		Storage:       registry,
+		Storage:       storagetest.FromObjects(registry),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
@@ -273,7 +273,7 @@ func pushEncryptedHistory(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.Put(context.Background(), ref, storage.Object{MediaType: "application/vnd.enbu.secrets.age.v1", Data: ciphertext}, ""); err != nil {
+	if err := registry.Put(context.Background(), ref, ciphertext, ""); err != nil {
 		t.Fatalf("push %s: %v", fmt.Sprint(ref), err)
 	}
 }

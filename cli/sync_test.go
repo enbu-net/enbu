@@ -9,20 +9,20 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type failingDigestRegistry struct {
 	err error
 }
 
-func (f *failingDigestRegistry) Capabilities() storage.Capabilities { return storage.Capabilities{} }
-func (f *failingDigestRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
+func (f *failingDigestRegistry) Get(_ context.Context, key string) ([]byte, storage.Version, error) {
 	if key == "enbu-workspace" {
 		return workspaceObject(), "workspace", nil
 	}
-	return storage.Object{}, "", f.err
+	return nil, "", f.err
 }
-func (f *failingDigestRegistry) Put(context.Context, string, storage.Object, storage.Version) error {
+func (f *failingDigestRegistry) Put(context.Context, string, []byte, storage.Version) error {
 	return nil
 }
 func (f *failingDigestRegistry) List(context.Context, string) ([]string, error) { return nil, nil }
@@ -34,7 +34,7 @@ func TestSyncReturnsNonNotFoundSecretPullErrors(t *testing.T) {
 	}
 
 	a := &app.App{
-		Storage:       &failingDigestRegistry{err: errors.New("unauthorized")},
+		Storage:       storagetest.FromObjects(&failingDigestRegistry{err: errors.New("unauthorized")}),
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{key: []byte(kp.Identity.String())},

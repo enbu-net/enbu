@@ -44,34 +44,40 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	if err != nil {
 		return nil, err
 	}
-	metadata, _, err := store.Get(ctx, workspaceKey)
+	metadata, _, err := getRef(ctx, store, workspaceKey)
 	if errors.Is(err, storage.ErrNotFound) {
+		if detector, ok := store.Refs.(storage.LegacyDetector); ok {
+			legacy, derr := detector.HasLegacy(ctx)
+			if derr != nil {
+				return nil, derr
+			}
+			if legacy {
+				return nil, apperr.New(apperr.CodeInvalidArgument, "storage was written by an older enbu version and cannot be read; use an empty location or migrate it manually", nil)
+			}
+		}
 		if cfg.WorkspaceID == "" {
 			cfg.WorkspaceID = uuid.NewV4().String()
 		}
 		if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 			return nil, err
 		}
-		err = store.Put(ctx, workspaceKey, storage.Object{MediaType: workspaceMediaType, Data: []byte(cfg.WorkspaceID)}, "")
+		err = putRef(ctx, store, workspaceKey, []byte(cfg.WorkspaceID), "")
 		if errors.Is(err, storage.ErrConflict) {
-			metadata, _, err = store.Get(ctx, workspaceKey)
+			metadata, _, err = getRef(ctx, store, workspaceKey)
 		} else if err == nil {
-			metadata = storage.Object{MediaType: workspaceMediaType, Data: []byte(cfg.WorkspaceID)}
+			metadata = []byte(cfg.WorkspaceID)
 		}
 	}
 	if err != nil {
 		return nil, storageError(err)
 	}
-	if metadata.MediaType != workspaceMediaType {
-		return nil, fmt.Errorf("invalid workspace metadata")
-	}
-	if _, err := uuid.Parse(string(metadata.Data)); err != nil {
+	if _, err := uuid.Parse(string(metadata)); err != nil {
 		return nil, fmt.Errorf("invalid stored workspace ID: %w", err)
 	}
 	if missing {
-		cfg.WorkspaceID = string(metadata.Data)
+		cfg.WorkspaceID = string(metadata)
 	}
-	if cfg.WorkspaceID != string(metadata.Data) {
+	if cfg.WorkspaceID != string(metadata) {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "storage belongs to a different workspace", nil)
 	}
 	// Save the workspace binding before registration, so a failed registration
@@ -86,18 +92,18 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	defer func() { _ = id.Close() }()
 	publicKey := id.Recipient().String()
 	key := RecipientKey(publicKey)
-	o, _, err := store.Get(ctx, key)
+	o, _, err := getRef(ctx, store, key)
 	if errors.Is(err, storage.ErrNotFound) {
-		o = storage.Object{MediaType: recipientMediaType, Data: []byte(publicKey)}
-		err = store.Put(ctx, key, o, "")
+		o = []byte(publicKey)
+		err = putRef(ctx, store, key, o, "")
 	}
 	if errors.Is(err, storage.ErrConflict) {
-		o, _, err = store.Get(ctx, key)
+		o, _, err = getRef(ctx, store, key)
 	}
 	if err != nil {
 		return nil, storageError(err)
 	}
-	if o.MediaType != recipientMediaType || string(o.Data) != publicKey {
+	if string(o) != publicKey {
 		return nil, fmt.Errorf("recipient fingerprint collision or corrupt record")
 	}
 	result = &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL, KeyCreated: info.Created, Mode: "initialize"}
@@ -105,7 +111,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		result.Warnings = append(result.Warnings, warning)
 		a.emit(warning)
 	}
-	secret, _, err := store.Get(ctx, secretsTag(cfg.CurrentEnvironment()))
+	secret, _, err := getRef(ctx, store, secretsTag(cfg.CurrentEnvironment()))
 	if err == nil {
 		result.Mode = "join"
 		result.HasSecrets = true

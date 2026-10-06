@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -12,20 +11,32 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/opencontainers/go-digest"
 )
 
-type Local struct{ Dir string }
+type local struct{ dir string }
+type localBlobs struct{ local }
+type localRefs struct{ local }
 
-func (s *Local) Capabilities() Capabilities { return Capabilities{AtomicUpdates: true} }
+// NewLocal stores blobs under dir/blobs/sha256 and refs under dir/refs.
+func NewLocal(dir string) *Store {
+	l := local{dir}
+	return &Store{Blobs: localBlobs{l}, Refs: localRefs{l}}
+}
 
-func (s *Local) withLock(ctx context.Context, fn func(*os.Root) error) error {
+func (s local) openRoot() (*os.Root, error) {
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return nil, err
+	}
+	return os.OpenRoot(s.dir)
+}
+
+func (s local) withLock(ctx context.Context, fn func(*os.Root) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
-		return err
-	}
-	r, err := os.OpenRoot(s.Dir)
+	r, err := s.openRoot()
 	if err != nil {
 		return err
 	}
@@ -73,73 +84,172 @@ func rejectSymlink(r *os.Root, name string) error {
 	return nil
 }
 
-func readLocal(r *os.Root, key string) (Object, Version, error) {
-	name := key + ".json"
-	if err := rejectSymlink(r, name); err != nil {
-		return Object{}, "", err
+const blobDir = "blobs/sha256"
+
+func blobPath(d digest.Digest) (string, error) {
+	if err := ValidateDigest(d); err != nil {
+		return "", err
 	}
-	f, err := r.Open(name)
-	if errors.Is(err, fs.ErrNotExist) {
-		return Object{}, "", ErrNotFound
-	}
-	if err != nil {
-		return Object{}, "", err
-	}
-	defer func() { _ = f.Close() }()
-	b, err := io.ReadAll(io.LimitReader(f, MaxEnvelopeBytes+1))
-	if err != nil {
-		return Object{}, "", err
-	}
-	o, err := Decode(b)
-	return o, Version(fmt.Sprintf("sha256:%x", sha256.Sum256(b))), err
+	return blobDir + "/" + d.Encoded(), nil
 }
 
-func (s *Local) Get(ctx context.Context, key string) (o Object, v Version, err error) {
-	if err = ValidateKey(key); err != nil {
+// syncSubdir syncs a directory below r, where renames into it were just made.
+func syncSubdir(r *os.Root, dir string) error {
+	sub, err := r.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sub.Close() }()
+	return syncDirectory(sub)
+}
+
+// stage writes the content of r to a pending file in the storage root.
+func stage(ctx context.Context, root *os.Root, src io.Reader) (name string, d digest.Digest, err error) {
+	name = ".pending-" + uuid.NewV4().String()
+	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
+	if err != nil {
+		return "", "", err
+	}
+	defer func() {
+		_ = f.Close()
+		if err != nil {
+			_ = root.Remove(name)
+		}
+	}()
+	d, _, err = copyHashed(ctx, f, src)
+	if err == nil {
+		err = f.Sync()
+	}
+	return name, d, err
+}
+
+func (s localBlobs) Put(ctx context.Context, src io.Reader) (digest.Digest, error) {
+	root, err := s.openRoot()
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.MkdirAll(blobDir, 0o700); err != nil {
+		return "", err
+	}
+	pending, d, err := stage(ctx, root, src)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Remove(pending) }()
+	path, err := blobPath(d)
+	if err != nil {
+		return "", err
+	}
+	if _, err := root.Lstat(path); err == nil {
+		if err := rejectSymlink(root, path); err != nil {
+			return "", err
+		}
+		// Same digest, same content: skip the rename, which fails on Windows while
+		// another process has the blob open. A damaged leftover is replaced.
+		if localBlobMatches(root, path, d) {
+			return d, nil
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return d, commitLocalFile(root, pending, path, func(r *os.Root) error { return syncSubdir(r, blobDir) })
+}
+
+func localBlobMatches(root *os.Root, path string, d digest.Digest) bool {
+	f, err := root.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	v := d.Verifier()
+	n, err := io.Copy(v, io.LimitReader(f, MaxPayloadBytes+1))
+	return err == nil && n <= MaxPayloadBytes && v.Verified()
+}
+
+func (s localBlobs) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error) {
+	path, err := blobPath(d)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	root, err := s.openRoot()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	if err := rejectSymlink(root, path); err != nil {
+		return nil, err
+	}
+	f, err := root.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return newVerifyReader(f, d), nil
+}
+
+func readLocalRef(r *os.Root, name string) (digest.Digest, Version, error) {
+	path := "refs/" + name
+	if err := rejectSymlink(r, path); err != nil {
+		return "", "", err
+	}
+	b, err := r.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", err
+	}
+	d, err := parseRef(b)
+	return d, Version(d), err
+}
+
+func (s localRefs) Get(ctx context.Context, name string) (d digest.Digest, v Version, err error) {
+	if err = ValidateKey(name); err != nil {
 		return
 	}
-	err = s.withLock(ctx, func(r *os.Root) error { o, v, err = readLocal(r, key); return err })
+	err = s.withLock(ctx, func(r *os.Root) error { d, v, err = readLocalRef(r, name); return err })
 	return
 }
 
-// Put atomically replaces an object. On Unix it also syncs the containing
+// Put atomically replaces a ref. On Unix it also syncs the containing
 // directory. If that sync fails, Put returns an error even though the replacement
 // is already visible; callers must reload its version before retrying.
-func (s *Local) Put(ctx context.Context, key string, o Object, expected Version) error {
-	if err := ValidateKey(key); err != nil {
+func (s localRefs) Put(ctx context.Context, name string, target digest.Digest, expected Version) error {
+	if err := ValidateKey(name); err != nil {
 		return err
 	}
-	b, err := Encode(o)
-	if err != nil {
+	if err := ValidateDigest(target); err != nil {
 		return err
 	}
 	return s.withLock(ctx, func(r *os.Root) error {
-		_, current, err := readLocal(r, key)
+		if err := r.MkdirAll("refs", 0o700); err != nil {
+			return err
+		}
+		_, current, err := readLocalRef(r, name)
 		if err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
 		if current != expected {
 			return ErrConflict
 		}
-		name := ".pending-" + uuid.NewV4().String()
-		f, err := r.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
-		if err != nil {
+		pending := ".pending-" + uuid.NewV4().String()
+		if err := r.WriteFile(pending, []byte(target), 0o600); err != nil {
 			return err
 		}
-		defer func() { _ = f.Close(); _ = r.Remove(name) }()
-		if _, err := f.Write(b); err != nil {
-			return err
-		}
-		if err := f.Sync(); err != nil {
-			return err
-		}
-		if err := f.Close(); err != nil {
-			return err
-		}
+		defer func() { _ = r.Remove(pending) }()
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return commitLocalFile(r, name, key+".json", syncDirectory)
+		return commitLocalFile(r, pending, "refs/"+name, func(r *os.Root) error { return syncSubdir(r, "refs") })
 	})
 }
 
@@ -153,9 +263,12 @@ func commitLocalFile(r *os.Root, pending, name string, syncDir func(*os.Root) er
 	return nil
 }
 
-func (s *Local) List(ctx context.Context, prefix string) (keys []string, err error) {
+func (s localRefs) List(ctx context.Context, prefix string) (keys []string, err error) {
 	err = s.withLock(ctx, func(r *os.Root) error {
-		f, err := r.Open(".")
+		f, err := r.Open("refs")
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -165,23 +278,36 @@ func (s *Local) List(ctx context.Context, prefix string) (keys []string, err err
 			return err
 		}
 		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".json") {
+			if !strings.HasPrefix(entry.Name(), prefix) {
 				continue
 			}
-			key := strings.TrimSuffix(entry.Name(), ".json")
-			if !strings.HasPrefix(key, prefix) {
-				continue
-			}
-			if err := ValidateKey(key); err != nil {
+			if err := ValidateKey(entry.Name()); err != nil {
 				return err
 			}
-			if err := rejectSymlink(r, entry.Name()); err != nil {
+			if err := rejectSymlink(r, "refs/"+entry.Name()); err != nil {
 				return err
 			}
-			keys = append(keys, key)
+			keys = append(keys, entry.Name())
 		}
 		sort.Strings(keys)
 		return ctx.Err()
 	})
 	return
+}
+
+// HasLegacy reports whether dir holds key.json files from the pre-blob layout.
+func (s localRefs) HasLegacy(ctx context.Context) (bool, error) {
+	entries, err := os.ReadDir(s.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
+			return true, ctx.Err()
+		}
+	}
+	return false, ctx.Err()
 }

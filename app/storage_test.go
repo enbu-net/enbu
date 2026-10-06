@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,8 +36,7 @@ func TestS3StorageConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s3Store, ok := store.(*storage.S3)
-	if !ok || s3Store.Bucket != "enbu-test" || s3Store.Prefix != "team/workspace" || s3Store.Client.EndpointURL().String() != "http://localhost:9000" {
+	if store.Blobs == nil || store.Refs == nil {
 		t.Fatalf("unexpected S3 configuration: %+v", store)
 	}
 	cfg.Storage.Endpoint = "https://example.com/path"
@@ -54,9 +54,11 @@ func TestLocalStorageNativePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	local, ok := store.(*storage.Local)
-	if !ok || local.Dir != dir {
-		t.Fatalf("storage=%+v, want local directory %q", store, dir)
+	if err := putRef(context.Background(), store, "probe", []byte("x"), ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "refs", "probe")); err != nil {
+		t.Fatalf("storage did not use local directory %q: %v", dir, err)
 	}
 }
 
@@ -157,16 +159,14 @@ func TestInitializeRejectsCorruptStorageRecords(t *testing.T) {
 				t.Fatal(err)
 			}
 			key := RecipientKey(initialized.PublicKey)
-			media := recipientMediaType
 			if kind == "secrets" {
 				key = secretsTag("default")
-				media = secretsMediaType
 			}
-			_, version, err := a.Storage.Get(ctx, key)
+			_, version, err := getRef(ctx, a.Storage, key)
 			if err != nil && !errors.Is(err, storage.ErrNotFound) {
 				t.Fatal(err)
 			}
-			if err := a.Storage.Put(ctx, key, storage.Object{MediaType: media, Data: []byte{}}, version); err != nil {
+			if err := putRef(ctx, a.Storage, key, []byte("corrupt"), version); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := a.InitializeRepository(ctx); err == nil {

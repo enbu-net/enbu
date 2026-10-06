@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"io/fs"
 	"strings"
 	"sync"
@@ -12,71 +10,27 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
 
-type memRegistry struct {
-	mu    sync.RWMutex
-	data  map[string][]byte
-	media map[string]string
-}
-
-func newMemRegistry() *memRegistry {
-	return &memRegistry{data: map[string][]byte{}, media: map[string]string{}}
-}
-func (r *memRegistry) Capabilities() storage.Capabilities {
-	return storage.Capabilities{AtomicUpdates: true}
-}
-func (r *memRegistry) Get(_ context.Context, key string) (storage.Object, storage.Version, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	d, ok := r.data[key]
-	if !ok {
-		return storage.Object{}, "", storage.ErrNotFound
-	}
-	return storage.Object{MediaType: r.media[key], Data: append([]byte(nil), d...)}, storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(d))), nil
-}
-func (r *memRegistry) Put(_ context.Context, key string, o storage.Object, v storage.Version) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	var current storage.Version
-	if d, ok := r.data[key]; ok {
-		current = storage.Version(fmt.Sprintf("sha256:%x", sha256.Sum256(d)))
-	}
-	if current != v {
-		return storage.ErrConflict
-	}
-	r.data[key] = append([]byte(nil), o.Data...)
-	r.media[key] = o.MediaType
-	return nil
-}
-func (r *memRegistry) List(_ context.Context, prefix string) ([]string, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	var keys []string
-	for key := range r.data {
-		if strings.HasPrefix(key, prefix) {
-			keys = append(keys, key)
-		}
-	}
-	return keys, nil
-}
+func newMemRegistry() *storage.Store { return storagetest.NewMemory() }
 
 type conflictOnceRegistry struct {
-	storage.Storage
+	storagetest.Objects
 	pushes int
 }
 
-func (r *conflictOnceRegistry) Put(ctx context.Context, key string, o storage.Object, v storage.Version) error {
+func (r *conflictOnceRegistry) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
 	if key == "enbu-workspace" {
-		return r.Storage.Put(ctx, key, o, v)
+		return r.Objects.Put(ctx, key, o, v)
 	}
 	r.pushes++
 	if r.pushes == 1 {
 		return storage.ErrConflict
 	}
-	return r.Storage.Put(ctx, key, o, v)
+	return r.Objects.Put(ctx, key, o, v)
 }
 
 type staticTokenProvider struct{ token, username string }
@@ -132,7 +86,7 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 	}
 
 	prepareApp(t, a, env)
-	if err := reg.Put(context.Background(), RecipientKey(kp.PublicKey), storage.Object{MediaType: recipientMediaType, Data: []byte(kp.PublicKey)}, ""); err != nil {
+	if err := putRef(context.Background(), reg, RecipientKey(kp.PublicKey), []byte(kp.PublicKey), ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -157,8 +111,8 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 
 func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
 	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
-	registry := &conflictOnceRegistry{Storage: a.Storage}
-	a.Storage = registry
+	registry := &conflictOnceRegistry{Objects: storagetest.ToObjects(a.Storage)}
+	a.Storage = storagetest.FromObjects(registry)
 
 	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
 		t.Fatalf("SyncSecrets: %v", err)
@@ -241,7 +195,7 @@ func prepareApp(t *testing.T, a *App, env string) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Storage.Put(context.Background(), workspaceKey, storage.Object{MediaType: workspaceMediaType, Data: []byte(testWorkspaceID)}, ""); err != nil {
+	if err := putRef(context.Background(), a.Storage, workspaceKey, []byte(testWorkspaceID), ""); err != nil {
 		t.Fatal(err)
 	}
 }
