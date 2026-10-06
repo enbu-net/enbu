@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	enbuapp "github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -289,6 +290,7 @@ func (m *mockRepoDetector) LoadRepo() (string, string, error) {
 }
 
 type mockKeyStore struct {
+	apptest.Signers
 	mu   sync.RWMutex
 	data map[string][]byte
 }

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,6 +17,7 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -76,7 +77,10 @@ func (f *fakeServiceGit) AddRemote(_ context.Context, _, _, url string) error {
 
 func (*fakeServiceGit) CommitFiles(context.Context, string, []string, string) error { return nil }
 
-type desktopKeyStore struct{ values map[string][]byte }
+type desktopKeyStore struct {
+	apptest.Signers
+	values map[string][]byte
+}
 
 func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
 	s.values[key] = value
@@ -86,7 +90,7 @@ func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
 func (s *desktopKeyStore) loadSecret(_, key string) ([]byte, error) {
 	value, ok := s.values[key]
 	if !ok {
-		return nil, fmt.Errorf("key not found")
+		return nil, fs.ErrNotExist
 	}
 	return value, nil
 }

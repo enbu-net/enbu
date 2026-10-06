@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -42,6 +43,7 @@ type staticRepoDetector struct{ owner, repo string }
 func (s *staticRepoDetector) LoadRepo() (string, string, error) { return s.owner, s.repo, nil }
 
 type memKeyStore struct {
+	apptest.Signers
 	mu   sync.RWMutex
 	data map[string][]byte
 }

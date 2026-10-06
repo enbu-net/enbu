@@ -33,6 +33,13 @@ func FromObjects(o Objects) *storage.Store {
 	return &storage.Store{Blobs: b, Refs: &refs{o: o, blobs: b}}
 }
 
+// Wrap exposes o as the refs of a Store that shares base's blobs. Use it to
+// intercept ref reads and writes of base without losing the blobs the refs
+// point at, which FromObjects would not know about.
+func Wrap(base *storage.Store, o Objects) *storage.Store {
+	return &storage.Store{Blobs: base.Blobs, Refs: &refs{o: o, blobs: base.Blobs}}
+}
+
 // ToObjects exposes s as Objects.
 func ToObjects(s *storage.Store) Objects { return &view{s} }
 
@@ -77,7 +84,7 @@ func (b *blobs) Open(ctx context.Context, d digest.Digest) (io.ReadCloser, error
 
 type refs struct {
 	o     Objects
-	blobs *blobs
+	blobs storage.Blobs
 }
 
 func (r *refs) Get(ctx context.Context, name string) (digest.Digest, storage.Version, error) {
