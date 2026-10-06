@@ -240,8 +240,10 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 	return id, info, warning, nil
 }
 
-func saveMetadata(path string, md *Metadata) error {
-	b, err := json.MarshalIndent(md, "", "  ")
+func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }
+
+func saveJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
