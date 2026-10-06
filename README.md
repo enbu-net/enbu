@@ -72,9 +72,11 @@ See [Storage configuration and tests](docs/storage.md).
 
 ### 2. Initialize each member's workspace
 
-`init` creates or reuses a local Identity, registers its recipient, saves a generated
+`init` creates or reuses a local Identity and a separate signing key, saves a generated
 workspace UUID and storage configuration in `enbu.toml`, and updates `.gitignore`.
-Share `enbu.toml` with team members. Each member runs `enbu init` in their own folder.
+The first device to run `init` becomes the workspace admin and records `control_genesis`
+in `enbu.toml`: the trusted digest every other device verifies the member list against.
+Commit and share `enbu.toml`. Each member runs `enbu init` in their own folder.
 The UUID binds local Identity and environment-switch state to the workspace, so
 moving its folder or changing its storage URL does not select a new Identity.
 
@@ -107,8 +109,23 @@ enbu pull --env dev  # Writes to the configured output for dev
 
 ### 6. Add a team member
 
-A new member runs `enbu init` inside the repository to enter join mode and register their public key.  
-An existing member then runs `enbu sync` locally to re-encrypt secrets for the new recipient.
+Being able to write to storage does not make anyone a member. A new member runs `enbu init`
+inside the repository (with the shared `enbu.toml`), which leaves a join request and prints the
+device fingerprint, for example `a1b2-c3d4-e5f6-0718-293a`. Send that fingerprint to an admin
+over another channel (chat, in person). The admin then picks the request from a list:
+
+```bash
+enbu member approve     # choose the request, compare the fingerprint, confirm
+enbu member requests    # list devices waiting for approval
+enbu member list        # list members
+enbu member remove      # remove a member and re-encrypt without them
+```
+
+Approving re-encrypts every environment, so the new member can `enbu pull` right away.
+In scripts, pass `--device <fingerprint-or-device-id>` (and `--yes` to skip the prompt).
+The TUI (`enbu`) and the desktop app have the same approval list on their Members screen.
+
+Removing a member cannot revoke secrets that device already read: rotate them.
 
 ## Environments
 
@@ -218,18 +235,34 @@ for local commands and report usage.
 
 ```
 Storage (OCI registry / S3 prefix / Local directory)
-├── recipient-{sha256-public-key}      ← Public keys (shared across all environments)
-├── secrets-default                     ← Encrypted secrets for default environment
-├── secrets-dev                         ← Encrypted secrets for dev environment
+├── control-head                        ← Signed member list (admin-signed chain)
+├── request-{device-id}                 ← A device asking to join (carries no authority)
+├── secrets-default                     ← Signed state naming the ciphertext of default
+├── secrets-dev                         ← Signed state naming the ciphertext of dev
 ├── enbu-workspace                       ← Shared workspace UUID
-└── hist-{env-hash}-{time}-{uuid}       ← Immutable encrypted snapshots
+└── hist-{env-hash}-{time}-{uuid}       ← Signed states of earlier versions
 ```
 
-1. `enbu add` — Creates a new secret, encrypts for all recipients' public keys, and writes through Storage
+Storage is untrusted. A ref is only a locator; signatures are the authority:
+
+- **Signed Control** lists the trusted devices, their signing keys and age recipients. Each new
+  Control is signed by an admin of the previous one, starting from the genesis digest in `enbu.toml`.
+- **Signed State** binds a ciphertext digest to the device that wrote it. Readers verify the author
+  is a current member and the signature is valid before decrypting.
+- **Local checkpoints** remember the newest Control and State this device accepted, so storage
+  cannot silently serve older ones.
+- The recipient set is built only from the verified Control. The signing key is a separate keypair
+  from the encryption key (hardware P-256 when available, Ed25519 in the OS keyring otherwise) and
+  is never written to storage.
+
+Not covered: storage denying service, hiding the newest revision (freeze), a fresh device with no
+checkpoint being served an older state, a malicious admin, and stolen admin keys.
+
+1. `enbu add` — Creates a new secret, encrypts for the verified members, signs the new state, and writes through Storage
 2. `enbu edit` — Updates an existing secret in the encrypted bundle and pushes the updated artifact
 3. `enbu delete` — Removes a secret from the encrypted bundle and pushes the updated artifact
 4. `enbu pull` — Pulls ciphertext, decrypts with your private key, writes to `.env`
-5. `enbu sync` — Re-encrypts with the current recipient list when members are added or removed
+5. `enbu sync` — Re-encrypts and re-signs for the current member list
 
 ### GitHub authentication & initialization flow
 
@@ -254,9 +287,9 @@ sequenceDiagram
     CLI-->>User: ✓ Authenticated
 
     User->>CLI: enbu init
-    CLI->>CLI: Create or load repository Identity
-    CLI->>GHCR: Register public key as recipient-{sha256-public-key}
-    Note over GHCR: Recipients are environment-independent
+    CLI->>CLI: Create or load repository Identity and signing key
+    CLI->>GHCR: Create the genesis Control (first device only)
+    Note over GHCR: The genesis digest is saved in enbu.toml
     GHCR-->>CLI: Done
     CLI-->>User: ✓ Initialized
 ```
@@ -270,39 +303,38 @@ sequenceDiagram
     participant GHCR as Storage
 
     User->>CLI: enbu add KEY VALUE
-    CLI->>GHCR: Fetch all recipient public keys
-    GHCR-->>CLI: Public key list
-    CLI->>CLI: Encrypt with age for all public keys
+    CLI->>GHCR: Fetch control-head and verify the signed chain
+    GHCR-->>CLI: Verified members
+    CLI->>CLI: Encrypt with age for the members' recipients
+    CLI->>CLI: Sign the state with the signing key
     CLI->>GHCR: Push to secrets-default
     GHCR-->>CLI: Done
     CLI-->>User: ✓ Secret added
 ```
 
-### Member Addition & Sync Flow
+### Member Addition Flow
 
 ```mermaid
 sequenceDiagram
     participant New as New Member
-    participant Member as Existing Member
+    participant Admin as Admin
     participant CLI as enbu CLI
     participant GHCR as Storage
 
-    New->>CLI: enbu init (join mode)
-    CLI->>CLI: Create or load repository Identity
-    CLI->>GHCR: Register public key as recipient-{sha256-public-key}
-    CLI-->>New: ✓ Key registered
+    New->>CLI: enbu init (shared enbu.toml)
+    CLI->>GHCR: Verify Control from the genesis digest
+    CLI->>GHCR: Write request-{device-id} (no authority)
+    CLI-->>New: Waiting for approval, fingerprint a1b2-c3d4-...
 
-    Member->>CLI: enbu sync
-    CLI->>GHCR: Fetch all recipient public keys
-    GHCR-->>CLI: Public key list
-    CLI->>GHCR: Pull secrets-default
-    GHCR-->>CLI: Ciphertext
-    CLI->>CLI: Decrypt with private key → re-encrypt for all public keys
-    CLI->>GHCR: Update secrets-default
+    New-->>Admin: Fingerprint, over another channel
+    Admin->>CLI: enbu member approve
+    CLI->>GHCR: List requests, show the fingerprint
+    Admin->>CLI: Confirm the fingerprint matches
+    CLI->>GHCR: Append a Control signed by the admin
+    CLI->>GHCR: Re-encrypt and re-sign every environment
 
     New->>CLI: enbu pull
-    CLI->>GHCR: Pull secrets-default
-    GHCR-->>CLI: Ciphertext
+    CLI->>GHCR: Verify Control and State
     CLI->>CLI: Decrypt with private key
     CLI-->>New: Write .env
 ```

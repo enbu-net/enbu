@@ -59,7 +59,8 @@ enbu init
 以下が自動で行われます  
 
 - ハードウェアIdentityの作成・再利用（利用不可ならOS keyring）
-- 公開鍵をGHCRに登録
+- 暗号化鍵とは別の署名鍵の作成（利用可能ならハードウェアP-256、なければOS keyringのEd25519）
+- 最初の端末はWorkspace Controlを作成して管理者になり、信頼の起点となるdigestを `enbu.toml` の `control_genesis` に保存
 - `enbu.toml` の作成
 - `.gitignore` の更新
 
@@ -92,8 +93,24 @@ enbu pull --env dev # dev の設定済み出力先に書き出し
 
 ### 6. メンバーの追加
 
-新しいメンバーがリポジトリ内で `enbu init` を実行すると、joinモードで公開鍵が登録されます。  
-既存メンバーがローカルで `enbu sync` を実行すると、そのメンバーも復号可能になります。  
+Storageへ書き込めるだけではメンバーになれません。
+新しいメンバーは、共有された `enbu.toml` があるリポジトリで `enbu init` を実行します。
+承認依頼が置かれ、端末のフィンガープリント（例: `a1b2-c3d4-e5f6-0718-293a`）が表示されます。
+このフィンガープリントを、チャットや対面など別の経路で管理者へ伝えます。
+管理者は一覧から依頼を選んで承認します。
+
+```bash
+enbu member approve     # 依頼を選び、フィンガープリントを照合して確定
+enbu member requests    # 承認待ちの端末一覧
+enbu member list        # メンバー一覧
+enbu member remove      # メンバーを削除し、その端末を除いて再暗号化
+```
+
+承認すると全環境が再暗号化されるため、新メンバーはすぐに `enbu pull` できます。
+スクリプトでは `--device <フィンガープリントまたはdevice id>`（確認を省くなら `--yes`）を指定します。
+TUI（`enbu`）とデスクトップアプリのメンバー画面にも同じ承認リストがあります。
+
+メンバーを削除しても、その端末がすでに読み取ったシークレットは取り消せません。ローテーションしてください。
 
 ## 環境
 
@@ -146,7 +163,7 @@ export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
 
 fallbackは鍵作成前の利用可否検査だけで決めます。
 作成開始後の失敗や保存済みIdentityのロード失敗では、別の鍵を作りません。
-`init`は保存済みrecipientを登録し、登録失敗後の再実行でも同じ鍵を使います。
+`init`は登録失敗後の再実行でも、保存済みの暗号化鍵と署名鍵を使い続けます。
 TPMでは元の端末でのみロード可能な子鍵blobを、Secure EnclaveではKeychainの参照を保存します。
 Secure Enclave鍵は端末のロック解除中に利用でき、毎回のTouch IDは要求しません。
 macOSでSecure Enclave鍵を永続保存するには、実行ファイルの署名entitlementとユーザーのログインセッションによるdata-protection Keychainへのアクセスが必要です。
@@ -186,17 +203,29 @@ Device Flowは認証完了前にコードを表示する必要があるため、
 ## 仕組み
 
 ```
-GHCR (ghcr.io/{owner}/{repo}-enbu)
-├── recipient-{user}-{fingerprint}      ← 公開鍵（全環境で共有）
-├── secrets-default                     ← default 環境の暗号化シークレット
-└── secrets-dev                         ← dev 環境の暗号化シークレット
+Storage (OCI registry / S3 prefix / Local directory)
+├── control-head                        ← 署名付きメンバー一覧（管理者署名の連鎖）
+├── request-{device-id}                 ← 参加依頼（権限は持たない）
+├── secrets-default                     ← default 環境の暗号文を指す署名付き State
+├── secrets-dev                         ← dev 環境の暗号文を指す署名付き State
+├── enbu-workspace                       ← Workspace UUID
+└── hist-{env-hash}-{time}-{uuid}       ← 過去バージョンの署名付き State
 ```
 
-1. `enbu add`  - 新規シークレットを全受信者の公開鍵で暗号化し、OCI Imageアーティファクトとしてプッシュ  
-2. `enbu edit` - 暗号化された bundle 内の既存シークレットを更新し、更新したアーティファクトをプッシュ  
-3. `enbu delete` - 暗号化された bundle からシークレットを削除し、更新したアーティファクトをプッシュ  
-4. `enbu pull` - 暗号文をプルし、自分の秘密鍵で復号して `.env` に書き出し  
-5. `enbu sync` - メンバー追加・削除時に最新の受信者リストで再暗号化  
+Storageは信頼しません。Refは場所を示すヒントにすぎず、権限は署名にあります。
+
+- **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは直前のControlの管理者が署名し、`enbu.toml` のgenesis digestから検証します。
+- **署名付きState** 暗号文のdigestと、書き込んだ端末を結び付けます。読む側は作者が現在のメンバーで署名が正しいことを確認してから復号します。
+- **ローカルcheckpoint** この端末が受け入れた最新のControlとStateを覚え、古いものを返されたら拒否します。
+- recipientは検証済みControlだけから作られます。署名鍵は暗号化鍵とは別で、Storageへは保存されません。
+
+対象外: Storageによるサービス拒否、最新revisionを隠すfreeze、checkpointのない新規端末への古いState提示、悪意ある管理者、盗まれた管理者の署名鍵。
+
+1. `enbu add`  - 新規シークレットを検証済みメンバーの公開鍵で暗号化し、署名付きStateとして書き込み  
+2. `enbu edit` - 暗号化された bundle 内の既存シークレットを更新し、署名して書き込み  
+3. `enbu delete` - 暗号化された bundle からシークレットを削除し、署名して書き込み  
+4. `enbu pull` - Control と State を検証してから復号し、`.env` に書き出し  
+5. `enbu sync` - 現在のメンバー一覧で再暗号化・再署名  
 
 ### 認証・初期化フロー
 
@@ -221,9 +250,9 @@ sequenceDiagram
     CLI-->>User: ✓ Authenticated
 
     User->>CLI: enbu init
-    CLI->>CLI: リポジトリのIdentityを作成・読込
-    CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
-    Note over GHCR: recipient は環境非依存
+    CLI->>CLI: リポジトリのIdentityと署名鍵を作成・読込
+    CLI->>GHCR: 最初の端末だけgenesis Controlを作成
+    Note over GHCR: genesis digestは enbu.toml に保存
     GHCR-->>CLI: 完了
     CLI-->>User: ✓ Initialized
 ```
@@ -237,39 +266,38 @@ sequenceDiagram
     participant GHCR as GHCR
 
     User->>CLI: enbu add KEY VALUE
-    CLI->>GHCR: 全 recipient の公開鍵を取得
-    GHCR-->>CLI: 公開鍵リスト
-    CLI->>CLI: age で全公開鍵向けに暗号化
+    CLI->>GHCR: control-head を取得し署名の連鎖を検証
+    GHCR-->>CLI: 検証済みメンバー
+    CLI->>CLI: メンバーの recipient 向けに age で暗号化
+    CLI->>CLI: 署名鍵でStateに署名
     CLI->>GHCR: secrets-default にプッシュ
     GHCR-->>CLI: 完了
     CLI-->>User: ✓ Secret added
 ```
 
-### メンバー追加・同期フロー
+### メンバー追加フロー
 
 ```mermaid
 sequenceDiagram
     participant New as 新メンバー
-    participant Member as 既存メンバー
+    participant Admin as 管理者
     participant CLI as enbu CLI
     participant GHCR as GHCR
 
-    New->>CLI: enbu init (join mode)
-    CLI->>CLI: リポジトリのIdentityを作成・読込
-    CLI->>GHCR: recipient-{user}-{fingerprint} として公開鍵を登録
-    CLI-->>New: ✓ 鍵を登録しました
+    New->>CLI: enbu init (共有された enbu.toml)
+    CLI->>GHCR: genesis digestからControlを検証
+    CLI->>GHCR: request-{device-id} を書き込み（権限なし）
+    CLI-->>New: 承認待ち、フィンガープリント a1b2-c3d4-...
 
-    Member->>CLI: enbu sync
-    CLI->>GHCR: 全 recipient の公開鍵を取得
-    GHCR-->>CLI: 公開鍵リスト
-    CLI->>GHCR: secrets-default をプル
-    GHCR-->>CLI: 暗号文
-    CLI->>CLI: メンバーの秘密鍵で復号 → 全公開鍵で再暗号化
-    CLI->>GHCR: secrets-default を更新
+    New-->>Admin: フィンガープリントを別経路で伝える
+    Admin->>CLI: enbu member approve
+    CLI->>GHCR: 依頼一覧を取得しフィンガープリントを表示
+    Admin->>CLI: 一致を確認して確定
+    CLI->>GHCR: 管理者署名のControlを追記
+    CLI->>GHCR: 全環境を再暗号化・再署名
 
     New->>CLI: enbu pull
-    CLI->>GHCR: secrets-default をプル
-    GHCR-->>CLI: 暗号文
+    CLI->>GHCR: ControlとStateを検証
     CLI->>CLI: 自分の秘密鍵で復号
     CLI-->>New: .env に書き出し
 ```
