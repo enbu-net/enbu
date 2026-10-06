@@ -30,6 +30,7 @@ require (
 	golang.design/x/clipboard v0.11.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
+	golang.org/x/term v0.45.0
 	golang.org/x/text v0.42.0
 	oras.land/oras-go/v2 v2.6.2
 )
@@ -106,6 +107,5 @@ require (
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 )

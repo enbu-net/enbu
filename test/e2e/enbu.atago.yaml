@@ -29,7 +29,7 @@ scenarios:
       - assert:
           exit_code: 0
           stdout:
-            contains: [auth, init, switch, add, edit, delete, pull, sync, history, completion]
+            contains: [auth, init, member, switch, add, edit, delete, pull, sync, history, completion]
           stderr:
             empty: true
       - run:
@@ -40,7 +40,7 @@ scenarios:
             json:
               - {path: "$.ok", equals: true}
               - {path: "$.data.command", equals: enbu}
-              - {path: "$.data.commands", length: 12}
+              - {path: "$.data.commands", length: 13}
           stderr:
             empty: true
       - run:
