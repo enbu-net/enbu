@@ -1,3 +1,5 @@
+//go:build fixture
+
 package storage
 
 import (

@@ -7,7 +7,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"net/url"
 	"oras.land/oras-go/v2/registry/remote/auth"
-	"path/filepath"
 	"strings"
 	"uuid"
 
@@ -92,18 +91,7 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (*stor
 	}
 	switch u.Scheme {
 	case "local":
-		if u.Host != "" {
-			return nil, apperr.New(apperr.CodeInvalidArgument, "local URL must have an empty host", nil)
-		}
-		path := u.Path
-		if len(path) > 2 && path[0] == '/' && path[2] == ':' {
-			path = path[1:]
-		}
-		dir := filepath.FromSlash(path)
-		if !filepath.IsAbs(dir) {
-			return nil, apperr.New(apperr.CodeInvalidArgument, "local storage requires an absolute path", nil)
-		}
-		return storage.NewLocal(dir), nil
+		return openLocalStorage(u)
 	case "s3":
 		if u.Host == "" {
 			return nil, apperr.New(apperr.CodeInvalidArgument, "S3 storage requires a bucket", nil)
@@ -133,7 +121,7 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (*stor
 		}
 		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP)
 	default:
-		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with local://, oci:// or s3://", nil)
+		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with oci:// or s3://", nil)
 	}
 }
 

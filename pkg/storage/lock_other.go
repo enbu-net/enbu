@@ -1,4 +1,4 @@
-//go:build !unix && !windows
+//go:build !unix && !windows && fixture
 
 package storage
 
