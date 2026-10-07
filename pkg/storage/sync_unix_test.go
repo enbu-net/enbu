@@ -1,4 +1,4 @@
-//go:build unix && fixture
+//go:build unix
 
 package storage
 

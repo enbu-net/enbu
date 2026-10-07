@@ -1,5 +1,3 @@
-//go:build fixture
-
 package storage
 
 import (
@@ -295,21 +293,4 @@ func (s localRefs) List(ctx context.Context, prefix string) (keys []string, err 
 		return ctx.Err()
 	})
 	return
-}
-
-// HasLegacy reports whether dir holds key.json files from the pre-blob layout.
-func (s localRefs) HasLegacy(ctx context.Context) (bool, error) {
-	entries, err := os.ReadDir(s.dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-			return true, ctx.Err()
-		}
-	}
-	return false, ctx.Err()
 }

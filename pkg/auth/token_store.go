@@ -8,10 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"
 )
 
@@ -49,9 +47,6 @@ func SaveToken(token *StoredToken) error {
 	if err != nil || !bytes.Equal(stored, data) {
 		return errors.New("verifying saved token failed")
 	}
-	if err := os.Remove(legacyTokenPath()); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing legacy token file: %w", err)
-	}
 	return nil
 }
 
@@ -87,14 +82,10 @@ func LoadToken() (*StoredToken, error) {
 }
 
 func DeleteToken() error {
-	var deleteErrors []error
 	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		deleteErrors = append(deleteErrors, fmt.Errorf("removing token: %w", err))
+		return fmt.Errorf("removing token: %w", err)
 	}
-	if err := os.Remove(legacyTokenPath()); err != nil && !os.IsNotExist(err) {
-		deleteErrors = append(deleteErrors, fmt.Errorf("removing legacy token file: %w", err))
-	}
-	return errors.Join(deleteErrors...)
+	return nil
 }
 
 func validateStoredToken(token *StoredToken) error {
@@ -109,8 +100,4 @@ func validateStoredToken(token *StoredToken) error {
 
 func notLoggedInError() error {
 	return apperr.New(apperr.CodeNotAuthenticated, "not logged in: run 'enbu auth login' to authenticate with GitHub", nil)
-}
-
-func legacyTokenPath() string {
-	return filepath.Join(config.DataDir(), "token.json")
 }

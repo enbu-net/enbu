@@ -15,7 +15,7 @@ Keyless `.env` management powered by GitHub. Encrypts secrets with age, stores c
 - Manage local issues and architecture decisions with Kotowari in `.kotowari/`.
 - Record design decisions as Kotowari ADRs, not Design Docs or Pages. Do not recreate `docs/design/`.
 - Keep `.kotowari/` local and out of Git. Use `kotowari check` after editing workspace files directly.
-- The Local storage backend (`local://`) is a test fixture compiled only with `-tags fixture`. `task` targets and CI pass it; add it to direct `go test`/`go vet` runs. Never expose `local://` in user docs or release builds.
+- The Local storage backend (`local://`) is a test fixture: `local://` is accepted only by builds with `-tags fixture` (`app/storage_local.go`). `task` targets and CI pass the tag; add it to direct `go test` runs of tests that resolve a `local://` URL. Never expose `local://` in user docs or release builds. Do not tag-gate code in dependency packages: tobari drops custom-tagged files of dependencies in the unit coverage run.
 
 ## Commands
 

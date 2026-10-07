@@ -86,10 +86,12 @@ Checksums detect corruption; they do not authenticate the backend.
 ## Local test fixture
 
 A filesystem backend (`local:///absolute/path`) exists for tests and development
-only. It is compiled in only with `-tags fixture`; release binaries reject
+only. The implementation lives in `pkg/storage`, but only builds with
+`-tags fixture` wire `local://` into `app.openStorage`; release binaries reject
 `local://` URLs. Do not use it for real workspaces. The `task` targets, CI and
-`scripts/tobari.py` pass the tag. When running `go test`, `go vet` or an editor's
-gopls directly, add `-tags fixture` too.
+`scripts/tobari.py` pass the tag. Tests that resolve a `local://` URL, and the CLI
+binary built by the Identity E2E, need it; add `-tags fixture` when running them
+with `go test` directly.
 
 Use an absolute directory path with an empty URL host. Windows paths use
 `local:///C:/path/to/store`. Local entries are versioned JSON envelopes containing
@@ -101,7 +103,7 @@ filesystem, not a network filesystem with weaker locking guarantees.
 ## Tests
 
 ```bash
-go test -race -tags fixture ./pkg/storage # Local and minis3 unit/contract tests
+go test -race ./pkg/storage             # Local and minis3 unit/contract tests
 task identity/test/e2e                 # Local fixture/OCI CLI lifecycle on each OS
 task storage/test/e2e                  # OCI + RustFS via Compose, plus S3 CLI
 ```
