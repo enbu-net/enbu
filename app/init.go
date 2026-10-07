@@ -53,15 +53,6 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	}
 	metadata, _, err := getRef(ctx, store, workspaceKey)
 	if errors.Is(err, storage.ErrNotFound) {
-		if detector, ok := store.Refs.(storage.LegacyDetector); ok {
-			legacy, derr := detector.HasLegacy(ctx)
-			if derr != nil {
-				return nil, derr
-			}
-			if legacy {
-				return nil, apperr.New(apperr.CodeInvalidArgument, "storage was written by an older enbu version and cannot be read; use an empty location or migrate it manually", nil)
-			}
-		}
 		if cfg.WorkspaceID == "" {
 			cfg.WorkspaceID = uuid.NewV4().String()
 		}

@@ -199,19 +199,3 @@ func s3Error(err error, writing bool) error {
 	}
 	return err
 }
-
-// HasLegacy reports whether the prefix holds key.json objects from the pre-blob layout.
-func (s s3Refs) HasLegacy(ctx context.Context) (bool, error) {
-	listCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	base := s.base()
-	for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base}) {
-		if entry.Err != nil {
-			return false, s3Error(entry.Err, false)
-		}
-		if name := strings.TrimPrefix(entry.Key, base); !strings.Contains(name, "/") && strings.HasSuffix(name, ".json") {
-			return true, nil
-		}
-	}
-	return false, ctx.Err()
-}

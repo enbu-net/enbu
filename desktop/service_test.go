@@ -380,7 +380,7 @@ func TestSelectRepositoryUpdatesHistory(t *testing.T) {
 	}
 }
 
-func TestListRepositoriesRemovesLegacyDuplicates(t *testing.T) {
+func TestListRepositoriesDeduplicatesHistory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
 	if err := config.SaveGUI(&config.GUIConfig{

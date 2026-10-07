@@ -290,11 +290,11 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 	t.Run("secrets without control", func(t *testing.T) {
 		a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
 		prepareApp(t, a, "default")
-		if err := putRef(bg, a.Storage, secretsTag("default"), []byte("legacy"), ""); err != nil {
+		if err := putRef(bg, a.Storage, secretsTag("default"), []byte("unsigned"), ""); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
-			t.Fatalf("legacy storage accepted: %v", err)
+			t.Fatalf("storage without control accepted: %v", err)
 		}
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {

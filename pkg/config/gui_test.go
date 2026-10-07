@@ -52,15 +52,15 @@ func TestGUIConfigRepoHistory(t *testing.T) {
 	}
 }
 
-func TestLoadGUILegacyNoHistory(t *testing.T) {
+func TestLoadGUIWithoutRepoHistory(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dir)
 
 	if err := os.MkdirAll(filepath.Join(dir, "enbu"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	legacy := []byte("selected_repo = \"/some/path\"\n")
-	if err := os.WriteFile(filepath.Join(dir, "enbu", "gui.toml"), legacy, 0o600); err != nil {
+	content := []byte("selected_repo = \"/some/path\"\n")
+	if err := os.WriteFile(filepath.Join(dir, "enbu", "gui.toml"), content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
