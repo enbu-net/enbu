@@ -49,5 +49,5 @@ jobs:
         run: |
           dbus-run-session -- sh -eu -c '
             printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles/s3
+            go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e -run TestStorageBackendLifecycles/s3
           '

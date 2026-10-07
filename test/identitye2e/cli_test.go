@@ -131,7 +131,8 @@ func buildCLI(t *testing.T, host string, testTransport bool) string {
 	}
 	binary := filepath.Join(t.TempDir(), name)
 	args := []string{"build", "-buildvcs=false", "-ldflags", "-X main.Version=identity-e2e -X github.com/enbu-net/enbu/pkg/provider/github.apiBaseURL=" + api.URL + "/", "-o", binary}
-	var tags []string
+	// The shared CLI lifecycle runs against local:// too, which only fixture builds accept.
+	tags := []string{"fixture"}
 	if testTransport {
 		tags = append(tags, "identitytest")
 	}

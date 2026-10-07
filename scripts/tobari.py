@@ -69,7 +69,7 @@ def collect(suite: str) -> int:
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-    tags = "enbucoverage"
+    tags = "enbucoverage,fixture"
     if suite == "scenario":
         tags += ",scenario"
     if suite == "identity":
