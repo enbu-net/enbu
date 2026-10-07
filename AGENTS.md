@@ -12,6 +12,10 @@ Keyless `.env` management powered by GitHub. Encrypts secrets with age, stores c
 - Force-pushes are prohibited.
 - After changing code, always run `task all/build`, `task all/test`, and `task all/check`.
 - When a Linear task is provided, use a branch name like `feat/enbu-01`.
+- Manage local issues and architecture decisions with Kotowari in `.kotowari/`.
+- Record design decisions as Kotowari ADRs, not Design Docs or Pages. Do not recreate `docs/design/`.
+- Keep `.kotowari/` local and out of Git. Use `kotowari check` after editing workspace files directly.
+- The Local storage backend (`local://`) is a test fixture compiled only with `-tags fixture`. `task` targets and CI pass it; add it to direct `go test`/`go vet` runs. Never expose `local://` in user docs or release builds.
 
 ## Commands
 
@@ -41,6 +45,8 @@ pkg/config/              → repo detection (git remote), enbu.toml, XDG data di
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/age/                 → key generation, encrypt/decrypt with age (X25519 only)
 pkg/keystore/            → pluggable private key storage (OS keyring or plaintext file)
+pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
+pkg/wsp/                 → workspace security protocol: signed Control chain, SignedState, local checkpoints
 pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
 pkg/oci/                 → push/pull OCI artifacts to GHCR (oras-go), tag listing, digest checks
 pkg/provider/github/     → GitHub API client (org detection)
@@ -51,7 +57,10 @@ test/                    → scenario tests (build tag: scenario)
 ## Key design decisions
 
 - Secrets are stored per environment as OCI manifests tagged `secrets-{env}` on `ghcr.io/{owner}/{repo}-enbu`
-- Recipients are environment-independent: each user's public key is stored as `recipient-{username}-{fingerprint}` (shared across all environments)
+- Storage is untrusted: a ref is a locator, signatures are the authority. Storage write access must never grant membership or the right to publish secret state
+- Members are the principals of the signed Control chain (`control-head`), rooted at the `control_genesis` digest in `enbu.toml`. The age recipient set comes only from the verified Control; `recipient-*` objects no longer exist. Admin/Member only manages membership and is not a data-access permission
+- Each secret state (`secrets-{env}`) is a SignedState naming the ciphertext blob; readers verify author, signature and the local checkpoint before decrypting. The signing key is separate from the encryption key and never stored in Storage
+- New devices leave a self-signed `request-{device-id}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
 - `enbu switch` manages environments (create, switch, delete, rename) with state tracked in `enbu.toml` (shared) and `.enbu.local` (per-user)
 - Access control is delegated to OPA/Rego policy evaluated at sync time — not per-environment recipient lists
 - `sync` command re-encrypts for all recipients with optimistic concurrency (digest-based conflict detection + exponential backoff retry)

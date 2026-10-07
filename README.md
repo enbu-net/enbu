@@ -20,7 +20,7 @@ Development requires sensitive information like API keys and database passwords,
 
 ## Features
 
-- **Pluggable storage** — OCI registries, S3-compatible object storage, or a local directory
+- **Pluggable storage** — OCI registries or S3-compatible object storage
 - **E2E encrypted** — Only each member's local private key can decrypt
 - **Simple CLI** — After setup, just `enbu add` and `enbu pull`
 <!-- Planned -->
@@ -39,14 +39,6 @@ Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
 ## Quick Start
 
 ### 1. Choose storage
-
-For a local workspace, no Git repository or GitHub login is required:
-
-```bash
-mkdir my-workspace
-cd my-workspace
-enbu init --storage local:///absolute/path/to/enbu-store
-```
 
 For GHCR, authenticate and specify the registry repository explicitly:
 
