@@ -29,7 +29,7 @@ tasks:
     deps:
       - gui/build/frontend
     cmds:
-      - go test -v -shuffle=on -race ./...
+      - go test -v -shuffle=on -race -tags=fixture ./...
 
   cli/test/scenario:
     desc: Run scenario tests
@@ -39,7 +39,7 @@ tasks:
       - docker compose up -d --wait
       - defer: docker compose down
       - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
-      - go test -v -shuffle=on -race -tags=scenario ./...
+      - go test -v -shuffle=on -race -tags=fixture,scenario ./...
 
   cli/test/coverage:
     desc: Collect all Go unit tests with tobari, including desktop and TUI
@@ -116,7 +116,7 @@ tasks:
   identity/test/e2e:
     desc: Run Identity CLI E2E with local OCI and persistent vTPM (real OS keyring required)
     cmds:
-      - go test -v -count=1 -tags=identitye2e ./test/identitye2e
+      - go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e
 
   storage/test/e2e:
     desc: Run OCI and S3 contracts plus shared CLI E2E against RustFS
@@ -134,8 +134,8 @@ tasks:
       - defer: docker compose -p enbu-storage -f test/storage/compose.yaml down --volumes --remove-orphans
       - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:5002/v2/
       - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:9002/health
-      - go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage
-      - go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles
+      - go test -v -race -count=1 -tags=fixture,storagee2e ./pkg/storage -run TestRemoteStorage
+      - go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e -run TestStorageBackendLifecycles
 
   export/aws/test/e2e:
     desc: Verify AWS Secrets Manager plans through AWS SDK v2 and Kumo
@@ -224,7 +224,7 @@ tasks:
       - gui/build/frontend
     cmds:
       - go run ./tools/apperrlint .
-      - golangci-lint run --fix ./...
+      - golangci-lint run --fix --build-tags fixture ./...
       - golangci-lint fmt ./...
       - git diff --exit-code -- '*.go'
 

@@ -85,9 +85,9 @@ jobs:
         if: runner.os != 'Linux'
         run: task identity/test/e2e
       - name: Identity package tests
-        run: go test -v ./pkg/identity
+        run: go test -v -tags=fixture ./pkg/identity
       - name: Storage unit tests
-        run: go test -v -race ./pkg/storage
+        run: go test -v -race -tags=fixture ./pkg/storage
 
   storage-e2e:
     name: Storage E2E (OCI / RustFS)

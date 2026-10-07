@@ -42,12 +42,12 @@ jobs:
           echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/aws-oidc-token" >> "$GITHUB_ENV"
           echo "AWS_ROLE_ARN=$TEST_ROLE_ARN" >> "$GITHUB_ENV"
       - name: Test conditional writes against AWS S3
-        run: go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage/S3
+        run: go test -v -race -count=1 -tags=fixture,storagee2e ./pkg/storage -run TestRemoteStorage/S3
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
       - name: Test shared CLI lifecycle against AWS S3
         run: |
           dbus-run-session -- sh -eu -c '
             printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            go test -v -count=1 -tags=identitye2e ./test/identitye2e -run TestStorageBackendLifecycles/s3
+            go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e -run TestStorageBackendLifecycles/s3
           '
