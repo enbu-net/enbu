@@ -3,212 +3,175 @@ package wsp
 import (
 	"errors"
 	"os"
-	"strings"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	digest "github.com/opencontainers/go-digest"
 )
 
-func TestCheckpointRollbackDetection(t *testing.T) {
-	f := newStateFixture(t)
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"))
-	mk := func(seq uint64, ct string) *VerifiedState {
-		s := f.state(f.bob)
-		s.Sequence = seq
-		if seq > 1 {
-			s.Previous = digest.FromString("prev")
+// stateView builds a view from revision names and the parents they list.
+func stateView(edges map[string][]string) *StateView {
+	g := NewGraph()
+	for name, parents := range edges {
+		var ps []digest.Digest
+		for _, p := range parents {
+			ps = append(ps, d(p))
 		}
-		s.Ciphertext = digest.FromString(ct)
-		blob, err := SignState(s, f.bob.signer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		v, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
+		g.Add(d(name), ps)
 	}
-	s1, s2 := mk(1, "a"), mk(2, "b")
-	if err := cps.AcceptState(s1); err != nil {
+	sv := &StateView{Graph: g, States: map[digest.Digest]*VerifiedState{}}
+	for _, h := range g.Heads() {
+		sv.Heads = append(sv.Heads, &VerifiedState{Digest: h})
+	}
+	return sv
+}
+
+func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
+	if err := cps.CheckStates(testResource, stateView(map[string][]string{"a": nil}).Graph); err != nil {
+		t.Fatalf("nothing accepted yet: %v", err)
+	}
+	// Two writers raced: a and b are both heads, both accepted.
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}})); err != nil {
 		t.Fatal(err)
 	}
-	if err := cps.AcceptState(s2); err != nil {
+	// Storage later shows only a: b vanished.
+	if err := cps.CheckStates(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}}).Graph); !errors.Is(err, ErrRollback) {
+		t.Fatalf("lost head: %v", err)
+	}
+	// A merge of a and b contains both as ancestors, so it is progress.
+	merged := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}, "m": {"a", "b"}})
+	if err := cps.CheckStates(testResource, merged.Graph); err != nil {
+		t.Fatalf("merge after fork: %v", err)
+	}
+	if err := acceptView(cps, merged); err != nil {
 		t.Fatal(err)
 	}
-	if err := cps.AcceptState(s2); err != nil {
-		t.Fatalf("re-accepting the same state: %v", err)
+	got, err := cps.State(testResource)
+	if err != nil || len(got) != 1 || got[0] != d("m") {
+		t.Fatalf("accepted heads = %v %v", got, err)
 	}
-	if err := cps.CheckState(s1); !errors.Is(err, ErrRollback) {
-		t.Fatalf("older state accepted: %v", err)
+	// Going back to the pre-merge fork is now a rollback too: m is gone.
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}})); !errors.Is(err, ErrRollback) {
+		t.Fatalf("accepting an older view: %v", err)
 	}
-	// A different, validly signed state at the same sequence is a fork: it is
-	// reported and stops the read, and it does not replace what was accepted.
-	sibling := mk(2, "other")
-	if err := cps.CheckState(sibling); !errors.Is(err, ErrRollback) || !strings.Contains(err.Error(), "fork") {
-		t.Fatalf("a forked state at the same sequence was not rejected: %v", err)
-	}
-	if err := cps.AcceptState(sibling); !errors.Is(err, ErrRollback) {
-		t.Fatalf("a forked state was accepted: %v", err)
-	}
-	if cp, _ := cps.State("secrets/prod"); cp == nil || cp.Digest != s2.Digest {
-		t.Fatalf("the accepted state was replaced: %+v", cp)
-	}
-	if err := cps.CheckState(s1); !errors.Is(err, ErrRollback) {
-		t.Fatalf("older state accepted: %v", err)
-	}
-	// The checkpoint survives reopening: it is stored locally.
-	reopened := &Checkpoints{path: cps.path}
-	if err := reopened.CheckState(s1); !errors.Is(err, ErrRollback) {
-		t.Fatalf("checkpoint was not persisted: %v", err)
+	// Resources have separate checkpoints.
+	if err := cps.CheckStates("secrets/prod", stateView(map[string][]string{"x": nil}).Graph); err != nil {
+		t.Fatalf("other resource: %v", err)
 	}
 }
 
-func TestControlCheckpointIsMonotonic(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"))
-	g1 := &Verified{Control: Control{Generation: 1}, Digest: digest.FromString("1")}
-	g2 := &Verified{Control: Control{Generation: 2}, Digest: digest.FromString("2")}
-	if err := cps.AcceptControl(g2); err != nil {
+func acceptView(c *Checkpoints, sv *StateView) error {
+	heads := make([]digest.Digest, len(sv.Heads))
+	for i, h := range sv.Heads {
+		heads[i] = h.Digest
+	}
+	return c.AcceptStates(testResource, sv.Graph, heads)
+}
+
+func controlView(names ...string) *ControlView {
+	v := &ControlView{verified: map[digest.Digest]*Verified{}}
+	for _, n := range names {
+		x := &Verified{Digest: d(n)}
+		v.verified[x.Digest] = x
+		v.Heads = append(v.Heads, x)
+	}
+	sortVerified(v.Heads)
+	return v
+}
+
+func TestControlCheckpointNeverMovesBack(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
+	if err := cps.AcceptControl(controlView("g1")); err != nil {
 		t.Fatal(err)
 	}
-	if err := cps.AcceptControl(g1); !errors.Is(err, ErrRollback) {
-		t.Fatalf("older control accepted: %v", err)
+	// A view that no longer holds g1 is a rollback.
+	if err := cps.AcceptControl(controlView("other")); !errors.Is(err, ErrRollback) {
+		t.Fatalf("control view without the accepted head: %v", err)
 	}
-	fork := &Verified{Control: Control{Generation: 2}, Digest: digest.FromString("fork")}
-	if err := cps.AcceptControl(fork); !errors.Is(err, ErrRollback) {
-		t.Fatalf("forked control accepted: %v", err)
+	// A newer view that still holds g1 advances the checkpoint.
+	newer := controlView("g1", "g2")
+	newer.Heads = newer.Heads[:0]
+	newer.Heads = append(newer.Heads, newer.verified[d("g2")])
+	if err := cps.AcceptControl(newer); err != nil {
+		t.Fatal(err)
 	}
-	if err := cps.AcceptControl(g2); err != nil {
-		t.Fatalf("same control again: %v", err)
+	got, err := cps.Control()
+	if err != nil || len(got) != 1 || got[0] != d("g2") {
+		t.Fatalf("accepted control heads = %v %v", got, err)
 	}
-	if cp, _ := cps.Control(); cp == nil || cp.Generation != 2 {
-		t.Fatalf("checkpoint: %+v", cp)
+	if err := cps.AcceptControl(controlView("g1")); !errors.Is(err, ErrRollback) {
+		t.Fatalf("older control view: %v", err)
 	}
 }
 
-func TestCorruptCheckpointFails(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"))
-	if err := cps.AcceptControl(&Verified{Control: Control{Generation: 1}, Digest: digest.FromString("1")}); err != nil {
-		t.Fatal(err)
-	}
-	if err := writeFile(cps.path, "{not json"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cps.Control(); err == nil {
-		t.Fatal("corrupt checkpoint read as empty")
-	}
-}
-
-func writeFile(path, s string) error { return os.WriteFile(path, []byte(s), 0o600) }
-
-func TestCheckpointsAreSeparatePerWorkspaceAndGenesis(t *testing.T) {
+func TestCheckpointFilesAreSeparatePerWorkspaceAndGenesis(t *testing.T) {
 	dir := t.TempDir()
-	genesisA, genesisB := digest.FromString("a"), digest.FromString("b")
-	a := OpenCheckpoints(dir, testWorkspace, genesisA)
-	if err := a.AcceptControl(&Verified{Control: Control{Generation: 4}, Digest: digest.FromString("4")}); err != nil {
+	a := OpenCheckpoints(dir, testWorkspace, d("genesis-a"))
+	b := OpenCheckpoints(dir, testWorkspace, d("genesis-b"))
+	if err := acceptView(a, stateView(map[string][]string{"x": nil})); err != nil {
 		t.Fatal(err)
 	}
-	// Another trust root, or another workspace, starts its own history; its
-	// generation 0 is not a rollback of the other's generation 4.
-	for name, other := range map[string]*Checkpoints{
-		"other genesis":   OpenCheckpoints(dir, testWorkspace, genesisB),
-		"other workspace": OpenCheckpoints(dir, "0192f3a0-7c1e-7a55-9d3c-000000000000", genesisA),
-	} {
-		if cp, err := other.Control(); err != nil || cp != nil {
-			t.Fatalf("%s sees %+v %v", name, cp, err)
-		}
-		if err := other.AcceptControl(&Verified{Control: Control{Generation: 0}, Digest: digest.FromString("0")}); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-	}
-	if cp, _ := a.Control(); cp == nil || cp.Generation != 4 {
-		t.Fatalf("the first history changed: %+v", cp)
+	if got, _ := b.State(testResource); got != nil {
+		t.Fatalf("another genesis shares the checkpoint: %v", got)
 	}
 }
 
-func TestUnsupportedCheckpointVersionFails(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("g"))
-	if err := writeFile(cps.path, `{"version": 2}`); err != nil {
+func TestCorruptAndOldCheckpointFiles(t *testing.T) {
+	dir := t.TempDir()
+	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+	if err := os.WriteFile(cps.path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := cps.Control(); err == nil {
-		t.Fatal("an unknown checkpoint version was read as empty")
+		t.Fatal("corrupt checkpoint accepted")
 	}
-	if err := cps.AcceptControl(&Verified{Control: Control{Generation: 1}, Digest: digest.FromString("1")}); err == nil {
-		t.Fatal("an unknown checkpoint version was overwritten")
+	if err := os.WriteFile(cps.path, []byte(`{"version":99}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cps.Control(); err == nil {
+		t.Fatal("unsupported future version accepted")
+	}
+	// A file of the old single-digest format carries nothing over and starts empty.
+	if err := os.WriteFile(cps.path, []byte(`{"version":1,"control":{"generation":3,"digest":"x"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cps.Control(); err != nil || got != nil {
+		t.Fatalf("old format: %v %v", got, err)
+	}
+	if filepath.Dir(cps.path) != dir {
+		t.Fatal("checkpoint escaped its directory")
 	}
 }
 
-func TestAcceptStateRejectsWhatBecameStaleMeanwhile(t *testing.T) {
-	f := newStateFixture(t)
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("g"))
-	mk := func(seq uint64) *VerifiedState {
-		s := f.state(f.bob)
-		s.Sequence = seq
-		if seq > 1 {
-			s.Previous = digest.FromString("prev")
-		}
-		blob, err := SignState(s, f.bob.signer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		v, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return v
+func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
+	other := OpenCheckpoints(filepath.Dir(cps.path), testWorkspace, d("genesis"))
+	views := []*StateView{
+		stateView(map[string][]string{"r": nil}),
+		stateView(map[string][]string{"r": nil, "a": {"r"}}),
+		stateView(map[string][]string{"r": nil, "a": {"r"}, "b": {"a"}}),
 	}
-	old, newer := mk(2), mk(3)
-	if err := cps.CheckState(old); err != nil { // nothing is recorded yet
-		t.Fatal(err)
-	}
-	// Another process accepts a newer state between the caller's check and its accept.
-	if err := cps.AcceptState(newer); err != nil {
-		t.Fatal(err)
-	}
-	if err := cps.AcceptState(old); !errors.Is(err, ErrRollback) {
-		t.Fatalf("a stale state was silently accepted: %v", err)
-	}
-	if cp, _ := cps.State("secrets/prod"); cp == nil || cp.Sequence != 3 {
-		t.Fatalf("checkpoint moved: %+v", cp)
-	}
-}
-
-// Many processes (here, many Checkpoints on one file) accept states at once;
-// the file must end at the highest sequence, never a lower one.
-func TestConcurrentAcceptsNeverMoveACheckpointBack(t *testing.T) {
-	f := newStateFixture(t)
-	path := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("g")).path
 	var wg sync.WaitGroup
-	for seq := uint64(1); seq <= 24; seq++ {
+	for i, v := range views {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s := f.state(f.bob)
-			s.Sequence = seq
-			if seq > 1 {
-				s.Previous = digest.FromString("prev")
+			c := cps
+			if i%2 == 1 {
+				c = other
 			}
-			blob, err := SignState(s, f.bob.signer)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			v, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			c := &Checkpoints{path: path}
-			if err := c.AcceptState(v); err != nil && !errors.Is(err, ErrRollback) {
-				t.Error(err)
-			}
+			_ = acceptView(c, v) // older views may be rejected once a newer one is in
 		}()
 	}
 	wg.Wait()
-	cp, err := (&Checkpoints{path: path}).State("secrets/prod")
-	if err != nil || cp == nil || cp.Sequence != 24 {
-		t.Fatalf("final checkpoint %+v %v, want sequence 24", cp, err)
+	got, err := cps.State(testResource)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("heads = %v %v", got, err)
+	}
+	// Whatever won, the checkpoint never holds something a later view must lose.
+	if err := cps.CheckStates(testResource, views[2].Graph); err != nil {
+		t.Fatalf("newest view rejected: %v", err)
 	}
 }

@@ -1,5 +1,5 @@
 // Package wsp implements the workspace security protocol: a signed Control
-// chain naming the trusted principals, signed States for secret ciphertexts,
+// DAG naming the trusted principals, signed States for secret ciphertexts,
 // and local checkpoints that detect rollback.
 //
 // Storage is untrusted. A ref is only a locator; signatures are the authority.
@@ -17,9 +17,10 @@ var (
 	// ErrInvalid marks an object that failed verification: bad signature, wrong
 	// author, malformed or non-canonical encoding.
 	ErrInvalid = errors.New("invalid workspace object")
-	// ErrRollback marks storage returning something older than, or diverging
-	// from, what this client has already accepted.
-	ErrRollback = errors.New("storage rolled back or forked workspace state")
+	// ErrRollback marks storage showing less than this client has already
+	// accepted, or hiding an object another object depends on. It may be a stale
+	// listing: retrying later can succeed.
+	ErrRollback = errors.New("storage shows less than this client already accepted")
 
 	encMode = mustEncMode()
 	decMode = mustDecMode()

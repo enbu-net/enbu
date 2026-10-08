@@ -19,11 +19,12 @@ type Principal struct {
 	Admin     bool              `cbor:"admin"`
 }
 
-// Control lists the principals trusted by a workspace at one generation.
+// Control lists the principals trusted by a workspace. Controls form a DAG:
+// a normal update has one parent, a fork resolution names every head it joins.
 type Control struct {
 	Workspace  string           `cbor:"workspace"`
-	Generation uint64           `cbor:"generation"`
-	Previous   digest.Digest    `cbor:"previous"` // empty only at genesis
+	Parents    []digest.Digest  `cbor:"parents"` // sorted, unique; empty only at genesis
+	Height     uint64           `cbor:"height"`  // a hint for display; never used for security
 	Principals []Principal      `cbor:"principals"`
 	Author     signing.DeviceID `cbor:"author"`
 }
@@ -59,12 +60,23 @@ func (c Control) Validate() error {
 	if c.Workspace == "" {
 		return invalid("control has no workspace")
 	}
-	if c.Generation == 0 {
-		if c.Previous != "" {
-			return invalid("genesis control has a previous digest")
+	if len(c.Parents) == 0 {
+		if c.Height != 0 {
+			return invalid("genesis control has a height")
 		}
-	} else if err := validDigest(c.Previous); err != nil {
-		return invalid("control previous: %v", err)
+	} else if c.Height == 0 {
+		return invalid("control with parents has height 0")
+	}
+	if len(c.Parents) > MaxPrincipals {
+		return invalid("control has too many parents")
+	}
+	for i, p := range c.Parents {
+		if err := validDigest(p); err != nil {
+			return invalid("control parent: %v", err)
+		}
+		if i > 0 && c.Parents[i-1] >= p {
+			return invalid("control parents must be sorted and unique")
+		}
 	}
 	if err := c.Author.Validate(); err != nil {
 		return invalid("control author: %v", err)
@@ -161,7 +173,7 @@ func VerifyGenesis(workspace string, blob []byte, trusted digest.Digest) (*Verif
 	if err != nil {
 		return nil, err
 	}
-	if c.Generation != 0 || c.Workspace != workspace {
+	if len(c.Parents) != 0 || c.Workspace != workspace {
 		return nil, invalid("not the genesis control of this workspace")
 	}
 	author, ok := c.Principal(c.Author)
@@ -174,10 +186,15 @@ func VerifyGenesis(workspace string, blob []byte, trusted digest.Digest) (*Verif
 	return &Verified{Control: c, Digest: trusted}, nil
 }
 
-// VerifyNext verifies blob as the successor of prev. Its legitimacy comes from
-// prev: the author must be an admin of prev and the signature must verify
-// under prev's key for that author. The new Control vouches for nothing.
-func VerifyNext(prev *Verified, blob []byte) (*Verified, error) {
+// VerifyChild verifies blob as a Control whose parents are all verified. Its
+// legitimacy comes from them: the author must be an admin of every parent and
+// the signature must verify under that admin's key. A Control with several
+// parents resolves a fork, so it may only keep principals the parents already
+// listed and may not make anyone an admin who was not already one.
+func VerifyChild(parents []*Verified, blob []byte) (*Verified, error) {
+	if len(parents) == 0 {
+		return nil, invalid("control has no parent")
+	}
 	s, err := DecodeSigned(blob)
 	if err != nil {
 		return nil, err
@@ -186,18 +203,64 @@ func VerifyNext(prev *Verified, blob []byte) (*Verified, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.Workspace != prev.Workspace {
-		return nil, invalid("control belongs to another workspace")
+	want := make([]digest.Digest, len(parents))
+	height := uint64(0)
+	for i, p := range parents {
+		want[i] = p.Digest
+		if c.Workspace != p.Workspace {
+			return nil, invalid("control belongs to another workspace")
+		}
+		height = max(height, p.Height)
 	}
-	if c.Generation != prev.Generation+1 || c.Previous != prev.Digest {
-		return nil, invalid("control does not follow generation %d", prev.Generation)
+	sortDigests(want)
+	if len(c.Parents) != len(want) {
+		return nil, invalid("control does not name its parents")
 	}
-	author, ok := prev.Principal(c.Author)
-	if !ok || !author.Admin {
-		return nil, invalid("control author %s is not an admin", c.Author)
+	for i := range want {
+		if c.Parents[i] != want[i] {
+			return nil, invalid("control does not name its parents")
+		}
 	}
-	if err := signing.Verify(author.Signing, signing.DomainControl, s.Body, s.Signature); err != nil {
+	if c.Height != height+1 {
+		return nil, invalid("control height %d does not follow %d", c.Height, height)
+	}
+	var key signing.PublicKey
+	for _, p := range parents {
+		author, ok := p.Principal(c.Author)
+		if !ok || !author.Admin {
+			return nil, invalid("control author %s is not an admin of parent %s", c.Author, p.Digest)
+		}
+		key = author.Signing
+	}
+	if err := signing.Verify(key, signing.DomainControl, s.Body, s.Signature); err != nil {
 		return nil, invalid("control signature: %v", err)
 	}
+	if len(parents) > 1 {
+		if err := checkResolution(parents, c); err != nil {
+			return nil, err
+		}
+	}
 	return &Verified{Control: c, Digest: digest.FromBytes(blob)}, nil
+}
+
+func checkResolution(parents []*Verified, c Control) error {
+	for _, p := range c.Principals {
+		listed, wasAdmin := false, false
+		for _, parent := range parents {
+			if old, ok := parent.Principal(p.ID); ok {
+				if old.Signing.DeviceID() != p.Signing.DeviceID() || old.Recipient != p.Recipient {
+					return invalid("resolution changes principal %s", p.ID)
+				}
+				listed = true
+				wasAdmin = wasAdmin || old.Admin
+			}
+		}
+		if !listed {
+			return invalid("resolution adds principal %s", p.ID)
+		}
+		if p.Admin && !wasAdmin {
+			return invalid("resolution makes %s an admin", p.ID)
+		}
+	}
+	return nil
 }
