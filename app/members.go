@@ -311,6 +311,11 @@ func (a *App) ResolveControlFork(ctx context.Context) (err error) {
 		}
 		return wspError(err)
 	}
+	// The resolution may have dropped members that the existing ciphertext is
+	// still encrypted for, so it re-encrypts exactly as a removal does.
+	if err := a.reencryptAll(ctx); err != nil {
+		return apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
+	}
 	return nil
 }
 
