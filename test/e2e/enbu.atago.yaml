@@ -40,7 +40,7 @@ scenarios:
             json:
               - {path: "$.ok", equals: true}
               - {path: "$.data.command", equals: enbu}
-              - {path: "$.data.commands", length: 13}
+              - {path: "$.data.commands", length: 14}
           stderr:
             empty: true
       - run:
