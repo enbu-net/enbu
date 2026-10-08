@@ -56,14 +56,15 @@ test/                    → scenario tests (build tag: scenario)
 
 ## Key design decisions
 
-- Secrets are stored per environment as OCI manifests tagged `secrets-{env}` on `ghcr.io/{owner}/{repo}-enbu`
+- Storage never overwrites: every update is an immutable revision (one OCI manifest holding the SignedState and the ciphertext) under a unique content-derived tag `s-{scope}-{digest}` on `ghcr.io/{owner}/{repo}-enbu` (Control `c-{digest}`, join request `r-{digest}`). OCI has no atomic conditional update, so concurrent writers publish side by side instead of racing for one tag (ADR-12)
 - Storage is untrusted: a ref is a locator, signatures are the authority. Storage write access must never grant membership or the right to publish secret state
-- Members are the principals of the signed Control chain (`control-head`), rooted at the `control_genesis` digest in `enbu.toml`. The age recipient set comes only from the verified Control; `recipient-*` objects no longer exist. Admin/Member only manages membership and is not a data-access permission
-- Each secret state (`secrets-{env}`) is a SignedState naming the ciphertext blob; readers verify author, signature and the local checkpoint before decrypting. The signing key is separate from the encryption key and never stored in Storage
-- New devices leave a self-signed `request-{device-id}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
+- Members are the principals of the signed Control DAG, rooted at the `control_genesis` digest in `enbu.toml`. The age recipient set comes only from the verified Control. Two admins changing members at once fork the DAG; everything stops until an admin runs `enbu member resolve-fork` (ADR-14). Admin/Member only manages membership and is not a data-access permission
+- Each revision is a SignedState naming its `Parents` and the ciphertext; readers verify author and signature, set aside heads from non-members, and check the local checkpoint (the heads already accepted) before decrypting. Concurrent heads are merged 3-way (`pkg/merge`); a key changed differently stops reads and writes until `enbu resolve` (ADR-13). The signing key is separate from the encryption key and never stored in Storage
+- New devices publish a self-signed join request `r-{digest}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
 - `enbu switch` manages environments (create, switch, delete, rename) with state tracked in `enbu.toml` (shared) and `.enbu.local` (per-user)
 - Access control is delegated to OPA/Rego policy evaluated at sync time — not per-environment recipient lists
-- `sync` command re-encrypts for all recipients with optimistic concurrency (digest-based conflict detection + exponential backoff retry)
+- `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
+- Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin reclaims storage with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
 - Only age X25519 keys are used — no SSH key support
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
