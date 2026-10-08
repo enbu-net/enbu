@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/opencontainers/go-digest"
-	"math/rand/v2"
+	"maps"
 	"os"
 	"path/filepath"
-	"time"
+	"strings"
+
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/merge"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 const maxRetries = 3
@@ -29,11 +32,14 @@ func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]st
 		return nil, err
 	}
 	defer s.Close()
-	read, err := s.readState(ctx, secretsTag(resolved.Name), resolved.Name, true)
+	read, err := s.readResource(ctx, resolved.Name, nil, true)
 	if IsNotFoundError(err) {
 		return map[string]string{}, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := conflictError(read.conflicts); err != nil {
 		return nil, err
 	}
 	return read.secrets, nil
@@ -74,7 +80,91 @@ func (a *App) SyncSecrets(ctx context.Context, env string) (err error) {
 	return a.changeSecret(ctx, env, "sync", func(map[string]string) error { return nil })
 }
 
+// SecretConflict is a key that concurrent edits changed differently. Nothing
+// is chosen for the user: they pick one candidate, or give a new value.
+type SecretConflict struct {
+	Key        string              `json:"key"`
+	Candidates []ConflictCandidate `json:"candidates"`
+}
+
+type ConflictCandidate struct {
+	Value   string `json:"value"`
+	Deleted bool   `json:"deleted"`
+}
+
+// ListConflicts returns the keys of env that are waiting for a decision.
+func (a *App) ListConflicts(ctx context.Context, env string) (conflicts []SecretConflict, err error) {
+	defer apperr.NormalizeInto(&err)
+	resolved, err := a.resolveEnvironment(env)
+	if err != nil {
+		return nil, err
+	}
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	read, err := s.readResource(ctx, resolved.Name, nil, true)
+	if IsNotFoundError(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toSecretConflicts(read.conflicts), nil
+}
+
+// SecretChoice settles one conflicted key with a value, or by deleting it.
+type SecretChoice struct {
+	Value  string
+	Delete bool
+}
+
+// ResolveSecrets settles every conflicted key of env and publishes the result
+// as a revision that merges all heads. Every conflict must be settled at once:
+// a merge revision holds one value per key.
+func (a *App) ResolveSecrets(ctx context.Context, env string, choices map[string]SecretChoice) (err error) {
+	defer apperr.NormalizeInto(&err)
+	picked := make(map[string]merge.Choice, len(choices))
+	for k, c := range choices {
+		picked[k] = merge.Choice{Value: c.Value, Delete: c.Delete}
+	}
+	return a.changeSecretWith(ctx, env, "resolve", picked, func(map[string]string) error { return nil })
+}
+
+func toSecretConflicts(cs []merge.Conflict) []SecretConflict {
+	out := make([]SecretConflict, len(cs))
+	for i, c := range cs {
+		out[i] = SecretConflict{Key: c.Key}
+		for _, v := range c.Candidates {
+			out[i].Candidates = append(out[i].Candidates, ConflictCandidate{Value: v.Text, Deleted: v.Deleted})
+		}
+	}
+	return out
+}
+
+func conflictError(cs []merge.Conflict) error {
+	if len(cs) == 0 {
+		return nil
+	}
+	keys := make([]string, len(cs))
+	for i, c := range cs {
+		keys[i] = c.Key
+	}
+	return apperr.New(apperr.CodeSecretConflict, fmt.Sprintf("concurrent edits changed %s differently; choose a value with 'enbu resolve'", strings.Join(keys, ", ")),
+		apperr.Params{"keys": strings.Join(keys, ", ")})
+}
+
 func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[string]string) error) error {
+	return a.changeSecretWith(ctx, env, op, nil, change)
+}
+
+// changeSecretWith reads the merged content, applies change, and publishes the
+// result as a new revision whose parents are every head it saw. It never
+// overwrites: if another writer published meanwhile, both revisions exist and
+// whichever reads next merges them. Before publishing it looks once more, so a
+// head that appeared during the edit is merged now rather than left for later.
+func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[string]merge.Choice, change func(map[string]string) error) error {
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -92,12 +182,12 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 	if op == "sync" {
 		attempts = 5
 	}
-	ref := secretsTag(resolved.Name)
+	var published []digest.Digest // revisions this call made; a stale listing may not show them yet
 	for attempt := 0; attempt < attempts; attempt++ {
 		a.emitStepProgress(op, "pull_secrets", "start")
-		cur, err := s.readState(ctx, ref, resolved.Name, true)
+		cur, err := s.readResource(ctx, resolved.Name, choices, true, published...)
 		var secrets map[string]string
-		var version storage.Version
+		var parents []digest.Digest
 		if err != nil {
 			if !IsNotFoundError(err) {
 				return fmt.Errorf("pulling secrets: %w", err)
@@ -106,26 +196,51 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 				a.emitStepProgress(op, "pull_secrets", "done")
 				return nil
 			}
-			if op == "edit" {
+			if op == "edit" || op == "resolve" {
 				return err
 			}
-			cur, secrets = nil, map[string]string{}
+			secrets = map[string]string{}
 		} else {
-			secrets, version = cur.secrets, cur.version
+			if err := conflictError(cur.conflicts); err != nil {
+				return err
+			}
+			secrets, parents = maps.Clone(cur.secrets), cur.parents()
 		}
 		if err := change(secrets); err != nil {
-			if err == errNoChange {
+			if err == errNoChange && len(parents) <= 1 {
 				a.emitStepProgress(op, "pull_secrets", "done")
 				return nil
 			}
-			return err
+			if err != errNoChange {
+				return err
+			}
+		}
+		// Look once more just before publishing: heads that appeared during the
+		// edit are merged now, in the same revision.
+		if cur != nil {
+			latest, err := s.loadResource(ctx, resolved.Name, published...)
+			if err != nil {
+				return err
+			}
+			accepted, err := s.cps.State(s.resource(resolved.Name))
+			if err != nil {
+				return err
+			}
+			if !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {
+				a.emitRetry(attempt+1, attempts)
+				continue
+			}
 		}
 		a.emitStepProgress(op, "encrypt", "start")
 		a.emitStepProgress(op, "push", "start")
-		stateDigest, err := s.writeState(ctx, ref, resolved.Name, secrets, cur, version)
+		rev, err := s.writeState(ctx, resolved.Name, secrets, parents)
+		if rev != "" {
+			published = append(published, rev)
+		}
 		if errors.Is(err, errControlMoved) {
-			// Members changed while we were working; nothing was published.
-			// Start over on the new member list so removed members are not encrypted for.
+			// Members changed while we were working. Start over on the new member
+			// list so removed members are not encrypted for; a revision already
+			// published stays and is merged by the next read.
 			s.Close()
 			if s, err = a.openSession(ctx); err != nil {
 				return err
@@ -136,49 +251,35 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 			continue
 		}
 		if errors.Is(err, storage.ErrNotFound) {
-			// A blob vanished between its upload and the ref update (registry GC).
-			// Re-run the whole attempt, which uploads it again.
+			// A blob vanished between its upload and the read-back (registry GC).
+			// Run the whole attempt again, which uploads it again.
 			if attempt == attempts-1 {
 				return fmt.Errorf("saving encrypted secrets: uploaded blob disappeared before it was referenced: %v", err)
-			}
-			continue
-		}
-		if apperr.Is(err, apperr.CodeConflict) {
-			if attempt == attempts-1 {
-				return conflictRetriesExhausted(err, attempts)
-			}
-			a.emitRetry(attempt+1, attempts)
-			delay := time.Duration(100+rand.IntN(100)) * time.Millisecond
-			if op == "sync" {
-				delay = time.Second * time.Duration(1<<attempt)
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(delay):
 			}
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
-		if op != "sync" {
-			a.saveSnapshot(ctx, s.store, resolved.Name, stateDigest)
+		if err := s.acceptPublished(ctx, resolved.Name, rev); err != nil {
+			return err
 		}
 		a.emitStepProgress(op, "push", "done")
 		return nil
 	}
-	return nil
+	return apperr.New(apperr.CodeConflict, fmt.Sprintf("secrets changed by other users while saving; failed after %d attempts", attempts), nil)
 }
 
-// saveSnapshot records a history entry as another ref to the signed state.
-func (a *App) saveSnapshot(ctx context.Context, store *storage.Store, env string, blob digest.Digest) {
-	if err := store.Refs.Put(ctx, snapshotTag(env), blob, ""); err != nil {
-		a.emit(fmt.Sprintf("Secrets saved, but history snapshot failed: %v", err))
+func sameHeads(a, b []*wsp.VerifiedState) bool {
+	if len(a) != len(b) {
+		return false
 	}
-}
-func conflictRetriesExhausted(err error, attempts int) error {
-	return fmt.Errorf("secrets changed by another user, failed after %d attempts: %w", attempts, err)
+	for i := range a {
+		if a[i].Digest != b[i].Digest {
+			return false
+		}
+	}
+	return true
 }
 
 type PulledSecrets struct {
@@ -219,9 +320,12 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 	defer s.Close()
 	a.emitStepProgress("pull", "pull_secrets", "start")
 	a.emitStepProgress("pull", "decrypt", "start")
-	read, err := s.readState(ctx, secretsTag(resolved.Name), resolved.Name, true)
+	read, err := s.readResource(ctx, resolved.Name, nil, true)
 	if err != nil {
 		return nil, fmt.Errorf("pulling secrets: %w", err)
+	}
+	if err := conflictError(read.conflicts); err != nil {
+		return nil, err
 	}
 	secrets := read.secrets
 	if emitDone {

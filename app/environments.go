@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 type EnvInfo struct {
@@ -166,4 +168,40 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	}
 
 	return a.saveProject(cfg)
+}
+
+// PurgeEnvironment deletes every stored revision of an environment. It is how
+// storage is reclaimed: enbu never trims history by itself, and removing an
+// environment from enbu.toml only forgets where its revisions are. Only a
+// workspace admin may delete, because deleting is not a right that writing to
+// storage gives, and the backend must be able to delete at all. It returns how
+// many revisions were deleted.
+func (a *App) PurgeEnvironment(ctx context.Context, name string) (deleted int, err error) {
+	defer apperr.NormalizeInto(&err)
+	if _, err := a.resolveEnvironment(name); err != nil {
+		return 0, err
+	}
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer s.Close()
+	if p, _ := s.head.Principal(s.self()); !p.Admin {
+		return 0, apperr.New(apperr.CodeAccessDenied, "only a workspace admin can delete stored revisions", nil)
+	}
+	if !s.store.Capabilities().PhysicalDelete {
+		return 0, apperr.New(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", nil)
+	}
+	scope := storage.StateScope(s.workspace, s.resource(name))
+	revs, err := s.store.Discover(ctx, storage.KindState, scope)
+	if err != nil {
+		return 0, storageError(err)
+	}
+	for _, rev := range revs {
+		if err := s.store.Delete(ctx, storage.KindState, scope, rev); err != nil && !errorsIsNotFound(err) {
+			return deleted, fmt.Errorf("deleting revision %s after %d deleted: %w", rev.Encoded(), deleted, storageError(err))
+		}
+		deleted++
+	}
+	return deleted, nil
 }

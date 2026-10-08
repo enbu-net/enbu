@@ -13,6 +13,8 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
 
 func TestLocalStorageNativePath(t *testing.T) {
@@ -24,10 +26,12 @@ func TestLocalStorageNativePath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := putRef(context.Background(), store, "probe", []byte("x"), ""); err != nil {
+	signed := []byte("probe")
+	if err := store.Publish(context.Background(), storage.Object{Kind: storage.KindRequest, Rev: digest.FromBytes(signed), Signed: signed}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "refs", "probe")); err != nil {
+	entries, err := os.ReadDir(filepath.Join(dir, "revisions"))
+	if err != nil || len(entries) != 1 {
 		t.Fatalf("storage did not use local directory %q: %v", dir, err)
 	}
 }
@@ -59,7 +63,8 @@ func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	// The trusted genesis belongs to the original workspace.
+	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
 		t.Fatalf("workspace mismatch: %v", err)
 	}
 }

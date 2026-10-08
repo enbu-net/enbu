@@ -2,15 +2,14 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
 
 func TestStorageURLValidation(t *testing.T) {
@@ -33,38 +32,12 @@ func TestS3StorageConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if store.Blobs == nil || store.Refs == nil {
-		t.Fatalf("unexpected S3 configuration: %+v", store)
+	if store == nil {
+		t.Fatal("no S3 store")
 	}
 	cfg.Storage.Endpoint = "https://example.com/path"
 	if _, err := a.openStorage(context.Background(), cfg); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("invalid S3 endpoint: %v", err)
-	}
-}
-
-func TestSnapshotKeysAreUnambiguousAndFitOCI(t *testing.T) {
-	for _, env := range []string{"dev", "dev-123", strings.Repeat("a", 100)} {
-		tag := snapshotTag(env)
-		if err := storage.ValidateKey(tag); err != nil {
-			t.Fatal(err)
-		}
-		if !IsSnapshotTag(env, tag) {
-			t.Fatal(tag)
-		}
-		for _, other := range []string{"prod", env + "-123"} {
-			if IsSnapshotTag(other, tag) {
-				t.Fatalf("%s belongs to %s", tag, other)
-			}
-		}
-		if IsSnapshotTag(env, tag+"-garbage") {
-			t.Fatal("accepted malformed UUID")
-		}
-		prefix, id, _ := strings.Cut(strings.TrimPrefix(tag, snapshotPrefix(env)), "-")
-		for _, nonCanonical := range []string{strings.ReplaceAll(id, "-", ""), "{" + id + "}", "urn:uuid:" + id} {
-			if IsSnapshotTag(env, snapshotPrefix(env)+prefix+"-"+nonCanonical) {
-				t.Fatalf("accepted non-canonical snapshot UUID %q", nonCanonical)
-			}
-		}
 	}
 }
 
@@ -96,32 +69,44 @@ func TestHistoryOrdersRapidUpdates(t *testing.T) {
 	}
 }
 
-func TestInitializeRejectsCorruptStorageRecords(t *testing.T) {
-	for _, kind := range []string{"control", "secrets"} {
-		t.Run(kind, func(t *testing.T) {
-			ctx := context.Background()
-			a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
-			prepareApp(t, a, "default")
-			if _, err := a.InitializeRepository(ctx); err != nil {
-				t.Fatal(err)
+func TestInitializeRejectsCorruptControl(t *testing.T) {
+	ctx := context.Background()
+	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
+	prepareApp(t, a, "default")
+	if _, err := a.InitializeRepository(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis := digest.Digest(cfg.ControlGenesis)
+	// The genesis object now holds bytes that are not that control.
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+			if kind == storage.KindControl && rev == genesis {
+				return storage.Object{Kind: kind, Rev: rev, Signed: []byte("corrupt")}, nil
 			}
-			if err := a.AddSecret(ctx, "default", "KEY", "value"); err != nil {
-				t.Fatal(err)
-			}
-			key := wsp.ControlRef
-			if kind == "secrets" {
-				key = secretsTag("default")
-			}
-			_, version, err := getRef(ctx, a.Storage, key)
-			if err != nil && !errors.Is(err, storage.ErrNotFound) {
-				t.Fatal(err)
-			}
-			if err := putRef(ctx, a.Storage, key, []byte("corrupt"), version); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := a.InitializeRepository(ctx); err == nil {
-				t.Fatal("corrupt storage treated as successful initialization")
-			}
-		})
+			return next.Fetch(ctx, kind, scope, rev)
+		},
+	})
+	if _, err := a.InitializeRepository(ctx); err == nil {
+		t.Fatal("corrupt storage treated as successful initialization")
+	}
+}
+
+// A repository with no trusted genesis must not adopt a workspace that storage
+// already holds: nothing there says whose it is.
+func TestInitializeRefusesAStorageThatAlreadyHoldsAWorkspace(t *testing.T) {
+	ctx := context.Background()
+	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
+	prepareApp(t, a, "default")
+	if _, err := a.InitializeRepository(ctx); err != nil {
+		t.Fatal(err)
+	}
+	other := &App{Storage: a.Storage, Identities: newMemKeyStore()}
+	prepareApp(t, other, "default") // same workspace id, but no control_genesis
+	if _, err := other.InitializeRepository(ctx); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		t.Fatalf("adopting an existing workspace without a genesis: %v", err)
 	}
 }

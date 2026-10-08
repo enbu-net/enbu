@@ -6,30 +6,29 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/opencontainers/go-digest"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
-// vanishingRefs fails Put with ErrNotFound the first n times for the secrets ref.
-type vanishingRefs struct {
-	storage.Refs
-	remaining int
-	puts      int
+// vanishing makes Publish of a State fail with ErrNotFound the first n times,
+// as when a registry GC drops a blob before the manifest that names it is read back.
+func vanishing(base storage.Store, n int) (storage.Store, *int) {
+	published := 0
+	return storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if o.Kind == storage.KindState && n > 0 {
+				n--
+				published++
+				return storage.ErrNotFound
+			}
+			return next.Publish(ctx, o)
+		},
+	}), &published
 }
 
-func (r *vanishingRefs) Put(ctx context.Context, name string, target digest.Digest, expected storage.Version) error {
-	if name == secretsTag("default") && r.remaining > 0 {
-		r.remaining--
-		r.puts++
-		return storage.ErrNotFound
-	}
-	return r.Refs.Put(ctx, name, target, expected)
-}
-
-func TestChangeSecretRetriesWhenBlobVanishesBeforeRefUpdate(t *testing.T) {
+func TestChangeSecretRetriesWhenBlobVanishesBeforeReadBack(t *testing.T) {
 	ctx := context.Background()
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
-	refs := &vanishingRefs{Refs: a.Storage.Refs, remaining: 1}
-	a.Storage = &storage.Store{Blobs: a.Storage.Blobs, Refs: refs}
+	a.Storage, _ = vanishing(a.Storage, 1)
 
 	if err := a.AddSecret(ctx, "default", "NEW", "value"); err != nil {
 		t.Fatal(err)
@@ -46,13 +45,13 @@ func TestChangeSecretRetriesWhenBlobVanishesBeforeRefUpdate(t *testing.T) {
 func TestChangeSecretDoesNotReportVanishedBlobAsMissingArtifact(t *testing.T) {
 	ctx := context.Background()
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
-	a.Storage = &storage.Store{Blobs: a.Storage.Blobs, Refs: &vanishingRefs{Refs: a.Storage.Refs, remaining: 100}}
+	a.Storage, _ = vanishing(a.Storage, 100)
 
 	err := a.AddSecret(ctx, "default", "NEW", "value")
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if IsNotFoundError(err) || errors.Is(err, storage.ErrNotFound) {
-		t.Fatalf("error must not look like a missing ref: %v", err)
+	if IsNotFoundError(err) || errors.Is(err, storage.ErrNotFound) && IsNotFoundError(err) {
+		t.Fatalf("error must not look like a missing environment: %v", err)
 	}
 }

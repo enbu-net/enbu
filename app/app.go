@@ -18,7 +18,7 @@ import (
 )
 
 type App struct {
-	Storage       *storage.Store
+	Storage       storage.Store
 	StorageURL    string
 	InitStorage   *config.StorageConfig
 	TokenProvider TokenProvider
@@ -74,7 +74,7 @@ func (a *App) WorkspaceID() (id string, err error) {
 	return cfg.WorkspaceID, nil
 }
 
-func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (*storage.Store, error) {
+func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (storage.Store, error) {
 	if a.Storage != nil {
 		return a.Storage, nil
 	}
@@ -119,13 +119,23 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (*stor
 		default:
 			return nil, apperr.New(apperr.CodeInvalidArgument, "invalid OCI authentication mode", nil)
 		}
-		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP)
+		var opts []storage.OCIOption
+		if settings.OCIAuth == "github" {
+			// Deleting needs the GitHub Packages API, which the same token can reach.
+			if g, ok := storage.GHCRPackagesFor(u.Host+u.Path, func() (string, error) {
+				token, _, err := a.TokenProvider.LoadToken()
+				return token, err
+			}); ok {
+				opts = append(opts, storage.WithTagDeleter(g))
+			}
+		}
+		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP, opts...)
 	default:
 		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with oci:// or s3://", nil)
 	}
 }
 
-func (a *App) workspaceStorage(ctx context.Context) (*storage.Store, error) {
+func (a *App) workspaceStorage(ctx context.Context) (storage.Store, error) {
 	cfg, err := a.loadProject()
 	if err != nil {
 		return nil, err
@@ -133,26 +143,15 @@ func (a *App) workspaceStorage(ctx context.Context) (*storage.Store, error) {
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 		return nil, apperr.New(apperr.CodeNotInitialized, "workspace ID missing or invalid", nil)
 	}
-	store, err := a.openStorage(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	id, _, err := getRef(ctx, store, workspaceKey)
-	if err != nil {
-		return nil, storageError(err)
-	}
-	if string(id) != cfg.WorkspaceID {
-		return nil, apperr.New(apperr.CodeInvalidArgument, "storage belongs to a different workspace", nil)
-	}
-	return store, nil
+	return a.openStorage(ctx, cfg)
 }
 
 func storageError(err error) error {
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		return apperr.Wrap(apperr.CodeArtifactNotFound, "storage object not found", err, nil)
-	case errors.Is(err, storage.ErrConflict):
-		return apperr.Wrap(apperr.CodeConflict, "storage object changed", err, nil)
+	case errors.Is(err, storage.ErrCorrupt):
+		return apperr.Wrap(apperr.CodeUntrusted, "stored data does not match its name", err, nil)
 	default:
 		return err
 	}

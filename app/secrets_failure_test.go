@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
@@ -15,7 +14,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
-	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
@@ -34,39 +33,39 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 		{"diff", func(a *App) error { _, err := a.DiffHistory(ctx, "default", 1, 1); return err }},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
-			for _, failure := range []string{"config", "workspace", "identity", "storage", "ciphertext", "bundle"} {
+			for _, failure := range []string{"config", "identity", "storage", "ciphertext", "bundle"} {
 				t.Run(failure, func(t *testing.T) {
 					kp := mustKeyPair(t)
-					// One existing secret also gives history operations a snapshot.
+					// One existing secret also gives history operations a revision.
 					a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "original"})
 					cause := errors.New("dependency unavailable")
 					wantCode := apperr.CodeInternal
 					preserveCause := false
 					base := a.Storage
-					hook := &hookedStorage{Objects: storagetest.ToObjects(base)}
 					writes := 0
-					hook.put = func(context.Context, string, []byte, storage.Version) error { writes++; return nil }
-					a.Storage = storagetest.Wrap(base, hook)
+					countWrites := func(ctx context.Context, next storage.Store, o storage.Object) error {
+						writes++
+						return next.Publish(ctx, o)
+					}
+					a.Storage = storagetest.Wrap(base, storagetest.Hooks{Publish: countWrites})
 					switch failure {
 					case "config":
 						if err := os.WriteFile(filepath.Join(a.RepositoryDir, "enbu.toml"), []byte("version = ["), 0o600); err != nil {
 							t.Fatal(err)
 						}
-					case "workspace":
-						hook.get = func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-							if key == workspaceKey {
-								return []byte("other-workspace"), "", nil
-							}
-							return getRef(ctx, base, key)
-						}
-						wantCode = apperr.CodeInvalidArgument
 					case "identity":
 						a.Identities = newMemKeyStore()
 						wantCode = apperr.CodeNotInitialized
 					case "storage":
-						hook.get = func(context.Context, string) ([]byte, storage.Version, error) {
-							return nil, "", cause
-						}
+						a.Storage = storagetest.Wrap(base, storagetest.Hooks{
+							Publish: countWrites,
+							Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+								return storage.Object{}, cause
+							},
+							Discover: func(context.Context, storage.Store, storage.Kind, string) ([]digest.Digest, error) {
+								return nil, cause
+							},
+						})
 						preserveCause = true
 					case "ciphertext", "bundle":
 						data := []byte("invalid age ciphertext")
@@ -77,25 +76,30 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						// A legitimately signed state whose ciphertext is bad: signatures
-						// pass, so the failure is the decrypt or bundle parse itself.
-						signed := stateBlob(t, a, base, secretsTag("default"), "default", data)
-						hook.get = func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-							if key == secretsTag("default") || strings.HasPrefix(key, snapshotPrefix("default")) {
-								return signed, "corrupt", nil
-							}
-							return getRef(ctx, base, key)
+						// A legitimately signed revision whose ciphertext is bad becomes the
+						// only head: signatures pass, so the failure is the decrypt or the
+						// bundle parse itself.
+						s, err := a.openSession(ctx)
+						if err != nil {
+							t.Fatal(err)
 						}
+						sv, err := s.loadResource(ctx, "default")
+						if err != nil {
+							t.Fatal(err)
+						}
+						publishRevision(t, base, a, s.workspace, s.resource("default"), s.head.Digest, data, sv.Heads[0].Digest)
+						s.Close()
+						writes = 0
 					}
 					err := operation.run(a)
 					if !apperr.Is(err, wantCode) {
 						t.Fatalf("error = %v, want %s", err, wantCode)
 					}
 					if preserveCause && !errors.Is(err, cause) {
-						t.Fatalf("error = %v, lost cause", err)
+						t.Fatalf("error = %v, want cause %v", err, cause)
 					}
 					if writes != 0 {
-						t.Fatalf("writes = %d after failed dependency", writes)
+						t.Fatalf("%d writes after a failure", writes)
 					}
 				})
 			}
@@ -118,19 +122,23 @@ func TestSecretWritesRejectUntrustedControl(t *testing.T) {
 			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "original"})
 			base := a.Storage
 			writes := 0
-			// The control-head ref now names a blob that is not a signed control.
-			junk, err := base.Blobs.Put(context.Background(), strings.NewReader("not a control"))
+			cfg, err := a.loadProject()
 			if err != nil {
 				t.Fatal(err)
 			}
-			a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-				get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-					if key == wsp.ControlRef {
-						return []byte(junk), "v", nil
+			genesis := digest.Digest(cfg.ControlGenesis)
+			// The genesis object is replaced by bytes that are not that control.
+			a.Storage = storagetest.Wrap(base, storagetest.Hooks{
+				Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+					if kind == storage.KindControl && rev == genesis {
+						return storage.Object{Kind: kind, Rev: rev, Signed: []byte("not a control")}, nil
 					}
-					return getRef(ctx, base, key)
+					return next.Fetch(ctx, kind, scope, rev)
 				},
-				put: func(context.Context, string, []byte, storage.Version) error { writes++; return nil },
+				Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+					writes++
+					return next.Publish(ctx, o)
+				},
 			})
 			err = operation.run(a)
 			if !apperr.Is(err, apperr.CodeUntrusted) || writes != 0 {
@@ -200,7 +208,9 @@ func setSecretTestOutput(t *testing.T, a *App, output string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.Environments["default"] = config.EnvironmentConfig{Output: output}
+	env := cfg.Environments["default"]
+	env.Output = output
+	cfg.Environments["default"] = env
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}

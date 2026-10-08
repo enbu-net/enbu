@@ -4,17 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"strconv"
-	"strings"
-	"time"
-	"uuid"
 
-	"crypto/sha256"
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
 const (
@@ -45,21 +41,12 @@ func CloseIdentities(ids []agecrypto.Identity) {
 	}
 }
 
-const workspaceKey = "enbu-workspace"
-
 func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (map[string]string, error) {
 	plaintext, err := age.Decrypt(ciphertext, identities...)
 	if err != nil {
 		return nil, err
 	}
 	return bundle.Unmarshal(plaintext)
-}
-
-func secretsTag(env string) string {
-	if env == "" {
-		env = DefaultEnvironment
-	}
-	return "secrets-" + env
 }
 
 func IsNotFoundError(err error) bool {
@@ -117,34 +104,4 @@ func IsNotInitializedError(err error) bool {
 		apperr.Is(err, apperr.CodeNotInitialized)
 }
 
-func snapshotPrefix(env string) string {
-	if env == "" {
-		env = DefaultEnvironment
-	}
-	return fmt.Sprintf("hist-%x-", sha256.Sum256([]byte(env)))
-}
-
-func snapshotTag(env string) string {
-	return fmt.Sprintf("%s%d-%s", snapshotPrefix(env), time.Now().UnixNano(), uuid.NewV4().String())
-}
-
-func IsSnapshotTag(env, tag string) bool { _, ok := snapshotTimestamp(env, tag); return ok }
-
-func snapshotTimestamp(env, tag string) (time.Time, bool) {
-	prefix := snapshotPrefix(env)
-	if !strings.HasPrefix(tag, prefix) {
-		return time.Time{}, false
-	}
-	tsText, id, ok := strings.Cut(strings.TrimPrefix(tag, prefix), "-")
-	if !ok {
-		return time.Time{}, false
-	}
-	if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
-		return time.Time{}, false
-	}
-	ts, err := strconv.ParseInt(tsText, 10, 64)
-	if err != nil || ts < 0 {
-		return time.Time{}, false
-	}
-	return time.Unix(0, ts), true
-}
+func errorsIsNotFound(err error) bool { return errors.Is(err, storage.ErrNotFound) }

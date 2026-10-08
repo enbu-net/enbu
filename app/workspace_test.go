@@ -15,25 +15,21 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
-	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
 
 // A fresh environment keeps these tests independent of any secrets alice wrote.
-const stagingRef = "secrets-staging"
+const stagingEnv = "staging"
 
-func writeStaging(t *testing.T, s *session, secrets map[string]string, cur *stateRead) digest.Digest {
+func writeStaging(t *testing.T, s *session, secrets map[string]string, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	var expected storage.Version
-	if cur != nil {
-		expected = cur.version
-	}
-	d, err := s.writeState(bg, stagingRef, "staging", secrets, cur, expected)
+	rev, err := s.writeState(bg, stagingEnv, secrets, parents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d
+	return rev
 }
 
 // encryptForTest encrypts secrets for the recipients of the verified Control.
@@ -48,15 +44,15 @@ func TestSessionStateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	writeStaging(t, s, map[string]string{"A": "1"}, nil)
-	first, err := s.readState(bg, stagingRef, "staging", true)
-	if err != nil || first.secrets["A"] != "1" || first.state.Sequence != 1 {
-		t.Fatalf("first read: %+v %v", first, err)
+	first := writeStaging(t, s, map[string]string{"A": "1"})
+	read, err := s.readResource(bg, stagingEnv, nil, true)
+	if err != nil || read.secrets["A"] != "1" || len(read.heads) != 1 || read.heads[0].Digest != first {
+		t.Fatalf("first read: %+v %v", read, err)
 	}
-	writeStaging(t, s, map[string]string{"A": "2"}, first)
-	second, err := s.readState(bg, stagingRef, "staging", true)
-	if err != nil || second.secrets["A"] != "2" || second.state.Sequence != 2 || second.state.Previous != first.state.Digest {
-		t.Fatalf("second read: %+v %v", second, err)
+	second := writeStaging(t, s, map[string]string{"A": "2"}, first)
+	read, err = s.readResource(bg, stagingEnv, nil, true)
+	if err != nil || read.secrets["A"] != "2" || read.heads[0].Digest != second || read.heads[0].Parents[0] != first {
+		t.Fatalf("second read: %+v %v", read, err)
 	}
 }
 
@@ -68,8 +64,8 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	writeStaging(t, s, map[string]string{"A": "1"}, nil)
-	read, err := s.readState(bg, stagingRef, "staging", false)
+	rev := writeStaging(t, s, map[string]string{"A": "1"})
+	read, err := s.readResource(bg, stagingEnv, nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,11 +73,11 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := readBlob(bg, alice.Storage, read.state.Ciphertext)
+	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), rev)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := decryptSecretsObject(ciphertext, stranger); err == nil {
+	if _, err := decryptSecretsObject(o.Cipher, stranger); err == nil {
 		t.Fatal("an identity outside the control decrypted the state")
 	}
 	if got := s.head.Recipients(); len(got) != 1 {
@@ -89,27 +85,10 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	}
 }
 
-func TestSessionRejectsUnsignedState(t *testing.T) {
-	alice := newAlice(t)
-	s, err := alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	// Real ciphertext for the real recipients, but nobody signed a state for it.
-	raw, err := encryptForTest(s, map[string]string{"A": "evil"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := putRef(bg, alice.Storage, stagingRef, raw, ""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.readState(bg, stagingRef, "staging", true); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("unsigned ciphertext accepted: %v", err)
-	}
-}
-
-func TestSessionRejectsStateSignedByNonMember(t *testing.T) {
+// Anything a writer to storage publishes that is not a validly signed State of a
+// member carries no authority. It is skipped, so it neither injects secrets nor
+// stops genuine ones from being read.
+func TestSessionIgnoresRevisionsWithoutAuthority(t *testing.T) {
 	alice := newAlice(t)
 	attacker := newDevice(t, alice)
 	requestJoin(t, attacker)
@@ -118,17 +97,29 @@ func TestSessionRejectsStateSignedByNonMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
+	ws := mustWorkspace(t, alice)
+	resource := s.resource(stagingEnv)
+	scope := storage.StateScope(ws, resource)
 	raw, err := encryptForTest(s, map[string]string{"A": "evil"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	blob := signAsOutsider(t, alice, attacker, "staging", raw)
-	if err := putRef(bg, alice.Storage, stagingRef, blob, ""); err != nil {
+
+	// Real ciphertext for the real recipients inside a "state" nobody signed.
+	garbage := []byte("not a signed state")
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Signed: garbage, Cipher: raw}); err != nil {
 		t.Fatal(err)
 	}
-	// The signature is valid; the author is simply not a principal.
-	if _, err := s.readState(bg, stagingRef, "staging", true); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("outsider-signed state accepted: %v", err)
+	// A valid signature by a device that is not a principal.
+	publishRevision(t, alice.Storage, attacker, ws, resource, s.head.Digest, raw)
+	if _, err := s.readResource(bg, stagingEnv, nil, true); !IsNotFoundError(err) {
+		t.Fatalf("revisions without authority were read: %v", err)
+	}
+
+	genuine := writeStaging(t, s, map[string]string{"A": "genuine"})
+	read, err := s.readResource(bg, stagingEnv, nil, true)
+	if err != nil || read.secrets["A"] != "genuine" || len(read.heads) != 1 || read.heads[0].Digest != genuine {
+		t.Fatalf("genuine head not read beside the junk: %+v %v", read, err)
 	}
 }
 
@@ -139,18 +130,49 @@ func TestSessionRejectsStateOfAnotherResource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	writeStaging(t, s, map[string]string{"A": "1"}, nil)
-	staged, _, err := alice.Storage.Refs.Get(bg, stagingRef)
+	rev := writeStaging(t, s, map[string]string{"A": "1"})
+	src := storage.StateScope(s.workspace, s.resource(stagingEnv))
+	o, err := alice.Storage.Fetch(bg, storage.KindState, src, rev)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Replaying a genuine staging state as the dev environment must fail.
-	if err := alice.Storage.Refs.Put(bg, "secrets-dev", staged, ""); err != nil {
+	o.Scope = storage.StateScope(s.workspace, s.resource("dev"))
+	if err := alice.Storage.Publish(bg, o); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.readState(bg, "secrets-dev", "dev", true); !apperr.Is(err, apperr.CodeUntrusted) {
+	if _, err := s.readResource(bg, "dev", nil, true); !IsNotFoundError(err) {
 		t.Fatalf("state replayed under another environment accepted: %v", err)
 	}
+}
+
+func hide(base storage.Store, hidden ...digest.Digest) storage.Store {
+	is := func(d digest.Digest) bool {
+		for _, h := range hidden {
+			if h == d {
+				return true
+			}
+		}
+		return false
+	}
+	return storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revs, err := next.Discover(ctx, kind, scope)
+			var out []digest.Digest
+			for _, r := range revs {
+				if !is(r) {
+					out = append(out, r)
+				}
+			}
+			return out, err
+		},
+		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+			if is(rev) {
+				return storage.Object{}, storage.ErrNotFound
+			}
+			return next.Fetch(ctx, kind, scope, rev)
+		},
+	})
 }
 
 func TestSessionDetectsStateRollback(t *testing.T) {
@@ -160,30 +182,22 @@ func TestSessionDetectsStateRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	writeStaging(t, s, map[string]string{"A": "1"}, nil)
-	old, _, err := alice.Storage.Refs.Get(bg, stagingRef)
-	if err != nil {
+	first := writeStaging(t, s, map[string]string{"A": "1"})
+	second := writeStaging(t, s, map[string]string{"A": "2"}, first)
+	if _, err := s.readResource(bg, stagingEnv, nil, true); err != nil { // accepts the second revision
 		t.Fatal(err)
 	}
-	first, err := s.readState(bg, stagingRef, "staging", true)
-	if err != nil {
-		t.Fatal(err)
+	// Storage stops showing the newest revision.
+	real := alice.Storage
+	alice.Storage = hide(real, second)
+	s.store = alice.Storage
+	if _, err := s.readResource(bg, stagingEnv, nil, true); !apperr.Is(err, apperr.CodeRollback) {
+		t.Fatalf("storage that lost an accepted revision: %v", err)
 	}
-	writeStaging(t, s, map[string]string{"A": "2"}, first)
-	if _, err := s.readState(bg, stagingRef, "staging", true); err != nil { // accepts sequence 2
-		t.Fatal(err)
-	}
-	// Storage serves the previous, genuinely signed state again.
-	_, version, _ := alice.Storage.Refs.Get(bg, stagingRef)
-	if err := alice.Storage.Refs.Put(bg, stagingRef, old, version); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.readState(bg, stagingRef, "staging", true); !apperr.Is(err, apperr.CodeRollback) {
-		t.Fatalf("old state accepted: %v", err)
-	}
-	// History snapshots are older by design.
-	if _, err := s.readState(bg, stagingRef, "staging", false); err != nil {
-		t.Fatalf("snapshot read: %v", err)
+	// Seeing it again is not a rollback: a stale listing is temporary.
+	s.store = real
+	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "2" {
+		t.Fatalf("after storage recovered: %v", err)
 	}
 }
 
@@ -207,29 +221,33 @@ func TestOpenControlDetectsRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	genesis := s.head.Digest
 	extra := extraPrincipal(t)
-	if _, err := wsp.UpdateControl(bg, s.store, s.head, s.signer, func(c *wsp.Control) error {
+	v, err := wsp.UpdateControl(bg, s.store, s.view, s.signer, func(c *wsp.Control) error {
 		c.Principals = append(c.Principals, extra)
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	s.Close()
-	if got, err := alice.openControl(bg); err != nil || got.head.Generation != 1 { // records generation 1
+	if got, err := alice.openControl(bg); err != nil || got.head.Digest != v.Digest { // records the new head
 		t.Fatalf("control after update: %v", err)
 	}
-	// Storage hides the change by serving the genesis head again.
-	_, version, _ := alice.Storage.Refs.Get(bg, wsp.ControlRef)
-	if err := alice.Storage.Refs.Put(bg, wsp.ControlRef, genesis, version); err != nil {
-		t.Fatal(err)
-	}
+	// Storage hides the change.
+	real := alice.Storage
+	alice.Storage = hide(real, v.Digest)
 	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeRollback) {
 		t.Fatalf("old control accepted: %v", err)
 	}
+	alice.Storage = real
+	if _, err := alice.openControl(bg); err != nil {
+		t.Fatalf("storage recovered: %v", err)
+	}
 }
 
-func TestOpenControlRejectsForgedControl(t *testing.T) {
+// A Control signed by someone who is not an admin is not part of the DAG, so
+// publishing one changes nothing for anybody.
+func TestOpenControlIgnoresForgedControl(t *testing.T) {
 	alice := newAlice(t)
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
@@ -244,17 +262,23 @@ func TestOpenControlRejectsForgedControl(t *testing.T) {
 	}
 	defer s.Close()
 	self := wsp.Principal{ID: ms.Public().DeviceID(), Signing: ms.Public(), Recipient: s.head.Principals[0].Recipient, Admin: true}
-	forged, err := wsp.SignControl(wsp.Control{Workspace: s.workspace, Generation: 1, Previous: s.head.Digest, Author: self.ID,
+	forged, err := wsp.SignControl(wsp.Control{Workspace: s.workspace, Parents: []digest.Digest{s.head.Digest}, Height: s.head.Height + 1, Author: self.ID,
 		Principals: append(append([]wsp.Principal{}, s.head.Principals...), self)}, ms)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, version, _ := alice.Storage.Refs.Get(bg, wsp.ControlRef)
-	if err := putRef(bg, alice.Storage, wsp.ControlRef, forged, version); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("forged control accepted: %v", err)
+	got, err := alice.openControl(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.head.Digest != s.head.Digest {
+		t.Fatal("a forged control became the head")
+	}
+	if _, ok := got.head.Principal(self.ID); ok {
+		t.Fatal("the forger became a principal")
 	}
 }
 
@@ -277,8 +301,8 @@ func TestOpenControlNeedsTrustedGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("opened with a wrong genesis: %v", err)
+	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		t.Fatalf("opened with a genesis storage does not hold: %v", err)
 	}
 	cfg.ControlGenesis = genuine
 	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
@@ -300,45 +324,9 @@ func TestOpenSessionRequiresMembership(t *testing.T) {
 
 func TestOpenControlWithoutControlIsIncompatible(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
-	cfg, err := a.loadProject()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.ControlGenesis = "sha256:" + string(bytes.Repeat([]byte("1"), 64))
-	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
-		t.Fatal(err)
-	}
 	other := &App{Storage: newMemRegistry(), Identities: a.Identities, CheckpointDir: t.TempDir(), RepositoryDir: a.RepositoryDir}
-	if err := putRef(bg, other.Storage, workspaceKey, []byte(testWorkspaceID), ""); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := other.openControl(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("storage without a control: %v", err)
-	}
-}
-
-// A state that this device would refuse to read back must not be published.
-func TestWriteStateDoesNotPublishBelowTheCheckpoint(t *testing.T) {
-	alice := newAlice(t)
-	s, err := alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	writeStaging(t, s, map[string]string{"A": "1"}, nil)
-	read, err := s.readState(bg, stagingRef, "staging", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeStaging(t, s, map[string]string{"A": "2"}, read) // checkpoint is now sequence 2
-	// A fresh chain for the same environment under another ref would start at
-	// sequence 1, below what this device has accepted.
-	_, err = s.writeState(bg, "secrets-staging-copy", "staging", map[string]string{"A": "x"}, nil, "")
-	if !apperr.Is(err, apperr.CodeRollback) {
-		t.Fatalf("writing below the checkpoint: %v", err)
-	}
-	if _, _, err := alice.Storage.Refs.Get(bg, "secrets-staging-copy"); !errors.Is(err, storage.ErrNotFound) {
-		t.Fatalf("the ref was created anyway: %v", err)
 	}
 }
 
@@ -357,18 +345,18 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 	}
 	defer other.Close()
 	extra := extraPrincipal(t)
-	if _, err := wsp.UpdateControl(bg, other.store, other.head, other.signer, func(c *wsp.Control) error {
+	if _, err := wsp.UpdateControl(bg, other.store, other.view, other.signer, func(c *wsp.Control) error {
 		c.Principals = append(c.Principals, extra)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.writeState(bg, stagingRef, "staging", map[string]string{"A": "1"}, nil, "")
+	_, err = s.writeState(bg, stagingEnv, map[string]string{"A": "1"}, nil)
 	if !errors.Is(err, errControlMoved) {
 		t.Fatalf("write on a stale control: %v", err)
 	}
-	if _, _, err := alice.Storage.Refs.Get(bg, stagingRef); !errors.Is(err, storage.ErrNotFound) {
-		t.Fatalf("a state was published anyway: %v", err)
+	if revs := revisionsOf(t, alice, stagingEnv); len(revs) != 0 {
+		t.Fatalf("a state was published anyway: %v", revs)
 	}
 	// A fresh session sees the new member and encrypts for it.
 	fresh, err := alice.openSession(bg)
@@ -376,38 +364,8 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fresh.Close()
-	if _, err := fresh.writeState(bg, stagingRef, "staging", map[string]string{"A": "1"}, nil, ""); err != nil {
+	if _, err := fresh.writeState(bg, stagingEnv, map[string]string{"A": "1"}, nil); err != nil {
 		t.Fatalf("write on the current control: %v", err)
-	}
-}
-
-// On a backend whose ref update is not atomic, another writer can overwrite
-// ours right after it. That must surface as a conflict and leave the checkpoint
-// alone, so the retry starts from the state that really is current.
-func TestWriteStateReportsALostUpdate(t *testing.T) {
-	alice := newAlice(t)
-	base := alice.Storage
-	alice.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-			objects := storagetest.ToObjects(base)
-			if err := objects.Put(ctx, key, o, v); err != nil || key != stagingRef {
-				return err
-			}
-			// A concurrent writer's update lands on top of ours.
-			_, now, _ := objects.Get(ctx, key)
-			return objects.Put(ctx, key, []byte("someone else's state"), now)
-		}})
-	s, err := alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	_, err = s.writeState(bg, stagingRef, "staging", map[string]string{"A": "1"}, nil, "")
-	if !apperr.Is(err, apperr.CodeConflict) {
-		t.Fatalf("a lost update was not reported as a conflict: %v", err)
-	}
-	if cp, _ := s.cps.State("secrets/staging"); cp != nil {
-		t.Fatalf("the checkpoint recorded a state that was overwritten: %+v", cp)
 	}
 }
 
@@ -435,14 +393,14 @@ func changeControl(t *testing.T, a *App, mutate func(*wsp.Control)) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := wsp.UpdateControl(bg, s.store, s.head, s.signer, func(c *wsp.Control) error { mutate(c); return nil }); err != nil {
+	if _, err := wsp.UpdateControl(bg, s.store, s.view, s.signer, func(c *wsp.Control) error { mutate(c); return nil }); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // An admin must be able to take over what a member last wrote when removing
-// them, so a state this device accepted stays acceptable. A state the removed
-// member signs afterwards was never accepted and must not be.
+// them, so a revision this device accepted stays acceptable. A revision the
+// removed member signs afterwards was never accepted and is set aside.
 func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 	alice := newAlice(t)
 	bob := newDevice(t, alice)
@@ -450,6 +408,7 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 	bobsEntry := principalOf(t, bob)
 	changeControl(t, alice, func(c *wsp.Control) { c.Principals = append(c.Principals, bobsEntry) })
 
+	ws := mustWorkspace(t, alice)
 	s, err := alice.openSession(bg)
 	if err != nil {
 		t.Fatal(err)
@@ -458,15 +417,8 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Close()
-	if err := putRef(bg, alice.Storage, stagingRef, signAsOutsider(t, alice, bob, "staging", raw), ""); err != nil {
-		t.Fatal(err)
-	}
-	s, err = alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if read, err := s.readState(bg, stagingRef, "staging", true); err != nil || read.secrets["A"] != "by bob" {
+	bobsRev := publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), s.head.Digest, raw)
+	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "by bob" {
 		t.Fatalf("bob's state while he is a member: %v", err)
 	}
 	s.Close()
@@ -485,20 +437,52 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if read, err := s.readState(bg, stagingRef, "staging", true); err != nil || read.secrets["A"] != "by bob" {
+	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "by bob" {
 		t.Fatalf("the state alice already accepted was refused after bob left: %v", err)
 	}
 
-	// Bob signs something new after the removal.
-	_, version, _ := alice.Storage.Refs.Get(bg, stagingRef)
+	// Bob claims the control he knew and signs something new on top of his own revision.
+	oldControl := s.head.Parents[0]
 	forged, err := encryptForTest(s, map[string]string{"A": "bob again"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := putRef(bg, alice.Storage, stagingRef, signAsOutsider(t, alice, bob, "staging", forged), version); err != nil {
+	publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), oldControl, forged, bobsRev)
+	read, err := s.readResource(bg, stagingEnv, nil, true)
+	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Digest != bobsRev {
+		t.Fatalf("a revision signed after the removal changed what is read: %+v %v", read, err)
+	}
+}
+
+// A removed member whose only revision this device never accepted cannot be read.
+func TestSessionSetsAsideAHeadOfAMemberRemovedBeforeItWasAccepted(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	requestJoin(t, bob)
+	bobsEntry := principalOf(t, bob)
+	changeControl(t, alice, func(c *wsp.Control) { c.Principals = append(c.Principals, bobsEntry) })
+	s, err := alice.openSession(bg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.readState(bg, stagingRef, "staging", true); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("a state signed after the removal was accepted: %v", err)
+	raw, _ := encryptForTest(s, map[string]string{"A": "by bob"})
+	publishRevision(t, alice.Storage, bob, mustWorkspace(t, alice), s.resource(stagingEnv), s.head.Digest, raw)
+	s.Close()
+	changeControl(t, alice, func(c *wsp.Control) {
+		kept := c.Principals[:0:0]
+		for _, p := range c.Principals {
+			if p.ID != bobsEntry.ID {
+				kept = append(kept, p)
+			}
+		}
+		c.Principals = kept
+	})
+	s, err = alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.readResource(bg, stagingEnv, nil, true); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("a head by a removed member, never accepted: %v", err)
 	}
 }
