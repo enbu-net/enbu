@@ -63,7 +63,7 @@ Region uses the saved setting, `AWS_REGION`, then `AWS_DEFAULT_REGION`; when omi
 the SDK discovers the bucket region. An omitted endpoint selects Amazon S3.
 No credentials are saved in `enbu.toml` or accepted in storage URLs. Required
 permissions are ListBucket on the workspace prefix and GetObject/PutObject on its
-objects. Only `enbu switch --delete --purge` deletes objects (DeleteObject).
+objects. Only `enbu switch --delete --purge` and `--purge-incarnation` delete objects (DeleteObject).
 
 ## Revisions and limits
 
@@ -99,7 +99,10 @@ against their merge base (`pkg/merge`) and publishes the result with all heads a
 parents; a key the heads changed differently is a conflict that stops reads and
 writes until `enbu resolve`. Revisions are not trimmed automatically, because a
 revision found late needs its merge base. `enbu switch --delete NAME --purge`
-(admin only) deletes an environment's revisions where the backend can: S3 and the
+(admin only) deletes an environment's revisions where the backend can, and only
+after checking that the environment itself can be deleted. An environment deleted
+without `--purge` prints its incarnation; `enbu switch --purge-incarnation ID`
+reclaims its revisions later: S3 and the
 local fixture directly, GHCR through the GitHub Packages API (token with
 `delete:packages`; a package version that carries any other tag is left alone,
 because deleting a version deletes all its tags). Other registries cannot.
