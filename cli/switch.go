@@ -11,6 +11,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 	var (
 		create  bool
 		delete  bool
+		purge   bool
 		list    bool
 		moveOld string
 		moveNew string
@@ -45,6 +46,15 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 				if len(args) == 0 {
 					return invalidArgument("environment name required for --delete", nil)
 				}
+				purged := 0
+				if purge {
+					// Before the environment is forgotten: the stored revisions are found through it.
+					n, err := a.PurgeEnvironment(cmd.Context(), args[0])
+					if err != nil {
+						return err
+					}
+					purged = n
+				}
 				if err := a.DeleteEnvironment(args[0]); err != nil {
 					return err
 				}
@@ -52,9 +62,13 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 					return writeJSON(cmd, map[string]any{
 						"action":      "delete",
 						"environment": args[0],
+						"purged":      purged,
 					})
 				}
 				cmd.Printf("Deleted environment '%s'\n", args[0])
+				if purge {
+					cmd.Printf("Deleted %d stored revision(s)\n", purged)
+				}
 				return nil
 			}
 
@@ -109,6 +123,7 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 
 	cmd.Flags().BoolVarP(&create, "create", "c", false, "Create a new environment and switch to it")
 	cmd.Flags().BoolVarP(&delete, "delete", "d", false, "Delete an environment")
+	cmd.Flags().BoolVar(&purge, "purge", false, "With --delete, also delete the environment's stored revisions (admin only)")
 	cmd.Flags().BoolVarP(&list, "list", "l", false, "List all environments")
 	cmd.Flags().StringVarP(&moveOld, "move", "m", "", "Rename an environment (old name)")
 

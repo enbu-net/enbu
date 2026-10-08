@@ -174,52 +174,100 @@ func TestScenario_SyncIdempotent(t *testing.T) {
 	)
 }
 
+// Storage has no compare-and-swap, so concurrent writers publish side by side.
+// Every add that reports success must still be there afterwards, for everyone.
 func TestScenario_ConcurrentAdds(t *testing.T) {
+	names := []string{"alice", "bob", "carol", "dave"}
+	steps := []Step{Users(names...)}
+	for _, n := range names {
+		steps = append(steps, Register(n))
+	}
+	steps = append(steps, Add("alice", "SEED", "initial"))
+	steps = append(steps,
+		StepFunc("everyone adds distinct keys at the same time, three rounds", func(t *testing.T, s *ScenarioState) {
+			for round := 0; round < 3; round++ {
+				var wg sync.WaitGroup
+				errs := make([]error, len(names))
+				for i, n := range names {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						key := fmt.Sprintf("FROM_%s_%d", strings.ToUpper(n), round)
+						errs[i] = executeCommand(s.ctx, s.user(t, n).svc, "add", key, key+"-data")
+					}()
+				}
+				wg.Wait()
+				for i, err := range errs {
+					if err != nil {
+						t.Fatalf("%s's add failed in round %d: %v", names[i], round, err)
+					}
+				}
+			}
+		}),
+		StepFunc("nothing a successful add wrote is lost, for anyone", func(t *testing.T, s *ScenarioState) {
+			for _, reader := range names {
+				output := pullStdout(t, s.ctx, s.user(t, reader))
+				if !strings.Contains(output, "SEED") {
+					t.Fatalf("%s lost SEED: %s", reader, output)
+				}
+				for _, n := range names {
+					for round := 0; round < 3; round++ {
+						if key := fmt.Sprintf("FROM_%s_%d", strings.ToUpper(n), round); !strings.Contains(output, key) {
+							t.Fatalf("%s does not see %s: %s", reader, key, output)
+						}
+					}
+				}
+			}
+		}),
+	)
+	RunScenario(t, steps...)
+}
+
+// Two people changing one key at the same time is the one case that needs a
+// person: both values are kept until someone chooses.
+func TestScenario_ConcurrentEditsOfOneKeyNeedAChoice(t *testing.T) {
 	RunScenario(t,
 		Users("alice", "bob"),
 		Register("alice"),
 		Register("bob"),
-		Add("alice", "SEED", "initial"),
-		StepFunc("alice and bob add concurrently", func(t *testing.T, s *ScenarioState) {
-			user1 := s.user(t, "alice")
-			user2 := s.user(t, "bob")
-
+		Add("alice", "KEY", "original"),
+		StepFunc("both edit KEY at the same time", func(t *testing.T, s *ScenarioState) {
 			var wg sync.WaitGroup
-			var err1, err2 error
-
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				err1 = executeCommand(s.ctx, user1.svc, "add", "FROM_ALICE", "alice-data")
-			}()
-			go func() {
-				defer wg.Done()
-				err2 = executeCommand(s.ctx, user2.svc, "add", "FROM_BOB", "bob-data")
-			}()
+			errs := make([]error, 2)
+			for i, n := range []string{"alice", "bob"} {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					errs[i] = executeCommand(s.ctx, s.user(t, n).svc, "edit", "KEY", n+"-value")
+				}()
+			}
 			wg.Wait()
-
-			if err1 != nil && err2 != nil {
-				t.Fatalf("both adds failed: err1=%v, err2=%v", err1, err2)
-			}
-
-			if err1 != nil {
-				addSecret(t, s.ctx, user1, "FROM_ALICE", "alice-data")
-			}
-			if err2 != nil {
-				addSecret(t, s.ctx, user2, "FROM_BOB", "bob-data")
+			for i, err := range errs {
+				if err != nil {
+					t.Fatalf("edit %d failed: %v", i, err)
+				}
 			}
 		}),
-		StepFunc("at least one concurrent add survives", func(t *testing.T, s *ScenarioState) {
-			output := pullStdout(t, s.ctx, s.user(t, "alice"))
-			if !strings.Contains(output, "SEED") {
-				t.Fatalf("missing SEED: %s", output)
+		StepFunc("the key waits for a decision and neither value is lost", func(t *testing.T, s *ScenarioState) {
+			alice := s.user(t, "alice")
+			// The editors raced, so the registry may have serialized them; settle
+			// whichever way it went.
+			err := executeCommand(s.ctx, alice.svc, "pull")
+			if err == nil {
+				if out := pullStdout(t, s.ctx, alice); !strings.Contains(out, "-value") {
+					t.Fatalf("an edit was lost: %s", out)
+				}
+				return
 			}
-			if !strings.Contains(output, "FROM_ALICE") || !strings.Contains(output, "FROM_BOB") {
-				output2 := pullStdout(t, s.ctx, s.user(t, "bob"))
-				t.Logf("alice sees: %s", output)
-				t.Logf("bob sees: %s", output2)
-				if !strings.Contains(output, "FROM_ALICE") && !strings.Contains(output, "FROM_BOB") {
-					t.Fatal("neither concurrent add survived")
+			if !strings.Contains(err.Error(), "differently") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if err := executeCommand(s.ctx, alice.svc, "resolve", "--pick", "KEY=1"); err != nil {
+				t.Fatalf("resolve: %v", err)
+			}
+			for _, n := range []string{"alice", "bob"} {
+				if out := pullStdout(t, s.ctx, s.user(t, n)); !strings.Contains(out, "-value") {
+					t.Fatalf("%s sees %s after resolving", n, out)
 				}
 			}
 		}),

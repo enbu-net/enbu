@@ -21,7 +21,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 type testUser struct {
@@ -314,12 +313,6 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 	st, err := storage.NewOCI("localhost:5000/"+owner+"/"+repo+"-enbu", nil, true)
 	if err != nil {
 		t.Fatal(err)
-	}
-	objects := storagetest.ToObjects(st)
-	if _, _, err = objects.Get(context.Background(), "enbu-workspace"); err != nil {
-		if err = objects.Put(context.Background(), "enbu-workspace", []byte(cfg.WorkspaceID), ""); err != nil {
-			t.Fatal(err)
-		}
 	}
 	svc := &enbuapp.App{
 		Storage:       st,
