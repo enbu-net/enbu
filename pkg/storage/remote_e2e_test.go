@@ -1,6 +1,6 @@
 //go:build storagee2e
 
-package storage
+package storage_test
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/minio/minio-go/v7"
 )
 
@@ -17,18 +19,18 @@ func TestRemoteStorage(t *testing.T) {
 		if ref == "" {
 			t.Skip("ENBU_TEST_OCI_REF not set")
 		}
-		st, err := NewOCI(ref+"/"+uuid.NewV4().String(), nil, true)
+		st, err := storage.NewOCI(ref+"/"+uuid.NewV4().String(), nil, true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		contract(t, st)
+		storagetest.Contract(t, st)
 	})
 	t.Run("S3", func(t *testing.T) {
 		bucket := os.Getenv("ENBU_TEST_S3_BUCKET")
 		if bucket == "" {
 			t.Skip("ENBU_TEST_S3_BUCKET not set")
 		}
-		client, err := NewS3Client(os.Getenv("ENBU_TEST_S3_ENDPOINT"), "", true)
+		client, err := storage.NewS3Client(os.Getenv("ENBU_TEST_S3_ENDPOINT"), "", true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +40,7 @@ func TestRemoteStorage(t *testing.T) {
 			}
 		}
 		prefix := "storage-contract/" + uuid.NewV4().String()
-		st := NewS3(client, bucket, prefix)
+		st := storage.NewS3(client, bucket, prefix)
 		t.Cleanup(func() {
 			for obj := range client.ListObjects(context.Background(), bucket, minio.ListObjectsOptions{Prefix: prefix + "/", Recursive: true}) {
 				if obj.Err != nil {
@@ -50,7 +52,6 @@ func TestRemoteStorage(t *testing.T) {
 				}
 			}
 		})
-		contract(t, st)
-		atomicContract(t, st)
+		storagetest.Contract(t, st)
 	})
 }
