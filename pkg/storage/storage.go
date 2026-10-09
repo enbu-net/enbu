@@ -12,17 +12,20 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
 )
 
 const (
-	// MaxPayloadBytes bounds the ciphertext of one revision.
+	// MaxPayloadBytes bounds one attached blob, such as a revision's ciphertext.
 	MaxPayloadBytes = 10 * 1024 * 1024
-	// MaxSignedBytes bounds the signed header of one object.
-	MaxSignedBytes = 1024 * 1024
-	scopeHexLen    = 32
+	// MaxHeadBytes bounds the head of an object, which is read for every revision.
+	MaxHeadBytes = 1024 * 1024
+	// MaxBlobs bounds the blobs one object can attach.
+	MaxBlobs    = 8
+	scopeHexLen = 32
 )
 
 var (
@@ -53,14 +56,19 @@ func (k Kind) letter() (string, bool) {
 	return "", false
 }
 
-// Object is one published revision. Rev is the digest of Signed. Cipher is the
-// ciphertext a State names; it is empty for every other kind.
+// Object is one published revision: a head that names it, and blobs the head
+// refers to. Rev is the digest of Head. Storage gives the parts no meaning; the
+// protocol on top decides what the head says and what each blob is.
+//
+// They are separate because they are read separately: finding a resource's
+// heads and merge base needs only the small heads of every revision, and a
+// blob is fetched only for a revision whose content is actually needed.
 type Object struct {
-	Kind   Kind
-	Scope  string // StateScope for State, empty otherwise
-	Rev    digest.Digest
-	Signed []byte
-	Cipher []byte
+	Kind  Kind
+	Scope string // StateScope for State, empty otherwise
+	Rev   digest.Digest
+	Head  []byte
+	Blobs [][]byte
 }
 
 // Capabilities lists optional backend features. Correctness never depends on them.
@@ -71,16 +79,39 @@ type Capabilities struct {
 // Store is the whole contract a backend implements.
 type Store interface {
 	// Publish stores the object under its content-derived name. It is create-only
-	// and idempotent, and returns only after reading the object back by name.
+	// and idempotent, and returns only after reading the object back by name, so
+	// a head is never visible without the blobs it refers to.
 	Publish(ctx context.Context, o Object) error
-	// Fetch returns the object, verified against its name. A missing object is ErrNotFound.
-	Fetch(ctx context.Context, kind Kind, scope string, rev digest.Digest) (Object, error)
+	// FetchHead returns the head, verified against its name. A missing object is
+	// ErrNotFound. It never transfers the blobs.
+	FetchHead(ctx context.Context, kind Kind, scope string, rev digest.Digest) ([]byte, error)
+	// OpenBlob streams the index-th blob of an object (counting from 0). A missing
+	// object or blob is ErrNotFound. The caller checks the content against the
+	// digest its head names, because only the protocol on top knows it.
+	OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error)
 	// Discover lists the revisions it can currently see. The list may be stale
 	// but never names an object that does not exist.
 	Discover(ctx context.Context, kind Kind, scope string) ([]digest.Digest, error)
 	// Delete removes an object. Backends without Capabilities.PhysicalDelete return ErrUnsupported.
 	Delete(ctx context.Context, kind Kind, scope string, rev digest.Digest) error
 	Capabilities() Capabilities
+}
+
+// ReadBlob reads a whole blob of at most limit bytes.
+func ReadBlob(ctx context.Context, s Store, kind Kind, scope string, rev digest.Digest, index int, limit int64) ([]byte, error) {
+	rc, err := s.OpenBlob(ctx, kind, scope, rev, index)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, ErrTooLarge
+	}
+	return data, nil
 }
 
 // StateScope names the listing bucket of one resource of a workspace. A scope
@@ -126,21 +157,22 @@ func ValidateObject(o Object) error {
 	if err := validateRef(o.Kind, o.Scope, o.Rev); err != nil {
 		return err
 	}
-	if len(o.Signed) == 0 || len(o.Signed) > MaxSignedBytes {
-		return fmt.Errorf("signed object must be 1..%d bytes", MaxSignedBytes)
+	if len(o.Head) == 0 || len(o.Head) > MaxHeadBytes {
+		return fmt.Errorf("head must be 1..%d bytes", MaxHeadBytes)
 	}
-	if digest.FromBytes(o.Signed) != o.Rev {
-		return fmt.Errorf("%w: revision is not the digest of the signed bytes", ErrCorrupt)
+	if digest.FromBytes(o.Head) != o.Rev {
+		return fmt.Errorf("%w: revision is not the digest of the head", ErrCorrupt)
 	}
-	if o.Kind == KindState {
-		if len(o.Cipher) == 0 {
-			return errors.New("state object has no ciphertext")
+	if len(o.Blobs) > MaxBlobs {
+		return fmt.Errorf("an object has at most %d blobs", MaxBlobs)
+	}
+	for _, b := range o.Blobs {
+		if len(b) == 0 {
+			return errors.New("a blob must not be empty")
 		}
-		if len(o.Cipher) > MaxPayloadBytes {
+		if len(b) > MaxPayloadBytes {
 			return ErrTooLarge
 		}
-	} else if len(o.Cipher) != 0 {
-		return fmt.Errorf("%s objects carry no ciphertext", o.Kind)
 	}
 	return nil
 }
@@ -214,32 +246,87 @@ func ValidateDigest(d digest.Digest) error {
 	return nil
 }
 
-// frame packs the two parts of an object into one byte string for backends
-// that store a revision as a single file or object.
+// A single-file backend (S3, local) stores an object as
+//
+//	uvarint(parts) uvarint(len)... head blob...
+//
+// where the head is the first part. The lengths come first so a reader can
+// reach one part with a ranged read, without transferring the others.
+
+// maxFrameBytes bounds a stored object so a hostile backend cannot exhaust memory.
+const maxFrameBytes = MaxHeadBytes + MaxBlobs*MaxPayloadBytes + (MaxBlobs+2)*binary.MaxVarintLen64
+
 func frame(o Object) []byte {
+	parts := append([][]byte{o.Head}, o.Blobs...)
 	var buf bytes.Buffer
 	var n [binary.MaxVarintLen64]byte
-	buf.Write(n[:binary.PutUvarint(n[:], uint64(len(o.Signed)))])
-	buf.Write(o.Signed)
-	buf.Write(o.Cipher)
+	buf.Write(n[:binary.PutUvarint(n[:], uint64(len(parts)))])
+	for _, p := range parts {
+		buf.Write(n[:binary.PutUvarint(n[:], uint64(len(p)))])
+	}
+	for _, p := range parts {
+		buf.Write(p)
+	}
 	return buf.Bytes()
 }
 
-// unframe splits and verifies bytes read from a backend against the requested name.
-func unframe(kind Kind, scope string, rev digest.Digest, data []byte) (Object, error) {
-	n, read := binary.Uvarint(data)
-	if read <= 0 || n == 0 || n > MaxSignedBytes || uint64(len(data)-read) < n {
-		return Object{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
+// frameLayout is where each part of a stored object lies.
+type frameLayout struct{ offsets, lengths []int64 }
+
+// readLayout parses the lengths at the start of an object of the given size.
+func readLayout(r io.ReaderAt, size int64) (frameLayout, error) {
+	headerMax := int64((MaxBlobs + 2) * binary.MaxVarintLen64)
+	buf := make([]byte, min(size, headerMax))
+	if _, err := r.ReadAt(buf, 0); err != nil && !errors.Is(err, io.EOF) {
+		return frameLayout{}, err
 	}
-	o := Object{Kind: kind, Scope: scope, Rev: rev, Signed: data[read : read+int(n)]}
-	if rest := data[read+int(n):]; len(rest) > 0 {
-		o.Cipher = rest
+	count, n := binary.Uvarint(buf)
+	if n <= 0 || count == 0 || count > MaxBlobs+1 {
+		return frameLayout{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
 	}
-	if err := ValidateObject(o); err != nil {
-		return Object{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
+	var l frameLayout
+	pos := int64(n)
+	var total uint64
+	for i := uint64(0); i < count; i++ {
+		v, m := binary.Uvarint(buf[pos:])
+		if m <= 0 {
+			return frameLayout{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
+		}
+		pos += int64(m)
+		l.lengths = append(l.lengths, int64(v))
+		total += v
 	}
-	return o, nil
+	if l.lengths[0] == 0 || l.lengths[0] > MaxHeadBytes || total > maxFrameBytes || int64(total) != size-pos {
+		return frameLayout{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
+	}
+	off := pos
+	for _, length := range l.lengths {
+		l.offsets = append(l.offsets, off)
+		off += length
+	}
+	return l, nil
 }
 
-// maxFrameBytes bounds a stored frame so a hostile backend cannot exhaust memory.
-const maxFrameBytes = MaxPayloadBytes + MaxSignedBytes + binary.MaxVarintLen64
+// readHead reads and verifies the head of a stored object.
+func readHead(r io.ReaderAt, size int64, rev digest.Digest) ([]byte, frameLayout, error) {
+	l, err := readLayout(r, size)
+	if err != nil {
+		return nil, l, err
+	}
+	head := make([]byte, l.lengths[0])
+	if _, err := r.ReadAt(head, l.offsets[0]); err != nil && !errors.Is(err, io.EOF) {
+		return nil, l, err
+	}
+	if digest.FromBytes(head) != rev {
+		return nil, l, fmt.Errorf("%w: head does not match its revision", ErrCorrupt)
+	}
+	return head, l, nil
+}
+
+// blobSection is a reader over one blob of a stored object.
+func blobSection(r io.ReaderAt, l frameLayout, index int) (*io.SectionReader, error) {
+	if index < 0 || index+1 >= len(l.offsets) {
+		return nil, fmt.Errorf("%w: the object has no blob %d", ErrNotFound, index)
+	}
+	return io.NewSectionReader(r, l.offsets[index+1], l.lengths[index+1]), nil
+}

@@ -27,7 +27,7 @@ func TestLocalStorageNativePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	signed := []byte("probe")
-	if err := store.Publish(context.Background(), storage.Object{Kind: storage.KindRequest, Rev: digest.FromBytes(signed), Signed: signed}); err != nil {
+	if err := store.Publish(context.Background(), storage.Object{Kind: storage.KindRequest, Rev: digest.FromBytes(signed), Head: signed}); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(filepath.Join(dir, "revisions"))

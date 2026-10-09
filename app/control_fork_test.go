@@ -148,7 +148,7 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest)
+	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer CloseIdentities(ids)
-	if _, err := decryptSecretsObject(o.Cipher, ids...); err == nil {
+	if _, err := decryptSecretsObject(ciphertext, ids...); err == nil {
 		t.Fatal("the current revision is still encrypted for the member the resolution dropped")
 	}
 	if read.heads[0].Control != cur.head.Digest {

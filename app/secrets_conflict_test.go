@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -296,5 +297,50 @@ func TestResolveRefusesWhenAValueAppearedAfterTheListing(t *testing.T) {
 	}
 	if err := alice.ResolveSecrets(bg, "default", fresh.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
 		t.Fatalf("resolving the listing that was shown: %v", err)
+	}
+}
+
+// A read transfers only the ciphertexts whose content it uses: the heads, and
+// the merge base when they must be merged. Building the DAG reads heads only,
+// so the cost does not grow with the length of the history.
+func TestReadingOpensOnlyTheCiphertextsItUses(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	for i := 0; i < 8; i++ {
+		if err := alice.EditSecret(bg, "default", "KEY", "v"+string(rune('2'+i))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opened := 0
+	count := func(a *App) {
+		a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+			OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+				opened++
+				return next.OpenBlob(ctx, kind, scope, rev, index)
+			},
+		})
+	}
+	count(bob)
+	if got := listOK(t, bob); got["KEY"] != "v9" {
+		t.Fatalf("secrets = %v", got)
+	}
+	if opened != 1 {
+		t.Fatalf("a read of a ten-revision history opened %d ciphertexts, want the 1 head", opened)
+	}
+
+	// Two heads: both, and their merge base.
+	raceOnPublish(alice, func() {
+		if err := bob.AddSecret(bg, "default", "FROM_BOB", "b"); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := alice.AddSecret(bg, "default", "FROM_ALICE", "a"); err != nil {
+		t.Fatal(err)
+	}
+	opened = 0
+	if got := listOK(t, bob); got["FROM_ALICE"] != "a" || got["FROM_BOB"] != "b" {
+		t.Fatalf("secrets = %v", got)
+	}
+	if opened != 3 {
+		t.Fatalf("a read that merges two heads opened %d ciphertexts, want 2 heads and 1 base", opened)
 	}
 }

@@ -77,6 +77,30 @@ func readLocal(r *os.Root, path string) ([]byte, error) {
 	return data, nil
 }
 
+// openLocal opens a stored object for ranged reads.
+func openLocal(r *os.Root, path string) (*os.File, int64, error) {
+	if err := rejectSymlink(r, path); err != nil {
+		return nil, 0, err
+	}
+	f, err := r.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, 0, ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, 0, err
+	}
+	if info.Size() > maxFrameBytes {
+		_ = f.Close()
+		return nil, 0, ErrTooLarge
+	}
+	return f, info.Size(), nil
+}
+
 func (s local) Publish(ctx context.Context, o Object) error {
 	if err := ValidateObject(o); err != nil {
 		return err
@@ -114,35 +138,73 @@ func (s local) Publish(ctx context.Context, o Object) error {
 	if err := commitLocalFile(root, pending, path, func(r *os.Root) error { return syncSubdir(r, revisionDir) }); err != nil {
 		return err
 	}
-	_, err = s.fetchFrom(root, o.Kind, o.Scope, o.Rev)
+	f, size, err := openLocal(root, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if size != int64(len(data)) {
+		return fmt.Errorf("%w: %s has the wrong size after publishing", ErrCorrupt, name)
+	}
+	_, _, err = readHead(f, size, o.Rev)
 	return err
 }
 
-func (s local) fetchFrom(root *os.Root, kind Kind, scope string, rev digest.Digest) (Object, error) {
+func (s local) FetchHead(ctx context.Context, kind Kind, scope string, rev digest.Digest) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	name, err := Name(kind, scope, rev)
 	if err != nil {
-		return Object{}, err
-	}
-	data, err := readLocal(root, revisionDir+"/"+name)
-	if err != nil {
-		return Object{}, err
-	}
-	return unframe(kind, scope, rev, data)
-}
-
-func (s local) Fetch(ctx context.Context, kind Kind, scope string, rev digest.Digest) (Object, error) {
-	if err := ctx.Err(); err != nil {
-		return Object{}, err
-	}
-	if err := validateRef(kind, scope, rev); err != nil {
-		return Object{}, err
+		return nil, err
 	}
 	root, err := s.openRoot()
 	if err != nil {
-		return Object{}, err
+		return nil, err
 	}
 	defer func() { _ = root.Close() }()
-	return s.fetchFrom(root, kind, scope, rev)
+	f, size, err := openLocal(root, revisionDir+"/"+name)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	head, _, err := readHead(f, size, rev)
+	return head, err
+}
+
+// OpenBlob streams one blob. The file stays open until the reader is closed, and
+// reads only that blob's range.
+func (s local) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	name, err := Name(kind, scope, rev)
+	if err != nil {
+		return nil, err
+	}
+	root, err := s.openRoot()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	f, size, err := openLocal(root, revisionDir+"/"+name)
+	if err != nil {
+		return nil, err
+	}
+	_, layout, err := readHead(f, size, rev)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	section, err := blobSection(f, layout, index)
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{section, f}, nil
 }
 
 func (s local) Discover(ctx context.Context, kind Kind, scope string) ([]digest.Digest, error) {

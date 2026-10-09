@@ -220,11 +220,11 @@ func TestLoadControlDetectsAHiddenAcceptedControl(t *testing.T) {
 		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
 			return nil, nil
 		},
-		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 			if rev == v1.Digest {
-				return storage.Object{}, storage.ErrNotFound
+				return nil, storage.ErrNotFound
 			}
-			return next.Fetch(ctx, kind, scope, rev)
+			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
 	if _, err := LoadControl(ctx, hidden, testWorkspace, genesis, cp); !errors.Is(err, ErrRollback) {
@@ -241,11 +241,11 @@ func TestLoadControlSkipsDamagedAndRefusesAnOversizedDAG(t *testing.T) {
 	bob := newActor(t, false)
 	v1 := addMember(t, store, genesis, alice, bob)
 	damaged := storagetest.Wrap(store, storagetest.Hooks{
-		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 			if rev == v1.Digest {
-				return storage.Object{}, storage.ErrCorrupt
+				return nil, storage.ErrCorrupt
 			}
-			return next.Fetch(ctx, kind, scope, rev)
+			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
 	view, err := LoadControl(ctx, damaged, testWorkspace, genesis, nil)

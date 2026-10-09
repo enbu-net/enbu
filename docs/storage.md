@@ -3,7 +3,8 @@
 Identity and Storage are independent. TPM, Secure Enclave and OS keyring identities
 can each use OCI or S3 storage. The application stores encrypted environment
 bundles, public recipients and signed membership through the same
-`pkg/storage.Store` interface: `Publish`, `Fetch` and `Discover` revisions.
+`pkg/storage.Store` interface: `Publish` a revision, `Discover` revisions, then
+`FetchHead` and `OpenBlob` to read them.
 
 ## Configuration
 
@@ -83,11 +84,24 @@ scope and digest and rejects an object that does not match its name. A tag on an
 OCI registry can be moved by anyone who can write, so this check, not the tag, is
 what is trusted.
 
-A revision is one OCI manifest with two layers (signed state, ciphertext) so the
-registry sees the ciphertext as reachable. `Publish` returns only after reading
-the manifest back by tag and finding both blobs. S3 stores each revision as one
-object with a create-only write (`If-None-Match: *`), which a backend needs only to
-avoid replacing an existing name; correctness does not depend on it.
+A revision is a *head* (the signed state, small, and the thing that names the
+revision) plus any number of *blobs* it refers to (for a secret revision, the
+ciphertext). Storage gives them no meaning. On OCI it is one manifest whose first
+layer is the head and whose other layers are the blobs, so the registry sees the
+ciphertext as reachable. `Publish` writes everything and returns only after
+reading the manifest back by tag and finding every blob; a head is never visible
+without its blobs. S3 stores each revision as one object, written with a
+create-only `If-None-Match: *` (a backend needs only to avoid replacing an
+existing name; correctness does not depend on it), laid out as a short table of
+lengths followed by the head and the blobs, so a ranged read reaches one part
+without the others.
+
+Reads are separate on purpose. Finding a resource's heads and merge base needs
+only the small head of every revision, so `FetchHead` never transfers a
+ciphertext, and `OpenBlob` streams one blob for a revision whose content is
+actually used (the heads, and the merge base when they are merged). The cost of
+a read therefore does not grow with the length of the history. The caller
+checks a blob against the digest its head names.
 
 `Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
 of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and
