@@ -293,10 +293,20 @@ func readLayout(r io.ReaderAt, size int64) (frameLayout, error) {
 			return frameLayout{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
 		}
 		pos += int64(m)
+		// Each part has its own bound, checked before it is added, so a length a
+		// hostile backend made huge can neither overflow the sum nor place a part
+		// outside the object.
+		limit := uint64(MaxPayloadBytes)
+		if i == 0 {
+			limit = MaxHeadBytes
+		}
+		if v > limit {
+			return frameLayout{}, fmt.Errorf("%w: part %d is larger than allowed", ErrCorrupt, i)
+		}
 		l.lengths = append(l.lengths, int64(v))
 		total += v
 	}
-	if l.lengths[0] == 0 || l.lengths[0] > MaxHeadBytes || total > maxFrameBytes || int64(total) != size-pos {
+	if l.lengths[0] == 0 || int64(total) != size-pos {
 		return frameLayout{}, fmt.Errorf("%w: malformed object", ErrCorrupt)
 	}
 	off := pos

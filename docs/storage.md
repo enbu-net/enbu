@@ -90,7 +90,9 @@ ciphertext). Storage gives them no meaning. On OCI it is one manifest whose firs
 layer is the head and whose other layers are the blobs, so the registry sees the
 ciphertext as reachable. `Publish` writes everything and returns only after
 reading the manifest back by tag and finding every blob; a head is never visible
-without its blobs. S3 stores each revision as one object, written with a
+without its blobs. S3 writes an object atomically and `Publish` then checks its
+size and head, so it confirms the object exists and its head is intact, not the
+content of every blob; each blob is checked when it is read. S3 stores each revision as one object, written with a
 create-only `If-None-Match: *` (a backend needs only to avoid replacing an
 existing name; correctness does not depend on it), laid out as a short table of
 lengths followed by the head and the blobs, so a ranged read reaches one part
@@ -99,9 +101,11 @@ without the others.
 Reads are separate on purpose. Finding a resource's heads and merge base needs
 only the small head of every revision, so `FetchHead` never transfers a
 ciphertext, and `OpenBlob` streams one blob for a revision whose content is
-actually used (the heads, and the merge base when they are merged). The cost of
-a read therefore does not grow with the length of the history. The caller
-checks a blob against the digest its head names.
+actually used (the heads, and the merge base when they are merged). So the
+ciphertext a read transfers does not grow with the history. Listing the names and
+reading and verifying every head still do; that has not been a problem and is left
+until it is measured to be. The caller checks a blob against the digest its head
+names.
 
 `Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
 of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and

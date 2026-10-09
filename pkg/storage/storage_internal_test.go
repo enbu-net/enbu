@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -147,6 +148,11 @@ func TestFrameRejectsMalformedAndTampered(t *testing.T) {
 		"trailing bytes":  append(append([]byte(nil), good...), 'x'),
 		"short":           good[:len(good)-1],
 		"tampered head":   tampered,
+		// 2^64-1 as a length: it must be refused before it is added to anything.
+		"length of 2^64-1":  {2, 5, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
+		"blob over the cap": append([]byte{2, 1}, append(binary.AppendUvarint(nil, MaxPayloadBytes+1), 'x')...),
+		"head over the cap": append([]byte{1}, append(binary.AppendUvarint(nil, MaxHeadBytes+1), 'x')...),
+		"zero-length head":  {1, 0},
 	} {
 		if _, _, err := readHead(bytes.NewReader(data), int64(len(data)), o.Rev); !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("%s: %v", name, err)
