@@ -194,16 +194,15 @@ func (s *session) loadResource(ctx context.Context, env string, also ...digest.D
 	return sv, nil
 }
 
-// decrypt fetches, checks and decrypts the ciphertext of one verified revision.
+// decrypt reads the ciphertext of one verified revision, checks it is the one
+// the signed State names, and decrypts it. This is the only place a revision's
+// blob is transferred, so only revisions whose content is used cost anything.
 func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[string]string, error) {
-	o, err := s.store.Fetch(ctx, storage.KindState, st.Scope(), st.Digest)
+	ciphertext, err := wsp.ReadCiphertext(ctx, s.store, st)
 	if err != nil {
 		return nil, wspError(err)
 	}
-	if digest.FromBytes(o.Cipher) != st.Ciphertext {
-		return nil, wspError(fmt.Errorf("%w: ciphertext does not match the signed state", storage.ErrCorrupt))
-	}
-	return decryptSecretsObject(o.Cipher, s.ids...)
+	return decryptSecretsObject(ciphertext, s.ids...)
 }
 
 // readResource returns the merged current content of env. The heads must have
@@ -350,7 +349,7 @@ func (s *session) writeState(ctx context.Context, env string, secrets map[string
 	if _, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob); err != nil {
 		return "", err
 	}
-	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Signed: blob, Cipher: ciphertext}
+	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
 	if err := s.store.Publish(ctx, obj); err != nil {
 		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}
