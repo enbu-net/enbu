@@ -1,18 +1,15 @@
 package wsp
 
 import (
+	"context"
+	"errors"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
-
-// JoinRequestPrefix names refs where a device asks to join a workspace. A
-// request carries no authority: it only lets an admin choose from a list
-// instead of typing keys. Only a signed Control adds a principal.
-const JoinRequestPrefix = "request-"
-
-func JoinRequestRef(id signing.DeviceID) string { return JoinRequestPrefix + string(id) }
 
 // JoinRequest is signed by the requesting device's own key, proving it holds
 // the signing key it names. That proves possession, not membership.
@@ -39,8 +36,9 @@ func NewJoinRequest(workspace, recipient string, now time.Time, signer signing.S
 	return Signed{Body: body, Signature: sig}.Encode()
 }
 
-// VerifyJoinRequest checks a request read from the ref named for device.
-func VerifyJoinRequest(workspace string, device signing.DeviceID, blob []byte) (*JoinRequest, error) {
+// VerifyJoinRequest checks a stored request. The device it names is derived
+// from the key inside, so nobody can file a request under another device.
+func VerifyJoinRequest(workspace string, blob []byte) (*JoinRequest, error) {
 	s, err := DecodeSigned(blob)
 	if err != nil {
 		return nil, err
@@ -55,9 +53,6 @@ func VerifyJoinRequest(workspace string, device signing.DeviceID, blob []byte) (
 	if err := r.Signing.Validate(); err != nil {
 		return nil, invalid("join request key: %v", err)
 	}
-	if r.DeviceID() != device {
-		return nil, invalid("join request does not match device %s", device)
-	}
 	if _, err := age.ParseRecipient(r.Recipient); err != nil {
 		return nil, invalid("join request recipient: %v", err)
 	}
@@ -65,4 +60,43 @@ func VerifyJoinRequest(workspace string, device signing.DeviceID, blob []byte) (
 		return nil, invalid("join request signature: %v", err)
 	}
 	return &r, nil
+}
+
+// PublishJoinRequest stores a request from NewJoinRequest and returns its revision.
+func PublishJoinRequest(ctx context.Context, store storage.Store, blob []byte) (digest.Digest, error) {
+	rev := digest.FromBytes(blob)
+	return rev, store.Publish(ctx, storage.Object{Kind: storage.KindRequest, Rev: rev, Signed: blob})
+}
+
+// PendingRequest is a verified request together with the revision it is stored under.
+type PendingRequest struct {
+	JoinRequest
+	Rev digest.Digest
+}
+
+// ListJoinRequests returns the verified requests storage shows, sorted by
+// revision. Several requests from one device are all returned: storage listing
+// order says nothing about which is newest, so the admin chooses. Damaged or
+// foreign objects are skipped.
+func ListJoinRequests(ctx context.Context, store storage.Store, workspace string) ([]PendingRequest, error) {
+	revs, err := store.Discover(ctx, storage.KindRequest, "")
+	if err != nil {
+		return nil, err
+	}
+	var out []PendingRequest
+	for _, rev := range revs {
+		o, err := store.Fetch(ctx, storage.KindRequest, "", rev)
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrCorrupt) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		r, err := VerifyJoinRequest(workspace, o.Signed)
+		if err != nil {
+			continue
+		}
+		out = append(out, PendingRequest{JoinRequest: *r, Rev: rev})
+	}
+	return out, nil
 }

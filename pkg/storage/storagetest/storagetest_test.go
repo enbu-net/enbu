@@ -2,63 +2,44 @@ package storagetest
 
 import (
 	"context"
-	"io"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
 
-type countingObjects struct {
-	Objects
-	gets, puts []string
-}
-
-func (c *countingObjects) Get(ctx context.Context, key string) ([]byte, storage.Version, error) {
-	c.gets = append(c.gets, key)
-	return c.Objects.Get(ctx, key)
-}
-
-func (c *countingObjects) Put(ctx context.Context, key string, data []byte, v storage.Version) error {
-	c.puts = append(c.puts, key)
-	return c.Objects.Put(ctx, key, data, v)
-}
-
-// Wrap must intercept ref traffic while still resolving blobs that were only
-// ever written to the base store, which FromObjects cannot do.
-func TestWrapInterceptsRefsAndSharesBlobs(t *testing.T) {
+func TestHooksInterceptAndPassThrough(t *testing.T) {
 	ctx := context.Background()
 	base := NewMemory()
-	ciphertext, err := base.Blobs.Put(ctx, strings.NewReader("ciphertext"))
-	if err != nil {
+	boom := errors.New("boom")
+	var published int
+	wrapped := Wrap(base, Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			published++
+			if published == 1 {
+				return boom
+			}
+			return next.Publish(ctx, o)
+		},
+		Discover: func(context.Context, storage.Store, storage.Kind, string) ([]digest.Digest, error) {
+			return nil, nil // stale listing
+		},
+	})
+	o := Object(storage.KindControl, "", "signed", "")
+	if err := wrapped.Publish(ctx, o); !errors.Is(err, boom) {
+		t.Fatalf("first publish: %v", err)
+	}
+	if err := wrapped.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
-	spy := &countingObjects{Objects: ToObjects(base)}
-	wrapped := Wrap(base, spy)
-
-	if err := wrapped.Refs.Put(ctx, "state", ciphertext, ""); err != nil {
-		t.Fatal(err)
+	if revs, _ := wrapped.Discover(ctx, storage.KindControl, ""); len(revs) != 0 {
+		t.Fatal("hook did not hide the revision")
 	}
-	got, _, err := wrapped.Refs.Get(ctx, "state")
-	if err != nil || got != ciphertext {
-		t.Fatalf("ref = %s %v", got, err)
+	if revs, _ := base.Discover(ctx, storage.KindControl, ""); len(revs) != 1 {
+		t.Fatal("the base store lost the revision")
 	}
-	if len(spy.puts) != 1 || spy.puts[0] != "state" || len(spy.gets) != 1 {
-		t.Fatalf("ref traffic was not seen: puts=%v gets=%v", spy.puts, spy.gets)
-	}
-	for _, s := range []*storage.Store{wrapped, base} {
-		rc, err := s.Blobs.Open(ctx, ciphertext)
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, _ := io.ReadAll(rc)
-		_ = rc.Close()
-		if string(data) != "ciphertext" {
-			t.Fatalf("blob = %q", data)
-		}
-	}
-	// A ref written through the wrapper is visible in the base store.
-	if baseRef, _, err := base.Refs.Get(ctx, "state"); err != nil || baseRef != ciphertext {
-		t.Fatalf("base ref = %s %v", baseRef, err)
+	if _, err := wrapped.Fetch(ctx, o.Kind, o.Scope, o.Rev); err != nil {
+		t.Fatalf("fetch passes through: %v", err)
 	}
 }
