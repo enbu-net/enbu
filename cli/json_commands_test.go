@@ -12,6 +12,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
@@ -171,12 +172,9 @@ func TestJSONInit(t *testing.T) {
 	if data["pending"] != false {
 		t.Fatalf("the founder must not be pending: %v", data["pending"])
 	}
-	// The workspace is rooted in a signed Control, not a recipient object.
-	if _, _, err := store.Refs.Get(context.Background(), "control-head"); err != nil {
-		t.Fatalf("control-head: %v", err)
-	}
-	if recipients, err := store.Refs.List(context.Background(), "recipient-"); err != nil || len(recipients) != 0 {
-		t.Fatalf("recipient objects written: %v %v", recipients, err)
+	// The workspace is rooted in a signed Control.
+	if controls, err := store.Discover(context.Background(), storage.KindControl, ""); err != nil || len(controls) != 1 {
+		t.Fatalf("controls: %v %v", controls, err)
 	}
 	content, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
 	if err != nil || !strings.Contains(string(content), "control_genesis") {

@@ -14,7 +14,7 @@ type deleteTestRepoDetector struct{}
 
 func (*deleteTestRepoDetector) LoadRepo() (string, string, error) { return "owner", "repo", nil }
 
-func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
+func TestDeleteCommandBuildsOnTheRevisionItRead(t *testing.T) {
 	a, rec := newSeededApp(t, map[string]string{"API_KEY": "secret"})
 	cmd := NewWithApp("test", a)
 	cmd.SetArgs([]string{"delete", "API_KEY"})
@@ -23,11 +23,11 @@ func TestDeleteCommandPassesBaseDigestToPush(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 	puts := rec.secretPuts()
-	if len(puts) != 2 {
-		t.Fatalf("expected 2 push (main + snapshot), got %d", len(puts))
+	if len(puts) != 1 {
+		t.Fatalf("expected 1 publish, got %d", len(puts))
 	}
-	if puts[0].expected == "" || puts[0].expected != puts[0].lastRead {
-		t.Fatalf("push must be based on the version that was read: expected=%q read=%q", puts[0].expected, puts[0].lastRead)
+	if len(puts[0].parents) != 1 {
+		t.Fatalf("the revision must be based on the one that was read: parents=%v", puts[0].parents)
 	}
 	if got := secretsOf(t, a); len(got) != 0 {
 		t.Fatalf("secret not deleted: %v", got)

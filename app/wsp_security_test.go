@@ -71,15 +71,37 @@ func TestJoinApproveAndShareSecrets(t *testing.T) {
 	}
 }
 
-// Storage write access alone must not make anyone a recipient.
+// Storage write access alone must not make anyone a recipient: only the signed
+// Control lists them, so objects planted in storage change nothing.
 func TestRecipientInjection(t *testing.T) {
 	alice := newAlice(t)
 	attacker := mustKeyPair(t)
-	for _, name := range []string{"recipient-" + attacker.PublicKey, "recipient-0000"} {
-		if err := putRef(bg, alice.Storage, name, []byte(attacker.PublicKey), ""); err != nil {
+	ws := mustWorkspace(t, alice)
+	// Junk in the request namespace, and a Control nobody with authority signed.
+	for _, junk := range [][]byte{[]byte(attacker.PublicKey), []byte("recipient-0000")} {
+		if _, err := wsp.PublishJoinRequest(bg, alice.Storage, junk); err != nil {
 			t.Fatal(err)
 		}
 	}
+	mallory := newDevice(t, alice)
+	requestJoin(t, mallory)
+	ms, _ := mallory.Identities.LoadSigner(ws)
+	defer func() { _ = ms.Close() }()
+	s, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	self := wsp.Principal{ID: ms.Public().DeviceID(), Signing: ms.Public(), Recipient: attacker.PublicKey, Admin: true}
+	forged, err := wsp.SignControl(wsp.Control{Workspace: ws, Parents: []digest.Digest{s.head.Digest}, Height: s.head.Height + 1, Author: self.ID,
+		Principals: append(append([]wsp.Principal{}, s.head.Principals...), self)}, ms)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := alice.AddSecret(bg, "default", "NEW", "secret"); err != nil {
 		t.Fatal(err)
 	}
@@ -88,24 +110,21 @@ func TestRecipientInjection(t *testing.T) {
 		t.Fatalf("recipients: %+v %v", recipients, err)
 	}
 	// The ciphertext alice just wrote cannot be opened with the attacker's key.
-	s, err := alice.openSession(bg)
+	read, err := s.readResource(bg, "default", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	read, err := s.readState(bg, secretsTag("default"), "default", true)
+	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := readBlob(bg, alice.Storage, read.state.Ciphertext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := age.Decrypt(ct, attacker.Identity); err == nil {
+	if _, err := age.Decrypt(o.Cipher, attacker.Identity); err == nil {
 		t.Fatal("injected recipient can decrypt")
 	}
 }
 
+// A fake secret is a state somebody else made up. Without a member's signature
+// it is skipped, and it does not stop the real secrets from being read or written.
 func TestFakeSecretRejected(t *testing.T) {
 	alice := newAlice(t)
 	attacker := newDevice(t, alice)
@@ -115,29 +134,32 @@ func TestFakeSecretRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, version, err := getRef(bg, alice.Storage, secretsTag("default"))
+	s, err := alice.openSession(bg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Run("raw ciphertext", func(t *testing.T) {
-		if err := putRef(bg, alice.Storage, secretsTag("default"), forged, version); err != nil {
+	defer s.Close()
+	ws := mustWorkspace(t, alice)
+	resource := s.resource("default")
+	t.Run("unsigned state", func(t *testing.T) {
+		junk := []byte("not a signed state")
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Signed: junk, Cipher: forged}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
-			t.Fatalf("unsigned ciphertext accepted: %v", err)
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+			t.Fatalf("unsigned state changed the secrets: %v %v", got, err)
 		}
 	})
 	t.Run("state signed by a non-principal", func(t *testing.T) {
-		blob := signAsOutsider(t, alice, attacker, "default", forged)
-		_, version, _ := getRef(bg, alice.Storage, secretsTag("default"))
-		if err := putRef(bg, alice.Storage, secretsTag("default"), blob, version); err != nil {
-			t.Fatal(err)
+		publishRevision(t, alice.Storage, attacker, ws, resource, s.head.Digest, forged, revisionsOf(t, alice, "default")[0])
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+			t.Fatalf("outsider-signed state changed the secrets: %v %v", got, err)
 		}
-		if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
-			t.Fatalf("outsider-signed state accepted: %v", err)
+		if err := alice.AddSecret(bg, "default", "X", "y"); err != nil {
+			t.Fatalf("write beside a forged state: %v", err)
 		}
-		if err := alice.AddSecret(bg, "default", "X", "y"); !apperr.Is(err, apperr.CodeUntrusted) {
-			t.Fatalf("write built on a forged state: %v", err)
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" || got["X"] != "y" {
+			t.Fatalf("secrets: %v %v", got, err)
 		}
 	})
 }
@@ -159,22 +181,23 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	if err := bob.AddSecret(bg, "default", "LATE", "x"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("removed member wrote: %v", err)
 	}
-	// And a state he signs by hand is not accepted as current.
+	// And a revision he signs by hand, claiming the control he knew, is set
+	// aside: it is not accepted as current and does not change what is read.
 	ciphertext, _ := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
-	ct, _ := alice.Storage.Blobs.Put(bg, bytes.NewReader(ciphertext))
-	_, version, _ := getRef(bg, alice.Storage, secretsTag("default"))
 	cur, _ := alice.openSession(bg)
 	defer cur.Close()
-	blob, err := wsp.SignState(wsp.State{Workspace: cur.workspace, Resource: secretsResource("default"), Sequence: 99, Previous: cur.head.Digest,
-		ControlGeneration: bobsView.head.Generation, Control: bobsView.head.Digest, Ciphertext: ct, Author: bobsID}, bobsView.signer)
+	sv, err := cur.loadResource(bg, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := putRef(bg, alice.Storage, secretsTag("default"), blob, version); err != nil {
-		t.Fatal(err)
+	publishRevision(t, alice.Storage, bob, cur.workspace, cur.resource("default"), bobsView.head.Digest, ciphertext, sv.Heads[0].Digest)
+	got, err := alice.ListSecrets(bg, "default")
+	if err != nil || got["KEY"] != "v1" {
+		t.Fatalf("removed member's revision changed the secrets: %v %v", got, err)
 	}
-	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("removed member's state accepted: %v", err)
+	// Alice writes on top of what she trusts, and keeps working.
+	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -182,6 +205,15 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	id := mustMember(t, alice, bob).DeviceID
+	before, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRead, err := before.readResource(bg, "default", nil, true)
+	before.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := alice.RemoveMember(bg, id); err != nil {
 		t.Fatal(err)
 	}
@@ -190,12 +222,12 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readState(bg, secretsTag("default"), "default", true)
+	read, err := s.readResource(bg, "default", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read.state.Sequence < 3 {
-		t.Fatalf("state was not re-signed after removal: %+v", read.state)
+	if len(read.heads) != 1 || read.heads[0].Control != s.head.Digest || read.heads[0].Digest == oldRead.heads[0].Digest {
+		t.Fatalf("state was not re-signed after removal: %+v", read.heads)
 	}
 	if _, err := bob.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("removed member still reads: %v", err)
@@ -207,21 +239,22 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 
 func TestStateRollbackDetected(t *testing.T) {
 	alice := newAlice(t)
-	old, _, err := alice.Storage.Refs.Get(bg, secretsTag("default"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	oldRevs := revisionsOf(t, alice, "default")
 	if err := alice.EditSecret(bg, "default", "KEY", "v2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := alice.ListSecrets(bg, "default"); err != nil { // accepts v2
 		t.Fatal(err)
 	}
-	// Storage serves the previous, genuinely signed state again.
-	_, version, _ := alice.Storage.Refs.Get(bg, secretsTag("default"))
-	if err := alice.Storage.Refs.Put(bg, secretsTag("default"), old, version); err != nil {
-		t.Fatal(err)
+	var newest digest.Digest
+	for _, r := range revisionsOf(t, alice, "default") {
+		if r != oldRevs[0] {
+			newest = r
+		}
 	}
+	// Storage serves the previous, genuinely signed state again.
+	real := alice.Storage
+	alice.Storage = hide(real, newest)
 	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeRollback) {
 		t.Fatalf("old state accepted: %v", err)
 	}
@@ -230,7 +263,7 @@ func TestStateRollbackDetected(t *testing.T) {
 	}
 	// A device with no checkpoint cannot tell; that limitation is documented.
 	fresh := newDevice(t, alice)
-	fresh.Identities, fresh.CheckpointDir = alice.Identities, t.TempDir()
+	fresh.Identities, fresh.CheckpointDir, fresh.Storage = alice.Identities, t.TempDir(), alice.Storage
 	if got, err := fresh.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
 		t.Fatalf("fresh client: %v %v", got, err)
 	}
@@ -238,24 +271,18 @@ func TestStateRollbackDetected(t *testing.T) {
 
 func TestControlRollbackDetected(t *testing.T) {
 	alice := newAlice(t)
-	cfg, _ := alice.loadProject()
-	genesis, _, err := alice.Storage.Refs.Get(bg, wsp.ControlRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(genesis) != cfg.ControlGenesis {
-		t.Fatalf("genesis %s != head %s", cfg.ControlGenesis, genesis)
-	}
 	bob := newDevice(t, alice)
 	res := requestJoin(t, bob)
 	if err := alice.ApproveMember(bg, res.DeviceID); err != nil {
 		t.Fatal(err)
 	}
-	// Storage hides the approval by serving the genesis head again.
-	_, version, _ := alice.Storage.Refs.Get(bg, wsp.ControlRef)
-	if err := alice.Storage.Refs.Put(bg, wsp.ControlRef, genesis, version); err != nil {
+	cur, err := alice.openControl(bg)
+	if err != nil {
 		t.Fatal(err)
 	}
+	// Storage hides the approval.
+	real := alice.Storage
+	alice.Storage = hide(real, cur.head.Digest)
 	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeRollback) {
 		t.Fatalf("old control accepted: %v", err)
 	}
@@ -272,37 +299,33 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	// WorkspaceID alone is not enough to join.
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	// WorkspaceID alone is not enough to join, and a workspace that is already
+	// there is never adopted on faith.
+	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined without a genesis: %v", err)
 	}
-	// A wrong genesis fails verification instead of being trusted.
+	// A genesis storage does not hold is not trusted.
 	cfg.ControlGenesis = "sha256:" + string(bytes.Repeat([]byte("0"), 64))
 	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
+	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined with a wrong genesis: %v", err)
 	}
 }
 
 func TestIncompatibleStorageRejected(t *testing.T) {
-	t.Run("secrets without control", func(t *testing.T) {
-		a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
-		prepareApp(t, a, "default")
-		if err := putRef(bg, a.Storage, secretsTag("default"), []byte("unsigned"), ""); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
-			t.Fatalf("storage without control accepted: %v", err)
+	t.Run("storage already holds a workspace", func(t *testing.T) {
+		alice := newAlice(t)
+		other := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+		prepareApp(t, other, "default")
+		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+			t.Fatalf("a workspace without a trusted genesis was adopted: %v", err)
 		}
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {
 		alice := newAlice(t)
 		other := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
-		if err := putRef(bg, other.Storage, workspaceKey, []byte(testWorkspaceID), ""); err != nil {
-			t.Fatal(err)
-		}
 		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("trust root silently replaced: %v", err)
 		}
@@ -330,21 +353,21 @@ func TestSigningKeyIsNotStoredInWorkspaceStorage(t *testing.T) {
 	}
 }
 
-// foundingApp is a first device on empty storage whose writes of the control
-// head go through put, so a test can watch or fail the moment of publication.
-func foundingApp(t *testing.T, put func(ctx context.Context, data []byte) error) *App {
+// foundingApp is a first device on empty storage whose publication of the
+// genesis control goes through publish, so a test can watch or fail the moment.
+func foundingApp(t *testing.T, publish func(ctx context.Context, data []byte) error) *App {
 	t.Helper()
-	base := newMemRegistry()
 	a := &App{Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
-	a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-			if key == wsp.ControlRef && put != nil {
-				if err := put(ctx, o); err != nil {
+	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if o.Kind == storage.KindControl && publish != nil {
+				if err := publish(ctx, o.Signed); err != nil {
 					return err
 				}
 			}
-			return storagetest.ToObjects(base).Put(ctx, key, o, v)
-		}})
+			return next.Publish(ctx, o)
+		},
+	})
 	prepareApp(t, a, "default")
 	return a
 }
@@ -401,19 +424,6 @@ func TestFailedPublishLeavesNoGenesisBehind(t *testing.T) {
 	}
 }
 
-// Another device founding the workspace first must not leave this repository
-// trusting a genesis that is not the real one.
-func TestLosingTheFoundingRaceLeavesNoGenesisBehind(t *testing.T) {
-	a := foundingApp(t, func(context.Context, []byte) error { return storage.ErrConflict })
-	_, err := a.InitializeRepository(bg)
-	if !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("init after losing the race: %v", err)
-	}
-	if g := genesisInConfig(t, a); g != "" {
-		t.Fatalf("control_genesis %q was kept after losing the race", g)
-	}
-}
-
 // History written by a member who has since been removed is still history.
 func TestHistoryByARemovedMemberCanBeDiffedAndRestored(t *testing.T) {
 	alice := newAlice(t)
@@ -428,15 +438,16 @@ func TestHistoryByARemovedMemberCanBeDiffedAndRestored(t *testing.T) {
 	if err != nil || len(entries) < 2 {
 		t.Fatalf("history: %+v %v", entries, err)
 	}
+	// The newest entry is bob's write; the re-encryption after the removal repeats it.
 	diff, err := alice.DiffHistory(bg, "default", len(entries)-1, len(entries))
 	if err != nil {
-		t.Fatalf("diff across a removed member's snapshot: %v", err)
+		t.Fatalf("diff across a removed member's revision: %v", err)
 	}
 	if len(diff.Added) != 1 || diff.Added[0] != "BOB" {
 		t.Fatalf("diff = %+v", diff)
 	}
 	if err := alice.RestoreHistory(bg, "default", len(entries)); err != nil {
-		t.Fatalf("restore a removed member's snapshot: %v", err)
+		t.Fatalf("restore a removed member's revision: %v", err)
 	}
 	got, err := alice.ListSecrets(bg, "default")
 	if err != nil || got["BOB"] != "from bob" {
@@ -455,16 +466,16 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 	base := alice.Storage
 	extra := extraPrincipal(t)
 	moved := false
-	alice.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-			if key == secretsTag("default") && !moved {
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState && !moved {
 				moved = true
 				s, err := (&App{Storage: base, Identities: alice.Identities, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}).openSession(ctx)
 				if err != nil {
 					t.Error(err)
 				} else {
 					defer s.Close()
-					if _, err := wsp.UpdateControl(ctx, base, s.head, s.signer, func(c *wsp.Control) error {
+					if _, err := wsp.UpdateControl(ctx, base, s.view, s.signer, func(c *wsp.Control) error {
 						c.Principals = append(c.Principals, extra)
 						return nil
 					}); err != nil {
@@ -472,8 +483,9 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 					}
 				}
 			}
-			return storagetest.ToObjects(base).Get(ctx, key)
-		}})
+			return next.Discover(ctx, kind, scope)
+		},
+	})
 	if err := alice.AddSecret(bg, "default", "NEW", "value"); err != nil {
 		t.Fatal(err)
 	}
@@ -482,11 +494,11 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readState(bg, secretsTag("default"), "default", true)
+	read, err := s.readResource(bg, "default", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !moved || s.head.Generation != 1 || read.state.ControlGeneration != 1 {
-		t.Fatalf("moved=%v head=%d state written under generation %d: it still used the old member list", moved, s.head.Generation, read.state.ControlGeneration)
+	if !moved || s.head.Height != 1 || read.heads[0].Control != s.head.Digest {
+		t.Fatalf("moved=%v head=%d state written under %s: it still used the old member list", moved, s.head.Height, read.heads[0].Control)
 	}
 }

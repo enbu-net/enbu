@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	apptest "github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -13,6 +14,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 // approved returns a device that asked to join and has been approved by alice.
@@ -67,28 +69,49 @@ func TestMemberCannotApprove(t *testing.T) {
 	}
 }
 
-// A request that is not signed by the device it names is only noise.
+// A request carries no authority. Anything in the request namespace that is not
+// a validly self-signed request of this workspace is only noise.
 func TestForgedJoinRequestsAreIgnored(t *testing.T) {
 	alice := newAlice(t)
 	mallory, victim := newDevice(t, alice), newDevice(t, alice)
 	mRes := requestJoin(t, mallory)
-	vRes := requestJoin(t, victim)
-	genuine, _, err := getRef(bg, alice.Storage, wsp.JoinRequestRef(signing.DeviceID(mRes.DeviceID)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Mallory's genuine bytes are planted under the victim's device id, and
-	// under names that are not device ids at all.
-	victimRef := wsp.JoinRequestRef(signing.DeviceID(vRes.DeviceID))
-	_, v, _ := getRef(bg, alice.Storage, victimRef)
-	if err := putRef(bg, alice.Storage, victimRef, genuine, v); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"request-not-a-device", "request-" + mRes.DeviceID[:10]} {
-		if err := putRef(bg, alice.Storage, name, genuine, ""); err != nil {
+	ws := mustWorkspace(t, alice)
+
+	// Mallory's request body under the victim's signature, garbage, and a
+	// request for another workspace.
+	plant := func(blob []byte) {
+		t.Helper()
+		if _, err := wsp.PublishJoinRequest(bg, alice.Storage, blob); err != nil {
 			t.Fatal(err)
 		}
 	}
+	plant([]byte("garbage"))
+	vs, _, _, err := victim.Identities.CreateSigner(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = vs.Close() }()
+	id, _, _, err := victim.Identities.Create(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = id.Close() }()
+	other, err := wsp.NewJoinRequest("0192f3a0-7c1e-7a55-9d3c-000000000000", id.Recipient().String(), time.Now(), vs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plant(other)
+	good, err := wsp.NewJoinRequest(ws, id.Recipient().String(), time.Now(), vs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, _ := wsp.DecodeSigned(good)
+	ms, _ := mallory.Identities.LoadSigner(ws)
+	defer func() { _ = ms.Close() }()
+	forgedSig, _ := ms.Sign(signing.DomainJoin, signed.Body)
+	forged, _ := wsp.Signed{Body: signed.Body, Signature: forgedSig}.Encode()
+	plant(forged)
+
 	reqs, err := alice.ListJoinRequests(bg)
 	if err != nil {
 		t.Fatal(err)
@@ -96,12 +119,12 @@ func TestForgedJoinRequestsAreIgnored(t *testing.T) {
 	if len(reqs) != 1 || reqs[0].DeviceID != mRes.DeviceID {
 		t.Fatalf("forged requests listed: %+v", reqs)
 	}
-	if err := alice.ApproveMember(bg, vRes.DeviceID); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("approved a forged request: %v", err)
+	if err := alice.ApproveMember(bg, string(vs.Public().DeviceID())); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("approved a device whose only request was forged: %v", err)
 	}
 }
 
-func TestForgedControlRejected(t *testing.T) {
+func TestForgedControlIgnored(t *testing.T) {
 	alice := newAlice(t)
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
@@ -110,17 +133,17 @@ func TestForgedControlRejected(t *testing.T) {
 	s, _ := alice.openSession(bg)
 	defer s.Close()
 	self := wsp.Principal{ID: ms.Public().DeviceID(), Signing: ms.Public(), Recipient: mustRecipient(t, alice), Admin: true}
-	forged, err := wsp.SignControl(wsp.Control{Workspace: s.workspace, Generation: 1, Previous: s.head.Digest, Author: self.ID,
+	forged, err := wsp.SignControl(wsp.Control{Workspace: s.workspace, Parents: []digest.Digest{s.head.Digest}, Height: s.head.Height + 1, Author: self.ID,
 		Principals: append(append([]wsp.Principal{}, s.head.Principals...), self)}, ms)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, version, _ := alice.Storage.Refs.Get(bg, wsp.ControlRef)
-	if err := putRef(bg, alice.Storage, wsp.ControlRef, forged, version); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alice.ListMembers(bg); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("forged control accepted: %v", err)
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("a forged control changed the members: %+v %v", members, err)
 	}
 }
 
@@ -151,13 +174,7 @@ func TestMembershipChangeReportsIncompleteReencryption(t *testing.T) {
 			}
 			base := alice.Storage
 			// The control may change, but writing any secret state fails.
-			alice.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-				put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-					if key == wsp.ControlRef {
-						return storagetest.ToObjects(base).Put(ctx, key, o, v)
-					}
-					return errors.New("storage unavailable")
-				}})
+			alice.Storage = failStatePublishes(base, nil)
 			var err error
 			if op == "approve" {
 				err = alice.ApproveMember(bg, target)
@@ -260,20 +277,13 @@ func TestReencryptionTriesEveryEnvironment(t *testing.T) {
 	device := requestJoin(t, newDevice(t, alice))
 	base := alice.Storage
 	attempted := map[string]int{}
-	alice.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-			if key == wsp.ControlRef {
-				return storagetest.ToObjects(base).Put(ctx, key, o, v)
-			}
-			attempted[key]++
-			return errors.New("storage unavailable")
-		}})
+	alice.Storage = failStatePublishes(base, attempted)
 	err = alice.ApproveMember(bg, device.DeviceID)
 	if !apperr.Is(err, apperr.CodeReencryptIncomplete) {
 		t.Fatalf("error = %v", err)
 	}
 	// One environment failing must not stop the others from being attempted.
-	if attempted[secretsTag("default")] == 0 || attempted[secretsTag("dev")] == 0 {
+	if attempted[storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))] == 0 || attempted[storage.StateScope(cfg.WorkspaceID, cfg.Resource("dev"))] == 0 {
 		t.Fatalf("attempts per ref: %v", attempted)
 	}
 	for _, env := range []string{"default", "dev"} {
@@ -283,8 +293,8 @@ func TestReencryptionTriesEveryEnvironment(t *testing.T) {
 	}
 }
 
-// A removed member's snapshot is still history: it is judged by the control it
-// was written under, not by who is a member now.
+// A removed member's revision is still history: it is judged by the control it
+// was written under, not by who is a member now. It is not current, though.
 func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	alice := newEmptyAlice(t)
 	bob := approved(t, alice)
@@ -294,7 +304,7 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	}
 	defer bs.Close()
 	bobsEnv := "staging"
-	if _, err := bs.writeState(bg, "hist-bob", bobsEnv, map[string]string{"A": "by bob"}, nil, ""); err != nil {
+	if _, err := bs.writeState(bg, bobsEnv, map[string]string{"A": "by bob"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.RemoveMember(bg, mustMember(t, alice, bob).DeviceID); err != nil {
@@ -305,16 +315,18 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer as.Close()
-	if _, err := as.readState(bg, "hist-bob", bobsEnv, true); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("a removed author's state is not current: %v", err)
+	if _, err := as.readResource(bg, bobsEnv, nil, true); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("a removed author's revision is not current: %v", err)
 	}
-	read, err := as.readState(bg, "hist-bob", bobsEnv, false)
-	if err != nil {
+	sv, err := as.loadResource(bg, bobsEnv)
+	if err != nil || len(sv.States) != 1 {
 		t.Fatalf("history by a removed author: %v", err)
 	}
-	// Alice could decrypt it because it was encrypted for the members then.
-	if read.secrets["A"] != "by bob" {
-		t.Fatalf("secrets = %v", read.secrets)
+	for _, st := range sv.States {
+		secrets, err := as.decrypt(bg, st) // alice could decrypt it: she was a recipient then
+		if err != nil || secrets["A"] != "by bob" {
+			t.Fatalf("secrets = %v %v", secrets, err)
+		}
 	}
 }
 
@@ -326,13 +338,14 @@ func TestSetAdminDoesNotReencrypt(t *testing.T) {
 	id := mustMember(t, alice, bob).DeviceID
 	base := alice.Storage
 	secretWrites := 0
-	alice.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-			if strings.HasPrefix(key, "secrets-") || strings.HasPrefix(key, "hist-") {
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if o.Kind == storage.KindState {
 				secretWrites++
 			}
-			return storagetest.ToObjects(base).Put(ctx, key, o, v)
-		}})
+			return next.Publish(ctx, o)
+		},
+	})
 	if err := alice.SetAdmin(bg, id, true); err != nil {
 		t.Fatal(err)
 	}
@@ -342,4 +355,20 @@ func TestSetAdminDoesNotReencrypt(t *testing.T) {
 	if secretWrites != 0 {
 		t.Fatalf("changing the admin flag rewrote secrets %d times", secretWrites)
 	}
+}
+
+// failStatePublishes lets Control and request objects through and fails every
+// State publish, counting the attempts per scope into attempted when it is set.
+func failStatePublishes(base storage.Store, attempted map[string]int) storage.Store {
+	return storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if o.Kind != storage.KindState {
+				return next.Publish(ctx, o)
+			}
+			if attempted != nil {
+				attempted[o.Scope]++
+			}
+			return errors.New("storage unavailable")
+		},
+	})
 }

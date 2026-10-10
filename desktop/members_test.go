@@ -19,7 +19,7 @@ import (
 // second device (bob) that shares her enbu.toml, as it would through the repository.
 type membersFixture struct {
 	alice, bob *Service
-	store      *storage.Store
+	store      storage.Store
 	workspace  string
 	bobDevice  string
 }
@@ -46,13 +46,6 @@ func newMembersFixture(t *testing.T) *membersFixture {
 	aliceDir := t.TempDir()
 	alice, aliceApp := newService(aliceDir)
 	store := storage.NewLocal(storageDir)
-	ref, err := store.Blobs.Put(ctx, strings.NewReader(cfg.WorkspaceID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Refs.Put(ctx, "enbu-workspace", ref, ""); err != nil {
-		t.Fatal(err)
-	}
 	if err := apptest.Control(ctx, store, aliceDir, aliceApp.Identities); err != nil {
 		t.Fatal(err)
 	}

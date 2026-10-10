@@ -44,11 +44,11 @@ func TestAddCommandCreatesNewSecret(t *testing.T) {
 		t.Fatalf("add: %v", err)
 	}
 	puts := rec.secretPuts()
-	if len(puts) != 2 {
-		t.Fatalf("expected 2 push (main + snapshot), got %d", len(puts))
+	if len(puts) != 1 {
+		t.Fatalf("expected 1 publish, got %d", len(puts))
 	}
-	if puts[0].expected != "" {
-		t.Fatalf("expected empty base version for initial add, got %q", puts[0].expected)
+	if len(puts[0].parents) != 0 {
+		t.Fatalf("the first revision has no parents, got %v", puts[0].parents)
 	}
 	if got := secretsOf(t, a); !reflect.DeepEqual(got, map[string]string{"API_KEY": "secret"}) {
 		t.Fatalf("secrets = %v", got)
@@ -64,11 +64,11 @@ func TestEditCommandUpdatesExistingSecret(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 	puts := rec.secretPuts()
-	if len(puts) != 2 {
-		t.Fatalf("expected 2 push (main + snapshot), got %d", len(puts))
+	if len(puts) != 1 {
+		t.Fatalf("expected 1 publish, got %d", len(puts))
 	}
-	if puts[0].expected == "" || puts[0].expected != puts[0].lastRead {
-		t.Fatalf("push must be based on the version that was read: expected=%q read=%q", puts[0].expected, puts[0].lastRead)
+	if len(puts[0].parents) != 1 {
+		t.Fatalf("the revision must be based on the one that was read: parents=%v", puts[0].parents)
 	}
 	if got := secretsOf(t, a); got["API_KEY"] != "new" {
 		t.Fatalf("API_KEY = %q", got["API_KEY"])
