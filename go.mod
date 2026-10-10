@@ -15,7 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.50.1
 	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.2
 	github.com/ebitengine/purego v0.11.1
-	github.com/fxamacker/cbor/v2 v2.9.4
+	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/goccy/tobari v0.13.0
 	github.com/google/go-github/v92 v92.0.0
 	github.com/google/go-tpm v0.9.8
