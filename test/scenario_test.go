@@ -262,7 +262,15 @@ func TestScenario_ConcurrentEditsOfOneKeyNeedAChoice(t *testing.T) {
 			if !strings.Contains(err.Error(), "differently") {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if err := executeCommand(s.ctx, alice.svc, "resolve", "--pick", "KEY=1"); err != nil {
+			set, lerr := alice.svc.ListConflicts(s.ctx, "")
+			if lerr != nil || len(set.Conflicts) != 1 {
+				t.Fatalf("listing conflicts: %+v %v", set, lerr)
+			}
+			// Deciding without the listing's id is refused; with it the choice goes through.
+			if err := executeCommand(s.ctx, alice.svc, "resolve", "--pick", "KEY=1"); err == nil {
+				t.Fatal("resolve without --seen was accepted")
+			}
+			if err := executeCommand(s.ctx, alice.svc, "resolve", "--seen", set.ID, "--pick", "KEY=1"); err != nil {
 				t.Fatalf("resolve: %v", err)
 			}
 			for _, n := range []string{"alice", "bob"} {

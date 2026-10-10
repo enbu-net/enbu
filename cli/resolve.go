@@ -13,6 +13,7 @@ import (
 func newResolveCommand(a *app.App) *cobra.Command {
 	var (
 		envName string
+		seen    string
 		picks   []string
 		deletes []string
 	)
@@ -25,22 +26,29 @@ nothing is chosen for them: reading and writing stop until someone decides.
 Without options, resolve lists the conflicts and the candidates for each key.
 To settle them, give a decision for every conflicted key:
 
-  enbu resolve KEY=VALUE      use this value
-  enbu resolve --pick KEY=N   use the Nth candidate of the list
-  enbu resolve --delete KEY   remove the key`,
+  enbu resolve --seen ID KEY=VALUE      use this value
+  enbu resolve --seen ID --pick KEY=N   use the Nth candidate of the list
+  enbu resolve --seen ID --delete KEY   remove the key
+
+ID is printed by the listing. If anyone has written since, the ID no longer
+matches and nothing is changed, so a value you have not seen is never replaced.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			conflicts, err := a.ListConflicts(cmd.Context(), envName)
+			set, err := a.ListConflicts(cmd.Context(), envName)
 			if err != nil {
 				return err
 			}
 			if len(args)+len(picks)+len(deletes) == 0 {
-				return printConflicts(cmd, a, envName, conflicts)
+				return printConflicts(cmd, a, envName, set)
 			}
-			choices, err := parseChoices(conflicts, args, picks, deletes)
+			if seen != set.ID {
+				return apperr.New(apperr.CodeConflict, "the conflicts are not the ones you looked at (or --seen is missing); run 'enbu resolve' to see them again", nil)
+			}
+			choices, err := parseChoices(set.Conflicts, args, picks, deletes)
 			if err != nil {
 				return err
 			}
-			if err := a.ResolveSecrets(cmd.Context(), envName, choices); err != nil {
+			// The heads just listed are the ones the choices were made against.
+			if err := a.ResolveSecrets(cmd.Context(), envName, set.Heads, choices); err != nil {
 				return err
 			}
 			if jsonEnabled(cmd) {
@@ -55,14 +63,16 @@ To settle them, give a decision for every conflicted key:
 		},
 	}
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
+	cmd.Flags().StringVar(&seen, "seen", "", "ID of the conflict listing the decisions were made from")
 	cmd.Flags().StringArrayVar(&picks, "pick", nil, "Use the Nth candidate of a key, as KEY=N")
 	cmd.Flags().StringArrayVar(&deletes, "delete", nil, "Delete a conflicted key")
 	return cmd
 }
 
-func printConflicts(cmd *cobra.Command, a *app.App, envName string, conflicts []app.SecretConflict) error {
+func printConflicts(cmd *cobra.Command, a *app.App, envName string, set *app.ConflictSet) error {
+	conflicts := set.Conflicts
 	if jsonEnabled(cmd) {
-		return writeJSON(cmd, map[string]any{"environment": resolvedEnvironmentName(a, envName), "conflicts": conflicts})
+		return writeJSON(cmd, map[string]any{"environment": resolvedEnvironmentName(a, envName), "id": set.ID, "conflicts": conflicts})
 	}
 	if len(conflicts) == 0 {
 		cmd.Println("No conflicts")
@@ -78,7 +88,7 @@ func printConflicts(cmd *cobra.Command, a *app.App, envName string, conflicts []
 			}
 		}
 	}
-	cmd.Println("Decide every key with: enbu resolve KEY=VALUE, --pick KEY=N or --delete KEY")
+	cmd.Printf("Decide every key, for example: enbu resolve --seen %s KEY=VALUE (or --pick KEY=N, --delete KEY)\n", set.ID)
 	return nil
 }
 

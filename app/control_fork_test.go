@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
@@ -80,5 +81,86 @@ func TestControlForkStopsEverythingUntilAnAdminResolvesIt(t *testing.T) {
 	}
 	if err := alice.ResolveControlFork(bg); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("resolving a Control that is not forked: %v", err)
+	}
+}
+
+// Resolving a fork can drop a member who could read the existing secrets. The
+// ciphertext must then be re-encrypted without them, exactly as a removal does.
+func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	if err := alice.SetAdmin(bg, mustMember(t, alice, bob).DeviceID, true); err != nil {
+		t.Fatal(err)
+	}
+	dave := approved(t, alice) // a plain member who can read KEY today
+	carol := newDevice(t, alice)
+	requestJoin(t, carol)
+	carolEntry := principalOf(t, carol)
+	daveID := mustMember(t, alice, dave).DeviceID
+
+	as, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer as.Close()
+	bs, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+	if _, err := wsp.UpdateControl(bg, as.store, as.view, as.signer, func(c *wsp.Control) error {
+		c.Principals = append(c.Principals, carolEntry)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// bob, from the older head, removes dave.
+	if _, err := wsp.UpdateControl(bg, bs.store, bs.view, bs.signer, func(c *wsp.Control) error {
+		kept := c.Principals[:0:0]
+		for _, p := range c.Principals {
+			if string(p.ID) != daveID {
+				kept = append(kept, p)
+			}
+		}
+		c.Principals = kept
+		return nil
+	}); !apperr.Is(wspError(err), apperr.CodeControlForked) {
+		t.Fatalf("the concurrent change must report the fork: %v", err)
+	}
+
+	if err := alice.ResolveControlFork(bg); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice); got["KEY"] != "v1" {
+		t.Fatalf("alice after resolving: %v", got)
+	}
+	// dave was not on one of the sides, so the resolution drops him and he can
+	// no longer decrypt what is stored now.
+	if _, err := dave.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
+		t.Fatalf("a dropped member still reads: %v", err)
+	}
+	cur, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Close()
+	read, err := cur.readResource(bg, "default", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := LoadIdentities(dave.Identities, mustWorkspace(t, dave))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer CloseIdentities(ids)
+	if _, err := decryptSecretsObject(o.Cipher, ids...); err == nil {
+		t.Fatal("the current revision is still encrypted for the member the resolution dropped")
+	}
+	if read.heads[0].Control != cur.head.Digest {
+		t.Fatal("the revision was not re-signed under the resolved control")
 	}
 }

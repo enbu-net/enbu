@@ -61,3 +61,13 @@ func TestResolveListsNothingWhenThereAreNoConflicts(t *testing.T) {
 		t.Fatalf("output = %q", out.String())
 	}
 }
+
+func TestResolveNeedsTheIDOfTheListing(t *testing.T) {
+	a, _ := newSeededApp(t, map[string]string{"KEY": "value"})
+	cmd := NewWithApp("test", a)
+	cmd.SetArgs([]string{"resolve", "KEY=other"})
+	// No conflict and no matching id: nothing may be decided blind.
+	if err := cmd.Execute(); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("error = %v", err)
+	}
+}
