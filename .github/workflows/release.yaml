@@ -36,6 +36,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -52,6 +53,7 @@ jobs:
         id: bump
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -62,7 +64,8 @@ jobs:
             echo "Tag $new_version already exists, reusing for idempotent retry"
           else
             git tag "$new_version"
-            git push origin "$new_version"
+            # persist-credentials: false leaves no stored credential, so pass the token explicitly.
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$new_version"
           fi
           printf 'version=%s\n' "$new_version" >> "$GITHUB_OUTPUT"
 
@@ -445,6 +448,7 @@ jobs:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
           repositories: homebrew-tap
+          permission-contents: write
 
       - name: Trigger homebrew-tap update
         shell: bash
