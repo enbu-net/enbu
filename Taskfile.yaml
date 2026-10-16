@@ -194,8 +194,8 @@ tasks:
       - mkdir -p build
       - cp ../../assets/icon.png build/appicon.png
       - |
-        go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 build \
-          -nosyncgomod -m \
+        go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 build \
+          -nosyncgomod -m -s \
           -tags webkit2_41 \
           {{if .PLATFORM}}-platform "{{.PLATFORM}}"{{end}} \
           {{.EXTRA_FLAGS}} \
@@ -209,7 +209,7 @@ tasks:
         sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
     cmds:
       - vp env off
-      - go run github.com/wailsapp/wails/v2/cmd/wails@v2.13.0 dev -tags webkit2_41 -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
+      - go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 dev -tags webkit2_41 -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
 
   all/check:
     desc: Format and lint all code
@@ -227,6 +227,11 @@ tasks:
       - golangci-lint run --fix --build-tags fixture ./...
       - golangci-lint fmt ./...
       - git diff --exit-code -- '*.go'
+
+  cli/vuln:
+    desc: Scan Go dependencies and the standard library for known vulnerabilities
+    cmds:
+      - govulncheck -tags fixture ./...
 
   gui/check:
     desc: Format and lint GUI code
@@ -290,8 +295,12 @@ tasks:
   gui/build/frontend:
     internal: true
     run: once
-    deps:
-      - gui/install
     dir: web
     cmds:
+      - task: gui/install
       - vp run build
+    # The release workflow builds the frontend once and downloads web/dist into
+    # every desktop build job; ENBU_FRONTEND_PREBUILT=1 skips the rebuild there.
+    status:
+      - test "${ENBU_FRONTEND_PREBUILT:-}" = "1"
+      - test -f dist/index.html

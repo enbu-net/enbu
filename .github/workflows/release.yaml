@@ -25,7 +25,7 @@ jobs:
   tag:
     name: Create release tag
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -71,7 +71,7 @@ jobs:
 
   version:
     name: Resolve version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     needs: [tag]
     if: >-
@@ -130,6 +130,25 @@ jobs:
         with:
           name: attested-assets
           path: release-assets
+
+      # Fail before anything is published if an asset cannot be verified the way
+      # users will verify it: provenance signed by release-build.yaml of this repo.
+      - name: Verify attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' asset; do
+            gh attestation verify "$asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release-build.yaml"
+          done < <(
+            find release-assets -maxdepth 1 -type f \
+              ! -name '*.sigstore.json' \
+              ! -name 'checksums.txt' \
+              -print0
+          )
 
       - name: Generate release notes
         shell: bash

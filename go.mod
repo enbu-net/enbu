@@ -1,6 +1,6 @@
 module github.com/enbu-net/enbu
 
-go 1.27.0
+go 1.27.2
 
 require (
 	charm.land/bubbles/v2 v2.2.1

@@ -39,7 +39,6 @@ jobs:
           version: "~> v2"
           args: release --clean --skip=publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ inputs.version }}
 
       - name: Upload CLI artifacts
@@ -106,7 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             platform: windows/amd64
             suffix: windows_amd64
             package: zip
@@ -114,7 +113,7 @@ jobs:
             platform: windows/arm64
             suffix: windows_arm64
             package: zip
-          - os: macos-latest
+          - os: macos-15
             platform: darwin/arm64
             suffix: darwin_arm64
             package: dmg
@@ -149,12 +148,6 @@ jobs:
         with:
           aqua_version: v2.64.0
 
-      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          run-install: false
-          package-manager: false
-          node-manager: false
-
       - name: Download frontend artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -171,7 +164,8 @@ jobs:
         shell: bash
         env:
           PLATFORM: ${{ matrix.platform }}
-          EXTRA_FLAGS: -s -trimpath
+          EXTRA_FLAGS: -trimpath
+          ENBU_FRONTEND_PREBUILT: "1"
         run: task gui/build PLATFORM="$PLATFORM" EXTRA_FLAGS="$EXTRA_FLAGS"
 
       - name: Package desktop app
@@ -302,7 +296,9 @@ jobs:
       - name: Generate artifact attestations
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release-assets/*
+          # checksums.txt lists every asset except itself and the cosign bundles,
+          # so the signature bundles are not attested as if they were assets.
+          subject-checksums: release-assets/checksums.txt
 
       - name: Verify release asset set
         shell: bash
