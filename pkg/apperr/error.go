@@ -166,7 +166,18 @@ func IsKnownCode(code Code) bool {
 	return ok
 }
 
+// ExitError carries the exit status of a command enbu ran on the user's
+// behalf (enbu run). It is not an application error: the command already
+// reported whatever went wrong, enbu only passes its status on.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("command exited with status %d", e.Code) }
+
 func ExitCode(err error) int {
+	var exit *ExitError
+	if errors.As(err, &exit) {
+		return exit.Code
+	}
 	switch CodeOf(err) {
 	case CodeInvalidArgument:
 		return 2

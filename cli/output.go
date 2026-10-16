@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -204,6 +205,10 @@ func requestedJSON(cmd *cobra.Command, args []string) bool {
 // RenderExecutionError writes one command execution error using the selected
 // output format. JSON errors intentionally go to stdout for process consumers.
 func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
+	var exit *apperr.ExitError
+	if errors.As(err, &exit) {
+		return // the command enbu ran has already said what it had to say
+	}
 	err = apperr.Normalize(err)
 	if requestedJSON(cmd, args) || jsonEnabled(cmd) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
