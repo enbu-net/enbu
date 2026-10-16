@@ -64,7 +64,7 @@ func newMemberRequestsCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 			for _, r := range requests {
-				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, recipientKind(r.Recipient), r.RequestedAt.Format(time.DateTime))
+				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))
 			}
 			return nil
 		}}
@@ -78,11 +78,16 @@ type memberTarget struct {
 // choose resolves which device to act on. With --device it is explicit.
 // Otherwise one candidate is taken directly and several are offered as a list,
 // so nobody has to copy a device id by hand.
-func choose(cmd *cobra.Command, device, title string, candidates []memberTarget) (memberTarget, error) {
+func choose(cmd *cobra.Command, device, title string, candidates []memberTarget, self ...memberTarget) (memberTarget, error) {
 	if device != "" {
 		for _, c := range candidates {
-			if c.deviceID == device || strings.EqualFold(c.fingerprint, device) {
+			if c.matches(device) {
 				return c, nil
+			}
+		}
+		for _, c := range self {
+			if c.matches(device) {
+				return memberTarget{}, invalidArgument("that is this device: ask another admin to change your own membership", nil)
 			}
 		}
 		return memberTarget{}, invalidArgument("no such device", nil)
@@ -139,7 +144,7 @@ func newMemberApproveCommand(a *app.App) *cobra.Command {
 			candidates := make([]memberTarget, len(requests))
 			for i, r := range requests {
 				candidates[i] = memberTarget{deviceID: r.DeviceID, fingerprint: r.Fingerprint,
-					detail: fmt.Sprintf("%s, requested %s", recipientKind(r.Recipient), r.RequestedAt.Format(time.DateTime))}
+					detail: fmt.Sprintf("%s, requested %s", recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))}
 			}
 			if len(candidates) == 0 && device == "" {
 				if jsonEnabled(cmd) {
@@ -169,6 +174,21 @@ func newMemberApproveCommand(a *app.App) *cobra.Command {
 	return cmd
 }
 
+func (c memberTarget) matches(device string) bool {
+	return c.deviceID == device || strings.EqualFold(c.fingerprint, device)
+}
+
+// selfTarget is this device among members, so a command can say why it is
+// not offered rather than claim it does not exist.
+func selfTarget(members []app.MemberInfo) []memberTarget {
+	for _, m := range members {
+		if m.Self {
+			return []memberTarget{{deviceID: m.DeviceID, fingerprint: m.Fingerprint}}
+		}
+	}
+	return nil
+}
+
 func memberCandidates(members []app.MemberInfo, includeSelf bool) []memberTarget {
 	var out []memberTarget
 	for _, m := range members {
@@ -193,7 +213,7 @@ func newMemberRemoveCommand(a *app.App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			target, err := choose(cmd, device, "Remove which member?", memberCandidates(members, false))
+			target, err := choose(cmd, device, "Remove which member?", memberCandidates(members, false), selfTarget(members)...)
 			if err != nil {
 				return err
 			}
@@ -223,7 +243,7 @@ func newMemberAdminCommand(a *app.App) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			target, err := choose(cmd, device, "Change which member?", memberCandidates(members, false))
+			target, err := choose(cmd, device, "Change which member?", memberCandidates(members, false), selfTarget(members)...)
 			if err != nil {
 				return err
 			}
