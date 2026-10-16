@@ -23,12 +23,12 @@ func writeOutput(t *testing.T, a *App, content string) string {
 func TestPullKeepsVariablesEnbuDoesNotStore(t *testing.T) {
 	alice := newAlice(t) // KEY=v1
 	path := writeOutput(t, alice, "KEY=\"old\"\nLOCAL_ONLY=\"1\"\n")
-	kept, err := alice.PullSecretsToFileWith(bg, "default", false)
+	written, err := alice.PullSecretsToFileWith(bg, "default", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(kept) != 1 || kept[0] != "LOCAL_ONLY" {
-		t.Fatalf("kept = %v", kept)
+	if kept := written.Kept; len(kept) != 1 || kept[0] != "LOCAL_ONLY" || written.Count != 1 || written.Output != ".env" {
+		t.Fatalf("written = %+v", written)
 	}
 	got, _ := os.ReadFile(path)
 	text := string(got)
@@ -51,9 +51,9 @@ func TestPullKeepsVariablesEnbuDoesNotStore(t *testing.T) {
 func TestPullReplaceDropsLocalVariables(t *testing.T) {
 	alice := newAlice(t)
 	path := writeOutput(t, alice, "LOCAL_ONLY=\"1\"\n")
-	kept, err := alice.PullSecretsToFileWith(bg, "default", true)
-	if err != nil || len(kept) != 0 {
-		t.Fatalf("kept = %v, err = %v", kept, err)
+	written, err := alice.PullSecretsToFileWith(bg, "default", true)
+	if err != nil || len(written.Kept) != 0 {
+		t.Fatalf("written = %+v, err = %v", written, err)
 	}
 	if got, _ := os.ReadFile(path); strings.Contains(string(got), "LOCAL_ONLY") {
 		t.Fatalf("replace kept a variable:\n%s", got)

@@ -22,7 +22,7 @@ func TestPullWarnsAboutKeptLocalVariables(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(errOut.String(), "LOCAL_ONLY") || !strings.Contains(errOut.String(), "--replace") {
+	if !strings.Contains(errOut.String(), "✓ Written .env (1 secrets)") || !strings.Contains(errOut.String(), "LOCAL_ONLY") || !strings.Contains(errOut.String(), "--replace") {
 		t.Fatalf("stderr: %q", errOut.String())
 	}
 	cmd = NewWithApp("test", a)

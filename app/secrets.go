@@ -237,21 +237,28 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 
 func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 	defer apperr.NormalizeInto(&err)
-	kept, err := a.PullSecretsToFileWith(ctx, env, false)
+	written, err := a.PullSecretsToFileWith(ctx, env, false)
 	if err != nil {
 		return err
 	}
-	if len(kept) > 0 {
-		a.emit(keptMessage(kept))
+	if len(written.Kept) > 0 {
+		a.emit(keptMessage(written.Kept))
 	}
 	return nil
 }
 
+// WrittenFile describes what a pull wrote.
+type WrittenFile struct {
+	Output string   // the file, as configured for the environment
+	Count  int      // secrets written
+	Kept   []string // variables of the previous file that enbu does not store
+}
+
 // PullSecretsToFileWith writes the environment's secrets to its output file.
 // Variables the file already holds that enbu does not store are kept below a
-// marker and returned, unless replace is set; a file that cannot be read as
+// marker and reported, unless replace is set; a file that cannot be read as
 // dotenv is not overwritten without replace.
-func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (kept []string, err error) {
+func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {
 	defer apperr.NormalizeInto(&err)
 
 	result, err := a.pullSecretsData(ctx, env, false)
@@ -274,7 +281,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 
 	a.emitStepProgress("pull", "write", "done")
 	a.emit(fmt.Sprintf("Written %s (%d secrets)", result.Output, len(result.Secrets)))
-	return kept, nil
+	return &WrittenFile{Output: result.Output, Count: len(result.Secrets), Kept: kept}, nil
 }
 
 const keptMarker = "# Kept from the previous file; enbu does not store these (pull --replace drops them):"

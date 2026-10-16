@@ -40,12 +40,13 @@ func newPullCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 
-			kept, err := a.PullSecretsToFileWith(cmd.Context(), envName, replace)
+			written, err := a.PullSecretsToFileWith(cmd.Context(), envName, replace)
 			if err != nil {
 				return err
 			}
-			if len(kept) > 0 {
-				cmd.PrintErrf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)\n", len(kept), strings.Join(kept, ", "))
+			cmd.PrintErrf("✓ Written %s (%d secrets)\n", written.Output, written.Count)
+			if len(written.Kept) > 0 {
+				cmd.PrintErrf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)\n", len(written.Kept), strings.Join(written.Kept, ", "))
 			}
 			return nil
 		},
