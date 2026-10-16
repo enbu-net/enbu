@@ -296,7 +296,9 @@ jobs:
       - name: Generate artifact attestations
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: release-assets/*
+          # checksums.txt lists every asset except itself and the cosign bundles,
+          # so the signature bundles are not attested as if they were assets.
+          subject-checksums: release-assets/checksums.txt
 
       - name: Verify release asset set
         shell: bash
