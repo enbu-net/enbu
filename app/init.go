@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"strings"
 	"time"
 	"uuid"
 )
@@ -86,12 +88,12 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	}
 	id, info, warning, err := a.Identities.Create(cfg.WorkspaceID)
 	if err != nil {
-		return nil, err
+		return nil, identityError(err)
 	}
 	defer func() { _ = id.Close() }()
 	signer, _, signerWarning, err := a.Identities.CreateSigner(cfg.WorkspaceID)
 	if err != nil {
-		return nil, err
+		return nil, identityError(err)
 	}
 	defer func() { _ = signer.Close() }()
 	publicKey := id.Recipient().String()
@@ -213,4 +215,16 @@ func (a *App) leaveJoinRequest(ctx context.Context, store *storage.Store, device
 		return storageError(err)
 	}
 	return nil
+}
+
+// identityError turns "this device has no backend for a key" into an error
+// the user can act on: it carries the reason doctor would show and points at
+// doctor, instead of surfacing as an internal error.
+func identityError(err error) error {
+	if !errors.Is(err, identity.ErrUnavailable) {
+		return err
+	}
+	reason := strings.TrimPrefix(err.Error(), identity.ErrUnavailable.Error()+": ")
+	return apperr.Wrap(apperr.CodeIdentityUnavailable,
+		"no usable identity backend on this device: "+reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": reason})
 }
