@@ -3,8 +3,12 @@ version: 2
 builds:
   - main: .
     binary: enbu
+    flags:
+      - -trimpath
     ldflags:
       - -s -X main.Version={{.Version}}
+    # Reproducible builds: the attested binaries must not embed the build time.
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=0
     goos:
