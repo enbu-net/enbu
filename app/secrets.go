@@ -79,6 +79,14 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 	if err != nil {
 		return err
 	}
+	return a.changeStoredSecrets(ctx, resolved.Name, op, change)
+}
+
+// changeStoredSecrets is changeSecret for an environment named by storage
+// rather than by this device's enbu.toml, which may not list every
+// environment the workspace has.
+func (a *App) changeStoredSecrets(ctx context.Context, env, op string, change func(map[string]string) error) error {
+	resolved := &ResolvedEnvironment{Name: env}
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return err

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -251,15 +253,15 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*se
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
 // of the current Control.
 func (a *App) reencryptAll(ctx context.Context) error {
-	cfg, err := a.loadProject()
+	envs, err := a.workspaceEnvironments(ctx)
 	if err != nil {
 		return err
 	}
 	// Keep going after a failure: every environment left behind stays encrypted
 	// for the old recipient set, and the error should name all of them.
 	var errs []error
-	for _, env := range cfg.EnvironmentNames() {
-		if err := a.SyncSecrets(ctx, env); err != nil {
+	for _, env := range envs {
+		if err := a.changeStoredSecrets(ctx, env, "sync", func(map[string]string) error { return nil }); err != nil {
 			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", env, err))
 		}
 	}
@@ -273,7 +275,7 @@ func (a *App) reencryptAll(ctx context.Context) error {
 // in this device's checkpoint. It is best effort: an environment that cannot be
 // read now will fail to re-encrypt later with its own error.
 func (a *App) acceptCurrentStates(ctx context.Context) {
-	cfg, err := a.loadProject()
+	envs, err := a.workspaceEnvironments(ctx)
 	if err != nil {
 		return
 	}
@@ -282,7 +284,43 @@ func (a *App) acceptCurrentStates(ctx context.Context) {
 		return
 	}
 	defer s.Close()
-	for _, env := range cfg.EnvironmentNames() {
+	for _, env := range envs {
 		_, _ = s.readState(ctx, secretsTag(env), env, true)
 	}
+}
+
+// workspaceEnvironments names every environment that has secrets in storage,
+// plus the ones this device's enbu.toml lists. Membership changes must reach
+// environments another member created even when this device never pulled the
+// enbu.toml that lists them; otherwise a new member cannot read them and a
+// removed one stays among their recipients.
+func (a *App) workspaceEnvironments(ctx context.Context) ([]string, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	store, err := a.workspaceStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs, err := store.Refs.List(ctx, "secrets-")
+	if err != nil {
+		return nil, storageError(err)
+	}
+	seen := map[string]bool{}
+	var envs []string
+	add := func(env string) {
+		if !seen[env] && config.ValidEnvironmentName(env) {
+			seen[env] = true
+			envs = append(envs, env)
+		}
+	}
+	for _, env := range cfg.EnvironmentNames() {
+		add(env)
+	}
+	for _, ref := range refs {
+		add(strings.TrimPrefix(ref, "secrets-"))
+	}
+	sort.Strings(envs)
+	return envs, nil
 }
