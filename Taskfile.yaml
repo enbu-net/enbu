@@ -228,6 +228,11 @@ tasks:
       - golangci-lint fmt ./...
       - git diff --exit-code -- '*.go'
 
+  cli/vuln:
+    desc: Scan Go dependencies and the standard library for known vulnerabilities
+    cmds:
+      - govulncheck -tags fixture ./...
+
   gui/check:
     desc: Format and lint GUI code
     deps:

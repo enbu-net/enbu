@@ -167,6 +167,9 @@ jobs:
       - name: Check
         run: task all/check
 
+      - name: Vulnerability check
+        run: task cli/vuln
+
       - name: Verify no diff
         run: |
           if [ -n "$(git status --porcelain)" ]; then
