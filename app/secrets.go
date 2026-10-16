@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/opencontainers/go-digest"
+	"io/fs"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/schema/secretmap"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
 
 const maxRetries = 3
@@ -232,10 +237,26 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 
 func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 	defer apperr.NormalizeInto(&err)
+	kept, err := a.PullSecretsToFileWith(ctx, env, false)
+	if err != nil {
+		return err
+	}
+	if len(kept) > 0 {
+		a.emit(keptMessage(kept))
+	}
+	return nil
+}
+
+// PullSecretsToFileWith writes the environment's secrets to its output file.
+// Variables the file already holds that enbu does not store are kept below a
+// marker and returned, unless replace is set; a file that cannot be read as
+// dotenv is not overwritten without replace.
+func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (kept []string, err error) {
+	defer apperr.NormalizeInto(&err)
 
 	result, err := a.pullSecretsData(ctx, env, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	outputPath := result.Output
@@ -243,15 +264,66 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 		outputPath = filepath.Join(a.RepositoryDir, result.Output)
 	}
 	a.emitStepProgress("pull", "write", "start")
-	dotenv, err := bundle.ToDotEnv(result.Secrets)
+	dotenv, kept, err := dotenvWithLocal(outputPath, result.Secrets, replace)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {
-		return fmt.Errorf("writing %s: %w", result.Output, err)
+		return nil, fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
 	a.emitStepProgress("pull", "write", "done")
 	a.emit(fmt.Sprintf("Written %s (%d secrets)", result.Output, len(result.Secrets)))
-	return nil
+	return kept, nil
+}
+
+const keptMarker = "# Kept from the previous file; enbu does not store these (pull --replace drops them):"
+
+func keptMessage(kept []string) string {
+	return fmt.Sprintf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)", len(kept), strings.Join(kept, ", "))
+}
+
+// dotenvWithLocal renders secrets as dotenv and appends the variables of the
+// file at path that are not in secrets, so a pull does not throw away what a
+// person put there by hand. With replace the file's content is ignored.
+func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data []byte, kept []string, err error) {
+	data, err = bundle.ToDotEnv(secrets)
+	if err != nil {
+		return nil, nil, err
+	}
+	if replace {
+		return data, nil, nil
+	}
+	existing, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return data, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	vars, err := secretmap.ImportDotenv(existing)
+	if err != nil {
+		return nil, nil, apperr.Wrap(apperr.CodeInvalidArgument,
+			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", filepath.Base(path)), err, nil)
+	}
+	local := map[string]string{}
+	for key, value := range vars {
+		if _, stored := secrets[key]; !stored {
+			local[key] = value
+			kept = append(kept, key)
+		}
+	}
+	if len(kept) == 0 {
+		return data, nil, nil
+	}
+	sort.Strings(kept)
+	extra, err := bundle.ToDotEnv(local)
+	if err != nil {
+		return nil, nil, err
+	}
+	data = append(data, '\n')
+	data = append(data, keptMarker...)
+	data = append(data, '\n')
+	data = append(data, extra...)
+	return data, kept, nil
 }
