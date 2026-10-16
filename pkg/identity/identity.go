@@ -16,6 +16,11 @@ import (
 	hpkeecdh "filippo.io/hpke/crypto/ecdh"
 )
 
+// ErrUnavailable marks a device that cannot hold a key in any backend: no
+// usable hardware (TPM, Secure Enclave) and no reachable OS keyring. Callers
+// show the reason and point at `enbu doctor`; it is not an internal error.
+var ErrUnavailable = errors.New("identity backend unavailable")
+
 type Recipient interface {
 	age.Recipient
 	String() string
