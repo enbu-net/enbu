@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"testing"
 
@@ -10,6 +9,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/fxamacker/cbor/v2"
+	"github.com/opencontainers/go-digest"
 )
 
 const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
@@ -30,79 +31,94 @@ func prepareCLIApp(t *testing.T, a *app.App) {
 	}
 }
 
-// putRecord is one write to a ref, with the version the app last read for it.
+// putRecord is one published revision of a secret state.
 type putRecord struct {
-	key      string
-	expected storage.Version
-	lastRead storage.Version
+	rev     digest.Digest
+	parents []digest.Digest
 }
 
-// refRecorder observes ref traffic of a real in-memory store, so tests can
-// assert how many writes a command made and which version each was based on.
-type refRecorder struct {
-	storagetest.Objects
-	mu      sync.Mutex
-	puts    []putRecord
-	lastGet map[string]storage.Version
-	failGet map[string]error // by key prefix
+// stateRecorder observes the State revisions an app publishes to a real
+// in-memory store, so tests can assert how many writes a command made and which
+// revisions each was based on.
+type stateRecorder struct {
+	mu         sync.Mutex
+	puts       []putRecord
+	failStates error // makes every read of secret states fail with it
 }
 
-func (r *refRecorder) Get(ctx context.Context, key string) ([]byte, storage.Version, error) {
-	r.mu.Lock()
-	for prefix, err := range r.failGet {
-		if strings.HasPrefix(key, prefix) {
-			r.mu.Unlock()
-			return nil, "", err
-		}
+func (r *stateRecorder) hooks() storagetest.Hooks {
+	return storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if err := next.Publish(ctx, o); err != nil {
+				return err
+			}
+			if o.Kind == storage.KindState {
+				r.mu.Lock()
+				r.puts = append(r.puts, putRecord{rev: o.Rev, parents: parentsOf(o.Signed)})
+				r.mu.Unlock()
+			}
+			return nil
+		},
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if err := r.stateFailure(kind); err != nil {
+				return nil, err
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+			if err := r.stateFailure(kind); err != nil {
+				return storage.Object{}, err
+			}
+			return next.Fetch(ctx, kind, scope, rev)
+		},
 	}
-	r.mu.Unlock()
-	data, v, err := r.Objects.Get(ctx, key)
-	if err == nil {
-		r.mu.Lock()
-		r.lastGet[key] = v
-		r.mu.Unlock()
-	}
-	return data, v, err
 }
 
-func (r *refRecorder) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
+func (r *stateRecorder) stateFailure(kind storage.Kind) error {
 	r.mu.Lock()
-	r.puts = append(r.puts, putRecord{key: key, expected: v, lastRead: r.lastGet[key]})
-	r.mu.Unlock()
-	return r.Objects.Put(ctx, key, o, v)
+	defer r.mu.Unlock()
+	if kind == storage.KindState {
+		return r.failStates
+	}
+	return nil
 }
 
-func (r *refRecorder) reset() {
+// parentsOf reads the parents a signed State names, without verifying it.
+func parentsOf(signed []byte) []digest.Digest {
+	var outer struct {
+		Body []byte `cbor:"body"`
+	}
+	var body struct {
+		Parents []digest.Digest `cbor:"parents"`
+	}
+	if cbor.Unmarshal(signed, &outer) != nil || cbor.Unmarshal(outer.Body, &body) != nil {
+		return nil
+	}
+	return body.Parents
+}
+
+func (r *stateRecorder) reset() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.puts = nil
 }
 
-// secretPuts returns the writes to secret and history refs since the last reset.
-func (r *refRecorder) secretPuts() []putRecord {
+// secretPuts returns the State revisions published since the last reset.
+func (r *stateRecorder) secretPuts() []putRecord {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	var out []putRecord
-	for _, p := range r.puts {
-		if strings.HasPrefix(p.key, "secrets-") || strings.HasPrefix(p.key, "hist-") {
-			out = append(out, p)
-		}
-	}
-	return out
+	return append([]putRecord(nil), r.puts...)
 }
 
 // bootstrapCLIApp points a at store and creates the workspace the way the first
-// device does: workspace ref, signing key and genesis Control. Writes made
+// device does: signing key and genesis Control. Writes made
 // during setup are not recorded.
-func bootstrapCLIApp(t *testing.T, a *app.App, store *storage.Store) *refRecorder {
+func bootstrapCLIApp(t *testing.T, a *app.App, store storage.Store) *stateRecorder {
 	t.Helper()
-	rec := &refRecorder{Objects: storagetest.ToObjects(store), lastGet: map[string]storage.Version{}, failGet: map[string]error{}}
-	a.Storage = storagetest.Wrap(store, rec)
+	rec := &stateRecorder{}
+	a.Storage = storagetest.Wrap(store, rec.hooks())
 	a.CheckpointDir = t.TempDir()
 	prepareCLIApp(t, a)
-	if err := rec.Objects.Put(context.Background(), "enbu-workspace", []byte(testWorkspaceID), ""); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := a.InitializeRepository(context.Background()); err != nil {
 		t.Fatalf("initialize workspace: %v", err)
 	}
@@ -111,8 +127,8 @@ func bootstrapCLIApp(t *testing.T, a *app.App, store *storage.Store) *refRecorde
 }
 
 // newSeededApp returns a bootstrapped app whose default environment already
-// holds secrets (none if nil), plus the recorder of its ref traffic.
-func newSeededApp(t *testing.T, secrets map[string]string) (*app.App, *refRecorder) {
+// holds secrets (none if nil), plus the recorder of its State publishes.
+func newSeededApp(t *testing.T, secrets map[string]string) (*app.App, *stateRecorder) {
 	t.Helper()
 	a := &app.App{
 		TokenProvider: &deleteTestTokenProvider{},

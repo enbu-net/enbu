@@ -51,32 +51,16 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	if err != nil {
 		return nil, err
 	}
-	metadata, _, err := getRef(ctx, store, workspaceKey)
-	if errors.Is(err, storage.ErrNotFound) {
+	if missing {
+		// A fresh repository founds a new workspace. Joining an existing one needs
+		// the enbu.toml an admin shares: it holds the workspace and the trusted
+		// genesis, and nothing in storage can be trusted to name them.
 		if cfg.WorkspaceID == "" {
 			cfg.WorkspaceID = uuid.NewV4().String()
 		}
-		if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
-			return nil, err
-		}
-		err = putRef(ctx, store, workspaceKey, []byte(cfg.WorkspaceID), "")
-		if errors.Is(err, storage.ErrConflict) {
-			metadata, _, err = getRef(ctx, store, workspaceKey)
-		} else if err == nil {
-			metadata = []byte(cfg.WorkspaceID)
-		}
 	}
-	if err != nil {
-		return nil, storageError(err)
-	}
-	if _, err := uuid.Parse(string(metadata)); err != nil {
-		return nil, fmt.Errorf("invalid stored workspace ID: %w", err)
-	}
-	if missing {
-		cfg.WorkspaceID = string(metadata)
-	}
-	if cfg.WorkspaceID != string(metadata) {
-		return nil, apperr.New(apperr.CodeInvalidArgument, "storage belongs to a different workspace", nil)
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		return nil, fmt.Errorf("invalid workspace ID: %w", err)
 	}
 	// Save the workspace binding before registration, so a failed registration
 	// retries the same local identity rather than generating another key.
@@ -108,7 +92,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 			a.emit(w)
 		}
 	}
-	ref := secretsTag(cfg.CurrentEnvironment())
+	resource := cfg.Resource(cfg.CurrentEnvironment())
 	if _, ok := s.head.Principal(device); !ok {
 		// Not a member: leave a request an admin can pick from a list. It carries
 		// no authority, so anyone able to write to storage can do the same.
@@ -116,16 +100,16 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		if err != nil {
 			return nil, err
 		}
-		if err := putRef(ctx, store, wsp.JoinRequestRef(device), blob, ""); err != nil && !errors.Is(err, storage.ErrConflict) {
+		if _, err := wsp.PublishJoinRequest(ctx, store, blob); err != nil {
 			return nil, storageError(err)
 		}
 		result.Mode, result.Pending = "join", true
-		if _, _, err := store.Refs.Get(ctx, ref); err == nil {
+		if revs, err := store.Discover(ctx, storage.KindState, storage.StateScope(cfg.WorkspaceID, resource)); err == nil && len(revs) > 0 {
 			result.HasSecrets = true
 		}
 		return result, nil
 	}
-	_, err = s.readState(ctx, ref, cfg.CurrentEnvironment(), true)
+	_, err = s.readResource(ctx, cfg.CurrentEnvironment(), nil, true)
 	switch {
 	case err == nil:
 		result.Mode, result.HasSecrets = "join", true
@@ -144,18 +128,17 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 
 // ensureControl verifies the workspace's Control, creating the genesis Control
 // when the storage has none and this repository has no trusted genesis yet. On
-// return s.head is the verified head.
+// return s.view and s.head describe the verified DAG.
 func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Principal) error {
-	_, _, err := s.store.Refs.Get(ctx, wsp.ControlRef)
-	if errors.Is(err, storage.ErrNotFound) {
-		if s.cfg.ControlGenesis != "" {
-			// Never re-root trust silently: enbu.toml names a genesis this storage lacks.
-			return apperr.New(apperr.CodeIncompatibleStorage, "storage has no workspace control but enbu.toml expects one; use the original storage", nil)
-		}
-		if refs, lerr := s.store.Refs.List(ctx, "secrets-"); lerr != nil {
-			return storageError(lerr)
-		} else if len(refs) > 0 {
-			return apperr.New(apperr.CodeIncompatibleStorage, "storage was written without a workspace control and cannot be used; use an empty location", nil)
+	if s.cfg.ControlGenesis == "" {
+		// Storage must hold no workspace yet: with no trusted genesis there is
+		// nothing to tell a founder's Control from an outsider's.
+		for _, k := range []storage.Kind{storage.KindControl, storage.KindRequest} {
+			if revs, err := s.store.Discover(ctx, k, ""); err != nil {
+				return storageError(err)
+			} else if len(revs) > 0 {
+				return apperr.New(apperr.CodeIncompatibleStorage, "storage already holds a workspace; use the enbu.toml an admin shared, or an empty location", nil)
+			}
 		}
 		// Record the trusted digest in enbu.toml before publishing the control.
 		// The other order can leave a published control that this repository
@@ -170,24 +153,14 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 			return err // nothing has been published yet
 		}
 		if cerr := wsp.PublishGenesis(ctx, s.store, blob); cerr != nil {
-			// Either the publish failed or another device founded the workspace
-			// first. In both cases the digest we recorded is not trusted.
 			s.cfg.ControlGenesis = ""
 			if serr := a.saveProject(s.cfg); serr != nil {
 				return fmt.Errorf("could not undo the recorded control_genesis in enbu.toml, remove it by hand: %w", errors.Join(serr, cerr))
 			}
-			if !errors.Is(cerr, storage.ErrConflict) {
-				return storageError(cerr)
-			}
-			// On conflict another device created it first; verify theirs below.
+			return storageError(cerr)
 		}
-	} else if err != nil {
-		return storageError(err)
 	}
-	head, err := a.verifyControl(ctx, s)
-	if err != nil {
-		return err
-	}
-	s.head = head
-	return nil
+	// A genesis the repository trusts but storage lacks is reported by verifyControl
+	// as incompatible storage; trust is never re-rooted silently.
+	return a.verifyControl(ctx, s)
 }

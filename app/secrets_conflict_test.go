@@ -3,42 +3,13 @@ package app
 import (
 	"context"
 	"errors"
-	"reflect"
 	"testing"
 
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
-
-// Hooks preserve real encryption and the in-memory Storage contract.
-type hookedStorage struct {
-	storagetest.Objects
-	put  func(context.Context, string, []byte, storage.Version) error
-	get  func(context.Context, string) ([]byte, storage.Version, error)
-	list func(context.Context, string) ([]string, error)
-}
-
-func (s *hookedStorage) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
-	if s.put != nil {
-		return s.put(ctx, key, o, v)
-	}
-	return s.Objects.Put(ctx, key, o, v)
-}
-func (s *hookedStorage) Get(ctx context.Context, key string) ([]byte, storage.Version, error) {
-	if s.get != nil {
-		return s.get(ctx, key)
-	}
-	return s.Objects.Get(ctx, key)
-}
-func (s *hookedStorage) List(ctx context.Context, prefix string) ([]string, error) {
-	if s.list != nil {
-		return s.list(ctx, prefix)
-	}
-	return s.Objects.List(ctx, prefix)
-}
 
 type retryEvents struct {
 	recordingEvents
@@ -49,188 +20,233 @@ func (e *retryEvents) OnConflictRetry(attempt, limit int) {
 	e.retries = append(e.retries, [2]int{attempt, limit})
 }
 
-func TestSecretWritesHandleConflicts(t *testing.T) {
-	for _, operation := range []struct {
-		name string
-		run  func(*App) error
-		want map[string]string
-	}{
-		{"add", func(a *App) error { return a.AddSecret(context.Background(), "default", "NEW", "added") }, map[string]string{"KEY": "original", "NEW": "added", "CONCURRENT": "keep"}},
-		{"edit", func(a *App) error { return a.EditSecret(context.Background(), "default", "KEY", "edited") }, map[string]string{"KEY": "edited", "CONCURRENT": "keep"}},
-		{"delete", func(a *App) error { return a.DeleteSecret(context.Background(), "default", "KEY") }, map[string]string{"CONCURRENT": "keep"}},
-		{"restore", func(a *App) error { return a.RestoreHistory(context.Background(), "default", 1) }, map[string]string{"KEY": "original"}},
-	} {
-		t.Run(operation.name, func(t *testing.T) {
-			for _, failure := range []string{"retry succeeds", "exhausted", "non conflict", "snapshot failure"} {
-				t.Run(failure, func(t *testing.T) {
-					kp := mustKeyPair(t)
-					a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"KEY": "original"})
-					base := a.Storage
-					ref := secretsTag("default")
-					initial := map[string]string{"KEY": "original"}
-					if operation.name == "restore" {
-						initial = map[string]string{"KEY": "updated"}
-						ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(initial), []string{kp.PublicKey})
-						if err != nil {
-							t.Fatal(err)
-						}
-						_, version, err := getRef(context.Background(), base, ref)
-						if err != nil {
-							t.Fatal(err)
-						}
-						data := stateBlob(t, a, base, ref, "default", ciphertext)
-						if err := putRef(context.Background(), base, ref, data, version); err != nil {
-							t.Fatal(err)
-						}
-					}
-					events := &retryEvents{}
-					a.Events = events
-					var cause = storage.ErrConflict
-					wantCode := apperr.CodeConflict
-					if failure == "non conflict" || failure == "snapshot failure" {
-						cause = apperr.New(apperr.CodeAccessDenied, "push denied", nil)
-						wantCode = apperr.CodeAccessDenied
-					}
-					writes, snapshots := 0, 0
-					a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base), put: func(ctx context.Context, target string, o []byte, version storage.Version) error {
-						if target != ref {
-							snapshots++
-							if version != "" {
-								t.Fatal("snapshot must not use the current artifact's digest")
-							}
-							if failure == "snapshot failure" {
-								return cause
-							}
-							return putRef(ctx, base, target, o, version)
-						}
-						writes++
-						_, current, err := getRef(ctx, base, ref)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if version != current {
-							t.Fatalf("expected digest = %q, current = %q", version, current)
-						}
-						if failure == "exhausted" || failure == "non conflict" {
-							return cause
-						}
-						if failure == "retry succeeds" && writes == 1 {
-							// Another user changes the artifact before the retry. The next
-							// attempt must re-read its contents and its new digest.
-							ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "original", "CONCURRENT": "keep"}), []string{kp.PublicKey})
-							if err != nil {
-								t.Fatal(err)
-							}
-							concurrent := stateBlob(t, a, base, ref, "default", ciphertext)
-							if err := putRef(ctx, base, ref, concurrent, current); err != nil {
-								t.Fatal(err)
-							}
-							return cause
-						}
-						return putRef(ctx, base, target, o, version)
-					}})
-					err := operation.run(a)
-					wantWrites, wantSnapshots := 1, 1
-					var wantRetries [][2]int
-					switch failure {
-					case "retry succeeds":
-						wantWrites = 2
-						wantRetries = [][2]int{{1, maxRetries}}
-					case "exhausted":
-						wantWrites = maxRetries
-						wantSnapshots = 0
-						wantRetries = [][2]int{{1, maxRetries}, {2, maxRetries}}
-					case "non conflict":
-						wantSnapshots = 0
-					}
-					if writes != wantWrites || snapshots != wantSnapshots || !reflect.DeepEqual(events.retries, wantRetries) {
-						t.Fatalf("writes=%d snapshots=%d retries=%v, want %d/%d/%v", writes, snapshots, events.retries, wantWrites, wantSnapshots, wantRetries)
-					}
-					if failure == "exhausted" || failure == "non conflict" {
-						if !errors.Is(err, cause) || !apperr.Is(err, wantCode) {
-							t.Fatalf("error = %v, want preserved cause and code", err)
-						}
-						got, readErr := a.ListSecrets(context.Background(), "default")
-						if readErr != nil || !reflect.DeepEqual(got, initial) {
-							t.Fatalf("failed write changed secrets: %v, %v", got, readErr)
-						}
-						return
-					}
-					if err != nil {
-						t.Fatal(err)
-					}
-					want := operation.want
-					if failure == "snapshot failure" {
-						want = make(map[string]string)
-						for k, v := range operation.want {
-							if k != "CONCURRENT" {
-								want[k] = v
-							}
-						}
-					}
-					got, err := a.ListSecrets(context.Background(), "default")
-					if err != nil || !reflect.DeepEqual(got, want) {
-						t.Fatalf("secrets = %v, %v, want %v", got, err, want)
-					}
-				})
+// sharedWorkspace is a workspace with two members who see the same storage.
+func sharedWorkspace(t *testing.T) (alice, bob *App) {
+	t.Helper()
+	alice = newAlice(t)
+	bob = approved(t, alice)
+	return alice, bob
+}
+
+func listOK(t *testing.T, a *App) map[string]string {
+	t.Helper()
+	got, err := a.ListSecrets(bg, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// raceOnPublish makes other write while the first State publish of a is in
+// flight: after a's last look at the storage, before its revision lands. This
+// is the window an update used to be lost in.
+func raceOnPublish(a *App, other func()) {
+	done := false
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if o.Kind == storage.KindState && !done {
+				done = true
+				other()
 			}
-		})
+			return next.Publish(ctx, o)
+		},
+	})
+}
+
+// The point of the design: two successful concurrent writes both survive.
+func TestConcurrentWritesOfDifferentKeysBothSurvive(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	raceOnPublish(alice, func() {
+		if err := bob.AddSecret(bg, "default", "FROM_BOB", "b"); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := alice.AddSecret(bg, "default", "FROM_ALICE", "a"); err != nil {
+		t.Fatal(err)
+	}
+	for name, who := range map[string]*App{"alice": alice, "bob": bob} {
+		got := listOK(t, who)
+		if got["FROM_ALICE"] != "a" || got["FROM_BOB"] != "b" || got["KEY"] != "v1" {
+			t.Fatalf("%s sees %v", name, got)
+		}
+	}
+	// The next write merges the two heads into one revision.
+	if err := alice.AddSecret(bg, "default", "LATER", "x"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	read, err := s.readResource(bg, "default", nil, false)
+	if err != nil || len(read.heads) != 1 || len(read.heads[0].Parents) != 2 {
+		t.Fatalf("heads did not converge: %+v %v", read, err)
 	}
 }
 
-func TestSyncSecretsCancellationDuringConflict(t *testing.T) {
+// A head that appears while the user is editing is merged in the same revision.
+func TestHeadThatAppearsWhileEditingIsMergedBeforePublishing(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	events := &retryEvents{}
+	alice.Events = events
+	raced := false
+	err := alice.changeSecret(bg, "default", "add", func(secrets map[string]string) error {
+		if !raced {
+			raced = true
+			if err := bob.AddSecret(bg, "default", "FROM_BOB", "b"); err != nil {
+				t.Error(err)
+			}
+		}
+		secrets["FROM_ALICE"] = "a"
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events.retries) != 1 {
+		t.Fatalf("retries = %v, want one", events.retries)
+	}
+	got := listOK(t, alice)
+	if got["FROM_ALICE"] != "a" || got["FROM_BOB"] != "b" {
+		t.Fatalf("secrets = %v", got)
+	}
+}
+
+func TestConcurrentEditsOfOneKeyStopForAPersonToChoose(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	raceOnPublish(alice, func() {
+		if err := bob.EditSecret(bg, "default", "KEY", "bob's"); err != nil {
+			t.Error(err)
+		}
+	})
+	// Both writes succeed; nothing is lost and nothing is chosen silently.
+	if err := alice.EditSecret(bg, "default", "KEY", "alice's"); err != nil {
+		t.Fatal(err)
+	}
+	for _, who := range []*App{alice, bob} {
+		if _, err := who.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeSecretConflict) {
+			t.Fatalf("list on a conflict: %v", err)
+		}
+		if _, _, _, err := who.PullSecrets(bg, "default"); !apperr.Is(err, apperr.CodeSecretConflict) {
+			t.Fatalf("pull on a conflict: %v", err)
+		}
+		if err := who.AddSecret(bg, "default", "OTHER", "x"); !apperr.Is(err, apperr.CodeSecretConflict) {
+			t.Fatalf("write on a conflict: %v", err)
+		}
+	}
+	conflicts, err := bob.ListConflicts(bg, "default")
+	if err != nil || len(conflicts) != 1 || conflicts[0].Key != "KEY" || len(conflicts[0].Candidates) != 2 {
+		t.Fatalf("conflicts = %+v %v", conflicts, err)
+	}
+	values := map[string]bool{}
+	for _, c := range conflicts[0].Candidates {
+		values[c.Value] = true
+	}
+	if !values["alice's"] || !values["bob's"] {
+		t.Fatalf("candidates lost a value: %+v", conflicts[0].Candidates)
+	}
+
+	// Settling every conflict publishes a merge revision.
+	if err := bob.ResolveSecrets(bg, "default", map[string]SecretChoice{}); !apperr.Is(err, apperr.CodeSecretConflict) {
+		t.Fatalf("resolving nothing: %v", err)
+	}
+	if err := bob.ResolveSecrets(bg, "default", map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, who := range []*App{alice, bob} {
+		if got := listOK(t, who); got["KEY"] != "alice's" {
+			t.Fatalf("after resolving: %v", got)
+		}
+	}
+}
+
+func TestResolveCanDeleteAndLateWritesStillConflict(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	raceOnPublish(alice, func() {
+		if err := bob.DeleteSecret(bg, "default", "KEY"); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := alice.EditSecret(bg, "default", "KEY", "kept"); err != nil {
+		t.Fatal(err)
+	}
+	conflicts, err := alice.ListConflicts(bg, "default")
+	if err != nil || len(conflicts) != 1 {
+		t.Fatalf("delete against edit: %+v %v", conflicts, err)
+	}
+	deleted := false
+	for _, c := range conflicts[0].Candidates {
+		deleted = deleted || c.Deleted
+	}
+	if !deleted {
+		t.Fatal("the deletion is not offered as a candidate")
+	}
+	if err := alice.ResolveSecrets(bg, "default", map[string]SecretChoice{"KEY": {Delete: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, bob); len(got) != 0 {
+		t.Fatalf("after deleting: %v", got)
+	}
+}
+
+// A listing that does not show a revision yet makes a fork, not a lost update.
+func TestStaleListingMakesAForkNotALostUpdate(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	if err := bob.AddSecret(bg, "default", "FROM_BOB", "b"); err != nil {
+		t.Fatal(err)
+	}
+	// Alice's storage view does not list bob's revision yet.
+	real := alice.Storage
+	bs, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sv, err := bs.loadResource(bg, "default")
+	bs.Close()
+	if err != nil || len(sv.Heads) != 1 {
+		t.Fatalf("bob's view: %v", err)
+	}
+	newest := sv.Heads[0].Digest
+	alice.Storage = hide(real, newest)
+	if err := alice.AddSecret(bg, "default", "FROM_ALICE", "a"); err != nil {
+		t.Fatal(err)
+	}
+	alice.Storage = real
+	for _, who := range []*App{alice, bob} {
+		got := listOK(t, who)
+		if got["FROM_ALICE"] != "a" || got["FROM_BOB"] != "b" {
+			t.Fatalf("after the listing caught up: %v", got)
+		}
+	}
+}
+
+func TestSyncSecretsCancellation(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "value"})
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	base := a.Storage
-	pushes := 0
-	a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base), put: func(context.Context, string, []byte, storage.Version) error {
-		pushes++
-		cancel()
-		return storage.ErrConflict
-	}})
+	cancel()
 	if err := a.SyncSecrets(ctx, "default"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want cancellation", err)
 	}
-	if pushes != 1 {
-		t.Fatalf("pushes = %d, want 1", pushes)
+}
+
+func TestSecretsChangingEveryAttemptEventuallyReportsAConflict(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	n := 0
+	err := alice.changeSecret(bg, "default", "add", func(secrets map[string]string) error {
+		n++
+		if err := bob.AddSecret(bg, "default", "BUSY"+string(rune('a'+n)), "x"); err != nil {
+			t.Error(err)
+		}
+		secrets["MINE"] = "1"
+		return nil
+	})
+	if !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("a storage that changes on every attempt: %v", err)
+	}
+	if n != maxRetries {
+		t.Fatalf("attempts = %d, want %d", n, maxRetries)
 	}
 }
 
-func TestSyncSecretsPassesReadVersion(t *testing.T) {
-	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "value"})
-	base := a.Storage
-	reads, readsAtWrite, writes := 0, 0, 0
-	const version storage.Version = "opaque-version"
-	a.Storage = storagetest.Wrap(base, &hookedStorage{Objects: storagetest.ToObjects(base),
-		get: func(ctx context.Context, key string) ([]byte, storage.Version, error) {
-			o, v, err := getRef(ctx, base, key)
-			if key == secretsTag("default") {
-				reads++
-				v = version
-			}
-			return o, v, err
-		},
-		put: func(ctx context.Context, key string, o []byte, v storage.Version) error {
-			writes++
-			readsAtWrite = reads
-			if key != secretsTag("default") || v != version {
-				t.Fatalf("Put(%q) version=%q, want %q", key, v, version)
-			}
-			// Store it for real, under the version the backend actually has.
-			_, current, err := getRef(ctx, base, key)
-			if err != nil {
-				return err
-			}
-			return putRef(ctx, base, key, o, current)
-		},
-	})
-	if err := a.SyncSecrets(context.Background(), "default"); err != nil {
-		t.Fatal(err)
-	}
-	// One read to get the state and its version, then one write based on it.
-	// (The ref is read once more afterwards to detect a lost update.)
-	if readsAtWrite != 1 || writes != 1 {
-		t.Fatalf("reads before the write=%d writes=%d, want 1/1", readsAtWrite, writes)
-	}
-}
+var _ = digest.Digest("")

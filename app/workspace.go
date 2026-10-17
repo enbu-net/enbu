@@ -1,34 +1,38 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
+	"strings"
+	"time"
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/merge"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
 
-// session is a workspace opened for use: its Control chain has been verified
+// session is a workspace opened for use: its Control DAG has been verified
 // against the trusted genesis and the local checkpoint, so everything derived
 // from it (principals, recipients) is authoritative. Nothing read from storage
 // outside this verification is trusted.
 type session struct {
 	app       *App
-	store     *storage.Store
+	store     storage.Store
 	cfg       *config.ProjectConfig
 	workspace string
-	head      *wsp.Head
+	view      *wsp.ControlView
+	head      *wsp.Verified // the only head; nil while the Control is forked
 	cps       *wsp.Checkpoints
 	ids       []agecrypto.Identity
 	signer    signing.Signer
@@ -52,20 +56,36 @@ func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
 // wspError classifies verification failures so callers can tell an attack or
 // rollback from an ordinary failure.
 func wspError(err error) error {
+	var fork *wsp.ForkError
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, &fork):
+		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must resolve the fork", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
-		return apperr.Wrap(apperr.CodeRollback, "storage returned data older than this device already accepted", err, nil)
-	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrDigestMismatch):
+		return apperr.Wrap(apperr.CodeRollback, "storage shows less than this device already accepted", err, nil)
+	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrCorrupt):
 		return apperr.Wrap(apperr.CodeUntrusted, "stored data failed verification", err, nil)
 	default:
 		return storageError(err)
 	}
 }
 
-// openControl verifies the Control chain without loading any key.
+// openControl verifies the Control DAG without loading any key. It fails with
+// CodeControlForked while two heads compete.
 func (a *App) openControl(ctx context.Context) (*session, error) {
+	s, err := a.openControlView(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.head == nil {
+		return nil, wspError(&wsp.ForkError{Heads: s.view.Heads})
+	}
+	return s, nil
+}
+
+// openControlView is openControl that also returns a forked DAG, so an admin can resolve it.
+func (a *App) openControlView(ctx context.Context) (*session, error) {
 	cfg, err := a.loadProject()
 	if err != nil {
 		return nil, err
@@ -75,34 +95,37 @@ func (a *App) openControl(ctx context.Context) (*session, error) {
 		return nil, err
 	}
 	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID}
-	s.head, err = a.verifyControl(ctx, s)
-	if err != nil {
+	if err := a.verifyControl(ctx, s); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func (a *App) verifyControl(ctx context.Context, s *session) (*wsp.Head, error) {
+func (a *App) verifyControl(ctx context.Context, s *session) error {
 	if s.cfg.ControlGenesis == "" {
-		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml has no control_genesis; use the enbu.toml shared by an admin and run enbu init", nil)
+		return apperr.New(apperr.CodeInvalidArgument, "enbu.toml has no control_genesis; use the enbu.toml shared by an admin and run enbu init", nil)
 	}
 	// The checkpoint belongs to this trust root; the genesis may have just been created.
 	s.cps = a.checkpoints(s.workspace, s.cfg.ControlGenesis)
 	cp, err := s.cps.Control()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	head, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), cp)
+	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), cp)
 	if errors.Is(err, storage.ErrNotFound) {
-		return nil, apperr.Wrap(apperr.CodeIncompatibleStorage, "storage has no workspace control; use an empty location", err, nil)
+		return apperr.Wrap(apperr.CodeIncompatibleStorage, "storage has no workspace control; use an empty location", err, nil)
 	}
 	if err != nil {
-		return nil, wspError(err)
+		return wspError(err)
 	}
-	if err := s.cps.AcceptControl(head.Verified); err != nil {
-		return nil, wspError(err)
+	if err := s.cps.AcceptControl(view); err != nil {
+		return wspError(err)
 	}
-	return head, nil
+	s.view, s.head = view, nil
+	if !view.Forked() {
+		s.head = view.Heads[0]
+	}
+	return nil
 }
 
 // openSession also loads the encryption identity and the signing key, and
@@ -134,130 +157,180 @@ func (a *App) openSession(ctx context.Context) (*session, error) {
 
 func (s *session) self() signing.DeviceID { return s.signer.Public().DeviceID() }
 
-func secretsResource(env string) string {
-	if env == "" {
-		env = DefaultEnvironment
+func (s *session) resource(env string) string { return s.cfg.Resource(env) }
+
+// resourceRead is the current content of one environment: every head storage
+// shows, decrypted and merged against their merge base. A key the heads changed
+// differently is a conflict and is absent from secrets until a person chooses.
+type resourceRead struct {
+	view      *wsp.StateView
+	heads     []*wsp.VerifiedState
+	secrets   map[string]string
+	conflicts []merge.Conflict
+}
+
+func (r *resourceRead) parents() []digest.Digest {
+	out := make([]digest.Digest, len(r.heads))
+	for i, h := range r.heads {
+		out[i] = h.Digest
 	}
-	return "secrets/" + env
+	return out
 }
 
-type stateRead struct {
-	state   *wsp.VerifiedState
-	secrets map[string]string
-	version storage.Version
-}
-
-// readState loads and verifies the SignedState a ref names, then decrypts its
-// ciphertext. With current set the state must not be older than what this
-// device accepted, and is recorded as accepted; history snapshots are older by
-// design and skip that check.
-func (s *session) readState(ctx context.Context, ref, env string, current bool) (*stateRead, error) {
-	d, version, err := s.store.Refs.Get(ctx, ref)
+// loadResource verifies every revision of env that storage shows and checks it
+// against what this device accepted before. It decrypts nothing.
+func (s *session) loadResource(ctx context.Context, env string, also ...digest.Digest) (*wsp.StateView, error) {
+	resource := s.resource(env)
+	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
 	if err != nil {
-		return nil, storageError(err)
+		return nil, wspError(err)
 	}
-	blob, err := s.readBlob(ctx, ref, d)
+	if sv.Graph.Len() == 0 {
+		return nil, storageError(storage.ErrNotFound)
+	}
+	if err := s.cps.CheckStates(resource, sv.Graph); err != nil {
+		return nil, wspError(err)
+	}
+	return sv, nil
+}
+
+// decrypt fetches, checks and decrypts the ciphertext of one verified revision.
+func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[string]string, error) {
+	o, err := s.store.Fetch(ctx, storage.KindState, st.Scope(), st.Digest)
+	if err != nil {
+		return nil, wspError(err)
+	}
+	if digest.FromBytes(o.Cipher) != st.Ciphertext {
+		return nil, wspError(fmt.Errorf("%w: ciphertext does not match the signed state", storage.ErrCorrupt))
+	}
+	return decryptSecretsObject(o.Cipher, s.ids...)
+}
+
+// readResource returns the merged current content of env. The heads must have
+// been written by current members, except heads this device already accepted
+// (so an admin can take over what a since-removed member last wrote). choices
+// settles conflicts a person has already decided. With record set the verified
+// view becomes this device's checkpoint.
+func (s *session) readResource(ctx context.Context, env string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
+	sv, err := s.loadResource(ctx, env, also...)
 	if err != nil {
 		return nil, err
 	}
-	var st *wsp.VerifiedState
-	if current {
-		// The current state must have been written by someone who is a member now.
-		if st, err = s.verifyCurrent(ctx, env, blob); err != nil {
+	return s.mergeResource(ctx, env, sv, choices, record)
+}
+
+func (s *session) mergeResource(ctx context.Context, env string, sv *wsp.StateView, choices map[string]merge.Choice, record bool) (*resourceRead, error) {
+	resource := s.resource(env)
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		return nil, err
+	}
+	heads := s.trustedHeads(sv, accepted)
+	if len(heads) == 0 {
+		return nil, wspError(fmt.Errorf("%w: no revision of %s was written by a current member", wsp.ErrInvalid, resource))
+	}
+	r := &resourceRead{view: sv, heads: heads}
+	maps := make([]map[string]string, len(r.heads))
+	for i, h := range r.heads {
+		if maps[i], err = s.decrypt(ctx, h); err != nil {
 			return nil, err
 		}
-		if err := s.cps.CheckState(st); err != nil {
+	}
+	if len(maps) == 1 {
+		r.secrets = maps[0]
+	} else {
+		if missing := sv.Graph.Missing(); len(missing) > 0 {
+			return nil, wspError(fmt.Errorf("%w: revision %s is missing, so the heads cannot be merged yet", wsp.ErrRollback, missing[0]))
+		}
+		var bases []map[string]string
+		for _, b := range sv.Graph.MergeBases(r.parents()) {
+			m, err := s.decrypt(ctx, sv.States[b])
+			if err != nil {
+				return nil, err
+			}
+			bases = append(bases, m)
+		}
+		r.secrets, r.conflicts = merge.Merge(bases, maps, choices)
+	}
+	if record {
+		if err := s.cps.AcceptStates(resource, sv.Graph, r.parents()); err != nil {
 			return nil, wspError(err)
 		}
-	} else if st, err = s.verifyHistorical(ctx, env, blob); err != nil {
-		return nil, err
 	}
-	ciphertext, err := s.readBlob(ctx, ref, st.Ciphertext)
-	if err != nil {
-		return nil, err
+	return r, nil
+}
+
+// trustedHeads picks the heads this device may read as current. A head must be
+// written by a current member, or be one this device accepted while its author
+// was a member (so an admin can take over what a since-removed member last
+// wrote). A head failing both is not an error, because anyone able to write to
+// storage can publish one; it is set aside and its parents stand in for it, so
+// it neither injects content nor blocks reading.
+func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*wsp.VerifiedState {
+	trusted := func(h *wsp.VerifiedState) bool {
+		return wsp.AuthorIsCurrent(s.head, h) == nil || slices.Contains(accepted, h.Digest)
 	}
-	secrets, err := decryptSecretsObject(ciphertext, s.ids...)
-	if err != nil {
-		return nil, err
-	}
-	if current {
-		if err := s.cps.AcceptState(st); err != nil {
-			return nil, wspError(err)
+	var heads []*wsp.VerifiedState
+	seen := map[digest.Digest]bool{}
+	queue := slices.Clone(sv.Heads)
+	for len(queue) > 0 {
+		h := queue[0]
+		queue = queue[1:]
+		if seen[h.Digest] {
+			continue
+		}
+		seen[h.Digest] = true
+		if trusted(h) {
+			heads = append(heads, h)
+			continue
+		}
+		for _, p := range h.Parents {
+			if parent, ok := sv.States[p]; ok {
+				queue = append(queue, parent)
+			}
 		}
 	}
-	return &stateRead{state: st, secrets: secrets, version: version}, nil
+	// A parent that stands in for a set-aside head may already be covered by another head.
+	var out []*wsp.VerifiedState
+	for _, h := range heads {
+		covered := false
+		for _, other := range heads {
+			if other.Digest != h.Digest && sv.Graph.Ancestors(other.Digest)[h.Digest] {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, h)
+		}
+	}
+	slices.SortFunc(out, func(a, b *wsp.VerifiedState) int { return strings.Compare(string(a.Digest), string(b.Digest)) })
+	return out
 }
 
-// verifyCurrent verifies the state a ref names as the current one. Its author
-// must be a member now, with one exception: a state this device itself
-// accepted while its author was a member stays acceptable after the author is
-// removed, otherwise an admin could not take over what that member last wrote.
-// The exception is by digest, so a state the removed member signs after the
-// removal is not covered by it.
-func (s *session) verifyCurrent(ctx context.Context, env string, blob []byte) (*wsp.VerifiedState, error) {
-	st, err := wsp.VerifyState(s.head.Verified, s.workspace, secretsResource(env), blob)
-	if err == nil {
-		return st, nil
-	}
-	cp, cerr := s.cps.State(secretsResource(env))
-	if cerr == nil && cp != nil && cp.Digest == digest.FromBytes(blob) {
-		return s.verifyHistorical(ctx, env, blob)
-	}
-	return nil, wspError(err)
-}
-
-// verifyHistorical judges an older state, such as a history snapshot, by the
-// Control it was written under. Someone who was a member then and has since
-// been removed signed it validly, so the current member list is the wrong judge.
-func (s *session) verifyHistorical(ctx context.Context, env string, blob []byte) (*wsp.VerifiedState, error) {
-	generation, d, err := wsp.StateControl(blob)
-	if err != nil {
-		return nil, wspError(err)
-	}
-	written, err := wsp.ControlAt(ctx, s.store, s.head.Verified, generation, d)
-	if err != nil {
-		return nil, wspError(err)
-	}
-	st, err := wsp.VerifyHistoricalState(written, s.workspace, secretsResource(env), blob)
-	if err != nil {
-		return nil, wspError(err)
-	}
-	return st, nil
-}
-
-func (s *session) readBlob(ctx context.Context, ref string, d digest.Digest) ([]byte, error) {
-	data, err := readBlob(ctx, s.store, d)
-	if errors.Is(err, storage.ErrNotFound) {
-		// A missing blob behind an existing ref is corruption, not an absent ref.
-		return nil, fmt.Errorf("ref %s points to missing blob %s", ref, d)
-	}
-	if err != nil {
-		return nil, wspError(err)
-	}
-	return data, nil
-}
-
-// writeState encrypts secrets for the verified recipient set, signs a State
-// for it and points ref at that State. cur is the state being replaced.
 // errControlMoved means the member list changed after the session verified it.
 // Nothing has been published; the caller reopens the session and tries again.
 var errControlMoved = errors.New("workspace members changed while writing")
 
-// controlUnchanged re-reads the control head just before anything is
-// published. Encrypting for a recipient set that has since changed would hand
+// controlUnchanged loads the Control DAG again just before and after
+// publishing. Encrypting for a recipient set that has since changed would hand
 // new ciphertext to someone who was removed in the meantime.
 func (s *session) controlUnchanged(ctx context.Context) error {
-	d, _, err := s.store.Refs.Get(ctx, wsp.ControlRef)
+	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), nil)
 	if err != nil {
-		return storageError(err)
+		return wspError(err)
 	}
-	if d != s.head.Digest {
+	if view.Forked() || view.Heads[0].Digest != s.head.Digest {
 		return errControlMoved
 	}
 	return nil
 }
 
-func (s *session) writeState(ctx context.Context, ref, env string, secrets map[string]string, cur *stateRead, expected storage.Version) (digest.Digest, error) {
+// writeState encrypts secrets for the verified recipient set and publishes a
+// revision that merges parents. Storage has no compare-and-swap, so publishing
+// never replaces anything: a concurrent writer's revision stays beside this one
+// and the next reader merges them.
+func (s *session) writeState(ctx context.Context, env string, secrets map[string]string, parents []digest.Digest) (digest.Digest, error) {
 	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
 		return "", err
@@ -265,47 +338,45 @@ func (s *session) writeState(ctx context.Context, ref, env string, secrets map[s
 	if err := s.controlUnchanged(ctx); err != nil {
 		return "", err
 	}
-	ct, err := s.store.Blobs.Put(ctx, bytes.NewReader(ciphertext))
-	if err != nil {
-		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
-	}
-	next := wsp.State{Workspace: s.workspace, Resource: secretsResource(env), Sequence: 1,
-		ControlGeneration: s.head.Generation, Control: s.head.Digest, Ciphertext: ct, Author: s.self()}
-	if cur != nil {
-		next.Sequence, next.Previous = cur.state.Sequence+1, cur.state.Digest
-	}
+	resource := s.resource(env)
+	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
+		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
 		return "", err
 	}
-	// Verify what we are about to publish, and check it against the checkpoint,
-	// before the ref moves: once it has moved the state is public, so a failure
-	// found afterwards would leave a published state this device refuses.
-	st, err := wsp.VerifyState(s.head.Verified, s.workspace, next.Resource, blob)
-	if err != nil {
+	rev := digest.FromBytes(blob)
+	// Verify what we are about to publish before it becomes public.
+	if _, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob); err != nil {
 		return "", err
 	}
-	if err := s.cps.CheckState(st); err != nil {
-		return "", wspError(err)
+	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Signed: blob, Cipher: ciphertext}
+	if err := s.store.Publish(ctx, obj); err != nil {
+		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}
-	stateDigest, err := s.store.Blobs.Put(ctx, bytes.NewReader(blob))
+	// Members may have changed while we were publishing. The revision stays, and
+	// the caller publishes again for the new recipient set on top of it.
+	if err := s.controlUnchanged(ctx); err != nil {
+		return rev, err
+	}
+	return rev, nil
+}
+
+// acceptPublished records the view that includes a revision just published, so
+// a later view without it is a rollback.
+func (s *session) acceptPublished(ctx context.Context, env string, rev digest.Digest) error {
+	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, s.resource(env), rev)
 	if err != nil {
-		return "", fmt.Errorf("saving signed state: %w", storageError(err))
+		return wspError(err)
 	}
-	if err := storageError(s.store.Refs.Put(ctx, ref, stateDigest, expected)); err != nil {
-		return "", err
+	accepted, err := s.cps.State(s.resource(env))
+	if err != nil {
+		return err
 	}
-	// Some backends (OCI) cannot make the ref update atomic, so another writer's
-	// update can land on top of ours. Look once more: if the ref no longer names
-	// our state we lost, and the caller retries from what is there now instead
-	// of recording a state nobody will read.
-	if now, _, err := s.store.Refs.Get(ctx, ref); err != nil {
-		return "", storageError(err)
-	} else if now != stateDigest {
-		return "", apperr.Wrap(apperr.CodeConflict, "another update replaced this one", storage.ErrConflict, nil)
+	heads := s.trustedHeads(sv, accepted)
+	digests := make([]digest.Digest, len(heads))
+	for i, h := range heads {
+		digests[i] = h.Digest
 	}
-	if err := s.cps.AcceptState(st); err != nil {
-		return "", wspError(err)
-	}
-	return stateDigest, nil
+	return wspError(s.cps.AcceptStates(s.resource(env), sv.Graph, digests))
 }

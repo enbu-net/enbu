@@ -9,7 +9,7 @@ import (
 
 func TestSyncReturnsNonNotFoundSecretPullErrors(t *testing.T) {
 	a, rec := newSeededApp(t, map[string]string{"KEY": "value"})
-	rec.failGet["secrets-"] = errors.New("unauthorized")
+	rec.failStates = errors.New("unauthorized")
 
 	err := a.SyncSecrets(context.Background(), "")
 	if err == nil {

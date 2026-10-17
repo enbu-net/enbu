@@ -3,11 +3,9 @@
 package identitye2e
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +19,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func openOCIStore(t *testing.T, h *cliHarness) *storage.Store {
+func openOCIStore(t *testing.T, h *cliHarness) storage.Store {
 	t.Helper()
 	store, err := storage.NewOCI(strings.TrimPrefix(h.storageURL, "oci://"), nil, true)
 	if err != nil {
@@ -46,14 +44,10 @@ func approveX25519(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := store.Blobs.Put(ctx, bytes.NewReader(request))
-	if err != nil {
+	if _, err := wsp.PublishJoinRequest(ctx, store, request); err != nil {
 		t.Fatal(err)
 	}
 	device := signer.Public().DeviceID()
-	if err := store.Refs.Put(ctx, wsp.JoinRequestRef(device), d, ""); err != nil {
-		t.Fatal(err)
-	}
 	approved := h.run("member", "approve", "--device", string(device))
 	if approved["action"] != "approve" {
 		t.Fatalf("approve: %+v", approved)
@@ -61,7 +55,7 @@ func approveX25519(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) {
 }
 
 // decryptCurrent reads the current secrets state the way a client does, but as
-// the holder of x: it verifies the Control chain and the SignedState before
+// the holder of x: it verifies the Control DAG and the signed revisions before
 // decrypting. It fails if x is not a recipient.
 func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) []byte {
 	t.Helper()
@@ -71,31 +65,20 @@ func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) []
 	if err != nil {
 		t.Fatal(err)
 	}
-	head, err := wsp.LoadControl(ctx, store, h.workspaceID, digest.Digest(cfg.ControlGenesis), nil)
+	view, err := wsp.LoadControl(ctx, store, h.workspaceID, digest.Digest(cfg.ControlGenesis), nil)
 	if err != nil {
 		t.Fatalf("control: %v", err)
 	}
-	read := func(d digest.Digest) []byte {
-		rc, err := store.Blobs.Open(ctx, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = rc.Close() }()
-		b, err := io.ReadAll(rc)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return b
+	sv, err := wsp.LoadStates(ctx, store, view, h.workspaceID, cfg.Resource("default"))
+	if err != nil || len(sv.Heads) != 1 {
+		t.Fatalf("states: %v (%d heads)", err, len(sv.Heads))
 	}
-	ref, _, err := store.Refs.Get(ctx, "secrets-default")
+	state := sv.Heads[0]
+	o, err := store.Fetch(ctx, storage.KindState, state.Scope(), state.Digest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := wsp.VerifyState(head.Verified, h.workspaceID, "secrets/default", read(ref))
-	if err != nil {
-		t.Fatalf("state: %v", err)
-	}
-	plaintext, err := age.Decrypt(read(state.Ciphertext), x)
+	plaintext, err := age.Decrypt(o.Cipher, x)
 	if err != nil {
 		t.Fatalf("not a recipient: %v", err)
 	}

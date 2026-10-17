@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/opencontainers/go-digest"
 )
 
 func TestListHistory_Empty(t *testing.T) {
@@ -44,17 +45,17 @@ func TestListHistory_AfterAddSecret(t *testing.T) {
 	}
 }
 
-// Fixed snapshots exercise ordering and all diff categories without waiting for
+// Fixed revisions exercise ordering and all diff categories without waiting for
 // the wall clock or repeating the add/edit/delete command tests.
 func TestDiffHistory(t *testing.T) {
-	a := newHistoryTestApp(t)
+	a, revs := newHistoryTestApp(t)
 	entries, err := a.ListHistory(context.Background(), "default")
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantEntries := []HistoryEntry{
-		{Index: 1, Timestamp: time.UnixMilli(1000), Tag: snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111"},
-		{Index: 2, Timestamp: time.UnixMilli(2000), Tag: snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111"},
+		{Index: 1, Timestamp: time.Unix(1000, 0).UTC(), Tag: revs[0].Encoded()},
+		{Index: 2, Timestamp: time.Unix(2000, 0).UTC(), Tag: revs[1].Encoded()},
 	}
 	if !reflect.DeepEqual(entries, wantEntries) {
 		t.Fatalf("history = %#v, want %#v", entries, wantEntries)
@@ -80,35 +81,35 @@ func TestDiffHistory(t *testing.T) {
 	}
 }
 
-func newHistoryTestApp(t *testing.T) *App {
+// newHistoryTestApp publishes two chained revisions with fixed times, and some
+// revisions that must not show up: another environment's, and a re-encryption
+// of the same content.
+func newHistoryTestApp(t *testing.T) (*App, []digest.Digest) {
 	t.Helper()
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, nil)
-	// Insert newest first and include tags which must be ignored.
-	for _, snapshot := range []struct {
-		tag     string
-		secrets map[string]string
-	}{
-		{snapshotPrefix("default") + "2000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}},
-		{snapshotPrefix("default") + "1000000000-11111111-1111-4111-8111-111111111111", map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"}},
-		{snapshotPrefix("production") + "3000000000-11111111-1111-4111-8111-111111111111", map[string]string{"OTHER_ENV": "value"}},
-		{snapshotPrefix("default") + "invalid", map[string]string{"INVALID_TAG": "value"}},
-	} {
-		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(snapshot.secrets), []string{kp.PublicKey})
+	s, err := a.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ws := mustWorkspace(t, a)
+	publish := func(env string, at int64, secrets map[string]string, parents ...digest.Digest) digest.Digest {
+		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), []string{kp.PublicKey})
 		if err != nil {
 			t.Fatal(err)
 		}
-		signed := stateBlob(t, a, a.Storage, snapshot.tag, "default", ciphertext)
-		if err := putRef(context.Background(), a.Storage, snapshot.tag, signed, ""); err != nil {
-			t.Fatal(err)
-		}
+		return publishRevisionAt(t, a.Storage, a, ws, s.resource(env), s.head.Digest, ciphertext, at, parents...)
 	}
-	return a
+	old := publish("default", 1000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"})
+	next := publish("default", 2000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}, old)
+	publish("default", 3000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}, next) // re-encryption only
+	publish("production", 4000, map[string]string{"OTHER_ENV": "value"})
+	return a, []digest.Digest{old, next}
 }
 
 func TestRestoreHistory(t *testing.T) {
-	a := newHistoryTestApp(t)
-	// Restoration also works when the current secrets artifact is absent.
+	a, _ := newHistoryTestApp(t)
 	if err := a.RestoreHistory(context.Background(), "default", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestRestoreHistory(t *testing.T) {
 }
 
 func TestHistoryRejectsInvalidIndices(t *testing.T) {
-	a := newHistoryTestApp(t)
+	a, _ := newHistoryTestApp(t)
 	for _, index := range []int{-1, 0, 3} {
 		t.Run(fmt.Sprint(index), func(t *testing.T) {
 			for _, operation := range []struct {

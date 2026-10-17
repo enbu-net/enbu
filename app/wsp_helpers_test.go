@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"testing"
 
@@ -13,48 +12,48 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// stateBlob returns the stored bytes of a SignedState for ciphertext, signed by
-// this app's own device. It is the successor of the state currently at ref in
-// store, or a first state if there is none. Tests use it to put arbitrary
-// ciphertext behind a ref the way a legitimate writer would.
-func stateBlob(t *testing.T, a *App, store *storage.Store, ref, env string, ciphertext []byte) []byte {
+// publishRevision signs a State as author and publishes it with the given
+// ciphertext bytes, the way a writer would. control names the Control revision
+// the author claims to have seen. It returns the revision.
+func publishRevision(t *testing.T, store storage.Store, author *App, workspace, resource string, control digest.Digest, ciphertext []byte, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	ctx := context.Background()
-	cfg, err := a.loadProject()
-	if err != nil {
-		t.Fatal(err)
-	}
-	head, err := wsp.LoadControl(ctx, store, cfg.WorkspaceID, digest.Digest(cfg.ControlGenesis), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	signer, err := a.Identities.LoadSigner(cfg.WorkspaceID)
+	return publishRevisionAt(t, store, author, workspace, resource, control, ciphertext, 1700000000, parents...)
+}
+
+// publishRevisionAt is publishRevision with a fixed creation time, so history
+// ordering does not depend on the wall clock.
+func publishRevisionAt(t *testing.T, store storage.Store, author *App, workspace, resource string, control digest.Digest, ciphertext []byte, createdAt int64, parents ...digest.Digest) digest.Digest {
+	t.Helper()
+	signer, err := author.Identities.LoadSigner(workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = signer.Close() }()
-	ct, err := store.Blobs.Put(ctx, bytes.NewReader(ciphertext))
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := wsp.State{Workspace: cfg.WorkspaceID, Resource: secretsResource(env), Sequence: 1,
-		ControlGeneration: head.Generation, Control: head.Digest, Ciphertext: ct, Author: signer.Public().DeviceID()}
-	if d, _, err := store.Refs.Get(ctx, ref); err == nil {
-		prev, err := readBlob(ctx, store, d)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cur, err := wsp.VerifyState(head.Verified, cfg.WorkspaceID, st.Resource, prev)
-		if err != nil {
-			t.Fatal(err)
-		}
-		st.Sequence, st.Previous = cur.Sequence+1, cur.Digest
-	}
+	st := wsp.State{Workspace: workspace, Resource: resource, Parents: parents, Control: control,
+		Ciphertext: digest.FromBytes(ciphertext), Author: signer.Public().DeviceID(), CreatedAt: createdAt}
 	blob, err := wsp.SignState(st, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return blob
+	rev := digest.FromBytes(blob)
+	if err := store.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Signed: blob, Cipher: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+	return rev
+}
+
+// revisionsOf lists the revisions storage shows for env.
+func revisionsOf(t *testing.T, a *App, env string) []digest.Digest {
+	t.Helper()
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	revs, err := a.Storage.Discover(bg, storage.KindState, storage.StateScope(cfg.WorkspaceID, cfg.Resource(env)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return revs
 }
 
 var bg = context.Background()
@@ -107,32 +106,4 @@ func mustWorkspace(t *testing.T, a *App) string {
 		t.Fatal(err)
 	}
 	return id
-}
-
-// signAsOutsider builds a state with the attacker's own valid signature.
-func signAsOutsider(t *testing.T, alice, attacker *App, env string, ciphertext []byte) []byte {
-	t.Helper()
-	cfg, _ := attacker.loadProject()
-	signer, err := attacker.Identities.LoadSigner(cfg.WorkspaceID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = signer.Close() }()
-	s, err := alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ct, err := alice.Storage.Blobs.Put(bg, bytes.NewReader(ciphertext))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A first state for env with the attacker's own valid signature; only the
-	// author is wrong, so a rejection can only be about who signed it.
-	blob, err := wsp.SignState(wsp.State{Workspace: cfg.WorkspaceID, Resource: secretsResource(env), Sequence: 1,
-		ControlGeneration: s.head.Generation, Control: s.head.Digest, Ciphertext: ct, Author: signer.Public().DeviceID()}, signer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return blob
 }

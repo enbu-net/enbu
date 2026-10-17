@@ -8,22 +8,17 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
-
-type failingStorage struct {
-	storagetest.Objects
-	cause error
-}
-
-func (s *failingStorage) Get(context.Context, string) ([]byte, storage.Version, error) {
-	return nil, "", s.cause
-}
 
 func TestExportedOperationNormalizesUnknownError(t *testing.T) {
 	cause := errors.New("backend failed")
-	a := &App{Storage: newMemRegistry()}
-	prepareApp(t, a, "default")
-	a.Storage = storagetest.FromObjects(&failingStorage{cause: cause})
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+		Fetch: func(context.Context, storage.Store, storage.Kind, string, digest.Digest) (storage.Object, error) {
+			return storage.Object{}, cause
+		},
+	})
 	_, err := a.ListRecipients(context.Background())
 	var appErr *apperr.Error
 	if !errors.As(err, &appErr) {
