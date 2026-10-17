@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"time"
@@ -112,12 +113,12 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	if _, ok := s.head.Principal(device); !ok {
 		// Not a member: leave a request an admin can pick from a list. It carries
 		// no authority, so anyone able to write to storage can do the same.
-		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, time.Now(), signer)
+		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, now(), signer)
 		if err != nil {
 			return nil, err
 		}
-		if err := putRef(ctx, store, wsp.JoinRequestRef(device), blob, ""); err != nil && !errors.Is(err, storage.ErrConflict) {
-			return nil, storageError(err)
+		if err := a.leaveJoinRequest(ctx, store, device, blob); err != nil {
+			return nil, err
 		}
 		result.Mode, result.Pending = "join", true
 		if _, _, err := store.Refs.Get(ctx, ref); err == nil {
@@ -189,5 +190,27 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		return err
 	}
 	s.head = head
+	return nil
+}
+
+// now is the clock for join requests; tests move it.
+var now = time.Now
+
+// leaveJoinRequest publishes the request, replacing one this device left
+// earlier (an earlier init, or a membership that was removed since), so the
+// admin sees when the device last asked rather than when it first did.
+func (a *App) leaveJoinRequest(ctx context.Context, store *storage.Store, device signing.DeviceID, blob []byte) error {
+	ref := wsp.JoinRequestRef(device)
+	err := putRef(ctx, store, ref, blob, "")
+	if errors.Is(err, storage.ErrConflict) {
+		_, version, getErr := store.Refs.Get(ctx, ref)
+		if getErr != nil {
+			return storageError(getErr)
+		}
+		err = putRef(ctx, store, ref, blob, version)
+	}
+	if err != nil {
+		return storageError(err)
+	}
 	return nil
 }
