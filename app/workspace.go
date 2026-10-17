@@ -151,11 +151,32 @@ type stateRead struct {
 // ciphertext. With current set the state must not be older than what this
 // device accepted, and is recorded as accepted; history snapshots are older by
 // design and skip that check.
+//
+// The checkpoint is shared by every enbu process of this device. Another
+// process (the GUI, a script) can publish and accept a newer state between
+// this one fetching the ref and comparing the state with the checkpoint. That
+// is not storage rolling back, so on a mismatch the ref is fetched again and
+// only a storage that keeps serving the same old state is reported.
 func (s *session) readState(ctx context.Context, ref, env string, current bool) (*stateRead, error) {
-	d, version, err := s.store.Refs.Get(ctx, ref)
-	if err != nil {
-		return nil, storageError(err)
+	var last digest.Digest
+	for attempt := 0; ; attempt++ {
+		d, version, err := s.store.Refs.Get(ctx, ref)
+		if err != nil {
+			return nil, storageError(err)
+		}
+		read, err := s.readStateAt(ctx, ref, env, d, version, current)
+		if !current || !errors.Is(err, wsp.ErrRollback) || d == last || attempt >= maxSiblingRetries {
+			return read, err
+		}
+		last = d // storage moved on since the fetch that looked old; look again
 	}
+}
+
+// maxSiblingRetries bounds how often a read follows a ref that keeps moving
+// under it before giving up.
+const maxSiblingRetries = 3
+
+func (s *session) readStateAt(ctx context.Context, ref, env string, d digest.Digest, version storage.Version, current bool) (*stateRead, error) {
 	blob, err := s.readBlob(ctx, ref, d)
 	if err != nil {
 		return nil, err
@@ -286,6 +307,13 @@ func (s *session) writeState(ctx context.Context, ref, env string, secrets map[s
 		return "", err
 	}
 	if err := s.cps.CheckState(st); err != nil {
+		// Another process of this device may have published and accepted a
+		// state at this sequence since the read: then the ref has moved and the
+		// caller should retry on it, like any lost race. Only a ref that still
+		// names what was read is storage disagreeing with the checkpoint.
+		if moved, lookErr := s.refMoved(ctx, ref, cur); lookErr == nil && moved {
+			return "", apperr.Wrap(apperr.CodeConflict, "another update landed first", storage.ErrConflict, nil)
+		}
 		return "", wspError(err)
 	}
 	stateDigest, err := s.store.Blobs.Put(ctx, bytes.NewReader(blob))
@@ -299,13 +327,60 @@ func (s *session) writeState(ctx context.Context, ref, env string, secrets map[s
 	// update can land on top of ours. Look once more: if the ref no longer names
 	// our state we lost, and the caller retries from what is there now instead
 	// of recording a state nobody will read.
+	// A newer ref that descends from our state is not a loss: another process
+	// read what we published and built on it, so the update is in storage.
 	if now, _, err := s.store.Refs.Get(ctx, ref); err != nil {
 		return "", storageError(err)
 	} else if now != stateDigest {
-		return "", apperr.Wrap(apperr.CodeConflict, "another update replaced this one", storage.ErrConflict, nil)
+		if descends, err := s.descendsFrom(ctx, ref, env, now, st); err != nil || !descends {
+			cause := storage.ErrConflict
+			if err != nil {
+				cause = fmt.Errorf("%w: %w", storage.ErrConflict, err)
+			}
+			return "", apperr.Wrap(apperr.CodeConflict, "another update replaced this one", cause, nil)
+		}
+		// The checkpoint already names the newer state (or will, when that
+		// process records it); ours needs no record of its own.
+		return stateDigest, nil
 	}
 	if err := s.cps.AcceptState(st); err != nil {
 		return "", wspError(err)
 	}
 	return stateDigest, nil
+}
+
+// refMoved reports whether ref no longer names the state a write started from.
+func (s *session) refMoved(ctx context.Context, ref string, cur *stateRead) (bool, error) {
+	now, _, err := s.store.Refs.Get(ctx, ref)
+	if errors.Is(err, storage.ErrNotFound) {
+		return cur != nil, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return cur == nil || now != cur.state.Digest, nil
+}
+
+// descendsFrom reports whether the state named head has ours among its
+// ancestors, following Previous links while the sequence stays above ours.
+func (s *session) descendsFrom(ctx context.Context, ref, env string, head digest.Digest, ours *wsp.VerifiedState) (bool, error) {
+	d := head
+	for range maxSiblingRetries + 1 {
+		if d == ours.Digest {
+			return true, nil
+		}
+		blob, err := s.readBlob(ctx, ref, d)
+		if err != nil {
+			return false, err
+		}
+		st, err := s.verifyHistorical(ctx, env, blob)
+		if err != nil {
+			return false, err
+		}
+		if st.Sequence <= ours.Sequence || st.Previous == "" {
+			return false, nil
+		}
+		d = st.Previous
+	}
+	return false, nil
 }
