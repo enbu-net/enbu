@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -92,8 +95,19 @@ type ConflictCandidate struct {
 	Deleted bool   `json:"deleted"`
 }
 
+// ConflictSet is what a person looked at when deciding: the conflicted keys and
+// the heads they were computed from. ResolveSecrets must be given the same
+// Heads, so a value that appeared since is shown to the person rather than
+// swept away by a choice made without seeing it.
+type ConflictSet struct {
+	// ID is a short name for Heads, for a person to repeat back when deciding.
+	ID        string           `json:"id"`
+	Heads     []string         `json:"heads"`
+	Conflicts []SecretConflict `json:"conflicts"`
+}
+
 // ListConflicts returns the keys of env that are waiting for a decision.
-func (a *App) ListConflicts(ctx context.Context, env string) (conflicts []SecretConflict, err error) {
+func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, err error) {
 	defer apperr.NormalizeInto(&err)
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
@@ -106,12 +120,27 @@ func (a *App) ListConflicts(ctx context.Context, env string) (conflicts []Secret
 	defer s.Close()
 	read, err := s.readResource(ctx, resolved.Name, nil, true)
 	if IsNotFoundError(err) {
-		return nil, nil
+		return &ConflictSet{}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return toSecretConflicts(read.conflicts), nil
+	heads := headNames(read.parents())
+	return &ConflictSet{ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
+}
+
+func conflictID(heads []string) string {
+	sum := sha256.Sum256([]byte(strings.Join(heads, "\n")))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+func headNames(heads []digest.Digest) []string {
+	out := make([]string, len(heads))
+	for i, h := range heads {
+		out[i] = h.Encoded()
+	}
+	slices.Sort(out)
+	return out
 }
 
 // SecretChoice settles one conflicted key with a value, or by deleting it.
@@ -122,14 +151,20 @@ type SecretChoice struct {
 
 // ResolveSecrets settles every conflicted key of env and publishes the result
 // as a revision that merges all heads. Every conflict must be settled at once:
-// a merge revision holds one value per key.
-func (a *App) ResolveSecrets(ctx context.Context, env string, choices map[string]SecretChoice) (err error) {
+// a merge revision holds one value per key. seen is ConflictSet.Heads from the
+// listing the choices were made from; if the heads are different now, nothing
+// is published and the person looks again.
+func (a *App) ResolveSecrets(ctx context.Context, env string, seen []string, choices map[string]SecretChoice) (err error) {
 	defer apperr.NormalizeInto(&err)
+	if len(seen) == 0 {
+		return apperr.New(apperr.CodeInvalidArgument, "resolving needs the heads of the conflicts that were listed", nil)
+	}
+	slices.Sort(seen)
 	picked := make(map[string]merge.Choice, len(choices))
 	for k, c := range choices {
 		picked[k] = merge.Choice{Value: c.Value, Delete: c.Delete}
 	}
-	return a.changeSecretWith(ctx, env, "resolve", picked, func(map[string]string) error { return nil })
+	return a.changeSecretWith(ctx, env, "resolve", picked, seen, func(map[string]string) error { return nil })
 }
 
 func toSecretConflicts(cs []merge.Conflict) []SecretConflict {
@@ -156,7 +191,7 @@ func conflictError(cs []merge.Conflict) error {
 }
 
 func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[string]string) error) error {
-	return a.changeSecretWith(ctx, env, op, nil, change)
+	return a.changeSecretWith(ctx, env, op, nil, nil, change)
 }
 
 // changeSecretWith reads the merged content, applies change, and publishes the
@@ -164,7 +199,7 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 // overwrites: if another writer published meanwhile, both revisions exist and
 // whichever reads next merges them. Before publishing it looks once more, so a
 // head that appeared during the edit is merged now rather than left for later.
-func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[string]merge.Choice, change func(map[string]string) error) error {
+func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[string]merge.Choice, seen []string, change func(map[string]string) error) error {
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
 		return err
@@ -201,6 +236,9 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 			}
 			secrets = map[string]string{}
 		} else {
+			if seen != nil && !slices.Equal(headNames(cur.parents()), seen) {
+				return apperr.New(apperr.CodeConflict, "the conflicts changed since you looked at them; run 'enbu resolve' again to see the new values", nil)
+			}
 			if err := conflictError(cur.conflicts); err != nil {
 				return err
 			}

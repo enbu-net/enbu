@@ -135,10 +135,11 @@ func TestConcurrentEditsOfOneKeyStopForAPersonToChoose(t *testing.T) {
 			t.Fatalf("write on a conflict: %v", err)
 		}
 	}
-	conflicts, err := bob.ListConflicts(bg, "default")
-	if err != nil || len(conflicts) != 1 || conflicts[0].Key != "KEY" || len(conflicts[0].Candidates) != 2 {
-		t.Fatalf("conflicts = %+v %v", conflicts, err)
+	set, err := bob.ListConflicts(bg, "default")
+	if err != nil || len(set.Conflicts) != 1 || set.Conflicts[0].Key != "KEY" || len(set.Conflicts[0].Candidates) != 2 {
+		t.Fatalf("conflicts = %+v %v", set, err)
 	}
+	conflicts := set.Conflicts
 	values := map[string]bool{}
 	for _, c := range conflicts[0].Candidates {
 		values[c.Value] = true
@@ -148,10 +149,10 @@ func TestConcurrentEditsOfOneKeyStopForAPersonToChoose(t *testing.T) {
 	}
 
 	// Settling every conflict publishes a merge revision.
-	if err := bob.ResolveSecrets(bg, "default", map[string]SecretChoice{}); !apperr.Is(err, apperr.CodeSecretConflict) {
+	if err := bob.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{}); !apperr.Is(err, apperr.CodeSecretConflict) {
 		t.Fatalf("resolving nothing: %v", err)
 	}
-	if err := bob.ResolveSecrets(bg, "default", map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
+	if err := bob.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, who := range []*App{alice, bob} {
@@ -171,18 +172,18 @@ func TestResolveCanDeleteAndLateWritesStillConflict(t *testing.T) {
 	if err := alice.EditSecret(bg, "default", "KEY", "kept"); err != nil {
 		t.Fatal(err)
 	}
-	conflicts, err := alice.ListConflicts(bg, "default")
-	if err != nil || len(conflicts) != 1 {
-		t.Fatalf("delete against edit: %+v %v", conflicts, err)
+	set, err := alice.ListConflicts(bg, "default")
+	if err != nil || len(set.Conflicts) != 1 {
+		t.Fatalf("delete against edit: %+v %v", set, err)
 	}
 	deleted := false
-	for _, c := range conflicts[0].Candidates {
+	for _, c := range set.Conflicts[0].Candidates {
 		deleted = deleted || c.Deleted
 	}
 	if !deleted {
 		t.Fatal("the deletion is not offered as a candidate")
 	}
-	if err := alice.ResolveSecrets(bg, "default", map[string]SecretChoice{"KEY": {Delete: true}}); err != nil {
+	if err := alice.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Delete: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := listOK(t, bob); len(got) != 0 {
@@ -250,3 +251,50 @@ func TestSecretsChangingEveryAttemptEventuallyReportsAConflict(t *testing.T) {
 }
 
 var _ = digest.Digest("")
+
+// A choice is made against the values the person saw. If another value shows up
+// before they decide, it must not be swept away by a choice made without it.
+func TestResolveRefusesWhenAValueAppearedAfterTheListing(t *testing.T) {
+	alice, bob := sharedWorkspace(t)
+	raceOnPublish(alice, func() {
+		if err := bob.EditSecret(bg, "default", "KEY", "bob's"); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := alice.EditSecret(bg, "default", "KEY", "alice's"); err != nil {
+		t.Fatal(err)
+	}
+	set, err := alice.ListConflicts(bg, "default")
+	if err != nil || len(set.Conflicts) != 1 || set.ID == "" {
+		t.Fatalf("listing: %+v %v", set, err)
+	}
+
+	// A third value for KEY arrives, written from the same base as the others.
+	s, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	read, err := s.readResource(bg, "default", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := encryptForTest(s, map[string]string{"KEY": "carol's"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseRev := read.heads[0].Parents
+	publishRevision(t, alice.Storage, bob, s.workspace, s.resource("default"), s.head.Digest, third, baseRev...)
+
+	err = alice.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}})
+	if !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("resolving against a stale listing: %v", err)
+	}
+	fresh, err := alice.ListConflicts(bg, "default")
+	if err != nil || fresh.ID == set.ID || len(fresh.Conflicts[0].Candidates) != 3 {
+		t.Fatalf("the new value is not offered: %+v %v", fresh, err)
+	}
+	if err := alice.ResolveSecrets(bg, "default", fresh.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
+		t.Fatalf("resolving the listing that was shown: %v", err)
+	}
+}
