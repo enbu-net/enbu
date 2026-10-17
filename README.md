@@ -86,6 +86,21 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 
 `add` creates a new secret and fails if the key already exists. Use `edit` to update an existing secret.
 
+Leave out the value to keep it off the command line and out of shell history:
+`enbu add API_KEY` asks for it with a hidden prompt, reads it from stdin when
+piped, or takes it from `--value-file PATH` (`-` for stdin). Multi-line values
+such as certificates work this way.
+
+To bring an existing `.env` into enbu at once:
+
+```bash
+enbu import            # reads .env of the current environment
+enbu import app.env    # or any dotenv file, "-" for stdin
+```
+
+Variables that already exist with the same value are left alone; one with a
+different value stops the import unless you pass `--overwrite`.
+
 ### 4. Delete secrets
 
 ```bash
