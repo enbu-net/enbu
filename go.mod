@@ -16,7 +16,7 @@ require (
 	github.com/deploymenttheory/go-sdk-vtpm2 v1.0.2
 	github.com/ebitengine/purego v0.11.1
 	github.com/fxamacker/cbor/v2 v2.9.6
-	github.com/goccy/tobari v0.13.0
+	github.com/goccy/tobari v0.14.0
 	github.com/google/go-github/v92 v92.0.0
 	github.com/google/go-tpm v0.9.8
 	github.com/minio/minio-go/v7 v7.3.0
