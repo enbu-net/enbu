@@ -99,6 +99,11 @@ enbu pull  # Writes to .env file
 enbu pull --env dev  # Writes to the configured output for dev
 ```
 
+Variables the file already holds that enbu does not store (a local `DEBUG=1`,
+say) are kept below a marker and listed on stderr, so a pull never throws them
+away silently. `enbu pull --replace` overwrites the file completely. A file that
+is not valid dotenv is not overwritten without `--replace`.
+
 ### 6. Add a team member
 
 Being able to write to storage does not make anyone a member. A new member runs `enbu init`
