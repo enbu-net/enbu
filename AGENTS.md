@@ -62,7 +62,7 @@ test/                    → scenario tests (build tag: scenario)
 - Each secret state (`secrets-{env}`) is a SignedState naming the ciphertext blob; readers verify author, signature and the local checkpoint before decrypting. The signing key is separate from the encryption key and never stored in Storage
 - New devices leave a self-signed `request-{device-id}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
 - `enbu switch` manages environments (create, switch, delete, rename) with state tracked in `enbu.toml` (shared) and `.enbu.local` (per-user)
-- Access control is delegated to OPA/Rego policy evaluated at sync time — not per-environment recipient lists
+- Recipients are shared across environments: there are no per-environment recipient lists, and no policy engine (an OPA/Rego policy is only an idea in the README's planned list)
 - `sync` command re-encrypts for all recipients with optimistic concurrency (digest-based conflict detection + exponential backoff retry)
 - Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
 - Only age X25519 keys are used — no SSH key support
