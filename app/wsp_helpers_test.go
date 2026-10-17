@@ -36,7 +36,7 @@ func publishRevisionAt(t *testing.T, store storage.Store, author *App, workspace
 		t.Fatal(err)
 	}
 	rev := digest.FromBytes(blob)
-	if err := store.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Signed: blob, Cipher: ciphertext}); err != nil {
+	if err := store.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}); err != nil {
 		t.Fatal(err)
 	}
 	return rev

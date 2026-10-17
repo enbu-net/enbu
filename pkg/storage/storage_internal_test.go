@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,8 +13,12 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func testObject(kind Kind, scope, signed, cipher string) Object {
-	return Object{Kind: kind, Scope: scope, Rev: digest.FromString(signed), Signed: []byte(signed), Cipher: []byte(cipher)}
+func testObject(kind Kind, scope, head string, blobs ...string) Object {
+	o := Object{Kind: kind, Scope: scope, Rev: digest.FromString(head), Head: []byte(head)}
+	for _, b := range blobs {
+		o.Blobs = append(o.Blobs, []byte(b))
+	}
+	return o
 }
 
 func TestNameAndPrefix(t *testing.T) {
@@ -72,16 +77,20 @@ func TestStateScopeDependsOnWorkspaceAndResource(t *testing.T) {
 
 func TestValidateObject(t *testing.T) {
 	scope := StateScope("ws", "r")
-	good := testObject(KindState, scope, "signed", "cipher")
+	good := testObject(KindState, scope, "head", "blob")
 	if err := ValidateObject(good); err != nil {
 		t.Fatal(err)
 	}
 	cases := map[string]func(*Object){
-		"wrong digest":         func(o *Object) { o.Rev = digest.FromString("other") },
-		"empty signed":         func(o *Object) { o.Signed = nil },
-		"state without cipher": func(o *Object) { o.Cipher = nil },
-		"oversized cipher":     func(o *Object) { o.Cipher = bytes.Repeat([]byte("x"), MaxPayloadBytes+1) },
-		"bad scope":            func(o *Object) { o.Scope = "bad" },
+		"wrong digest":    func(o *Object) { o.Rev = digest.FromString("other") },
+		"empty head":      func(o *Object) { o.Head = nil },
+		"oversized head":  func(o *Object) { o.Head = bytes.Repeat([]byte("x"), MaxHeadBytes+1) },
+		"oversized blob":  func(o *Object) { o.Blobs = [][]byte{bytes.Repeat([]byte("x"), MaxPayloadBytes+1)} },
+		"empty blob":      func(o *Object) { o.Blobs = [][]byte{{}} },
+		"too many blobs":  func(o *Object) { o.Blobs = make([][]byte, MaxBlobs+1) },
+		"bad scope":       func(o *Object) { o.Scope = "bad" },
+		"unknown kind":    func(o *Object) { o.Kind = "other" },
+		"scope on a head": func(o *Object) { o.Kind = KindControl },
 	}
 	for name, mutate := range cases {
 		o := good
@@ -90,25 +99,62 @@ func TestValidateObject(t *testing.T) {
 			t.Fatalf("%s accepted", name)
 		}
 	}
-	control := testObject(KindControl, "", "signed", "")
-	if err := ValidateObject(control); err != nil {
-		t.Fatal(err)
-	}
-	control.Cipher = []byte("x")
-	if err := ValidateObject(control); err == nil {
-		t.Fatal("control with ciphertext accepted")
+	// What a state or a control may attach is the protocol's business, not storage's.
+	for _, o := range []Object{testObject(KindControl, "", "head"), testObject(KindControl, "", "head", "x", "y"), testObject(KindState, scope, "head")} {
+		if err := ValidateObject(o); err != nil {
+			t.Fatalf("%s with %d blobs: %v", o.Kind, len(o.Blobs), err)
+		}
 	}
 }
 
-func TestFrameRoundTripAndRejectsMalformed(t *testing.T) {
+func TestFrameLayoutReachesEachPartWithoutTheOthers(t *testing.T) {
 	scope := StateScope("ws", "r")
-	o := testObject(KindState, scope, "signed", "cipher")
-	got, err := unframe(o.Kind, o.Scope, o.Rev, frame(o))
-	if err != nil || !bytes.Equal(got.Signed, o.Signed) || !bytes.Equal(got.Cipher, o.Cipher) {
-		t.Fatalf("round trip: %v", err)
+	o := testObject(KindState, scope, "the head", "first", "second blob")
+	data := frame(o)
+	r := bytes.NewReader(data)
+	head, layout, err := readHead(r, int64(len(data)), o.Rev)
+	if err != nil || string(head) != "the head" {
+		t.Fatalf("head = %q %v", head, err)
 	}
-	for name, data := range map[string][]byte{"empty": nil, "zero length": {0}, "length past end": {200, 1}, "tampered": append([]byte{6}, []byte("signeX")...)} {
-		if _, err := unframe(o.Kind, o.Scope, o.Rev, data); !errors.Is(err, ErrCorrupt) {
+	for i, want := range []string{"first", "second blob"} {
+		section, err := blobSection(r, layout, i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]byte, section.Size())
+		if _, err := section.ReadAt(got, 0); err != nil && string(got) != want {
+			t.Fatalf("blob %d = %q %v", i, got, err)
+		}
+		if string(got) != want {
+			t.Fatalf("blob %d = %q", i, got)
+		}
+	}
+	if _, err := blobSection(r, layout, 2); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a blob past the end: %v", err)
+	}
+}
+
+func TestFrameRejectsMalformedAndTampered(t *testing.T) {
+	scope := StateScope("ws", "r")
+	o := testObject(KindState, scope, "the head", "blob")
+	good := frame(o)
+	tampered := append([]byte(nil), good...)
+	tampered[len(tampered)-6] ^= 1 // inside the head
+	for name, data := range map[string][]byte{
+		"empty":           nil,
+		"zero parts":      {0},
+		"too many parts":  {200, 1},
+		"length past end": append([]byte{1, 100}, 'x'),
+		"trailing bytes":  append(append([]byte(nil), good...), 'x'),
+		"short":           good[:len(good)-1],
+		"tampered head":   tampered,
+		// 2^64-1 as a length: it must be refused before it is added to anything.
+		"length of 2^64-1":  {2, 5, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
+		"blob over the cap": append([]byte{2, 1}, append(binary.AppendUvarint(nil, MaxPayloadBytes+1), 'x')...),
+		"head over the cap": append([]byte{1}, append(binary.AppendUvarint(nil, MaxHeadBytes+1), 'x')...),
+		"zero-length head":  {1, 0},
+	} {
+		if _, _, err := readHead(bytes.NewReader(data), int64(len(data)), o.Rev); !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
@@ -118,7 +164,7 @@ func TestLocalRejectsCorruptionAndSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	st := NewLocal(dir)
 	ctx := context.Background()
-	o := testObject(KindControl, "", "signed-control", "")
+	o := testObject(KindControl, "", "head-control")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +174,7 @@ func TestLocalRejectsCorruptionAndSymlinks(t *testing.T) {
 	if err := os.WriteFile(path, []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Fetch(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, ErrCorrupt) {
+	if _, err := st.FetchHead(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, ErrCorrupt) {
 		t.Fatalf("garbage file: %v", err)
 	}
 	if err := st.Publish(ctx, o); !errors.Is(err, ErrCorrupt) {
@@ -145,7 +191,7 @@ func TestLocalRejectsCorruptionAndSymlinks(t *testing.T) {
 	if err := os.Symlink(target, path); err != nil {
 		t.Skip("symlinks are not available:", err)
 	}
-	if _, err := st.Fetch(ctx, o.Kind, o.Scope, o.Rev); err == nil || errors.Is(err, ErrNotFound) {
+	if _, err := st.FetchHead(ctx, o.Kind, o.Scope, o.Rev); err == nil || errors.Is(err, ErrNotFound) {
 		t.Fatalf("symlink followed: %v", err)
 	}
 }
@@ -154,7 +200,7 @@ func TestLocalDiscoverIgnoresForeignFiles(t *testing.T) {
 	dir := t.TempDir()
 	st := NewLocal(dir)
 	ctx := context.Background()
-	o := testObject(KindRequest, "", "signed-request", "")
+	o := testObject(KindRequest, "", "head-request")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}

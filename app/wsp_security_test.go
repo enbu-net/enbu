@@ -98,7 +98,7 @@ func TestRecipientInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Head: forged}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -114,11 +114,11 @@ func TestRecipientInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest)
+	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := age.Decrypt(o.Cipher, attacker.Identity); err == nil {
+	if _, err := age.Decrypt(ciphertext, attacker.Identity); err == nil {
 		t.Fatal("injected recipient can decrypt")
 	}
 }
@@ -143,7 +143,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	resource := s.resource("default")
 	t.Run("unsigned state", func(t *testing.T) {
 		junk := []byte("not a signed state")
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Signed: junk, Cipher: forged}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Blobs: [][]byte{forged}}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
@@ -361,7 +361,7 @@ func foundingApp(t *testing.T, publish func(ctx context.Context, data []byte) er
 	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
 		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
 			if o.Kind == storage.KindControl && publish != nil {
-				if err := publish(ctx, o.Signed); err != nil {
+				if err := publish(ctx, o.Head); err != nil {
 					return err
 				}
 			}

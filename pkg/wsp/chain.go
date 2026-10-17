@@ -81,11 +81,11 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 	if err := validDigest(genesis); err != nil {
 		return nil, invalid("trusted genesis digest: %v", err)
 	}
-	obj, err := store.Fetch(ctx, storage.KindControl, "", genesis)
+	genesisBlob, err := store.FetchHead(ctx, storage.KindControl, "", genesis)
 	if err != nil {
 		return nil, fmt.Errorf("reading genesis control: %w", err)
 	}
-	root, err := VerifyGenesis(workspace, obj.Signed, genesis)
+	root, err := VerifyGenesis(workspace, genesisBlob, genesis)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 		return nil, err
 	}
 	pending := map[digest.Digest]pendingControl{}
-	total := len(obj.Signed)
+	total := len(genesisBlob)
 	load := func(rev digest.Digest) error {
 		if _, done := view.verified[rev]; done {
 			return nil
@@ -107,15 +107,15 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 		if len(pending) >= maxControls || total > maxControlBytes {
 			return invalid("control DAG is too large")
 		}
-		o, err := store.Fetch(ctx, storage.KindControl, "", rev)
+		blob, err := store.FetchHead(ctx, storage.KindControl, "", rev)
 		switch {
 		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
 			return nil // listed but unavailable or damaged: it carries no authority
 		case err != nil:
 			return err
 		}
-		total += len(o.Signed)
-		s, err := DecodeSigned(o.Signed)
+		total += len(blob)
+		s, err := DecodeSigned(blob)
 		if err != nil {
 			return nil
 		}
@@ -123,7 +123,7 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 		if err != nil || c.Workspace != workspace {
 			return nil
 		}
-		pending[rev] = pendingControl{blob: o.Signed, c: c}
+		pending[rev] = pendingControl{blob: blob, c: c}
 		return nil
 	}
 	for _, rev := range revs {
@@ -218,7 +218,7 @@ func NewGenesis(workspace string, founder Principal, signer signing.Signer) ([]b
 }
 
 func publishControl(ctx context.Context, store storage.Store, blob []byte) error {
-	return store.Publish(ctx, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(blob), Signed: blob})
+	return store.Publish(ctx, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(blob), Head: blob})
 }
 
 // PublishGenesis stores a genesis Control from NewGenesis.

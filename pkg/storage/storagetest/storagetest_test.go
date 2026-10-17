@@ -26,7 +26,7 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 			return nil, nil // stale listing
 		},
 	})
-	o := Object(storage.KindControl, "", "signed", "")
+	o := Object(storage.KindControl, "", "head")
 	if err := wrapped.Publish(ctx, o); !errors.Is(err, boom) {
 		t.Fatalf("first publish: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 	if revs, _ := base.Discover(ctx, storage.KindControl, ""); len(revs) != 1 {
 		t.Fatal("the base store lost the revision")
 	}
-	if _, err := wrapped.Fetch(ctx, o.Kind, o.Scope, o.Rev); err != nil {
+	if _, err := wrapped.FetchHead(ctx, o.Kind, o.Scope, o.Rev); err != nil {
 		t.Fatalf("fetch passes through: %v", err)
 	}
 }

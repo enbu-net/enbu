@@ -59,8 +59,8 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 					case "storage":
 						a.Storage = storagetest.Wrap(base, storagetest.Hooks{
 							Publish: countWrites,
-							Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
-								return storage.Object{}, cause
+							FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+								return nil, cause
 							},
 							Discover: func(context.Context, storage.Store, storage.Kind, string) ([]digest.Digest, error) {
 								return nil, cause
@@ -129,11 +129,11 @@ func TestSecretWritesRejectUntrustedControl(t *testing.T) {
 			genesis := digest.Digest(cfg.ControlGenesis)
 			// The genesis object is replaced by bytes that are not that control.
 			a.Storage = storagetest.Wrap(base, storagetest.Hooks{
-				Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+				FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 					if kind == storage.KindControl && rev == genesis {
-						return storage.Object{Kind: kind, Rev: rev, Signed: []byte("not a control")}, nil
+						return []byte("not a control"), nil
 					}
-					return next.Fetch(ctx, kind, scope, rev)
+					return next.FetchHead(ctx, kind, scope, rev)
 				},
 				Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
 					writes++

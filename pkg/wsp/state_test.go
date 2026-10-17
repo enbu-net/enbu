@@ -3,6 +3,8 @@ package wsp
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -43,7 +45,7 @@ func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) di
 		t.Fatal(err)
 	}
 	rev := digest.FromBytes(blob)
-	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Signed: blob, Cipher: []byte(cipher)}); err != nil {
+	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{[]byte(cipher)}}); err != nil {
 		t.Fatal(err)
 	}
 	return rev
@@ -235,5 +237,52 @@ func TestLoadStatesReportsAParentStorageCannotProduce(t *testing.T) {
 	}
 	if m := sv.Graph.Missing(); len(m) != 1 || m[0] != root {
 		t.Fatalf("missing = %v", m)
+	}
+}
+
+func TestReadCiphertextChecksTheBlobAgainstTheSignedState(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	rev := f.publish(t, f.state(f.alice), f.alice, "the ciphertext")
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := sv.States[rev]
+	got, err := ReadCiphertext(ctx, f.store, st)
+	if err != nil || string(got) != "the ciphertext" {
+		t.Fatalf("ciphertext = %q %v", got, err)
+	}
+	// Storage serves other bytes under the revision: the State names the digest.
+	swapped := storagetest.Wrap(f.store, storagetest.Hooks{
+		OpenBlob: func(context.Context, storage.Store, storage.Kind, string, digest.Digest, int) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("another ciphertext")), nil
+		},
+	})
+	if _, err := ReadCiphertext(ctx, swapped, st); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("swapped ciphertext: %v", err)
+	}
+}
+
+// Reading the DAG must not transfer ciphertexts: only the heads are needed to
+// find heads and merge bases.
+func TestLoadStatesNeverOpensABlob(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	f.publish(t, f.state(f.bob, root), f.bob, "child")
+	opened := 0
+	counting := storagetest.Wrap(f.store, storagetest.Hooks{
+		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+			opened++
+			return next.OpenBlob(ctx, kind, scope, rev, index)
+		},
+	})
+	sv, err := LoadStates(ctx, counting, f.view, testWorkspace, testResource)
+	if err != nil || len(sv.States) != 2 {
+		t.Fatalf("load: %v", err)
+	}
+	if opened != 0 {
+		t.Fatalf("%d blobs were opened while building the DAG", opened)
 	}
 }

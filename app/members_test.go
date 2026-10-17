@@ -138,7 +138,7 @@ func TestForgedControlIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Head: forged}); err != nil {
 		t.Fatal(err)
 	}
 	members, err := alice.ListMembers(bg)

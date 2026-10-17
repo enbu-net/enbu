@@ -73,11 +73,11 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o, err := alice.Storage.Fetch(bg, storage.KindState, read.heads[0].Scope(), rev)
+	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), rev, 0, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := decryptSecretsObject(o.Cipher, stranger); err == nil {
+	if _, err := decryptSecretsObject(ciphertext, stranger); err == nil {
 		t.Fatal("an identity outside the control decrypted the state")
 	}
 	if got := s.head.Recipients(); len(got) != 1 {
@@ -107,7 +107,7 @@ func TestSessionIgnoresRevisionsWithoutAuthority(t *testing.T) {
 
 	// Real ciphertext for the real recipients inside a "state" nobody signed.
 	garbage := []byte("not a signed state")
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Signed: garbage, Cipher: raw}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Head: garbage, Blobs: [][]byte{raw}}); err != nil {
 		t.Fatal(err)
 	}
 	// A valid signature by a device that is not a principal.
@@ -132,13 +132,17 @@ func TestSessionRejectsStateOfAnotherResource(t *testing.T) {
 	defer s.Close()
 	rev := writeStaging(t, s, map[string]string{"A": "1"})
 	src := storage.StateScope(s.workspace, s.resource(stagingEnv))
-	o, err := alice.Storage.Fetch(bg, storage.KindState, src, rev)
+	head, err := alice.Storage.FetchHead(bg, storage.KindState, src, rev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, src, rev, 0, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Replaying a genuine staging state as the dev environment must fail.
-	o.Scope = storage.StateScope(s.workspace, s.resource("dev"))
-	if err := alice.Storage.Publish(bg, o); err != nil {
+	replay := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(s.workspace, s.resource("dev")), Rev: rev, Head: head, Blobs: [][]byte{ciphertext}}
+	if err := alice.Storage.Publish(bg, replay); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.readResource(bg, "dev", nil, true); !IsNotFoundError(err) {
@@ -166,11 +170,11 @@ func hide(base storage.Store, hidden ...digest.Digest) storage.Store {
 			}
 			return out, err
 		},
-		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 			if is(rev) {
-				return storage.Object{}, storage.ErrNotFound
+				return nil, storage.ErrNotFound
 			}
-			return next.Fetch(ctx, kind, scope, rev)
+			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
 }
@@ -267,7 +271,7 @@ func TestOpenControlIgnoresForgedControl(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Signed: forged}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(forged), Head: forged}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := alice.openControl(bg)

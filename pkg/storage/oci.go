@@ -27,8 +27,8 @@ type ociStore struct {
 }
 
 const (
-	ociSignedMediaType = "application/vnd.enbu.signed.v1"
-	ociCipherMediaType = "application/vnd.enbu.ciphertext.v1"
+	ociHeadMediaType   = "application/vnd.enbu.head.v1"
+	ociBlobMediaType   = "application/vnd.enbu.blob.v1"
 	ociConfigMediaType = "application/vnd.enbu.config.v1+json"
 )
 
@@ -86,12 +86,13 @@ func blobDescriptor(mediaType string, data []byte) ocispec.Descriptor {
 }
 
 // manifestFor builds the canonical manifest of an object: no timestamps and a
-// fixed layer order, so publishing the same object twice is byte-identical.
+// fixed layer order (the head, then the blobs), so publishing the same object
+// twice is byte-identical.
 func manifestFor(o Object) (cfg ocispec.Descriptor, layers []ocispec.Descriptor, body []byte, desc ocispec.Descriptor, err error) {
 	cfg = blobDescriptor(ociConfigMediaType, []byte("{}"))
-	layers = []ocispec.Descriptor{blobDescriptor(ociSignedMediaType, o.Signed)}
-	if len(o.Cipher) > 0 {
-		layers = append(layers, blobDescriptor(ociCipherMediaType, o.Cipher))
+	layers = []ocispec.Descriptor{blobDescriptor(ociHeadMediaType, o.Head)}
+	for _, b := range o.Blobs {
+		layers = append(layers, blobDescriptor(ociBlobMediaType, b))
 	}
 	body, err = json.Marshal(ocispec.Manifest{Versioned: specs.Versioned{SchemaVersion: 2}, MediaType: ocispec.MediaTypeImageManifest, Config: cfg, Layers: layers})
 	desc = blobDescriptor(ocispec.MediaTypeImageManifest, body)
@@ -136,11 +137,8 @@ func (s ociStore) Publish(ctx context.Context, o Object) error {
 		if err := s.pushBlob(ctx, cfg, []byte("{}")); err != nil {
 			return err
 		}
-		if err := s.pushBlob(ctx, layers[0], o.Signed); err != nil {
-			return err
-		}
-		if len(layers) > 1 {
-			if err := s.pushBlob(ctx, layers[1], o.Cipher); err != nil {
+		for i, part := range append([][]byte{o.Head}, o.Blobs...) {
+			if err := s.pushBlob(ctx, layers[i], part); err != nil {
 				return err
 			}
 		}
@@ -169,6 +167,7 @@ func (s ociStore) Publish(ctx context.Context, o Object) error {
 	return nil
 }
 
+// fetchLimited reads a descriptor of at most limit bytes and checks its digest.
 func fetchLimited(ctx context.Context, r *remote.Repository, d ocispec.Descriptor, limit int64) ([]byte, error) {
 	if d.Size < 0 || d.Size > limit {
 		return nil, ErrTooLarge
@@ -188,47 +187,90 @@ func fetchLimited(ctx context.Context, r *remote.Repository, d ocispec.Descripto
 	return b, nil
 }
 
-func (s ociStore) Fetch(ctx context.Context, kind Kind, scope string, rev digest.Digest) (Object, error) {
+// manifest resolves the tag of an object and reads its manifest, checking that
+// the first layer is the head the revision names.
+func (s ociStore) manifest(ctx context.Context, kind Kind, scope string, rev digest.Digest) (ocispec.Manifest, string, error) {
 	name, err := Name(kind, scope, rev)
 	if err != nil {
-		return Object{}, err
+		return ocispec.Manifest{}, "", err
 	}
 	desc, err := s.repo.Resolve(ctx, name)
 	if err != nil {
-		return Object{}, remoteError(err)
+		return ocispec.Manifest{}, "", remoteError(err)
 	}
-	raw, err := fetchLimited(ctx, s.repo, desc, MaxSignedBytes)
+	raw, err := fetchLimited(ctx, s.repo, desc, MaxHeadBytes)
 	if err != nil {
-		return Object{}, err
+		return ocispec.Manifest{}, "", err
 	}
 	var m ocispec.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return Object{}, fmt.Errorf("%w: manifest: %v", ErrCorrupt, err)
+		return ocispec.Manifest{}, "", fmt.Errorf("%w: manifest: %v", ErrCorrupt, err)
 	}
-	want := 1
-	if kind == KindState {
-		want = 2
+	if len(m.Layers) == 0 || len(m.Layers) > MaxBlobs+1 || m.Layers[0].MediaType != ociHeadMediaType || m.Layers[0].Digest != rev {
+		return ocispec.Manifest{}, "", fmt.Errorf("%w: manifest of %s does not match its name", ErrCorrupt, name)
 	}
-	if len(m.Layers) != want || m.Layers[0].MediaType != ociSignedMediaType || m.Layers[0].Digest != rev {
-		return Object{}, fmt.Errorf("%w: manifest of %s does not match its name", ErrCorrupt, name)
-	}
-	o := Object{Kind: kind, Scope: scope, Rev: rev}
-	if o.Signed, err = fetchLimited(ctx, s.repo, m.Layers[0], MaxSignedBytes); err != nil {
-		return Object{}, err
-	}
-	if kind == KindState {
-		if m.Layers[1].MediaType != ociCipherMediaType {
-			return Object{}, fmt.Errorf("%w: manifest of %s has no ciphertext layer", ErrCorrupt, name)
-		}
-		if o.Cipher, err = fetchLimited(ctx, s.repo, m.Layers[1], MaxPayloadBytes); err != nil {
-			return Object{}, err
-		}
-	}
-	if err := ValidateObject(o); err != nil {
-		return Object{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
-	}
-	return o, nil
+	return m, name, nil
 }
+
+func (s ociStore) FetchHead(ctx context.Context, kind Kind, scope string, rev digest.Digest) ([]byte, error) {
+	m, _, err := s.manifest(ctx, kind, scope, rev)
+	if err != nil {
+		return nil, err
+	}
+	return fetchLimited(ctx, s.repo, m.Layers[0], MaxHeadBytes)
+}
+
+func (s ociStore) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	m, name, err := s.manifest(ctx, kind, scope, rev)
+	if err != nil {
+		return nil, err
+	}
+	if index < 0 || index+1 >= len(m.Layers) || m.Layers[index+1].MediaType != ociBlobMediaType {
+		return nil, fmt.Errorf("%w: %s has no blob %d", ErrNotFound, name, index)
+	}
+	layer := m.Layers[index+1]
+	if layer.Size < 0 || layer.Size > MaxPayloadBytes {
+		return nil, ErrTooLarge
+	}
+	rc, err := s.repo.Fetch(ctx, layer)
+	if err != nil {
+		return nil, remoteError(err)
+	}
+	return newVerifyReader(rc, layer), nil
+}
+
+// verifyReader fails at the end unless the bytes are the layer the manifest names.
+type verifyReader struct {
+	rc   io.ReadCloser
+	v    digest.Verifier
+	want int64
+	n    int64
+	err  error
+}
+
+func newVerifyReader(rc io.ReadCloser, d ocispec.Descriptor) io.ReadCloser {
+	return &verifyReader{rc: rc, v: d.Digest.Verifier(), want: d.Size}
+}
+
+func (r *verifyReader) Read(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	n, err := r.rc.Read(p)
+	r.n += int64(n)
+	_, _ = r.v.Write(p[:n])
+	if r.n > r.want {
+		r.err = fmt.Errorf("%w: blob is larger than its layer", ErrCorrupt)
+		return 0, r.err
+	}
+	if errors.Is(err, io.EOF) && (r.n != r.want || !r.v.Verified()) {
+		r.err = fmt.Errorf("%w: blob does not match its layer", ErrCorrupt)
+		return n, r.err
+	}
+	return n, err
+}
+
+func (r *verifyReader) Close() error { return r.rc.Close() }
 
 // repositoryUnknown reports a registry's "name unknown" answer, which is how
 // one that creates repositories on first push (zot, GHCR) answers a listing of

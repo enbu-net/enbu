@@ -54,7 +54,7 @@ func (r *stateRecorder) hooks() storagetest.Hooks {
 			}
 			if o.Kind == storage.KindState {
 				r.mu.Lock()
-				r.puts = append(r.puts, putRecord{rev: o.Rev, parents: parentsOf(o.Signed)})
+				r.puts = append(r.puts, putRecord{rev: o.Rev, parents: parentsOf(o.Head)})
 				r.mu.Unlock()
 			}
 			return nil
@@ -65,11 +65,11 @@ func (r *stateRecorder) hooks() storagetest.Hooks {
 			}
 			return next.Discover(ctx, kind, scope)
 		},
-		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 			if err := r.stateFailure(kind); err != nil {
-				return storage.Object{}, err
+				return nil, err
 			}
-			return next.Fetch(ctx, kind, scope, rev)
+			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	}
 }

@@ -15,8 +15,8 @@ func TestExportedOperationNormalizesUnknownError(t *testing.T) {
 	cause := errors.New("backend failed")
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
 	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
-		Fetch: func(context.Context, storage.Store, storage.Kind, string, digest.Digest) (storage.Object, error) {
-			return storage.Object{}, cause
+		FetchHead: func(context.Context, storage.Store, storage.Kind, string, digest.Digest) ([]byte, error) {
+			return nil, cause
 		},
 	})
 	_, err := a.ListRecipients(context.Background())

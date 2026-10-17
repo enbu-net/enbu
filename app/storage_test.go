@@ -83,11 +83,11 @@ func TestInitializeRejectsCorruptControl(t *testing.T) {
 	genesis := digest.Digest(cfg.ControlGenesis)
 	// The genesis object now holds bytes that are not that control.
 	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
-		Fetch: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (storage.Object, error) {
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
 			if kind == storage.KindControl && rev == genesis {
-				return storage.Object{Kind: kind, Rev: rev, Signed: []byte("corrupt")}, nil
+				return []byte("corrupt"), nil
 			}
-			return next.Fetch(ctx, kind, scope, rev)
+			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
 	if _, err := a.InitializeRepository(ctx); err == nil {

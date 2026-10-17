@@ -74,11 +74,11 @@ func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) []
 		t.Fatalf("states: %v (%d heads)", err, len(sv.Heads))
 	}
 	state := sv.Heads[0]
-	o, err := store.Fetch(ctx, storage.KindState, state.Scope(), state.Digest)
+	ciphertext, err := storage.ReadBlob(ctx, store, storage.KindState, state.Scope(), state.Digest, 0, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err := age.Decrypt(o.Cipher, x)
+	plaintext, err := age.Decrypt(ciphertext, x)
 	if err != nil {
 		t.Fatalf("not a recipient: %v", err)
 	}

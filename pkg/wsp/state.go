@@ -149,8 +149,10 @@ type StateView struct {
 // maxRevisions bounds how many revisions one load reads.
 var maxRevisions = 20000
 
-// LoadStates reads every revision of a resource that storage lists, plus any
-// ancestors the listing missed, and verifies each against the Control DAG.
+// LoadStates reads the head of every revision of a resource that storage lists,
+// plus any ancestors the listing missed, and verifies each against the Control
+// DAG. It never transfers a ciphertext: the DAG needs only the heads, and a
+// ciphertext is read (OpenCiphertext) for the few revisions whose content is used.
 // Revisions that are damaged or unauthorized carry no authority and are skipped.
 // also lists revisions to include even if the listing does not show them.
 // A revision naming a parent storage cannot produce leaves the view incomplete,
@@ -176,7 +178,7 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		if len(tried) > maxRevisions {
 			return nil, invalid("resource has too many revisions")
 		}
-		o, err := store.Fetch(ctx, storage.KindState, scope, rev)
+		head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
 		switch {
 		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
 			sv.Skipped++
@@ -184,7 +186,7 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		case err != nil:
 			return nil, err
 		}
-		st, err := VerifyRevision(view, workspace, resource, rev, o.Signed)
+		st, err := VerifyRevision(view, workspace, resource, rev, head)
 		if err != nil {
 			if errors.Is(err, ErrRollback) {
 				return nil, err
@@ -200,4 +202,21 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		sv.Heads = append(sv.Heads, sv.States[d])
 	}
 	return sv, nil
+}
+
+// MaxCiphertextBytes bounds one revision's ciphertext.
+const MaxCiphertextBytes = storage.MaxPayloadBytes
+
+// ReadCiphertext reads the ciphertext of a verified revision and checks it is
+// the one the signed State names. It is attached to the revision as its only
+// blob; anything else storage holds there is refused.
+func ReadCiphertext(ctx context.Context, store storage.Store, st *VerifiedState) ([]byte, error) {
+	data, err := storage.ReadBlob(ctx, store, storage.KindState, st.Scope(), st.Digest, 0, MaxCiphertextBytes)
+	if err != nil {
+		return nil, err
+	}
+	if digest.FromBytes(data) != st.Ciphertext {
+		return nil, fmt.Errorf("%w: ciphertext does not match the signed state", storage.ErrCorrupt)
+	}
+	return data, nil
 }

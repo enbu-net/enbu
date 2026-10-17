@@ -65,7 +65,7 @@ func TestS3PrefixesAreIsolated(t *testing.T) {
 	client := minis3Client(t)
 	ctx := context.Background()
 	a, b := storage.NewS3(client, "enbu-test", "a"), storage.NewS3(client, "enbu-test", "b")
-	o := storagetest.Object(storage.KindControl, "", "signed", "")
+	o := storagetest.Object(storage.KindControl, "", "head")
 	if err := a.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestS3DiscoverPaginates(t *testing.T) {
 	st := storage.NewS3(client, "enbu-test", "ws")
 	const n = 1003
 	for i := range n {
-		if err := st.Publish(ctx, storagetest.Object(storage.KindRequest, "", fmt.Sprintf("request-%d", i), "")); err != nil {
+		if err := st.Publish(ctx, storagetest.Object(storage.KindRequest, "", fmt.Sprintf("request-%d", i))); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -94,17 +94,17 @@ func TestS3FetchRejectsTamperedAndMalformedObjects(t *testing.T) {
 	client := minis3Client(t)
 	ctx := context.Background()
 	st := storage.NewS3(client, "enbu-test", "ws")
-	o := storagetest.Object(storage.KindControl, "", "signed-control", "")
+	o := storagetest.Object(storage.KindControl, "", "head-control")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
 	name, _ := storage.Name(o.Kind, o.Scope, o.Rev)
 	key := "ws/revisions/" + name
-	for _, body := range []string{"", "garbage", "\x0dsigned-controlX"} {
+	for _, body := range []string{"", "garbage", "\x01\x0dhead-controlX"} {
 		if _, err := client.PutObject(ctx, "enbu-test", key, strings.NewReader(body), int64(len(body)), minio.PutObjectOptions{}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.Fetch(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, storage.ErrCorrupt) {
+		if _, err := st.FetchHead(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, storage.ErrCorrupt) {
 			t.Fatalf("body %q: %v", body, err)
 		}
 	}
@@ -135,10 +135,10 @@ func TestNewS3ClientCredentials(t *testing.T) {
 			} else if err := os.WriteFile(creds, []byte("[enbu-test]\naws_access_key_id=test-key\naws_secret_access_key=test-secret\naws_session_token=test-token\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			o := storagetest.Object(storage.KindControl, "", "signed", "")
+			o := storagetest.Object(storage.KindControl, "", "head")
 			name, _ := storage.Name(o.Kind, o.Scope, o.Rev)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodGet || r.URL.Path != "/enbu-test/workspace/revisions/"+name {
+				if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.URL.Path != "/enbu-test/workspace/revisions/"+name {
 					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 				}
 				if !strings.Contains(r.Header.Get("Authorization"), "Credential=test-key/") ||
@@ -155,7 +155,7 @@ func TestNewS3ClientCredentials(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = storage.NewS3(client, "enbu-test", "workspace").Fetch(context.Background(), o.Kind, o.Scope, o.Rev)
+			_, err = storage.NewS3(client, "enbu-test", "workspace").FetchHead(context.Background(), o.Kind, o.Scope, o.Rev)
 			if !errors.Is(err, storage.ErrNotFound) {
 				t.Fatalf("authenticated read: %v", err)
 			}
@@ -281,9 +281,9 @@ func TestOCIContractAgainstFakeRegistry(t *testing.T) {
 	storagetest.Contract(t, s)
 }
 
-func TestOCIPublishesOneManifestWithBothLayers(t *testing.T) {
+func TestOCIPublishesOneManifestWithTheHeadAndItsBlobs(t *testing.T) {
 	r, s := newFakeRegistry(t)
-	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "signed-state", "ciphertext")
+	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state", "ciphertext")
 	if err := s.Publish(context.Background(), o); err != nil {
 		t.Fatal(err)
 	}
@@ -292,8 +292,8 @@ func TestOCIPublishesOneManifestWithBothLayers(t *testing.T) {
 	if err := json.Unmarshal(r.manifests[name], &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Layers) != 2 || m.Layers[0].Digest != o.Rev || m.Layers[1].Digest != digest.FromBytes(o.Cipher) {
-		t.Fatalf("layers do not reference signed state and ciphertext: %+v", m.Layers)
+	if len(m.Layers) != 2 || m.Layers[0].Digest != o.Rev || m.Layers[1].Digest != digest.FromBytes(o.Blobs[0]) {
+		t.Fatalf("layers are not the head followed by its blobs: %+v", m.Layers)
 	}
 	if m.Subject != nil {
 		t.Fatal("a subject would trigger the racy referrers fallback")
@@ -314,7 +314,7 @@ func TestOCIPublishesOneManifestWithBothLayers(t *testing.T) {
 func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	ctx := context.Background()
-	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "signed-state", "ciphertext")
+	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state", "ciphertext")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -322,14 +322,18 @@ func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 
 	// The registry serves other bytes under the ciphertext digest.
 	r.mu.Lock()
-	r.blobs[digest.FromBytes(o.Cipher).String()] = []byte("tampered")
+	r.blobs[digest.FromBytes(o.Blobs[0]).String()] = []byte("tampered!!")
 	r.mu.Unlock()
-	if _, err := s.Fetch(ctx, o.Kind, o.Scope, o.Rev); err == nil {
-		t.Fatal("tampered ciphertext accepted")
+	// The head is still fine; the tampered blob is caught when it is read.
+	if _, err := s.FetchHead(ctx, o.Kind, o.Scope, o.Rev); err != nil {
+		t.Fatalf("head of an object with a tampered blob: %v", err)
+	}
+	if _, err := storage.ReadBlob(ctx, s, o.Kind, o.Scope, o.Rev, 0, storage.MaxPayloadBytes); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("tampered blob accepted: %v", err)
 	}
 
 	// The tag is retargeted at another revision's manifest.
-	other := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "signed-state-2", "ciphertext-2")
+	other := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state-2", "ciphertext-2")
 	if err := s.Publish(ctx, other); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +341,7 @@ func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 	r.mu.Lock()
 	r.manifests[name] = r.manifests[otherName]
 	r.mu.Unlock()
-	if _, err := s.Fetch(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, storage.ErrCorrupt) {
+	if _, err := s.FetchHead(ctx, o.Kind, o.Scope, o.Rev); !errors.Is(err, storage.ErrCorrupt) {
 		t.Fatalf("retargeted tag: %v", err)
 	}
 	if err := s.Publish(ctx, o); !errors.Is(err, storage.ErrCorrupt) {
@@ -348,13 +352,13 @@ func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 func TestOCIPublishFailsWhenABlobDisappears(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	ctx := context.Background()
-	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "signed-state", "ciphertext")
+	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state", "ciphertext")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
 	// A registry GC drops the ciphertext after the manifest exists; republishing must not acknowledge.
 	r.mu.Lock()
-	delete(r.blobs, digest.FromBytes(o.Cipher).String())
+	delete(r.blobs, digest.FromBytes(o.Blobs[0]).String())
 	r.mu.Unlock()
 	if err := s.Publish(ctx, o); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("publish acknowledged a missing blob: %v", err)
@@ -364,7 +368,7 @@ func TestOCIPublishFailsWhenABlobDisappears(t *testing.T) {
 func TestOCIDiscoverIgnoresForeignTags(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	ctx := context.Background()
-	o := storagetest.Object(storage.KindControl, "", "signed-control", "")
+	o := storagetest.Object(storage.KindControl, "", "head-control")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +397,7 @@ func TestOCIDiscoverTreatsAnUnknownRepositoryAsEmpty(t *testing.T) {
 			t.Fatalf("%s before the first push: %v %v", kind, revs, err)
 		}
 	}
-	o := storagetest.Object(storage.KindControl, "", "signed-control", "")
+	o := storagetest.Object(storage.KindControl, "", "head-control")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}

@@ -65,7 +65,7 @@ func VerifyJoinRequest(workspace string, blob []byte) (*JoinRequest, error) {
 // PublishJoinRequest stores a request from NewJoinRequest and returns its revision.
 func PublishJoinRequest(ctx context.Context, store storage.Store, blob []byte) (digest.Digest, error) {
 	rev := digest.FromBytes(blob)
-	return rev, store.Publish(ctx, storage.Object{Kind: storage.KindRequest, Rev: rev, Signed: blob})
+	return rev, store.Publish(ctx, storage.Object{Kind: storage.KindRequest, Rev: rev, Head: blob})
 }
 
 // PendingRequest is a verified request together with the revision it is stored under.
@@ -85,14 +85,14 @@ func ListJoinRequests(ctx context.Context, store storage.Store, workspace string
 	}
 	var out []PendingRequest
 	for _, rev := range revs {
-		o, err := store.Fetch(ctx, storage.KindRequest, "", rev)
+		blob, err := store.FetchHead(ctx, storage.KindRequest, "", rev)
 		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrCorrupt) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		r, err := VerifyJoinRequest(workspace, o.Signed)
+		r, err := VerifyJoinRequest(workspace, blob)
 		if err != nil {
 			continue
 		}

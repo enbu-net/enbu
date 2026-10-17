@@ -73,18 +73,33 @@ func (s s3) key(name string) string { return s.base() + "revisions/" + name }
 
 func (s s3) Capabilities() Capabilities { return Capabilities{PhysicalDelete: true} }
 
-func (s s3) read(ctx context.Context, name string) ([]byte, error) {
-	resp, err := s.client.GetObject(ctx, s.bucket, s.key(name), minio.GetObjectOptions{})
+// open returns an object for ranged reads and its size.
+func (s s3) open(ctx context.Context, name string) (*minio.Object, int64, error) {
+	obj, err := s.client.GetObject(ctx, s.bucket, s.key(name), minio.GetObjectOptions{})
 	if err != nil {
-		return nil, s3Error(err)
+		return nil, 0, s3Error(err)
 	}
-	defer func() { _ = resp.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp, maxFrameBytes+1))
+	info, err := obj.Stat()
 	if err != nil {
-		return nil, s3Error(err)
+		_ = obj.Close()
+		return nil, 0, s3Error(err)
 	}
-	if len(data) > maxFrameBytes {
-		return nil, ErrTooLarge
+	if info.Size > maxFrameBytes {
+		_ = obj.Close()
+		return nil, 0, ErrTooLarge
+	}
+	return obj, info.Size, nil
+}
+
+func (s s3) readAll(ctx context.Context, name string) ([]byte, error) {
+	obj, size, err := s.open(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = obj.Close() }()
+	data := make([]byte, size)
+	if _, err := obj.ReadAt(data, 0); err != nil && !errors.Is(err, io.EOF) {
+		return nil, s3Error(err)
 	}
 	return data, nil
 }
@@ -104,27 +119,67 @@ func (s s3) Publish(ctx context.Context, o Object) error {
 	if err != nil && !isExists(err) {
 		return s3Error(err)
 	}
-	// Read back by name. An existing object must be identical: names are content-derived.
-	got, err := s.read(ctx, name)
+	if isExists(err) {
+		// The name is taken. Names are content-derived, so it must hold exactly this object.
+		got, err := s.readAll(ctx, name)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(got, data) {
+			return fmt.Errorf("%w: %s already holds different content", ErrCorrupt, name)
+		}
+		return nil
+	}
+	// Read back by name: the size and the head, without transferring the blobs.
+	obj, size, err := s.open(ctx, name)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(got, data) {
-		return fmt.Errorf("%w: %s already holds different content", ErrCorrupt, name)
+	defer func() { _ = obj.Close() }()
+	if size != int64(len(data)) {
+		return fmt.Errorf("%w: %s has the wrong size after publishing", ErrCorrupt, name)
 	}
-	return nil
+	_, _, err = readHead(obj, size, o.Rev)
+	return err
 }
 
-func (s s3) Fetch(ctx context.Context, kind Kind, scope string, rev digest.Digest) (Object, error) {
+func (s s3) FetchHead(ctx context.Context, kind Kind, scope string, rev digest.Digest) ([]byte, error) {
 	name, err := Name(kind, scope, rev)
 	if err != nil {
-		return Object{}, err
+		return nil, err
 	}
-	data, err := s.read(ctx, name)
+	obj, size, err := s.open(ctx, name)
 	if err != nil {
-		return Object{}, err
+		return nil, err
 	}
-	return unframe(kind, scope, rev, data)
+	defer func() { _ = obj.Close() }()
+	head, _, err := readHead(obj, size, rev)
+	return head, err
+}
+
+func (s s3) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	name, err := Name(kind, scope, rev)
+	if err != nil {
+		return nil, err
+	}
+	obj, size, err := s.open(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	_, layout, err := readHead(obj, size, rev)
+	if err != nil {
+		_ = obj.Close()
+		return nil, err
+	}
+	section, err := blobSection(obj, layout, index)
+	if err != nil {
+		_ = obj.Close()
+		return nil, err
+	}
+	return struct {
+		io.Reader
+		io.Closer
+	}{section, obj}, nil
 }
 
 func (s s3) Discover(ctx context.Context, kind Kind, scope string) ([]digest.Digest, error) {
