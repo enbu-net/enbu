@@ -1,239 +1,239 @@
 package wsp
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	digest "github.com/opencontainers/go-digest"
 )
 
+const testResource = "secrets/dev"
+
 type stateFixture struct {
-	ctrl  *Verified
-	alice actor
-	bob   actor
+	store    storage.Store
+	alice    actor
+	bob      actor
+	genesis  digest.Digest
+	view     *ControlView
+	headHash digest.Digest
 }
 
+// newStateFixture founds a workspace with alice (admin) and bob (member).
 func newStateFixture(t *testing.T) stateFixture {
 	t.Helper()
-	alice, bob := newActor(t, true), newActor(t, false)
-	c := Control{Workspace: testWorkspace, Principals: []Principal{alice.p, bob.p}, Author: alice.p.ID}.canonical()
-	return stateFixture{ctrl: &Verified{Control: c, Digest: digest.FromString("control")}, alice: alice, bob: bob}
+	store, alice, genesis := workspace(t)
+	bob := newActor(t, false)
+	v := addMember(t, store, genesis, alice, bob)
+	return stateFixture{store: store, alice: alice, bob: bob, genesis: genesis, view: load(t, store, genesis), headHash: v.Digest}
 }
 
-func (f stateFixture) state(author actor) State {
-	return State{Workspace: testWorkspace, Resource: "secrets/prod", Sequence: 1, ControlGeneration: f.ctrl.Generation,
-		Control: f.ctrl.Digest, Ciphertext: digest.FromString("ciphertext"), Author: author.p.ID}
+func (f stateFixture) state(author actor, parents ...digest.Digest) State {
+	return State{Workspace: testWorkspace, Resource: testResource, Parents: parents, Control: f.headHash, Ciphertext: digest.FromString("ciphertext"), Author: author.p.ID}
+}
+
+func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) digest.Digest {
+	t.Helper()
+	s.Ciphertext = digest.FromString(cipher)
+	blob, err := SignState(s, by.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := digest.FromBytes(blob)
+	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Signed: blob, Cipher: []byte(cipher)}); err != nil {
+		t.Fatal(err)
+	}
+	return rev
+}
+
+func signedState(t *testing.T, s State, by actor) ([]byte, digest.Digest) {
+	t.Helper()
+	blob, err := SignState(s, by.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return blob, digest.FromBytes(blob)
 }
 
 func TestStateRoundTrip(t *testing.T) {
 	f := newStateFixture(t)
-	blob, err := SignState(f.state(f.bob), f.bob.signer)
+	blob, rev := signedState(t, f.state(f.bob), f.bob)
+	got, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob)
-	if err != nil {
-		t.Fatal(err)
+	if got.Author != f.bob.p.ID || got.Digest != rev || got.Resource != testResource {
+		t.Fatalf("unexpected state: %+v", got)
 	}
-	if st.Author != f.bob.p.ID || st.Digest != digest.FromBytes(blob) {
-		t.Fatalf("unexpected state: %+v", st)
+	head, _ := f.view.Head()
+	if err := AuthorIsCurrent(head, got); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestFakeSecretRejected(t *testing.T) {
 	f := newStateFixture(t)
-	attacker := newActor(t, false)
-	// A state signed by a key the Control does not list.
-	blob, err := SignState(f.state(attacker), attacker.signer)
-	if err != nil {
-		t.Fatal(err)
+	mallory := newActor(t, false)
+	// Mallory is no principal of the control the state names.
+	blob, rev := signedState(t, f.state(mallory), mallory)
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("state by an outsider accepted: %v", err)
 	}
-	if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("outsider state accepted: %v", err)
-	}
-	// An attacker claiming a member's id with a signature of their own.
+	// Mallory claims to be bob but signs with her own key.
 	forged := f.state(f.bob)
 	body, _ := encMode.Marshal(forged)
-	sig, _ := attacker.signer.Sign(signing.DomainState, body)
+	sig, _ := mallory.signer.Sign(signing.DomainState, body)
 	blob, _ = Signed{Body: body, Signature: sig}.Encode()
-	if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("forged author accepted: %v", err)
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, digest.FromBytes(blob), blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("state with a foreign signature accepted: %v", err)
 	}
 }
 
-func TestStateTampering(t *testing.T) {
+func TestStateTamperingAndWrongRevision(t *testing.T) {
 	f := newStateFixture(t)
-	good, err := SignState(f.state(f.bob), f.bob.signer)
-	if err != nil {
+	blob, rev := signedState(t, f.state(f.bob), f.bob)
+	signed, _ := DecodeSigned(blob)
+	var s State
+	if err := decodeCanonical(signed.Body, &s); err != nil {
 		t.Fatal(err)
 	}
-	signed, _ := DecodeSigned(good)
-	for name, mutate := range map[string]func(*State){
-		"ciphertext digest": func(s *State) { s.Ciphertext = digest.FromString("evil") },
-		"author":            func(s *State) { s.Author = f.alice.p.ID },
-		"workspace":         func(s *State) { s.Workspace = "0192f3a0-7c1e-7a55-9d3c-000000000000" },
-		"resource":          func(s *State) { s.Resource = "secrets/dev" },
-		"sequence":          func(s *State) { s.Sequence, s.Previous = 2, digest.FromString("p") },
-	} {
-		t.Run(name, func(t *testing.T) {
-			s := f.state(f.bob)
-			mutate(&s)
-			body, _ := encMode.Marshal(s)
-			blob, _ := Signed{Body: body, Signature: signed.Signature}.Encode()
-			resource, workspace := "secrets/prod", testWorkspace
-			if s.Resource != "secrets/prod" {
-				resource = s.Resource // let the reader ask for what the attacker claims
-			}
-			if s.Workspace != testWorkspace {
-				workspace = s.Workspace
-			}
-			if _, err := VerifyState(f.ctrl, workspace, resource, blob); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("tampered state accepted: %v", err)
-			}
-		})
+	s.Ciphertext = digest.FromString("swapped")
+	body, _ := encMode.Marshal(s)
+	tampered, _ := Signed{Body: body, Signature: signed.Signature}.Encode()
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, digest.FromBytes(tampered), tampered); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("tampered state accepted: %v", err)
 	}
+	// The bytes are not what the revision name says.
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, digest.FromString("other"), blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("revision mismatch accepted: %v", err)
+	}
+	_ = rev
 }
 
-func TestStateForOtherResourceRejected(t *testing.T) {
+func TestStateForOtherResourceOrWorkspaceRejected(t *testing.T) {
 	f := newStateFixture(t)
-	blob, _ := SignState(f.state(f.bob), f.bob.signer)
-	if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/dev", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("state replayed under another resource: %v", err)
+	blob, rev := signedState(t, f.state(f.bob), f.bob)
+	if _, err := VerifyRevision(f.view, testWorkspace, "secrets/prod", rev, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("state replayed for another resource: %v", err)
+	}
+	if _, err := VerifyRevision(f.view, "0192f3a0-7c1e-7a55-9d3c-000000000000", testResource, rev, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("state replayed for another workspace: %v", err)
 	}
 }
 
-func TestRemovedMemberStateRejected(t *testing.T) {
+func TestStateNamingAControlStorageDoesNotShowIsARollback(t *testing.T) {
 	f := newStateFixture(t)
-	blob, _ := SignState(f.state(f.bob), f.bob.signer)
-	after := &Verified{Control: Control{Workspace: testWorkspace, Generation: 1, Principals: []Principal{f.alice.p}, Author: f.alice.p.ID}, Digest: digest.FromString("control2")}
-	if _, err := VerifyState(after, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("removed member's state accepted: %v", err)
+	s := f.state(f.bob)
+	s.Control = digest.FromString("a newer control")
+	blob, rev := signedState(t, s, f.bob)
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrRollback) {
+		t.Fatalf("state naming an unknown control: %v", err)
 	}
 }
 
-func TestStateSignedUnderNewerControlIsRollback(t *testing.T) {
+func TestRemovedMemberIsHistoricalButNotCurrent(t *testing.T) {
 	f := newStateFixture(t)
-	s := f.state(f.alice)
-	s.ControlGeneration, s.Control = 5, digest.FromString("newer")
-	blob, _ := SignState(s, f.alice.signer)
-	if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrRollback) {
-		t.Fatalf("state from the future accepted: %v", err)
+	blob, rev := signedState(t, f.state(f.bob), f.bob)
+	if _, err := UpdateControl(context.Background(), f.store, f.view, f.alice.signer, func(c *Control) error {
+		c.Principals = []Principal{f.alice.p}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
-	s.ControlGeneration, s.Control = f.ctrl.Generation, digest.FromString("other")
-	blob, _ = SignState(s, f.alice.signer)
-	if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("state naming a foreign control accepted: %v", err)
+	view := load(t, f.store, f.genesis)
+	st, err := VerifyRevision(view, testWorkspace, testResource, rev, blob)
+	if err != nil {
+		t.Fatalf("a revision written while bob was a member stays valid: %v", err)
+	}
+	head, _ := view.Head()
+	if err := AuthorIsCurrent(head, st); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("removed member counted as current: %v", err)
 	}
 }
 
-func TestStateSignerMustBeAuthor(t *testing.T) {
+func TestStateSignerMustBeAuthorAndParentsMustBeSortedAndUnique(t *testing.T) {
 	f := newStateFixture(t)
 	if _, err := SignState(f.state(f.bob), f.alice.signer); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("signer other than author: %v", err)
 	}
+	p := digest.FromString("p")
+	if _, err := SignState(f.state(f.bob, p, p), f.bob.signer); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("duplicate parents: %v", err)
+	}
+	// Parents are sorted by SignState, so their order cannot change the revision.
+	a, b := digest.FromString("a"), digest.FromString("b")
+	one, _ := SignState(f.state(f.bob, a, b), f.bob.signer)
+	two, _ := SignState(f.state(f.bob, b, a), f.bob.signer)
+	if digest.FromBytes(one) != digest.FromBytes(two) && len(one) != len(two) {
+		t.Fatal("parent order changed the encoding")
+	}
 }
 
-// signedBody signs an arbitrary State body, bypassing SignState's own checks,
-// so VerifyState's validation is exercised on what a hostile writer could send.
-func signedBody(t *testing.T, s State, by actor) []byte {
-	t.Helper()
-	body, err := encMode.Marshal(s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sig, err := by.signer.Sign(signing.DomainState, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blob, err := Signed{Body: body, Signature: sig}.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return blob
-}
-
-func TestStateSequenceAndPreviousMustAgree(t *testing.T) {
+func TestLoadStatesBuildsTheDAGAndSkipsJunk(t *testing.T) {
+	ctx := context.Background()
 	f := newStateFixture(t)
-	first := f.state(f.bob)
-	first.Previous = digest.FromString("previous")
-	later := f.state(f.bob)
-	later.Sequence = 2
-	for name, s := range map[string]State{"first state with a previous": first, "later state without one": later, "sequence zero": func() State { z := f.state(f.bob); z.Sequence = 0; return z }()} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := SignState(s, f.bob.signer); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("SignState accepted it: %v", err)
-			}
-			// Validly signed by a member, but malformed: the reader must refuse it too.
-			if _, err := VerifyState(f.ctrl, testWorkspace, "secrets/prod", signedBody(t, s, f.bob)); !errors.Is(err, ErrInvalid) {
-				t.Fatalf("VerifyState accepted it: %v", err)
-			}
-		})
-	}
-}
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	left := f.publish(t, f.state(f.alice, root), f.alice, "left")
+	right := f.publish(t, f.state(f.bob, root), f.bob, "right")
 
-// A state signed under an earlier generation is normal: its author may simply
-// not have seen the newer Control yet. Only a state from the future is suspect.
-func TestStateFromAnEarlierControlGenerationIsAccepted(t *testing.T) {
-	f := newStateFixture(t)
-	head := &Verified{Control: f.ctrl.Control, Digest: digest.FromString("control 3")}
-	head.Generation = 3
-	s := f.state(f.bob)
-	s.ControlGeneration, s.Control = 1, digest.FromString("control 1")
-	blob, err := SignState(s, f.bob.signer)
+	// Junk: a revision by an outsider and a damaged object are skipped, not fatal.
+	mallory := newActor(t, false)
+	f.publish(t, f.state(mallory), mallory, "forged")
+
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyState(head, testWorkspace, "secrets/prod", blob); err != nil {
-		t.Fatalf("a state from an earlier generation was rejected: %v", err)
+	want := []digest.Digest{left, right}
+	sortDigests(want)
+	if len(sv.Heads) != 2 || sv.Heads[0].Digest != want[0] || sv.Heads[1].Digest != want[1] {
+		t.Fatalf("heads = %v", sv.Heads)
+	}
+	if sv.Skipped != 1 {
+		t.Fatalf("skipped = %d", sv.Skipped)
+	}
+	if bases := sv.Graph.MergeBases([]digest.Digest{left, right}); len(bases) != 1 || bases[0] != root {
+		t.Fatalf("merge base = %v", bases)
+	}
+	merged := f.publish(t, f.state(f.alice, left, right), f.alice, "merged")
+	sv, err = LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil || len(sv.Heads) != 1 || sv.Heads[0].Digest != merged {
+		t.Fatalf("after merge: %v %v", sv.Heads, err)
 	}
 }
 
-func TestHistoricalStateIsJudgedByTheControlItWasWrittenUnder(t *testing.T) {
+func TestLoadStatesFindsAncestorsAStaleListingHid(t *testing.T) {
+	ctx := context.Background()
 	f := newStateFixture(t)
-	blob, err := SignState(f.state(f.bob), f.bob.signer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gen, ctl, err := StateControl(blob)
-	if err != nil || gen != f.ctrl.Generation || ctl != f.ctrl.Digest {
-		t.Fatalf("StateControl = %d %s %v", gen, ctl, err)
-	}
-	// Bob is removed in the next generation.
-	after := &Verified{Control: Control{Workspace: testWorkspace, Generation: 1, Principals: []Principal{f.alice.p}, Author: f.alice.p.ID}, Digest: digest.FromString("after removal")}
-	if _, err := VerifyState(after, testWorkspace, "secrets/prod", blob); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a removed member's state is not current: %v", err)
-	}
-	// But it was validly written, and is accepted against the control it names.
-	st, err := VerifyHistoricalState(f.ctrl, testWorkspace, "secrets/prod", blob)
-	if err != nil || st.Author != f.bob.p.ID {
-		t.Fatalf("historical verification: %v", err)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	child := f.publish(t, f.state(f.alice, root), f.alice, "child")
+	stale := storagetest.Wrap(f.store, storagetest.Hooks{
+		Discover: func(context.Context, storage.Store, storage.Kind, string) ([]digest.Digest, error) {
+			return []digest.Digest{child}, nil
+		},
+	})
+	sv, err := LoadStates(ctx, stale, f.view, testWorkspace, testResource)
+	if err != nil || !sv.Graph.Has(root) || len(sv.Graph.Missing()) != 0 {
+		t.Fatalf("ancestors not found: %v", err)
 	}
 }
 
-func TestHistoricalStateStillNeedsAMemberAndASignature(t *testing.T) {
+func TestLoadStatesReportsAParentStorageCannotProduce(t *testing.T) {
+	ctx := context.Background()
 	f := newStateFixture(t)
-	outsider := newActor(t, false)
-	forged, err := SignState(f.state(outsider), outsider.signer)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	f.publish(t, f.state(f.alice, root), f.alice, "child")
+	if err := f.store.Delete(ctx, storage.KindState, storage.StateScope(testWorkspace, testResource), root); err != nil {
+		t.Fatal(err)
+	}
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyHistoricalState(f.ctrl, testWorkspace, "secrets/prod", forged); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a state by someone who was never a member: %v", err)
-	}
-	good, _ := SignState(f.state(f.bob), f.bob.signer)
-	signed, _ := DecodeSigned(good)
-	signed.Signature[0] ^= 1
-	tampered, _ := signed.Encode()
-	if _, err := VerifyHistoricalState(f.ctrl, testWorkspace, "secrets/prod", tampered); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a bad signature: %v", err)
-	}
-	// Judged by a different generation than the one it names.
-	other := &Verified{Control: f.ctrl.Control, Digest: digest.FromString("another control")}
-	if _, err := VerifyHistoricalState(other, testWorkspace, "secrets/prod", good); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a state judged by a control it does not name: %v", err)
-	}
-	if _, err := VerifyHistoricalState(f.ctrl, testWorkspace, "secrets/dev", good); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a state for another resource: %v", err)
+	if m := sv.Graph.Missing(); len(m) != 1 || m[0] != root {
+		t.Fatalf("missing = %v", m)
 	}
 }

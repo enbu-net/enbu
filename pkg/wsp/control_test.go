@@ -22,7 +22,7 @@ func genesisOf(t *testing.T, founder actor) ([]byte, digest.Digest) {
 // nextOf signs the successor of prev with the given principals.
 func nextOf(t *testing.T, prev *Verified, by actor, principals ...Principal) []byte {
 	t.Helper()
-	blob, err := SignControl(Control{Workspace: testWorkspace, Generation: prev.Generation + 1, Previous: prev.Digest,
+	blob, err := SignControl(Control{Workspace: testWorkspace, Parents: []digest.Digest{prev.Digest}, Height: prev.Height + 1,
 		Principals: principals, Author: by.p.ID}, by.signer)
 	if err != nil {
 		t.Fatal(err)
@@ -37,11 +37,11 @@ func TestControlGrowsOnlyThroughSignedSuccessors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := VerifyNext(genesis, nextOf(t, genesis, alice, alice.p, bob.p))
+	next, err := VerifyChild([]*Verified{genesis}, nextOf(t, genesis, alice, alice.p, bob.p))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Generation != 1 || len(next.Recipients()) != 2 {
+	if next.Height != 1 || len(next.Recipients()) != 2 {
 		t.Fatalf("unexpected control: %+v", next.Control)
 	}
 	if _, ok := next.Principal(bob.p.ID); !ok {
@@ -54,7 +54,7 @@ func TestOutsiderCannotSignControl(t *testing.T) {
 	blob, d := genesisOf(t, alice)
 	genesis, _ := VerifyGenesis(testWorkspace, blob, d)
 	forged := nextOf(t, genesis, mallory, alice.p, mallory.p)
-	if _, err := VerifyNext(genesis, forged); !errors.Is(err, ErrInvalid) {
+	if _, err := VerifyChild([]*Verified{genesis}, forged); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("control signed by an outsider was accepted: %v", err)
 	}
 }
@@ -63,11 +63,11 @@ func TestMemberCannotSignControl(t *testing.T) {
 	alice, bob := newActor(t, true), newActor(t, false)
 	blob, d := genesisOf(t, alice)
 	genesis, _ := VerifyGenesis(testWorkspace, blob, d)
-	g1, err := VerifyNext(genesis, nextOf(t, genesis, alice, alice.p, bob.p))
+	g1, err := VerifyChild([]*Verified{genesis}, nextOf(t, genesis, alice, alice.p, bob.p))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := VerifyNext(g1, nextOf(t, g1, bob, alice.p, bob.p)); !errors.Is(err, ErrInvalid) {
+	if _, err := VerifyChild([]*Verified{g1}, nextOf(t, g1, bob, alice.p, bob.p)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("member-signed control accepted: %v", err)
 	}
 }
@@ -105,7 +105,7 @@ func TestControlTampering(t *testing.T) {
 				t.Fatal("mutation did not change the body")
 			}
 			tampered, _ := Signed{Body: body, Signature: signed.Signature}.Encode()
-			if _, err := VerifyNext(genesis, tampered); !errors.Is(err, ErrInvalid) {
+			if _, err := VerifyChild([]*Verified{genesis}, tampered); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("tampered control accepted: %v", err)
 			}
 		})
@@ -145,13 +145,13 @@ func TestSuccessorMustFollowItsPredecessor(t *testing.T) {
 	genesis, _ := VerifyGenesis(testWorkspace, blob, d)
 	wrong := *genesis
 	wrong.Digest = digest.FromString("not the genesis")
-	if _, err := VerifyNext(&wrong, nextOf(t, genesis, alice, alice.p)); !errors.Is(err, ErrInvalid) {
+	if _, err := VerifyChild([]*Verified{&wrong}, nextOf(t, genesis, alice, alice.p)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("successor of another predecessor accepted: %v", err)
 	}
 	skipped := *genesis
-	skipped.Generation = 5
-	if _, err := VerifyNext(&skipped, nextOf(t, genesis, alice, alice.p)); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("generation gap accepted: %v", err)
+	skipped.Height = 5
+	if _, err := VerifyChild([]*Verified{&skipped}, nextOf(t, genesis, alice, alice.p)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("height gap accepted: %v", err)
 	}
 }
 
@@ -202,5 +202,99 @@ func TestNonCanonicalEncodingRejected(t *testing.T) {
 func TestOversizedObjectsAreRejectedBeforeParsing(t *testing.T) {
 	if _, err := DecodeSigned(make([]byte, MaxSignedBytes+1)); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("oversized object: %v", err)
+	}
+}
+
+// forkOf signs two competing children of the genesis, each by its own admin choice.
+func forkedControls(t *testing.T, alice, bob, carol actor) (genesis, a, b *Verified) {
+	t.Helper()
+	blob, d := genesisOf(t, alice)
+	genesis, err := VerifyGenesis(testWorkspace, blob, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withBob, err := VerifyChild([]*Verified{genesis}, nextOf(t, genesis, alice, alice.p, bob.p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// bob is an admin on one branch and carol joins on the other.
+	adminBob := bob.p
+	adminBob.Admin = true
+	a, err = VerifyChild([]*Verified{withBob}, nextOf(t, withBob, alice, alice.p, adminBob))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err = VerifyChild([]*Verified{withBob}, nextOf(t, withBob, alice, alice.p, bob.p, carol.p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return withBob, a, b
+}
+
+func resolution(t *testing.T, parents []*Verified, by actor, principals ...Principal) ([]byte, error) {
+	t.Helper()
+	ds := make([]digest.Digest, len(parents))
+	var h uint64
+	for i, p := range parents {
+		ds[i] = p.Digest
+		h = max(h, p.Height)
+	}
+	sortDigests(ds)
+	blob, err := SignControl(Control{Workspace: testWorkspace, Parents: ds, Height: h + 1, Principals: principals, Author: by.p.ID}, by.signer)
+	if err != nil {
+		return nil, err
+	}
+	_, err = VerifyChild(parents, blob)
+	return blob, err
+}
+
+func TestResolutionMayOnlyKeepWhatTheHeadsListed(t *testing.T) {
+	alice, bob, carol, mallory := newActor(t, true), newActor(t, false), newActor(t, false), newActor(t, false)
+	_, a, b := forkedControls(t, alice, bob, carol)
+	parents := []*Verified{a, b}
+
+	adminBob := bob.p
+	adminBob.Admin = true
+	if _, err := resolution(t, parents, alice, alice.p, adminBob, carol.p); err != nil {
+		t.Fatalf("keeping everything the heads listed: %v", err)
+	}
+	if _, err := resolution(t, parents, alice, alice.p); err != nil {
+		t.Fatalf("dropping principals: %v", err)
+	}
+	if _, err := resolution(t, parents, alice, alice.p, bob.p, carol.p, mallory.p); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution added a principal: %v", err)
+	}
+	adminCarol := carol.p
+	adminCarol.Admin = true
+	if _, err := resolution(t, parents, alice, alice.p, bob.p, adminCarol); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution promoted someone who was no admin on any head: %v", err)
+	}
+	swapped := bob.p
+	swapped.Recipient = mallory.p.Recipient
+	if _, err := resolution(t, parents, alice, alice.p, swapped); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution changed a recipient: %v", err)
+	}
+}
+
+func TestResolutionNeedsAnAdminOfEveryHead(t *testing.T) {
+	alice, bob, carol := newActor(t, true), newActor(t, false), newActor(t, false)
+	_, a, b := forkedControls(t, alice, bob, carol)
+	// bob is an admin on a but only a member on b.
+	adminBob := bob.p
+	adminBob.Admin = true
+	if _, err := resolution(t, []*Verified{a, b}, bob, alice.p, adminBob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution signed by an admin of only one head: %v", err)
+	}
+}
+
+func TestResolutionMustNameAllItsParents(t *testing.T) {
+	alice, bob, carol := newActor(t, true), newActor(t, false), newActor(t, false)
+	_, a, b := forkedControls(t, alice, bob, carol)
+	blob, err := resolution(t, []*Verified{a, b}, alice, alice.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyChild([]*Verified{a}, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution checked against a subset of its parents: %v", err)
 	}
 }

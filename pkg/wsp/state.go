@@ -1,46 +1,55 @@
 package wsp
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/opencontainers/go-digest"
 )
 
-// State binds one ciphertext blob to the device that published it. The
-// resource names what the ciphertext is (for example "secrets/prod"); it is a
-// plain string so authorization can later be decided per resource by policy.
+// State binds one ciphertext to the device that published it. The resource
+// names what the ciphertext is (for example "secrets/prod"); it is a plain
+// string so authorization can later be decided per resource by policy.
+//
+// States form a DAG: Parents are the revisions the author saw and merged. The
+// first revision of a resource has no parents.
 type State struct {
-	Workspace         string           `cbor:"workspace"`
-	Resource          string           `cbor:"resource"`
-	Sequence          uint64           `cbor:"sequence"` // 1 for the first state of a resource
-	Previous          digest.Digest    `cbor:"previous"` // SignedState blob replaced; empty at sequence 1
-	ControlGeneration uint64           `cbor:"control_generation"`
-	Control           digest.Digest    `cbor:"control"` // SignedControl blob the author saw
-	Ciphertext        digest.Digest    `cbor:"ciphertext"`
-	Author            signing.DeviceID `cbor:"author"`
+	Workspace  string           `cbor:"workspace"`
+	Resource   string           `cbor:"resource"`
+	Parents    []digest.Digest  `cbor:"parents"` // sorted, unique
+	Control    digest.Digest    `cbor:"control"` // Control revision the author saw
+	Ciphertext digest.Digest    `cbor:"ciphertext"`
+	Author     signing.DeviceID `cbor:"author"`
+	CreatedAt  int64            `cbor:"created_at"` // unix seconds; display only, never used for ordering decisions
 }
 
 // VerifiedState is a State whose author and signature have been checked
-// against a verified Control. Digest is the digest of the SignedState blob.
+// against the Control it names. Digest is the digest of the SignedState bytes,
+// which is the revision's identity.
 type VerifiedState struct {
 	State
 	Digest digest.Digest
 }
 
+// Scope is the storage listing bucket of the state's resource.
+func (s State) Scope() string { return storage.StateScope(s.Workspace, s.Resource) }
+
 func (s State) validate() error {
 	if s.Workspace == "" || s.Resource == "" {
 		return invalid("state has no workspace or resource")
 	}
-	if s.Sequence == 0 {
-		return invalid("state sequence starts at 1")
+	if len(s.Parents) > MaxParents {
+		return invalid("state has too many parents")
 	}
-	if (s.Sequence == 1) != (s.Previous == "") {
-		return invalid("state previous is set exactly when sequence > 1")
-	}
-	if s.Previous != "" {
-		if err := validDigest(s.Previous); err != nil {
-			return invalid("state previous: %v", err)
+	for i, p := range s.Parents {
+		if err := validDigest(p); err != nil {
+			return invalid("state parent: %v", err)
+		}
+		if i > 0 && s.Parents[i-1] >= p {
+			return invalid("state parents must be sorted and unique")
 		}
 	}
 	if err := validDigest(s.Control); err != nil {
@@ -55,8 +64,12 @@ func (s State) validate() error {
 	return nil
 }
 
+// MaxParents bounds how many heads one revision can merge.
+const MaxParents = 64
+
 // SignState signs s, whose Author must be signer, and returns the stored bytes.
 func SignState(s State, signer signing.Signer) ([]byte, error) {
+	sortDigests(s.Parents)
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
@@ -74,81 +87,117 @@ func SignState(s State, signer signing.Signer) ([]byte, error) {
 	return Signed{Body: body, Signature: sig}.Encode()
 }
 
-// verifySigned checks everything about a stored state that does not depend on
-// which Control generation judges it: encoding, workspace and resource, that the
-// author is a principal of ctrl, and the signature under that principal's key.
-func verifySigned(ctrl *Verified, workspace, resource string, blob []byte) (State, error) {
+// VerifyRevision checks one stored revision of workspace and resource against
+// the Control it names. The author must be a principal of that Control and the
+// signature must verify under the key it lists; a member removed since still
+// signed it validly. The named Control must be part of the verified DAG: one
+// that is not means storage showed an older Control DAG than the author saw,
+// which is reported as a rollback.
+//
+// It makes no claim about freshness or about whether the author is a member
+// now; see AuthorIsCurrent for revisions that become the head.
+func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Digest, blob []byte) (*VerifiedState, error) {
+	if digest.FromBytes(blob) != rev {
+		return nil, invalid("state does not match its revision %s", rev)
+	}
 	signed, err := DecodeSigned(blob)
 	if err != nil {
-		return State{}, err
+		return nil, err
 	}
 	var s State
 	if err := decodeCanonical(signed.Body, &s); err != nil {
-		return State{}, err
+		return nil, err
 	}
 	if err := s.validate(); err != nil {
-		return State{}, err
+		return nil, err
 	}
 	if s.Workspace != workspace || s.Resource != resource {
-		return State{}, invalid("state is for %s/%s, not %s/%s", s.Workspace, s.Resource, workspace, resource)
+		return nil, invalid("state is for %s/%s, not %s/%s", s.Workspace, s.Resource, workspace, resource)
 	}
-	author, ok := ctrl.Principal(s.Author)
+	written, ok := view.Get(s.Control)
 	if !ok {
-		return State{}, invalid("state author %s is not a principal of the workspace", s.Author)
+		return nil, fmt.Errorf("%w: state names control %s that storage does not show", ErrRollback, s.Control)
+	}
+	author, ok := written.Principal(s.Author)
+	if !ok {
+		return nil, invalid("state author %s is not a principal of the control it names", s.Author)
 	}
 	if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {
-		return State{}, invalid("state signature: %v", err)
+		return nil, invalid("state signature: %v", err)
 	}
-	return s, nil
+	return &VerifiedState{State: s, Digest: rev}, nil
 }
 
-// VerifyState checks a stored SignedState for workspace and resource against
-// the current verified Control: the author must be a principal now, and the
-// signature must verify under the key the Control lists for that author.
-//
-// A state that claims a newer Control than the head means storage served an
-// older control-head than the author saw, so it is reported as a rollback.
-func VerifyState(ctrl *Verified, workspace, resource string, blob []byte) (*VerifiedState, error) {
-	s, err := verifySigned(ctrl, workspace, resource, blob)
+// AuthorIsCurrent reports whether the author of st is still a principal of the
+// current Control. A revision may only be the head of a resource, and so be read
+// as the current value, while its author is.
+func AuthorIsCurrent(head *Verified, st *VerifiedState) error {
+	if _, ok := head.Principal(st.Author); !ok {
+		return invalid("state author %s is no longer a principal of the workspace", st.Author)
+	}
+	return nil
+}
+
+// StateView is the verified revision DAG of one resource as storage shows it.
+type StateView struct {
+	Graph   *Graph
+	States  map[digest.Digest]*VerifiedState
+	Heads   []*VerifiedState // sorted by digest
+	Skipped int              // listed revisions that failed to fetch or verify
+}
+
+// maxRevisions bounds how many revisions one load reads.
+var maxRevisions = 20000
+
+// LoadStates reads every revision of a resource that storage lists, plus any
+// ancestors the listing missed, and verifies each against the Control DAG.
+// Revisions that are damaged or unauthorized carry no authority and are skipped.
+// also lists revisions to include even if the listing does not show them.
+// A revision naming a parent storage cannot produce leaves the view incomplete,
+// which the caller sees as Graph.Missing.
+func LoadStates(ctx context.Context, store storage.Store, view *ControlView, workspace, resource string, also ...digest.Digest) (*StateView, error) {
+	scope := storage.StateScope(workspace, resource)
+	revs, err := store.Discover(ctx, storage.KindState, scope)
 	if err != nil {
 		return nil, err
 	}
-	switch {
-	case s.ControlGeneration > ctrl.Generation:
-		return nil, fmt.Errorf("%w: state was signed under control generation %d but the head is %d", ErrRollback, s.ControlGeneration, ctrl.Generation)
-	case s.ControlGeneration == ctrl.Generation && s.Control != ctrl.Digest:
-		return nil, invalid("state names a control that is not the verified generation %d", ctrl.Generation)
+	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
+	tried := map[digest.Digest]bool{}
+	// also names revisions the caller knows exist, such as one it just published
+	// that a stale listing may not show yet.
+	queue := append(append([]digest.Digest(nil), revs...), also...)
+	for len(queue) > 0 {
+		rev := queue[0]
+		queue = queue[1:]
+		if tried[rev] {
+			continue
+		}
+		tried[rev] = true
+		if len(tried) > maxRevisions {
+			return nil, invalid("resource has too many revisions")
+		}
+		o, err := store.Fetch(ctx, storage.KindState, scope, rev)
+		switch {
+		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
+			sv.Skipped++
+			continue
+		case err != nil:
+			return nil, err
+		}
+		st, err := VerifyRevision(view, workspace, resource, rev, o.Signed)
+		if err != nil {
+			if errors.Is(err, ErrRollback) {
+				return nil, err
+			}
+			sv.Skipped++
+			continue
+		}
+		sv.States[rev] = st
+		sv.Graph.Add(rev, st.Parents)
+		queue = append(queue, st.Parents...) // ancestors a stale listing hid
 	}
-	return &VerifiedState{State: s, Digest: digest.FromBytes(blob)}, nil
-}
-
-// StateControl reads which Control a stored state says it was signed under. The
-// answer is untrusted; it only tells the caller which Control to fetch (with
-// ControlAt) before VerifyHistoricalState checks it.
-func StateControl(blob []byte) (uint64, digest.Digest, error) {
-	signed, err := DecodeSigned(blob)
-	if err != nil {
-		return 0, "", err
+	for _, d := range sv.Graph.Heads() {
+		sv.Heads = append(sv.Heads, sv.States[d])
 	}
-	var s State
-	if err := decodeCanonical(signed.Body, &s); err != nil {
-		return 0, "", err
-	}
-	return s.ControlGeneration, s.Control, nil
-}
-
-// VerifyHistoricalState checks an older state, such as a history snapshot,
-// against the Control it was written under rather than the current one. A
-// member who has since been removed still signed it validly: the author must be
-// a principal of that Control, which must be the generation and digest the
-// state names. It makes no freshness claim, so no checkpoint applies.
-func VerifyHistoricalState(written *Verified, workspace, resource string, blob []byte) (*VerifiedState, error) {
-	s, err := verifySigned(written, workspace, resource, blob)
-	if err != nil {
-		return nil, err
-	}
-	if s.ControlGeneration != written.Generation || s.Control != written.Digest {
-		return nil, invalid("state was not written under control generation %d", written.Generation)
-	}
-	return &VerifiedState{State: s, Digest: digest.FromBytes(blob)}, nil
+	return sv, nil
 }

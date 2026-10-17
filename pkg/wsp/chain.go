@@ -1,191 +1,202 @@
 package wsp
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/opencontainers/go-digest"
 )
 
-// ControlRef names the mutable pointer to the newest SignedControl blob.
-// The ref is a hint: whatever it points at is verified before use.
-const ControlRef = "control-head"
-
-// maxChain bounds how many controls one load walks, and maxChainBytes how many
-// bytes it reads in total. Both are variables so tests can lower them.
+// maxControls bounds how many Controls one load reads, and maxControlBytes how
+// many bytes it reads in total. Both are variables so tests can lower them.
 var (
-	maxChain      = 10000
-	maxChainBytes = 32 << 20
+	maxControls     = 10000
+	maxControlBytes = 32 << 20
 )
 
-// Checkpoint is the newest Control a client has accepted.
-type Checkpoint struct {
-	Generation uint64        `json:"generation"`
-	Digest     digest.Digest `json:"digest"`
+// ErrControlFork marks a Control DAG with more than one head. Nothing proceeds
+// until an admin publishes a resolution Control.
+var ErrControlFork = errors.New("workspace control forked")
+
+// ForkError carries the competing heads so an admin can resolve them.
+type ForkError struct{ Heads []*Verified }
+
+func (e *ForkError) Error() string {
+	return fmt.Sprintf("%v: %d competing heads; an admin must resolve the fork", ErrControlFork, len(e.Heads))
 }
 
-// Head is the verified current Control and the ref version to update from.
-type Head struct {
-	*Verified
-	Version storage.Version
+func (e *ForkError) Is(target error) bool { return target == ErrControlFork }
+
+// ControlView is the verified Control DAG as storage currently shows it.
+type ControlView struct {
+	Workspace string
+	Genesis   digest.Digest
+	Heads     []*Verified // sorted by digest
+	verified  map[digest.Digest]*Verified
 }
 
-// readBlob returns the bytes stored under d, refusing anything larger than
-// limit. The storage layer already checks the digest at end of stream; checking
-// again here keeps the protocol from depending on every backend doing so, since
-// these bytes become trust anchors.
-func readBlob(ctx context.Context, store *storage.Store, d digest.Digest, limit int) ([]byte, error) {
-	rc, err := store.Blobs.Open(ctx, d)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rc.Close() }()
-	data, err := io.ReadAll(io.LimitReader(rc, int64(limit)+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > limit {
-		return nil, invalid("blob %s exceeds %d bytes", d, limit)
-	}
-	if digest.FromBytes(data) != d {
-		return nil, invalid("blob does not match its digest %s", d)
-	}
-	return data, nil
+// Get returns a verified Control of the DAG by digest.
+func (v *ControlView) Get(d digest.Digest) (*Verified, bool) {
+	c, ok := v.verified[d]
+	return c, ok
 }
 
-// LoadControl returns the verified head of the workspace's Control chain.
+// Digests lists every verified Control, which an accepted checkpoint must stay inside.
+func (v *ControlView) Digests() []digest.Digest {
+	out := make([]digest.Digest, 0, len(v.verified))
+	for d := range v.verified {
+		out = append(out, d)
+	}
+	sortDigests(out)
+	return out
+}
+
+// Forked reports whether the DAG has competing heads.
+func (v *ControlView) Forked() bool { return len(v.Heads) > 1 }
+
+// Head returns the single head, or a *ForkError when the DAG forked.
+func (v *ControlView) Head() (*Verified, error) {
+	if v.Forked() {
+		return nil, &ForkError{Heads: v.Heads}
+	}
+	return v.Heads[0], nil
+}
+
+type pendingControl struct {
+	blob []byte
+	c    Control
+}
+
+// LoadControl reads and verifies the Control DAG of a workspace.
 //
-// genesis is the trusted digest from bootstrap information. cp, if not nil, is
-// the newest Control this client accepted before; the head must descend from
-// it. Verification walks back from the head and stops at cp (trusted by
-// digest) or at genesis.
-func LoadControl(ctx context.Context, store *storage.Store, workspace string, genesis digest.Digest, cp *Checkpoint) (*Head, error) {
+// genesis is the trusted digest from bootstrap information; it is fetched by
+// digest, never discovered. Every other Control is accepted only when all its
+// parents are, so objects an outsider published without authority are ignored.
+// cp, if not nil, holds the heads this client accepted before; each must still
+// be part of the DAG, otherwise storage hid something it showed us earlier.
+func LoadControl(ctx context.Context, store storage.Store, workspace string, genesis digest.Digest, cp []digest.Digest) (*ControlView, error) {
 	if err := validDigest(genesis); err != nil {
 		return nil, invalid("trusted genesis digest: %v", err)
 	}
-	d, version, err := store.Refs.Get(ctx, ControlRef)
+	obj, err := store.Fetch(ctx, storage.KindControl, "", genesis)
+	if err != nil {
+		return nil, fmt.Errorf("reading genesis control: %w", err)
+	}
+	root, err := VerifyGenesis(workspace, obj.Signed, genesis)
 	if err != nil {
 		return nil, err
 	}
-	var blobs [][]byte // newest first
-	total := 0
-	for cur := d; ; {
-		blob, err := readBlob(ctx, store, cur, MaxSignedBytes)
+	view := &ControlView{Workspace: workspace, Genesis: genesis, verified: map[digest.Digest]*Verified{genesis: root}}
+
+	revs, err := store.Discover(ctx, storage.KindControl, "")
+	if err != nil {
+		return nil, err
+	}
+	pending := map[digest.Digest]pendingControl{}
+	total := len(obj.Signed)
+	load := func(rev digest.Digest) error {
+		if _, done := view.verified[rev]; done {
+			return nil
+		}
+		if _, ok := pending[rev]; ok {
+			return nil
+		}
+		if len(pending) >= maxControls || total > maxControlBytes {
+			return invalid("control DAG is too large")
+		}
+		o, err := store.Fetch(ctx, storage.KindControl, "", rev)
+		switch {
+		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
+			return nil // listed but unavailable or damaged: it carries no authority
+		case err != nil:
+			return err
+		}
+		total += len(o.Signed)
+		s, err := DecodeSigned(o.Signed)
 		if err != nil {
-			return nil, fmt.Errorf("reading control %s: %w", cur, err)
-		}
-		blobs = append(blobs, blob)
-		total += len(blob)
-		if cur == genesis || cp != nil && cur == cp.Digest {
-			break
-		}
-		if len(blobs) > maxChain || total > maxChainBytes {
-			return nil, invalid("control chain is too long")
-		}
-		s, err := DecodeSigned(blob)
-		if err != nil {
-			return nil, err
+			return nil
 		}
 		c, err := decodeControl(s.Body)
-		if err != nil {
+		if err != nil || c.Workspace != workspace {
+			return nil
+		}
+		pending[rev] = pendingControl{blob: o.Signed, c: c}
+		return nil
+	}
+	for _, rev := range revs {
+		if err := load(rev); err != nil {
 			return nil, err
 		}
-		if c.Generation == 0 || cp != nil && c.Generation <= cp.Generation {
-			// Reached the bottom, or went below the checkpoint, without meeting
-			// a trusted digest: this chain does not descend from what we trust.
-			if cp != nil && c.Generation <= cp.Generation {
-				return nil, fmt.Errorf("%w: control chain does not include accepted generation %d", ErrRollback, cp.Generation)
+	}
+	// Parents the listing did not show can still be fetched by digest.
+	for again := true; again; {
+		again = false
+		for _, p := range pending {
+			for _, parent := range p.c.Parents {
+				if _, ok := pending[parent]; !ok {
+					if _, done := view.verified[parent]; !done {
+						before := len(pending)
+						if err := load(parent); err != nil {
+							return nil, err
+						}
+						again = again || len(pending) != before
+					}
+				}
 			}
-			return nil, invalid("control chain does not start at the trusted genesis")
-		}
-		cur = c.Previous
-	}
-	// Anchor: the oldest blob read is trusted only because its digest equals the
-	// genesis or the checkpoint, so decide by the digest of the bytes themselves.
-	anchor := blobs[len(blobs)-1]
-	anchorDigest := digest.FromBytes(anchor)
-	var prev *Verified
-	switch {
-	case anchorDigest == genesis:
-		if prev, err = VerifyGenesis(workspace, anchor, genesis); err != nil {
-			return nil, err
-		}
-	case cp != nil && anchorDigest == cp.Digest:
-		s, err := DecodeSigned(anchor)
-		if err != nil {
-			return nil, err
-		}
-		c, err := decodeControl(s.Body)
-		if err != nil {
-			return nil, err
-		}
-		if c.Workspace != workspace || c.Generation != cp.Generation {
-			return nil, fmt.Errorf("%w: checkpoint control does not match the recorded generation", ErrRollback)
-		}
-		prev = &Verified{Control: c, Digest: cp.Digest}
-	default:
-		return nil, invalid("control chain does not end at a trusted digest")
-	}
-	for i := len(blobs) - 2; i >= 0; i-- {
-		if prev, err = VerifyNext(prev, blobs[i]); err != nil {
-			return nil, err
 		}
 	}
-	if cp != nil && prev.Generation < cp.Generation {
-		return nil, fmt.Errorf("%w: head generation %d is older than accepted %d", ErrRollback, prev.Generation, cp.Generation)
+	// Accept Controls whose parents are all accepted, until nothing changes.
+	for progress := true; progress; {
+		progress = false
+		for rev, p := range pending {
+			parents := make([]*Verified, 0, len(p.c.Parents))
+			ready := len(p.c.Parents) > 0
+			for _, parent := range p.c.Parents {
+				pv, ok := view.verified[parent]
+				if !ok {
+					ready = false
+					break
+				}
+				parents = append(parents, pv)
+			}
+			if !ready {
+				continue
+			}
+			delete(pending, rev)
+			progress = true
+			if v, err := VerifyChild(parents, p.blob); err == nil && v.Digest == rev {
+				view.verified[rev] = v
+			}
+		}
 	}
-	return &Head{Verified: prev, Version: version}, nil
+	childOf := map[digest.Digest]bool{}
+	for _, v := range view.verified {
+		for _, p := range v.Parents {
+			childOf[p] = true
+		}
+	}
+	for d, v := range view.verified {
+		if !childOf[d] {
+			view.Heads = append(view.Heads, v)
+		}
+	}
+	sortVerified(view.Heads)
+	for _, d := range cp {
+		if _, ok := view.verified[d]; !ok {
+			return nil, fmt.Errorf("%w: accepted control %s is missing from storage", ErrRollback, d)
+		}
+	}
+	return view, nil
 }
 
-// ControlAt returns the control of the given generation and digest from the
-// verified chain behind head. It is for judging an old state against the
-// control it was written under.
-//
-// No signatures are checked again: head is verified, and each older control is
-// named by the Previous digest inside the one after it, so its digest already
-// fixes its content. Reading stops at the requested generation.
-func ControlAt(ctx context.Context, store *storage.Store, head *Verified, generation uint64, d digest.Digest) (*Verified, error) {
-	switch {
-	case generation > head.Generation:
-		return nil, invalid("control generation %d is newer than the verified head %d", generation, head.Generation)
-	case generation == head.Generation:
-		if d != head.Digest {
-			return nil, invalid("control digest does not match generation %d", generation)
+func sortVerified(vs []*Verified) {
+	for i := 1; i < len(vs); i++ {
+		for j := i; j > 0 && vs[j].Digest < vs[j-1].Digest; j-- {
+			vs[j], vs[j-1] = vs[j-1], vs[j]
 		}
-		return head, nil
-	}
-	cur, gen, total := head.Previous, head.Generation-1, 0
-	for steps := 0; ; steps++ {
-		blob, err := readBlob(ctx, store, cur, MaxSignedBytes)
-		if err != nil {
-			return nil, fmt.Errorf("reading control %s: %w", cur, err)
-		}
-		if total += len(blob); steps >= maxChain || total > maxChainBytes {
-			return nil, invalid("control chain is too long")
-		}
-		s, err := DecodeSigned(blob)
-		if err != nil {
-			return nil, err
-		}
-		c, err := decodeControl(s.Body)
-		if err != nil {
-			return nil, err
-		}
-		if c.Generation != gen {
-			return nil, invalid("control %s is generation %d, expected %d", cur, c.Generation, gen)
-		}
-		if gen == generation {
-			if cur != d {
-				return nil, invalid("control digest does not match generation %d", generation)
-			}
-			return &Verified{Control: c, Digest: cur}, nil
-		}
-		cur, gen = c.Previous, gen-1
 	}
 }
 
@@ -206,14 +217,17 @@ func NewGenesis(workspace string, founder Principal, signer signing.Signer) ([]b
 	return blob, d, nil
 }
 
-// PublishGenesis stores a genesis Control from NewGenesis. It fails with
-// storage.ErrConflict when a Control already exists.
-func PublishGenesis(ctx context.Context, store *storage.Store, blob []byte) error {
-	return putControl(ctx, store, blob, "")
+func publishControl(ctx context.Context, store storage.Store, blob []byte) error {
+	return store.Publish(ctx, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(blob), Signed: blob})
+}
+
+// PublishGenesis stores a genesis Control from NewGenesis.
+func PublishGenesis(ctx context.Context, store storage.Store, blob []byte) error {
+	return publishControl(ctx, store, blob)
 }
 
 // CreateControl signs and publishes the genesis Control.
-func CreateControl(ctx context.Context, store *storage.Store, workspace string, founder Principal, signer signing.Signer) (*Verified, error) {
+func CreateControl(ctx context.Context, store storage.Store, workspace string, founder Principal, signer signing.Signer) (*Verified, error) {
 	blob, d, err := NewGenesis(workspace, founder, signer)
 	if err != nil {
 		return nil, err
@@ -228,26 +242,21 @@ func CreateControl(ctx context.Context, store *storage.Store, workspace string, 
 	return v, nil
 }
 
-func putControl(ctx context.Context, store *storage.Store, blob []byte, expected storage.Version) error {
-	d, err := store.Blobs.Put(ctx, bytes.NewReader(blob))
+// UpdateControl signs and publishes the successor of the view's only head.
+// mutate edits the principal list. signer must be an admin of the head;
+// otherwise the result could never verify, so it is refused before anything is
+// published. Storage has no compare-and-swap, so after publishing it loads the
+// DAG again: if another admin published at the same time the result is a
+// *ForkError and the caller must not treat the update as settled.
+func UpdateControl(ctx context.Context, store storage.Store, view *ControlView, signer signing.Signer, mutate func(*Control) error) (*Verified, error) {
+	head, err := view.Head()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// The ref is about to name this digest, so it must be the digest of our bytes.
-	if d != digest.FromBytes(blob) {
-		return fmt.Errorf("storage stored the control under a different digest %s", d)
-	}
-	return store.Refs.Put(ctx, ControlRef, d, expected)
-}
-
-// UpdateControl signs and publishes the successor of head. mutate edits the
-// principal list. signer must be an admin of head; otherwise the result could
-// never verify, so it is refused before anything is written.
-func UpdateControl(ctx context.Context, store *storage.Store, head *Head, signer signing.Signer, mutate func(*Control) error) (*Verified, error) {
 	next := head.Control
 	next.Principals = append([]Principal(nil), head.Principals...)
-	next.Generation++
-	next.Previous = head.Digest
+	next.Parents = []digest.Digest{head.Digest}
+	next.Height = head.Height + 1
 	next.Author = signer.Public().DeviceID()
 	if a, ok := head.Principal(next.Author); !ok || !a.Admin {
 		return nil, errors.New("only an admin can change the workspace control")
@@ -255,16 +264,63 @@ func UpdateControl(ctx context.Context, store *storage.Store, head *Head, signer
 	if err := mutate(&next); err != nil {
 		return nil, err
 	}
+	return publishChild(ctx, store, view, []*Verified{head}, next, signer)
+}
+
+// ResolveFork publishes a Control that joins every head of a forked view. It
+// starts from the principals the heads list (an admin of any head stays one);
+// mutate may only remove principals or admin rights, because VerifyChild
+// refuses a resolution that adds anything. signer must be an admin of every head.
+func ResolveFork(ctx context.Context, store storage.Store, view *ControlView, signer signing.Signer, mutate func(*Control) error) (*Verified, error) {
+	if !view.Forked() {
+		return nil, errors.New("the workspace control is not forked")
+	}
+	author := signer.Public().DeviceID()
+	next := Control{Workspace: view.Workspace, Author: author}
+	var maxHeight uint64
+	union := map[signing.DeviceID]Principal{}
+	for _, h := range view.Heads {
+		if a, ok := h.Principal(author); !ok || !a.Admin {
+			return nil, errors.New("only an admin of every competing control can resolve the fork")
+		}
+		next.Parents = append(next.Parents, h.Digest)
+		maxHeight = max(maxHeight, h.Height)
+		for _, p := range h.Principals {
+			if cur, ok := union[p.ID]; ok {
+				p.Admin = p.Admin || cur.Admin
+			}
+			union[p.ID] = p
+		}
+	}
+	sortDigests(next.Parents)
+	next.Height = maxHeight + 1
+	for _, p := range union {
+		next.Principals = append(next.Principals, p)
+	}
+	if err := mutate(&next); err != nil {
+		return nil, err
+	}
+	return publishChild(ctx, store, view, view.Heads, next, signer)
+}
+
+func publishChild(ctx context.Context, store storage.Store, view *ControlView, parents []*Verified, next Control, signer signing.Signer) (*Verified, error) {
 	blob, err := SignControl(next, signer)
 	if err != nil {
 		return nil, err
 	}
-	v, err := VerifyNext(head.Verified, blob)
+	v, err := VerifyChild(parents, blob)
 	if err != nil {
 		return nil, err
 	}
-	if err := putControl(ctx, store, blob, head.Version); err != nil {
+	if err := publishControl(ctx, store, blob); err != nil {
 		return nil, err
+	}
+	after, err := LoadControl(ctx, store, view.Workspace, view.Genesis, []digest.Digest{v.Digest})
+	if err != nil {
+		return nil, err
+	}
+	if after.Forked() {
+		return nil, &ForkError{Heads: after.Heads}
 	}
 	return v, nil
 }
