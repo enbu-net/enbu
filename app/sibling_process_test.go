@@ -56,15 +56,6 @@ func twinOf(t *testing.T, a *App) *App {
 	return twin
 }
 
-func mustSecrets(t *testing.T, a *App, env string) map[string]string {
-	t.Helper()
-	got, err := a.ListSecrets(bg, env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return got
-}
-
 // The twin publishes and accepts a newer state after this process fetched the
 // ref but before it compared the state with the checkpoint. That is not a
 // rollback: storage has the newer state, this process just read a moment too
