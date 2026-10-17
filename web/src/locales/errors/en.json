@@ -17,5 +17,6 @@
   "untrusted_state": "Stored data failed signature verification and was not used.",
   "rollback_detected": "Storage returned older data than this device already accepted.",
   "incompatible_storage": "This storage was created without a workspace control. Use an empty location.",
-  "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish."
+  "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.",
+  "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details."
 }

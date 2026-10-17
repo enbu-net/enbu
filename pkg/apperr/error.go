@@ -29,6 +29,9 @@ const (
 	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
 	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
 	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
+
+	// Local device.
+	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
 )
 
 var knownCodes = map[Code]struct{}{
@@ -52,6 +55,8 @@ var knownCodes = map[Code]struct{}{
 	CodeRollback:            {},
 	CodeIncompatibleStorage: {},
 	CodeReencryptIncomplete: {},
+
+	CodeIdentityUnavailable: {},
 }
 
 type Params map[string]string
