@@ -114,6 +114,16 @@ enbu pull  # Writes to .env file
 enbu pull --env dev  # Writes to the configured output for dev
 ```
 
+To use the secrets without writing them to disk at all, run the command through enbu:
+
+```bash
+enbu run -- npm start            # secrets become environment variables of npm
+enbu run -e prod -- ./migrate    # another environment
+enbu run --preserve-env -- make  # variables already set in the shell win
+```
+
+The command's exit status is returned as is.
+
 ### 6. Add a team member
 
 Being able to write to storage does not make anyone a member. A new member runs `enbu init`

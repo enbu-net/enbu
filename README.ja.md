@@ -105,6 +105,16 @@ enbu pull # .env ファイルに書き出し
 enbu pull --env dev # dev の設定済み出力先に書き出し
 ```
 
+秘密をディスクに書かずに使うには、コマンドを enbu 経由で起動します:
+
+```bash
+enbu run -- npm start            # 秘密が npm の環境変数になる
+enbu run -e prod -- ./migrate    # 別の環境
+enbu run --preserve-env -- make  # シェルで既に設定済みの変数を優先
+```
+
+コマンドの終了コードはそのまま返します。
+
 ### 6. メンバーの追加
 
 Storageへ書き込めるだけではメンバーになれません。
