@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
@@ -11,6 +9,7 @@ import (
 
 func newPullCommand(a *app.App) *cobra.Command {
 	var toStdout bool
+	var replace bool
 	var envName string
 
 	cmd := &cobra.Command{
@@ -32,29 +31,29 @@ func newPullCommand(a *app.App) *cobra.Command {
 				})
 			}
 
-			dotenv, output, count, err := a.PullSecrets(cmd.Context(), envName)
-			if err != nil {
-				return err
-			}
-
 			if toStdout {
+				dotenv, _, _, err := a.PullSecrets(cmd.Context(), envName)
+				if err != nil {
+					return err
+				}
 				_, _ = cmd.OutOrStdout().Write(dotenv)
 				return nil
 			}
 
-			if a.RepositoryDir != "" && !filepath.IsAbs(output) {
-				output = filepath.Join(a.RepositoryDir, output)
+			written, err := a.PullSecretsToFileWith(cmd.Context(), envName, replace)
+			if err != nil {
+				return err
 			}
-			if err := os.WriteFile(output, dotenv, 0o600); err != nil {
-				return fmt.Errorf("writing %s: %w", output, err)
+			cmd.PrintErrf("✓ Written %s (%d secrets)\n", written.Output, written.Count)
+			if len(written.Kept) > 0 {
+				cmd.PrintErrf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)\n", len(written.Kept), strings.Join(written.Kept, ", "))
 			}
-
-			cmd.PrintErrf("✓ Written %s (%d secrets)\n", output, count)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&toStdout, "stdout", false, "Output to stdout instead of .env file")
+	cmd.Flags().BoolVar(&replace, "replace", false, "Overwrite the output file even if it holds variables enbu does not store")
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
 	return cmd
 }
