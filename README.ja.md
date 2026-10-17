@@ -204,28 +204,27 @@ Device Flowは認証完了前にコードを表示する必要があるため、
 
 ```
 Storage (OCI registry / S3 prefix / Local directory)
-├── control-head                        ← 署名付きメンバー一覧（管理者署名の連鎖）
-├── request-{device-id}                 ← 参加依頼（権限は持たない）
-├── secrets-default                     ← default 環境の暗号文を指す署名付き State
-├── secrets-dev                         ← dev 環境の暗号文を指す署名付き State
-├── enbu-workspace                       ← Workspace UUID
-└── hist-{env-hash}-{time}-{uuid}       ← 過去バージョンの署名付き State
+├── c-{digest}                          ← 署名付きメンバー一覧（それぞれが親を指す）
+├── r-{digest}                          ← 参加依頼（権限は持たない）
+└── s-{scope}-{digest}                  ← 1環境の revision（署名付き State と暗号文）
 ```
 
-Storageは信頼しません。Refは場所を示すヒントにすぎず、権限は署名にあります。
+Storageは信頼しません。名前は場所を示すヒントにすぎず、権限は署名にあります。
 
-- **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは直前のControlの管理者が署名し、`enbu.toml` のgenesis digestから検証します。
-- **署名付きState** 暗号文のdigestと、書き込んだ端末を結び付けます。読む側は作者が現在のメンバーで署名が正しいことを確認してから復号します。
-- **ローカルcheckpoint** この端末が受け入れた最新のControlとStateを覚え、古いものを返されたら拒否します。
+- **上書きしません。** 更新はすべて自分のdigestを名前にした新しいrevisionです。同時に保存した2人のrevisionは並んで残り、どちらの更新も失われません。次に読む人がGitのようにmergeします。別のシークレットは合流し、2通りに変更されたシークレットは `enbu resolve` で選ぶまで止まります。
+- **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは親の管理者が署名し、`enbu.toml` のgenesis digestから検証します。2人の管理者が同時にメンバーを変更するとControlが分岐し、`enbu member resolve-fork` まで全部が止まります。
+- **署名付きState** 暗号文のdigestと親revisionを、書き込んだ端末に結び付けます。読む側は作者と署名を確認してから復号し、メンバーでない者が置いたものは脇に置きます。
+- **ローカルcheckpoint** この端末が受け入れたControlとStateのheadを覚え、Storageが黙って隠せないようにします。一覧の反映遅れは再試行で、データの損失とは扱いません。
 - recipientは検証済みControlだけから作られます。署名鍵は暗号化鍵とは別で、Storageへは保存されません。
 
-対象外: Storageによるサービス拒否、最新revisionを隠すfreeze、checkpointのない新規端末への古いState提示、悪意ある管理者、盗まれた管理者の署名鍵。
+対象外: Storageによるサービス拒否、checkpointのない新規端末に最新revisionを隠すこと、悪意ある管理者、盗まれた管理者の署名鍵、Storageに書き込める削除済みメンバーが、知っていたControlを名乗ってrevisionを置くこと。
 
-1. `enbu add`  - 新規シークレットを検証済みメンバーの公開鍵で暗号化し、署名付きStateとして書き込み  
-2. `enbu edit` - 暗号化された bundle 内の既存シークレットを更新し、署名して書き込み  
-3. `enbu delete` - 暗号化された bundle からシークレットを削除し、署名して書き込み  
-4. `enbu pull` - Control と State を検証してから復号し、`.env` に書き出し  
+1. `enbu add`  - 新規シークレットを検証済みメンバーの公開鍵で暗号化し、署名付きrevisionとして公開  
+2. `enbu edit` - 既存シークレットを更新し、新しいrevisionとして公開  
+3. `enbu delete` - シークレットを削除し、新しいrevisionとして公開  
+4. `enbu pull` - 現在のrevisionをmergeし、検証してから復号して `.env` に書き出し  
 5. `enbu sync` - 現在のメンバー一覧で再暗号化・再署名  
+6. `enbu resolve` - 同時に変更された同じシークレットから値を選ぶ  
 
 ### 認証・初期化フロー
 
@@ -266,11 +265,11 @@ sequenceDiagram
     participant GHCR as GHCR
 
     User->>CLI: enbu add KEY VALUE
-    CLI->>GHCR: control-head を取得し署名の連鎖を検証
+    CLI->>GHCR: Control DAG を取得し署名の連鎖を検証
     GHCR-->>CLI: 検証済みメンバー
     CLI->>CLI: メンバーの recipient 向けに age で暗号化
     CLI->>CLI: 署名鍵でStateに署名
-    CLI->>GHCR: secrets-default にプッシュ
+    CLI->>GHCR: 現在のrevisionの隣に新しいrevisionを公開
     GHCR-->>CLI: 完了
     CLI-->>User: ✓ Secret added
 ```

@@ -2,8 +2,8 @@
 
 Identity and Storage are independent. TPM, Secure Enclave and OS keyring identities
 can each use OCI or S3 storage. The application stores encrypted environment
-bundles, public recipients, workspace metadata and encrypted history through the
-same `pkg/storage.Storage` interface.
+bundles, public recipients and signed membership through the same
+`pkg/storage.Store` interface: `Publish`, `Fetch` and `Discover` revisions.
 
 ## Configuration
 
@@ -63,22 +63,48 @@ Region uses the saved setting, `AWS_REGION`, then `AWS_DEFAULT_REGION`; when omi
 the SDK discovers the bucket region. An omitted endpoint selects Amazon S3.
 No credentials are saved in `enbu.toml` or accepted in storage URLs. Required
 permissions are ListBucket on the workspace prefix and GetObject/PutObject on its
-objects. Normal operations do not delete objects.
+objects. Only `enbu switch --delete --purge` deletes objects (DeleteObject).
 
-## Updates and limits
+## Revisions and limits
 
-`Get` returns the payload and its version in the same read. `Put` creates a missing
-object when the expected version is empty, or replaces the expected version.
-S3 uses the response ETag and conditional
-`If-None-Match`/`If-Match` writes. S3-compatible endpoints must implement these
-conditions. [AWS documents these conditions](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
-The application re-reads and retries conflicts, preserving concurrent edits.
+Storage never replaces anything. An object is published once under a name derived
+from its own content and is never rewritten, so a writer cannot overwrite another
+writer's update and no compare-and-swap is needed:
 
-OCI Distribution has no atomic conditional manifest update. OCI checks the tag
-immediately before writing and reports `AtomicUpdates: false`; simultaneous writers
-can still overwrite each other between that check and the manifest PUT.
+| Object | OCI tag / file name | S3 key |
+|---|---|---|
+| Secret revision | `s-{scope}-{digest}` | `{prefix}/revisions/s-{scope}-{digest}` |
+| Control | `c-{digest}` | `{prefix}/revisions/c-{digest}` |
+| Join request | `r-{digest}` | `{prefix}/revisions/r-{digest}` |
 
-Payloads are limited to 10 MiB. Keys are flat, at most 128 ASCII characters, with
+`scope` is the first 128 bits of a hash of the workspace and the environment's
+resource name; `digest` is the SHA-256 of the signed bytes. A fetch re-derives the
+scope and digest and rejects an object that does not match its name. A tag on an
+OCI registry can be moved by anyone who can write, so this check, not the tag, is
+what is trusted.
+
+A revision is one OCI manifest with two layers (signed state, ciphertext) so the
+registry sees the ciphertext as reachable. `Publish` returns only after reading
+the manifest back by tag and finding both blobs. S3 stores each revision as one
+object with a create-only write (`If-None-Match: *`), which a backend needs only to
+avoid replacing an existing name; correctness does not depend on it.
+
+`Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
+of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and
+never names an object that does not exist. Referrers are not used: GHCR does not
+support them, and a registry that does not would force a racy fallback index.
+
+Concurrent writers therefore leave several heads. The next reader merges them 3-way
+against their merge base (`pkg/merge`) and publishes the result with all heads as
+parents; a key the heads changed differently is a conflict that stops reads and
+writes until `enbu resolve`. Revisions are not trimmed automatically, because a
+revision found late needs its merge base. `enbu switch --delete NAME --purge`
+(admin only) deletes an environment's revisions where the backend can: S3 and the
+local fixture directly, GHCR through the GitHub Packages API (token with
+`delete:packages`; a package version that carries any other tag is left alone,
+because deleting a version deletes all its tags). Other registries cannot.
+
+Payloads are limited to 10 MiB. Names are at most 128 ASCII characters, with
 letters, digits, `-`, `_`, `.`. Invalid/corrupt records, authentication failures,
 missing buckets and network failures are errors, not empty secret bundles.
 Checksums detect corruption; they do not authenticate the backend.
@@ -94,11 +120,10 @@ binary built by the Identity E2E, need it; add `-tags fixture` when running them
 with `go test` directly.
 
 Use an absolute directory path with an empty URL host. Windows paths use
-`local:///C:/path/to/store`. Local entries are versioned JSON envelopes containing
-media type, base64 payload and SHA-256 checksum. Directory/file modes are 0700/0600
-on Unix. Advisory locks serialize processes; writes use a synced temporary file
-and atomic replacement, and the version is a file digest. It targets a local
-filesystem, not a network filesystem with weaker locking guarantees.
+`local:///C:/path/to/store`. Each revision is one file under `revisions/` holding
+the signed bytes and the ciphertext. Directory/file modes are 0700/0600 on Unix;
+writes use a synced temporary file and an atomic rename. It targets a local
+filesystem, not a network filesystem.
 
 ## Tests
 

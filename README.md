@@ -227,34 +227,40 @@ for local commands and report usage.
 
 ```
 Storage (OCI registry / S3 prefix / Local directory)
-├── control-head                        ← Signed member list (admin-signed chain)
-├── request-{device-id}                 ← A device asking to join (carries no authority)
-├── secrets-default                     ← Signed state naming the ciphertext of default
-├── secrets-dev                         ← Signed state naming the ciphertext of dev
-├── enbu-workspace                       ← Shared workspace UUID
-└── hist-{env-hash}-{time}-{uuid}       ← Signed states of earlier versions
+├── c-{digest}                          ← Signed member list (each one names its parent)
+├── r-{digest}                          ← A device asking to join (carries no authority)
+└── s-{scope}-{digest}                  ← A revision of one environment: signed state + ciphertext
 ```
 
-Storage is untrusted. A ref is only a locator; signatures are the authority:
+Storage is untrusted. A name is only a locator; signatures are the authority:
 
+- **Nothing is overwritten.** Every update is a new revision named after its own digest, so two
+  people saving at the same time publish side by side and neither update is lost. The next
+  reader merges them like Git: different secrets combine, and a secret changed in two ways
+  stops until someone runs `enbu resolve`.
 - **Signed Control** lists the trusted devices, their signing keys and age recipients. Each new
-  Control is signed by an admin of the previous one, starting from the genesis digest in `enbu.toml`.
-- **Signed State** binds a ciphertext digest to the device that wrote it. Readers verify the author
-  is a current member and the signature is valid before decrypting.
-- **Local checkpoints** remember the newest Control and State this device accepted, so storage
-  cannot silently serve older ones.
+  Control is signed by an admin of its parent, starting from the genesis digest in `enbu.toml`.
+  If two admins change the members at once, the Control forks and everything waits for
+  `enbu member resolve-fork`.
+- **Signed State** binds a ciphertext digest and its parent revisions to the device that wrote
+  it. Readers verify the author and signature before decrypting, and set aside anything a
+  non-member published.
+- **Local checkpoints** remember the Control and State heads this device accepted, so storage
+  cannot silently hide them. A delayed listing is retried, not treated as lost data.
 - The recipient set is built only from the verified Control. The signing key is a separate keypair
   from the encryption key (hardware P-256 when available, Ed25519 in the OS keyring otherwise) and
   is never written to storage.
 
-Not covered: storage denying service, hiding the newest revision (freeze), a fresh device with no
-checkpoint being served an older state, a malicious admin, and stolen admin keys.
+Not covered: storage denying service, hiding the newest revision from a fresh device with no
+checkpoint, a malicious admin, stolen admin keys, and a removed member who can still write to
+storage publishing a revision that claims the control they knew.
 
-1. `enbu add` — Creates a new secret, encrypts for the verified members, signs the new state, and writes through Storage
-2. `enbu edit` — Updates an existing secret in the encrypted bundle and pushes the updated artifact
-3. `enbu delete` — Removes a secret from the encrypted bundle and pushes the updated artifact
-4. `enbu pull` — Pulls ciphertext, decrypts with your private key, writes to `.env`
+1. `enbu add` — Creates a new secret, encrypts for the verified members, signs a new revision, and publishes it
+2. `enbu edit` — Updates an existing secret and publishes a new revision
+3. `enbu delete` — Removes a secret and publishes a new revision
+4. `enbu pull` — Merges the current revisions, decrypts with your private key, writes to `.env`
 5. `enbu sync` — Re-encrypts and re-signs for the current member list
+6. `enbu resolve` — Chooses between a secret that two people changed at the same time
 
 ### GitHub authentication & initialization flow
 
@@ -295,11 +301,11 @@ sequenceDiagram
     participant GHCR as Storage
 
     User->>CLI: enbu add KEY VALUE
-    CLI->>GHCR: Fetch control-head and verify the signed chain
+    CLI->>GHCR: Fetch the Control DAG and verify the signed chain
     GHCR-->>CLI: Verified members
     CLI->>CLI: Encrypt with age for the members' recipients
     CLI->>CLI: Sign the state with the signing key
-    CLI->>GHCR: Push to secrets-default
+    CLI->>GHCR: Publish a new revision beside the current ones
     GHCR-->>CLI: Done
     CLI-->>User: ✓ Secret added
 ```
