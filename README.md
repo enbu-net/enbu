@@ -94,7 +94,7 @@ such as certificates work this way.
 To bring an existing `.env` into enbu at once:
 
 ```bash
-enbu import            # reads .env of the current environment
+enbu import            # reads ./.env into the current environment
 enbu import app.env    # or any dotenv file, "-" for stdin
 ```
 
@@ -113,6 +113,16 @@ enbu delete API_KEY
 enbu pull  # Writes to .env file
 enbu pull --env dev  # Writes to the configured output for dev
 ```
+
+To use the secrets without writing them to disk at all, run the command through enbu:
+
+```bash
+enbu run -- npm start            # secrets become environment variables of npm
+enbu run -e prod -- ./migrate    # another environment
+enbu run --preserve-env -- make  # variables already set in the shell win
+```
+
+The command's exit status is returned as is.
 
 ### 6. Add a team member
 
@@ -166,7 +176,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
+Use `-e`/`--env` with `add`, `edit`, `delete`, `import`, `run`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
 
 ## Identity storage
 

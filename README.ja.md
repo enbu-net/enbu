@@ -85,7 +85,7 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 既存の `.env` をまとめて取り込むには:
 
 ```bash
-enbu import            # 現在の環境の .env を読む
+enbu import            # ./.env を現在の環境に取り込む
 enbu import app.env    # 任意の dotenv ファイル。"-" で stdin
 ```
 
@@ -104,6 +104,16 @@ enbu delete API_KEY
 enbu pull # .env ファイルに書き出し
 enbu pull --env dev # dev の設定済み出力先に書き出し
 ```
+
+秘密をディスクに書かずに使うには、コマンドを enbu 経由で起動します:
+
+```bash
+enbu run -- npm start            # 秘密が npm の環境変数になる
+enbu run -e prod -- ./migrate    # 別の環境
+enbu run --preserve-env -- make  # シェルで既に設定済みの変数を優先
+```
+
+コマンドの終了コードはそのまま返します。
 
 ### 6. メンバーの追加
 
@@ -153,7 +163,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-`add`、`edit`、`delete`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有されます。`-e` を省略すると `switch` で設定した環境が使われます。
+`add`、`edit`、`delete`、`import`、`run`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有されます。`-e` を省略すると `switch` で設定した環境が使われます。
 
 ## Identityの保管
 
