@@ -15,7 +15,9 @@
   "unavailable": "The required service is unavailable.",
   "not_member": "This device has not been approved yet. Ask an admin to approve it.",
   "untrusted_state": "Stored data failed signature verification and was not used.",
-  "rollback_detected": "Storage returned older data than this device already accepted.",
+  "rollback_detected": "Storage shows less than this device already accepted. It may be a delayed listing; try again.",
   "incompatible_storage": "This storage was created without a workspace control. Use an empty location.",
+  "secret_conflict": "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.",
+  "control_forked": "Two admins changed the members at the same time. An admin must resolve the fork before anything else can proceed.",
   "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish."
 }
