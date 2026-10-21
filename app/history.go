@@ -94,10 +94,6 @@ func (a *App) history(ctx context.Context, env string) ([]HistoryEntry, map[dige
 	return history, revisions, nil
 }
 
-// chronological orders revisions so that every revision comes after its
-// parents. Between revisions that do not depend on each other it follows the
-// recorded time, then the digest, so the order is the same on every device.
-// The clock only breaks ties; it can never put a child before its parent.
 // historyStates keeps the revisions that lead to the current content: the heads
 // a read trusts and their ancestors. Any member can sign a revision that names
 // an older Control, so a removed member who can still write to storage can
@@ -115,6 +111,10 @@ func historyStates(sv *wsp.StateView, heads []*wsp.VerifiedState) map[digest.Dig
 	return out
 }
 
+// chronological orders revisions so that every revision comes after its
+// parents. Between revisions that do not depend on each other it follows the
+// recorded time, then the digest, so the order is the same on every device.
+// The clock only breaks ties; it can never put a child before its parent.
 func chronological(revisions map[digest.Digest]historyRevision) []digest.Digest {
 	waiting := map[digest.Digest]int{}
 	children := map[digest.Digest][]digest.Digest{}
