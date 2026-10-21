@@ -42,7 +42,17 @@ func (a *App) WriteConfig(content string) (err error) {
 	if err != nil {
 		path = filepath.Join(a.RepositoryDir, "enbu.toml")
 	}
-	if current, err := config.LoadProjectFrom(a.RepositoryDir); err == nil {
+	// Fail closed: a current file that cannot be read may hold values to protect.
+	existing, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return fmt.Errorf("reading enbu.toml: %w", err)
+	default:
+		current, err := config.DecodeProject(string(existing))
+		if err != nil {
+			return apperr.Wrap(apperr.CodeInvalidArgument, "the current enbu.toml cannot be read, so this edit cannot be checked; fix it in a text editor", err, nil)
+		}
 		if err := checkProtectedConfig(current, cfg); err != nil {
 			return err
 		}

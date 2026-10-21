@@ -141,3 +141,28 @@ output = ".env.staging"
 		t.Fatalf("another person's current = %q, want the team default", current)
 	}
 }
+
+// A local state that cannot be read must stop commands, not send them to the
+// team default without a word.
+func TestUnreadableLocalStateIsReported(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	dir := t.TempDir()
+	shared := "version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\ndefault_env = \"dev\"\n\n[env.dev]\noutput = \".env.dev\"\n\n[env.staging]\noutput = \".env.staging\"\n"
+	if err := os.WriteFile(dir+"/enbu.toml", []byte(shared), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{RepositoryDir: dir}
+	if err := a.SwitchEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	path := config.LocalStatePath("11111111-1111-4111-8111-111111111111")
+	if err := os.WriteFile(path, []byte("current = [\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if current, err := a.CurrentEnvironment(); err == nil {
+		t.Fatalf("CurrentEnvironment = %q with a broken local state", current)
+	}
+	if err := a.RenameEnvironment("staging", "stage"); err == nil {
+		t.Fatal("RenameEnvironment ignored a broken local state")
+	}
+}

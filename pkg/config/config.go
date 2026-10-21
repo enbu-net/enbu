@@ -85,6 +85,16 @@ func ParseProject(content string) (*ProjectConfig, error) {
 	return &cfg, nil
 }
 
+// DecodeProject reads enbu.toml content without checking its version, so the
+// values it protects can be compared even in a file enbu would refuse to use.
+func DecodeProject(content string) (*ProjectConfig, error) {
+	var cfg ProjectConfig
+	if _, err := toml.Decode(content, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing enbu.toml: %w", err)
+	}
+	return &cfg, nil
+}
+
 func ValidateProjectOutputs(cfg *ProjectConfig) error {
 	for name, env := range cfg.Environments {
 		output := strings.TrimSpace(env.Output)

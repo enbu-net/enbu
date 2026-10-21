@@ -46,9 +46,12 @@ func (a *App) loadProject() (*config.ProjectConfig, error) {
 		return nil, err
 	}
 	if _, perr := uuid.Parse(cfg.WorkspaceID); perr == nil {
-		if local, lerr := config.LoadLocalState(cfg.WorkspaceID); lerr == nil {
-			cfg.Current = local.Current
+		// A broken local state must not silently send commands to the team default.
+		local, err := config.LoadLocalState(cfg.WorkspaceID)
+		if err != nil {
+			return nil, err
 		}
+		cfg.Current = local.Current
 	}
 	return cfg, nil
 }

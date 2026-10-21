@@ -126,3 +126,28 @@ output = ".env.legacy"
 		t.Fatalf("removing an environment: %v", err)
 	}
 }
+
+// A current file that cannot be read may still name a trust root, so an edit
+// that cannot be checked against it is refused rather than written blindly.
+func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
+	dir := t.TempDir()
+	broken := "version = \"v1alpha2\"\ncontrol_genesis = \"sha256:aaaa\"\n[env\n"
+	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{RepositoryDir: dir}
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("WriteConfig over an unreadable file = %v", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "enbu.toml")); string(data) != broken {
+		t.Fatalf("enbu.toml was overwritten:\n%s", data)
+	}
+	// An unsupported version is still read for the values it protects.
+	old := "version = \"v1alpha1\"\ncontrol_genesis = \"sha256:aaaa\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeConfigProtected) {
+		t.Fatalf("WriteConfig over an old version = %v", err)
+	}
+}

@@ -214,7 +214,10 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 		return nil
 	}
 	local, err := config.LoadLocalState(cfg.WorkspaceID)
-	if err != nil || (local.Current != oldName && local.Previous != oldName) {
+	if err != nil {
+		return err
+	}
+	if local.Current != oldName && local.Previous != oldName {
 		return nil
 	}
 	if local.Current == oldName {
