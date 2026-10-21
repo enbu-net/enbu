@@ -46,11 +46,11 @@ describe("TransferModal", () => {
     expect(container.querySelector("[data-transfer-direction]")?.getAttribute("data-transfer-direction")).toBe("download");
 
     void act(() => vi.advanceTimersByTime(2400));
-    expect(container.textContent).toContain("Encrypting with age X25519");
+    expect(container.textContent).toContain("Encrypting for every member with age");
     expect(container.querySelector("[data-transfer-direction]")?.getAttribute("data-transfer-direction")).toBe("local");
 
     void act(() => vi.advanceTimersByTime(1200));
-    expect(container.textContent).toContain("Pushing OCI artifact to GHCR");
+    expect(container.textContent).toContain("Publishing the signed revision to storage");
     expect(container.querySelector("[data-transfer-direction]")?.getAttribute("data-transfer-direction")).toBe("upload");
   });
 
@@ -63,7 +63,7 @@ describe("TransferModal", () => {
         }),
       );
     });
-    expect(container.textContent).toContain("Pushing OCI artifact to GHCR");
+    expect(container.textContent).toContain("Publishing the signed revision to storage");
 
     act(() => {
       window.dispatchEvent(
@@ -92,7 +92,7 @@ describe("TransferModal", () => {
     });
     renderModal();
     act(() => callback?.({ op: "add", step: "encrypt", status: "start" }));
-    expect(container.textContent).toContain("Encrypting with age X25519");
+    expect(container.textContent).toContain("Encrypting for every member with age");
     act(() => root.unmount());
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     root = createRoot(container);

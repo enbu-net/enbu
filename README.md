@@ -163,15 +163,23 @@ enbu switch -c prod         # Create and switch to prod
 enbu switch dev             # Switch to dev
 enbu switch -               # Switch back to previous
 enbu switch -l              # List environments
-enbu switch -d staging      # Delete an environment
-enbu switch -m old new      # Rename an environment
+enbu switch -d staging      # Delete an environment (its stored revisions stay)
+enbu switch -d staging --purge         # Delete it and its stored revisions (admin)
+enbu switch --purge-incarnation ID     # Reclaim what an earlier plain delete left (admin)
+enbu switch -m old new      # Rename an environment (its secrets and history move with it)
 ```
 
-Define environments in `enbu.toml`:
+Switching is personal: the environment you switched to is kept on your device, not in
+`enbu.toml`, so it never shows up as a Git change. `default_env` in `enbu.toml` is the team's
+default, used until you switch.
+
+`enbu.toml` lists the environments and their output files. `enbu switch -c` writes them for
+you:
 
 ```toml
 version = "v1alpha2"
 workspace_id = "11111111-1111-4111-8111-111111111111"
+control_genesis = "sha256:…"   # written by the first init; never edit it
 default_env = "dev"
 
 [storage]
@@ -180,12 +188,37 @@ oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
+incarnation = "6f1c…"          # where dev's secrets are stored; keep it when editing
 
 [env.prod]
 output = ".env.prod"
+incarnation = "0b7e…"
 ```
 
+An environment you add by hand without an `incarnation` is stored under its name, and keeps
+that place when it is renamed. Changing an `incarnation` makes the environment show other
+secrets, so the desktop settings editor refuses it, as it refuses changes to `workspace_id`
+and `control_genesis`.
+
 Use `-e`/`--env` with `add`, `edit`, `delete`, `import`, `run`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
+
+### Concurrent edits and history
+
+Two people saving at the same time both keep their change. If they changed the same secret
+differently, reading stops until someone chooses; nothing is picked for you:
+
+```bash
+enbu resolve                               # list the conflicting values and an ID
+enbu resolve --seen ID API_KEY=sk-new      # use a value (or --pick KEY=N, --delete KEY)
+```
+
+The desktop app shows the same choice on its Secrets screen.
+
+```bash
+enbu history list           # revisions that changed the secrets, oldest first
+enbu history diff 3 5       # keys added, removed or changed between two revisions
+enbu history restore 3      # publish revision 3's content as a new revision
+```
 
 ## Identity storage
 
@@ -262,7 +295,7 @@ for local commands and report usage.
 ## How It Works
 
 ```
-Storage (OCI registry / S3 prefix / Local directory)
+Storage (OCI registry / S3 prefix)
 ├── c-{digest}                          ← Signed member list (each one names its parent)
 ├── r-{digest}                          ← A device asking to join (carries no authority)
 └── s-{scope}-{digest}                  ← A revision of one environment: signed state + ciphertext

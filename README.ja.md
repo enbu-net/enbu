@@ -39,30 +39,42 @@ go install github.com/enbu-net/enbu@latest
 
 ## クイックスタート
 
-### 1. 認証
+### 1. Storage を選ぶ
+
+GHCR を使う場合は、GitHub にログインしてからレジストリのリポジトリを明示します:
 
 ```bash
 enbu auth login
+enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
 ```
 
-GitHubにログインします  
-ヘッドレス環境では、`enbu auth login --device`を実行し、表示されたコードをGitHubで入力します。
-
-### 2. リポジトリの初期化
+ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
+その他の OCI レジストリは、既定で Docker の認証設定を使います:
 
 ```bash
-cd your-repo
-enbu init
+enbu init --storage oci://registry.example.com/team/secrets
 ```
 
-各ユーザーごとにそのリポジトリで1度初期化をします  
-以下が自動で行われます  
+S3 の場合はバケットを先に作り、AWS SDK の既定の認証情報チェーンを使います:
+
+```bash
+enbu init --storage s3://your-bucket/team/workspace --region ap-northeast-1
+```
+
+S3 互換サービスでは `--endpoint https://s3.example.com --path-style` も指定します。
+詳しくは [Storage の設定とテスト](docs/storage.md) を参照してください。
+
+### 2. 各メンバーのワークスペースを初期化
+
+`init` は端末ごとに1度実行します。以下が行われます:
 
 - ハードウェアIdentityの作成・再利用（利用不可ならOS keyring）
 - 暗号化鍵とは別の署名鍵の作成（利用可能ならハードウェアP-256、なければOS keyringのEd25519）
 - 最初の端末はWorkspace Controlを作成して管理者になり、信頼の起点となるdigestを `enbu.toml` の `control_genesis` に保存
-- `enbu.toml` の作成
-- `.gitignore` の更新
+- workspace UUID と storage の設定を `enbu.toml` に保存し、`.gitignore` を更新
+
+`enbu.toml` を commit して共有します。他のメンバーは共有された `enbu.toml` があるフォルダで `enbu init` を実行します。
+UUID がローカルの Identity と環境の切り替え状態をワークスペースに結び付けるので、フォルダを移動したり storage URL を変えたりしても別の Identity にはなりません。
 
 ### 3. シークレットの追加・編集
 
@@ -152,24 +164,58 @@ enbu switch -c prod         # prod を作成して切り替え
 enbu switch dev             # dev に切り替え
 enbu switch -               # 前の環境に戻る
 enbu switch -l              # 環境一覧
-enbu switch -d staging      # 環境を削除
-enbu switch -m old new      # 環境をリネーム
+enbu switch -d staging      # 環境を削除（保存済みの revision は残る）
+enbu switch -d staging --purge         # 環境と保存済みの revision を削除（管理者）
+enbu switch --purge-incarnation ID     # --purge なしで消した環境の revision を回収（管理者）
+enbu switch -m old new      # 環境をリネーム（シークレットと履歴も引き継ぐ）
 ```
 
-`enbu.toml` で環境と出力ファイルを定義:
+切り替えは個人の設定です。切り替えた環境は端末に保存され、`enbu.toml` には書かれないので Git の差分になりません。
+`enbu.toml` の `default_env` はチームの既定値で、切り替えるまではこれが使われます。
+
+`enbu.toml` には環境と出力ファイルが並びます。`enbu switch -c` が書き込みます:
 
 ```toml
-version = "0.1"
-default = "dev"
+version = "v1alpha2"
+workspace_id = "11111111-1111-4111-8111-111111111111"
+control_genesis = "sha256:…"   # 最初の init が書く。編集しない
+default_env = "dev"
+
+[storage]
+url = "oci://ghcr.io/your-org/your-repo-enbu"
+oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
+incarnation = "6f1c…"          # dev のシークレットの保存先。編集時も残す
 
 [env.prod]
 output = ".env.prod"
+incarnation = "0b7e…"
 ```
 
+`incarnation` なしで手書きした環境は名前で保存され、リネームしてもその保存先を使い続けます。
+`incarnation` を変えると別のシークレットが見えるようになるため、デスクトップアプリの設定エディタは
+`workspace_id`・`control_genesis` と同様にその変更を拒否します。
+
 `add`、`edit`、`delete`、`import`、`run`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有されます。`-e` を省略すると `switch` で設定した環境が使われます。
+
+### 同時編集と履歴
+
+2人が同時に保存しても、どちらの変更も残ります。同じシークレットを別々の値に変えた場合は、誰かが選ぶまで読み取りが止まります。enbu が勝手に選ぶことはありません:
+
+```bash
+enbu resolve                               # 競合した値と ID を表示
+enbu resolve --seen ID API_KEY=sk-new      # 値を指定（--pick KEY=N、--delete KEY も可）
+```
+
+デスクトップアプリのシークレット画面でも同じように選べます。
+
+```bash
+enbu history list           # シークレットを変えた revision（古い順）
+enbu history diff 3 5       # 2つの revision 間で追加・削除・変更されたキー
+enbu history restore 3      # revision 3 の内容を新しい revision として公開
+```
 
 ## Identityの保管
 
@@ -234,7 +280,7 @@ Device Flowは認証完了前にコードを表示する必要があるため、
 ## 仕組み
 
 ```
-Storage (OCI registry / S3 prefix / Local directory)
+Storage (OCI registry / S3 prefix)
 ├── c-{digest}                          ← 署名付きメンバー一覧（それぞれが親を指す）
 ├── r-{digest}                          ← 参加依頼（権限は持たない）
 └── s-{scope}-{digest}                  ← 1環境の revision（署名付き State と暗号文）
