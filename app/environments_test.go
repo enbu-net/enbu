@@ -36,6 +36,24 @@ output = ".env.staging"
 	if err := a.SwitchEnvironment("staging"); err != nil {
 		t.Fatalf("SwitchEnvironment: %v", err)
 	}
+	// With no workspace yet there is no local state, so the switch sets the
+	// team default in enbu.toml.
+	written, err := config.LoadProjectFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written.DefaultEnv != "staging" {
+		t.Fatalf("default_env = %q, want staging", written.DefaultEnv)
+	}
+	if err := a.RenameEnvironment("staging", "stage"); err != nil {
+		t.Fatalf("RenameEnvironment: %v", err)
+	}
+	if current, _ := a.CurrentEnvironment(); current != "stage" {
+		t.Fatalf("current after rename = %q, want stage", current)
+	}
+	if entries, _ := os.ReadDir(os.Getenv("XDG_DATA_HOME")); len(entries) != 0 {
+		t.Fatalf("a workspace without workspace_id wrote local state: %v", entries)
+	}
 }
 
 func TestSwitchEnvironmentRejectsInvalidName(t *testing.T) {
