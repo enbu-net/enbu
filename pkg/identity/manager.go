@@ -114,11 +114,11 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 			return nil, errors.New("invalid keyring metadata")
 		}
 		if m.Vault == nil {
-			return nil, errors.New("keyring unavailable")
+			return nil, unavailable("keyring unavailable", nil)
 		}
 		secret, err := m.Vault.Load(vaultService, md.Reference)
 		if err != nil {
-			return nil, fmt.Errorf("loading saved keyring identity: %w", err)
+			return nil, keyringError("loading saved keyring identity", err)
 		}
 		key, err := age.ParseX25519Identity(string(secret))
 		if err != nil {
@@ -220,7 +220,7 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 		md = &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "keyring", Algorithm: "X25519", Recipient: key.Recipient().String()},
 			PublicKey: []byte(key.Recipient().String()), Reference: hex.EncodeToString(ref)}
 		if err := m.Vault.Store(vaultService, md.Reference, []byte(key.String())); err != nil {
-			return nil, info, warning, fmt.Errorf("saving OS keyring identity: %w", err)
+			return nil, info, warning, keyringError("saving OS keyring identity", err)
 		}
 		id = FromX25519(key)
 	}

@@ -121,7 +121,7 @@ func (m *Manager) loadSoftwareSigner(md *SignerMetadata) (signing.Signer, error)
 	}
 	secret, err := m.Vault.Load(vaultService, md.Reference)
 	if err != nil {
-		return nil, fmt.Errorf("loading saved keyring signing key: %w", err)
+		return nil, keyringError("loading saved keyring signing key", err)
 	}
 	defer clear(secret) // the key is derived below; the encoded seed need not linger
 	seed, err := hex.DecodeString(string(secret))
@@ -237,7 +237,7 @@ func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error
 	}
 	md := &SignerMetadata{Backend: "keyring", Algorithm: "Ed25519", Reference: signerVaultPrefix + hex.EncodeToString(ref)}
 	if err := m.Vault.Store(vaultService, md.Reference, []byte(hex.EncodeToString(seed))); err != nil {
-		return nil, nil, fmt.Errorf("saving OS keyring signing key: %w", err)
+		return nil, nil, keyringError("saving OS keyring signing key", err)
 	}
 	return signing.NewEd25519Signer(ed25519.NewKeyFromSeed(seed)), md, nil
 }

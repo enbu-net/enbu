@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 
 	"filippo.io/age"
@@ -38,6 +39,16 @@ func unavailable(reason string, cause error) error {
 		reason += ": " + cause.Error()
 	}
 	return &UnavailableError{Reason: reason, Err: cause}
+}
+
+// keyringError reports a keyring that failed to store or load a key as
+// unavailable. A missing entry stays fs.ErrNotExist: the key is gone, the
+// keyring is not.
+func keyringError(op string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return unavailable(op, err)
 }
 
 type Recipient interface {

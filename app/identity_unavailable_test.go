@@ -132,3 +132,22 @@ func TestLoadingAnUnreachableIdentityReportsWhy(t *testing.T) {
 		})
 	}
 }
+
+type unreachableSignerInfo struct{ *memKeyStore }
+
+func (unreachableSignerInfo) SignerInfo(string) (identity.SignerInfo, error) {
+	return identity.SignerInfo{}, &identity.UnavailableError{Reason: "keyring unavailable"}
+}
+
+// 'enbu identity' reports an unreachable signing key the same way.
+func TestIdentityInfoReportsAnUnreachableSigningKey(t *testing.T) {
+	keys := newMemKeyStore()
+	a := &App{Identities: keys}
+	prepareApp(t, a, "default")
+	if _, _, err := a.CreateIdentity(); err != nil {
+		t.Fatal(err)
+	}
+	a.Identities = unreachableSignerInfo{keys}
+	_, err := a.IdentityInfo()
+	requireIdentityUnavailable(t, err, "keyring unavailable")
+}
