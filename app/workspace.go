@@ -142,7 +142,7 @@ func (a *App) openSession(ctx context.Context) (*session, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, apperr.New(apperr.CodeNotInitialized, "no signing key found (run 'enbu init' first)", nil)
 		}
-		return nil, fmt.Errorf("loading signing key: %w", err)
+		return nil, identityError(fmt.Errorf("loading signing key: %w", err))
 	}
 	if _, ok := s.head.Principal(s.signer.Public().DeviceID()); !ok {
 		s.Close()

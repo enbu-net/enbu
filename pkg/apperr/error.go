@@ -31,6 +31,9 @@ const (
 	CodeSecretConflict      Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
 	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin must resolve it
 	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
+
+	// Local device.
+	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
 )
 
 var knownCodes = map[Code]struct{}{
@@ -56,6 +59,8 @@ var knownCodes = map[Code]struct{}{
 	CodeSecretConflict:      {},
 	CodeControlForked:       {},
 	CodeReencryptIncomplete: {},
+
+	CodeIdentityUnavailable: {},
 }
 
 type Params map[string]string
@@ -170,7 +175,18 @@ func IsKnownCode(code Code) bool {
 	return ok
 }
 
+// ExitError carries the exit status of a command enbu ran on the user's
+// behalf (enbu run). It is not an application error: the command already
+// reported whatever went wrong, enbu only passes its status on.
+type ExitError struct{ Code int }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("command exited with status %d", e.Code) }
+
 func ExitCode(err error) int {
+	var exit *ExitError
+	if errors.As(err, &exit) {
+		return exit.Code
+	}
 	switch CodeOf(err) {
 	case CodeInvalidArgument:
 		return 2

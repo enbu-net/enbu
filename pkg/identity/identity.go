@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sync"
 
 	"filippo.io/age"
@@ -15,6 +16,40 @@ import (
 	"filippo.io/hpke"
 	hpkeecdh "filippo.io/hpke/crypto/ecdh"
 )
+
+// ErrUnavailable marks a device that cannot hold a key in any backend: no
+// usable hardware (TPM, Secure Enclave) and no reachable OS keyring. Callers
+// show the reason and point at `enbu doctor`; it is not an internal error.
+var ErrUnavailable = errors.New("identity backend unavailable")
+
+// UnavailableError is an ErrUnavailable that carries the reason to show.
+type UnavailableError struct {
+	Reason string
+	Err    error // the backend's own error, if any
+}
+
+func (e *UnavailableError) Error() string        { return ErrUnavailable.Error() + ": " + e.Reason }
+func (e *UnavailableError) Is(target error) bool { return target == ErrUnavailable }
+func (e *UnavailableError) Unwrap() error        { return e.Err }
+
+// unavailable reports that no backend can hold a key, for reason and, when
+// the backend said why, its cause.
+func unavailable(reason string, cause error) error {
+	if cause != nil {
+		reason += ": " + cause.Error()
+	}
+	return &UnavailableError{Reason: reason, Err: cause}
+}
+
+// keyringError reports a keyring that failed to store or load a key as
+// unavailable. A missing entry stays fs.ErrNotExist: the key is gone, the
+// keyring is not.
+func keyringError(op string, err error) error {
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return unavailable(op, err)
+}
 
 type Recipient interface {
 	age.Recipient

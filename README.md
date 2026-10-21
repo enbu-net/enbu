@@ -94,7 +94,7 @@ such as certificates work this way.
 To bring an existing `.env` into enbu at once:
 
 ```bash
-enbu import            # reads .env of the current environment
+enbu import            # reads ./.env into the current environment
 enbu import app.env    # or any dotenv file, "-" for stdin
 ```
 
@@ -122,6 +122,16 @@ the environment leaves the file on the next pull and is listed as removed. Kept
 variables are rewritten in sorted order without their comments.
 `enbu pull --replace` overwrites the file completely. A file that is not valid
 dotenv is not overwritten without `--replace`.
+
+To use the secrets without writing them to disk at all, run the command through enbu:
+
+```bash
+enbu run -- npm start            # secrets become environment variables of npm
+enbu run -e prod -- ./migrate    # another environment
+enbu run --preserve-env -- make  # variables already set in the shell win
+```
+
+The command's exit status is returned as is.
 
 ### 6. Add a team member
 
@@ -175,7 +185,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
+Use `-e`/`--env` with `add`, `edit`, `delete`, `import`, `run`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
 
 ## Identity storage
 
