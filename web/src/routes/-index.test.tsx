@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
+import { parse as parseToml } from "smol-toml";
 import { I18nProvider } from "../lib/i18n";
 import { displayError } from "../lib/app-error";
 import { backend } from "../lib/backend";
@@ -482,6 +483,20 @@ describe("enbu config editor", () => {
   it("rejects invalid TOML before entering the GUI", () => {
     expect(() => parseConfigDraft('version = "v1alpha2', [])).toThrow();
   });
+  it("keeps the trust root and where each environment is stored when the form saves", () => {
+    const text =
+      'version = "v1alpha2"\nworkspace_id = "11111111-1111-4111-8111-111111111111"\ncontrol_genesis = "sha256:abc"\ndefault_env = "dev"\n[env.dev]\noutput = ".env.dev"\nincarnation = "22222222-2222-4222-8222-222222222222"\n[env.legacy]\noutput = ".env.legacy"\n';
+    const draft = parseConfigDraft(text, []);
+    draft.default_env = "legacy";
+    const saved = parseToml(serializeConfigDraft(draft)) as {
+      control_genesis?: string;
+      env: Record<string, { incarnation?: string }>;
+    };
+    expect(saved.control_genesis).toBe("sha256:abc");
+    expect(saved.env.dev?.incarnation).toBe("22222222-2222-4222-8222-222222222222");
+    expect(saved.env.legacy).not.toHaveProperty("incarnation");
+  });
+
   it("preserves workspace identity and S3 configuration while editing environments", () => {
     const text =
       'version = "v1alpha2"\nworkspace_id = "11111111-1111-4111-8111-111111111111"\ndefault_env = "default"\n[storage]\nurl = "s3://bucket/prefix"\nregion = "us-east-1"\nendpoint = "http://localhost:9000"\npath_style = true\n[env.default]\noutput = ".env"\n';

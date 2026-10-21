@@ -5,6 +5,7 @@
   "access_denied": "アクセスが拒否されました。",
   "authentication_expired": "認証セッションの有効期限が切れました。もう一度お試しください。",
   "not_initialized": "先にこのリポジトリでenbuをセットアップしてください。",
+  "config_protected": "enbu.toml の \"{key}\" はここでは変更できません。ワークスペースが信頼するメンバーや、シークレットの保存先を決める値です。",
   "config_not_found": "enbu.tomlが見つかりません。",
   "environment_not_found": "環境「{name}」は存在しません。",
   "environment_already_exists": "環境「{name}」はすでに存在します。",

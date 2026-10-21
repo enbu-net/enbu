@@ -5,6 +5,7 @@
   "access_denied": "Access was denied.",
   "authentication_expired": "The authentication session expired. Try again.",
   "not_initialized": "Set up enbu for this repository first.",
+  "config_protected": "\"{key}\" in enbu.toml cannot be changed here: it decides which members the workspace trusts or where secrets are stored.",
   "config_not_found": "enbu.toml was not found.",
   "environment_not_found": "Environment \"{name}\" does not exist.",
   "environment_already_exists": "Environment \"{name}\" already exists.",
