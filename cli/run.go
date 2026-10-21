@@ -2,11 +2,14 @@ package cli
 
 import (
 	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -37,14 +40,35 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 			child.Stdin = cmd.InOrStdin()
 			child.Stdout = cmd.OutOrStdout()
 			child.Stderr = cmd.ErrOrStderr()
-			// Ctrl-C goes to the whole foreground process group; let the
-			// command decide what it means and report how it ended.
-			signal.Ignore(os.Interrupt)
-			defer signal.Reset(os.Interrupt)
-			err = child.Run()
-			var exit *exec.ExitError
-			if errors.As(err, &exit) {
-				return &apperr.ExitError{Code: exit.ExitCode()}
+			// Ctrl-C reaches the whole foreground process group, so the
+			// command gets it directly and decides what it means; enbu only
+			// stays alive to report how it ended. Termination signals sent
+			// to enbu alone are passed on, so the command, which holds the
+			// secrets, is not left running on its own.
+			signals := make(chan os.Signal, 1)
+			signal.Notify(signals, append([]os.Signal{os.Interrupt}, forwardedSignals...)...)
+			defer signal.Stop(signals)
+			if err := child.Start(); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: running %s: %v\n", args[0], err)
+				return &apperr.ExitError{Code: startFailureCode(err)}
+			}
+			done := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case s := <-signals:
+						if s != os.Interrupt {
+							_ = child.Process.Signal(s)
+						}
+					case <-done:
+						return
+					}
+				}
+			}()
+			err = child.Wait()
+			close(done)
+			if code, ok := exitCode(err); ok {
+				return &apperr.ExitError{Code: code}
 			}
 			if err != nil {
 				return invalidArgument("running "+args[0], err)
@@ -56,6 +80,31 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
 	cmd.Flags().BoolVar(&preserveEnv, "preserve-env", false, "Keep variables already set in the environment over secrets of the same name")
 	return cmd
+}
+
+// forwardedSignals are passed on to the command when enbu receives them.
+var forwardedSignals = []os.Signal{syscall.SIGTERM, syscall.SIGHUP}
+
+// exitCode is the status a shell would report for the command: its exit
+// code, or 128 plus the signal that ended it.
+func exitCode(err error) (int, bool) {
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		return 0, false
+	}
+	if ws, ok := exit.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+		return 128 + int(ws.Signal()), true
+	}
+	return exit.ExitCode(), true
+}
+
+// startFailureCode follows the shell: 127 when the command is not found,
+// 126 when it was found but could not be run.
+func startFailureCode(err error) int {
+	if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
+		return 127
+	}
+	return 126
 }
 
 // mergedEnv is base with secrets applied. Secrets win over base unless

@@ -94,7 +94,7 @@ such as certificates work this way.
 To bring an existing `.env` into enbu at once:
 
 ```bash
-enbu import            # reads .env of the current environment
+enbu import            # reads ./.env into the current environment
 enbu import app.env    # or any dotenv file, "-" for stdin
 ```
 
@@ -176,7 +176,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-Use `-e`/`--env` with `add`, `edit`, `delete`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
+Use `-e`/`--env` with `add`, `edit`, `delete`, `import`, `run`, `pull`, and `sync` to override the current environment. Recipients are shared across all environments — Without `-e`, enbu uses the environment set by `switch`.
 
 ## Identity storage
 
