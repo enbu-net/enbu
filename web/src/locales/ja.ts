@@ -62,6 +62,15 @@ export const ja = {
     switchEnvironment: "クリックして切り替え",
     environmentSecrets: "{environment} のシークレット",
   },
+  conflicts: {
+    title: "値を選択",
+    description:
+      "次のシークレットが同時に別々の値へ変更されました。失われた値はありません。続けるには、それぞれ使う値を1つ選んでください。",
+    candidate: "値 {number}",
+    deleted: "（削除）",
+    resolve: "この値を使う",
+    undecided: "すべてのシークレットの値を選んでください。",
+  },
   auth: {
     connect: "GitHub認証",
     waiting: "GitHubでの承認を待っています...",

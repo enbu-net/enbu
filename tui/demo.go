@@ -25,10 +25,10 @@ var (
 		{name: "production"},
 		{name: "staging"},
 	}
-	demoCurrent    = "development"
-	demoRecipients = []app.RecipientInfo{
-		{Username: "octocat", Fingerprint: "abc123def456"},
-		{Username: "hubot", Fingerprint: "xyz789ghi012"},
+	demoCurrent = "development"
+	demoMembers = []app.MemberInfo{
+		{Fingerprint: "aabb-ccdd-aabb-ccdd-aabb", Algorithm: "p256", Admin: true, Self: true},
+		{Fingerprint: "1122-3344-1122-3344-1122", Algorithm: "ed25519"},
 	}
 	demoRequests = []app.JoinRequestInfo{
 		{DeviceID: "demo-device", Fingerprint: "5566-7788-5566-7788-5566", Algorithm: "p256"},
@@ -65,7 +65,7 @@ func newDemoModel() *model {
 	m.repository = "enbu-net/enbu"
 	m.secrets = append([]secretEntry(nil), demoSecretsByEnv[demoCurrent]...)
 	m.envs = append([]envItem(nil), demoEnvs...)
-	m.recipients = append([]app.RecipientInfo(nil), demoRecipients...)
+	m.members = append([]app.MemberInfo(nil), demoMembers...)
 	m.requests = append([]app.JoinRequestInfo(nil), demoRequests...)
 	m.configContent = demoConfigContent
 	m.configDraft = demoConfigContent

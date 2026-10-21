@@ -90,8 +90,8 @@ func TestMouseSwitchesTabsAndRefreshesMembers(t *testing.T) {
 
 	msg := cmd()
 	_, _ = m.Update(msg)
-	if m.loading || len(m.recipients) == 0 {
-		t.Fatalf("members did not load: loading=%v recipients=%d", m.loading, len(m.recipients))
+	if m.loading || len(m.members) == 0 {
+		t.Fatalf("members did not load: loading=%v recipients=%d", m.loading, len(m.members))
 	}
 }
 
@@ -295,7 +295,7 @@ func TestTruncateHandlesLongAndWideValues(t *testing.T) {
 func membersModel() *model {
 	m := testModel()
 	m.tab = tabMembers
-	m.recipients = append(m.recipients, demoRecipients...)
+	m.members = append(m.members, demoMembers...)
 	m.requests = append(m.requests, demoRequests...)
 	m.requests = append(m.requests, appJoinRequest("second-device", "aaaa-bbbb-cccc-dddd-eeee"))
 	return m
@@ -371,11 +371,11 @@ func TestApproveDoesNothingWhenNobodyIsWaiting(t *testing.T) {
 func TestRequestCursorStaysInRangeAfterReload(t *testing.T) {
 	m := membersModel()
 	m.requestCursor = 1
-	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requests: m.requests[:1]})
+	_, _ = m.Update(membersLoadedMsg{members: m.members, requests: m.requests[:1]})
 	if m.requestCursor != 0 {
 		t.Fatalf("cursor = %d after the list shrank", m.requestCursor)
 	}
-	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients})
+	_, _ = m.Update(membersLoadedMsg{members: m.members})
 	if m.requestCursor != 0 {
 		t.Fatalf("cursor = %d with no requests", m.requestCursor)
 	}
@@ -400,7 +400,7 @@ func TestApprovalDialogKeepsItsTargetWhenTheListChanges(t *testing.T) {
 			_ = m.View()
 			_, _ = m.Update(keyMsg("j"))
 			_, _ = m.Update(keyMsg("a"))
-			_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requests: reloaded})
+			_, _ = m.Update(membersLoadedMsg{members: m.members, requests: reloaded})
 			view := m.View().Content // must not panic on an emptied list
 			if !strings.Contains(view, shown.Fingerprint) {
 				t.Fatalf("the dialog stopped showing %s:\n%s", shown.Fingerprint, view)
@@ -419,8 +419,8 @@ func TestApprovalDialogKeepsItsTargetWhenTheListChanges(t *testing.T) {
 
 func TestMembersStayWhenOnlyTheRequestsFailToLoad(t *testing.T) {
 	m := membersModel()
-	_, _ = m.Update(recipientsLoadedMsg{recipients: m.recipients, requestsErr: errors.New("requests unavailable")})
-	if len(m.recipients) == 0 {
+	_, _ = m.Update(membersLoadedMsg{members: m.members, requestsErr: errors.New("requests unavailable")})
+	if len(m.members) == 0 {
 		t.Fatal("the member list was discarded")
 	}
 	if m.err == nil || !strings.Contains(m.View().Content, "requests unavailable") {

@@ -45,6 +45,8 @@ vi.mock("../lib/backend", () => ({
     deleteSecret: vi.fn(),
     pullSecrets: vi.fn(),
     syncSecrets: vi.fn(),
+    listConflicts: vi.fn(),
+    resolveConflicts: vi.fn(),
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(),
     listMembers: vi.fn(async () => []),
@@ -837,6 +839,51 @@ describe("dashboard review regressions", () => {
 
     expect(backendMock.addSecret).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Secret "KEY" already exists.');
+  });
+
+  it("asks for a value when concurrent edits conflict, then shows the resolved secrets", async () => {
+    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
+    backendMock.listMembers.mockResolvedValue([]);
+    const { AppError } = await import("../lib/app-error");
+    backendMock.listSecrets.mockRejectedValueOnce(
+      new AppError({ code: "secret_conflict", params: { keys: "KEY" } }),
+    );
+    const set = {
+      environment: "default",
+      heads: ["h1", "h2"],
+      conflicts: [
+        {
+          key: "KEY",
+          candidates: [
+            { value: "alice", deleted: false },
+            { value: "bob", deleted: false },
+          ],
+        },
+      ],
+    };
+    backendMock.listConflicts.mockResolvedValueOnce(set);
+    backendMock.resolveConflicts.mockResolvedValueOnce(undefined);
+    renderAuthenticatedHome();
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Choose a value");
+    expect(container.textContent).not.toContain("Secrets changed");
+    const bob = container.querySelectorAll<HTMLInputElement>('[data-conflict-key="KEY"] input')[1];
+    act(() => bob?.click());
+    await act(async () => {
+      queryButton("Use these values")?.click();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(backendMock.resolveConflicts).toHaveBeenCalledWith(
+      "default",
+      ["h1", "h2"],
+      [{ key: "KEY", value: "bob", delete: false }],
+    );
+    expect(container.textContent).not.toContain("Choose a value");
+    expect(container.querySelector('input[aria-label="Value: KEY"]')).not.toBeNull();
   });
 
   it("reloads members by repository path and ignores stale completions", async () => {

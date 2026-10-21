@@ -62,6 +62,15 @@ export const en = {
     switchEnvironment: "Click to switch",
     environmentSecrets: "{environment} secrets",
   },
+  conflicts: {
+    title: "Choose a value",
+    description:
+      "These secrets were changed differently at the same time. Nothing was lost. Choose one value for each to continue.",
+    candidate: "Value {number}",
+    deleted: "(deleted)",
+    resolve: "Use these values",
+    undecided: "Choose a value for every secret.",
+  },
   auth: {
     connect: "Connect with GitHub",
     waiting: "Waiting for GitHub authorization...",

@@ -30,13 +30,14 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
+import type { ConflictSet, Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";
 import { ConfirmDeleteDialog } from "../components/confirm-delete-dialog";
 import { FingerprintConfirmDialog } from "../components/fingerprint-confirm-dialog";
 import { TransferModal } from "../components/transfer-modal";
+import { ConflictPanel } from "../components/conflict-panel";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { LanguageSelector } from "../components/language-selector";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -218,6 +219,8 @@ export function HomePage() {
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
+  const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
+  const [resolveLoading, setResolveLoading] = useState(false);
   const [secretKey, setSecretKey] = useState("");
   const [secretValue, setSecretValue] = useState("");
   const [newEnv, setNewEnv] = useState("");
@@ -343,7 +346,15 @@ export function HomePage() {
       const envs = await backend.listEnvironments();
       const nextEnv = resolveWorkspaceEnvironment(env, envs);
       setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));
-      setSecrets(await backend.listSecrets(nextEnv));
+      setConflicts(null);
+      try {
+        setSecrets(await backend.listSecrets(nextEnv));
+      } catch (err) {
+        // Concurrent edits stop reading until a person chooses; show the choice.
+        if (toDisplayError(err).code !== "secret_conflict") throw err;
+        setSecrets({ environment: nextEnv, secrets: [] });
+        setConflicts(await backend.listConflicts(nextEnv));
+      }
     } catch (err) {
       setActionError(toDisplayError(err));
     } finally {
@@ -809,6 +820,26 @@ export function HomePage() {
                 <Spinner size="sm" aria-hidden="true" />
                 <Text color="fg.muted">{t("common.loading")}</Text>
               </HStack>
+            ) : conflicts && conflicts.conflicts.length > 0 ? (
+              <ConflictPanel
+                key={conflicts.heads.join()}
+                set={conflicts}
+                loading={resolveLoading}
+                onResolve={async (choices) => {
+                  setResolveLoading(true);
+                  let failure: DisplayError | null = null;
+                  try {
+                    await backend.resolveConflicts(currentEnvironment, conflicts.heads, choices);
+                  } catch (err) {
+                    failure = toDisplayError(err);
+                  } finally {
+                    setResolveLoading(false);
+                  }
+                  // If someone wrote meanwhile, this shows the values they added.
+                  await refreshWorkspace(currentEnvironment);
+                  if (failure) setActionError(failure);
+                }}
+              />
             ) : (
               <Box
                 overflow="hidden"

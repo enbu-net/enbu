@@ -48,7 +48,7 @@ func TestDemoTabsSwitchWithoutLoadingFrames(t *testing.T) {
 	if cmd != nil || m.loading || m.tab != tabMembers {
 		t.Fatalf("members tab: cmd=%v loading=%v tab=%d", cmd != nil, m.loading, m.tab)
 	}
-	if view := m.View().Content; !strings.Contains(view, "octocat") || strings.Contains(view, "Loading") {
+	if view := m.View().Content; !strings.Contains(view, "(this device)") || strings.Contains(view, "Loading") {
 		t.Fatalf("members view is not ready: %q", view)
 	}
 

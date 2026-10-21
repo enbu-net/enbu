@@ -121,6 +121,15 @@ func (s *DesktopService) SyncSecrets(env string) BindingResponse {
 	return bindingError(s.service.SyncSecrets(env))
 }
 
+func (s *DesktopService) ListConflicts(env string) BindingResponse {
+	value, err := s.service.ListConflicts(env)
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) ResolveConflicts(env string, heads []string, choices []desktop.ConflictChoice) BindingResponse {
+	return bindingError(s.service.ResolveConflicts(env, heads, choices))
+}
+
 func (s *DesktopService) ListHistory(env string) BindingResponse {
 	value, err := s.service.ListHistory(env)
 	return bindingResult(value, err)

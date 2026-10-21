@@ -84,7 +84,7 @@ type model struct {
 	envMenuOpen bool
 	envCursor   int
 
-	recipients []app.RecipientInfo
+	members []app.MemberInfo
 	// requests are devices waiting for an admin to approve them.
 	requests      []app.JoinRequestInfo
 	requestCursor int
@@ -199,9 +199,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		m.clampCursor()
 		return m, nil
-	case recipientsLoadedMsg:
+	case membersLoadedMsg:
 		m.loading = false
-		m.recipients = msg.recipients
+		m.members = msg.members
 		m.requests = msg.requests
 		m.requestCursor = max(0, min(m.requestCursor, len(m.requests)-1))
 		m.err = msg.requestsErr
@@ -212,7 +212,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.overlay = overlayNone
 		m.approving = nil
 		m.loading = true
-		return m, m.loadRecipients()
+		return m, m.loadMembers()
 	case configLoadedMsg:
 		m.loading = false
 		m.configContent = msg.content
@@ -311,7 +311,7 @@ func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, keys.Refresh):
 			m.loading = true
-			return m, m.loadRecipients()
+			return m, m.loadMembers()
 		case key.Matches(msg, keys.Up):
 			m.requestCursor = max(0, m.requestCursor-1)
 		case key.Matches(msg, keys.Down):
@@ -523,7 +523,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.openAdd()
 		case hitRefreshMembers:
 			m.loading = true
-			return m, m.loadRecipients()
+			return m, m.loadMembers()
 		case hitApprove:
 			m.requestCursor = hit.index
 			m.openApprove()
@@ -569,7 +569,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) activateTab(tab tabState) (tea.Model, tea.Cmd) {
-	if m.tab == tab && ((tab == tabMembers && m.recipients != nil) || (tab == tabSettings && m.configContent != "") || tab == tabSecrets) {
+	if m.tab == tab && ((tab == tabMembers && m.members != nil) || (tab == tabSettings && m.configContent != "") || tab == tabSecrets) {
 		return m, nil
 	}
 	if m.configEditing && tab != tabSettings {
@@ -588,7 +588,7 @@ func (m *model) activateTab(tab tabState) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = true
-		return m, m.loadRecipients()
+		return m, m.loadMembers()
 	case tabSettings:
 		if m.staticDemo {
 			return m, nil
@@ -746,11 +746,18 @@ func (m *model) renderMembers(startY int) []string {
 		lines = append(lines, "")
 		help = "j/k select  a approve  r refresh  1/2/3 switch tab  q quit"
 	}
-	if len(m.recipients) == 0 {
-		lines = append(lines, dimStyle.Render("  No recipients found."))
+	if len(m.members) == 0 {
+		lines = append(lines, dimStyle.Render("  No members found."))
 	} else {
-		for _, recipient := range m.recipients {
-			lines = append(lines, fmt.Sprintf("  %s  %s", selectedStyle.Render(recipient.Username), dimStyle.Render(recipient.Fingerprint)))
+		for _, member := range m.members {
+			line := fmt.Sprintf("  %s  %s", selectedStyle.Render(member.Fingerprint), dimStyle.Render(strings.ToUpper(member.Algorithm)))
+			if member.Admin {
+				line += "  admin"
+			}
+			if member.Self {
+				line += dimStyle.Render("  (this device)")
+			}
+			lines = append(lines, line)
 		}
 	}
 	lines = append(lines, "", helpStyle.Render(help))
@@ -1068,18 +1075,18 @@ func (m *model) loadWorkspace() tea.Cmd {
 	}
 }
 
-func (m *model) loadRecipients() tea.Cmd {
+func (m *model) loadMembers() tea.Cmd {
 	return func() tea.Msg {
 		if m.app == nil {
-			return recipientsLoadedMsg{recipients: demoRecipients, requests: demoRequests}
+			return membersLoadedMsg{members: demoMembers, requests: demoRequests}
 		}
-		list, err := m.app.ListRecipients(context.Background())
+		list, err := m.app.ListMembers(context.Background())
 		if err != nil {
 			return errMsg{err}
 		}
 		// Keep the member list when only the request list fails to load.
 		requests, rerr := m.app.ListJoinRequests(context.Background())
-		return recipientsLoadedMsg{recipients: list, requests: requests, requestsErr: rerr}
+		return membersLoadedMsg{members: list, requests: requests, requestsErr: rerr}
 	}
 }
 

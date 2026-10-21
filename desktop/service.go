@@ -155,6 +155,32 @@ type SecretItem struct {
 	Value string `json:"value"`
 }
 
+// ConflictSet is the keys of an environment that concurrent edits changed
+// differently, and the heads they were computed from. ResolveConflicts must be
+// given the same heads, so a value that appeared since is shown first.
+type ConflictSet struct {
+	Environment string           `json:"environment"`
+	Heads       []string         `json:"heads"`
+	Conflicts   []SecretConflict `json:"conflicts"`
+}
+
+type SecretConflict struct {
+	Key        string              `json:"key"`
+	Candidates []ConflictCandidate `json:"candidates"`
+}
+
+type ConflictCandidate struct {
+	Value   string `json:"value"`
+	Deleted bool   `json:"deleted"`
+}
+
+// ConflictChoice settles one conflicted key with a value, or by deleting it.
+type ConflictChoice struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Delete bool   `json:"delete"`
+}
+
 type HistoryEntry struct {
 	Index     int       `json:"index"`
 	Timestamp time.Time `json:"timestamp"`
@@ -662,6 +688,40 @@ func (s *Service) PullSecrets(env string) error {
 
 func (s *Service) SyncSecrets(env string) error {
 	return s.withRepo(func() error { return s.app.SyncSecrets(s.context(), env) })
+}
+
+func (s *Service) ListConflicts(env string) (ConflictSet, error) {
+	return withRepoResult(s, func() (ConflictSet, error) {
+		set, err := s.app.ListConflicts(s.context(), env)
+		if err != nil {
+			return ConflictSet{}, err
+		}
+		if env == "" {
+			env, _ = s.app.CurrentEnvironment()
+		}
+		out := ConflictSet{Environment: env, Heads: set.Heads, Conflicts: make([]SecretConflict, len(set.Conflicts))}
+		for i, c := range set.Conflicts {
+			out.Conflicts[i] = SecretConflict{Key: c.Key, Candidates: make([]ConflictCandidate, len(c.Candidates))}
+			for j, cand := range c.Candidates {
+				out.Conflicts[i].Candidates[j] = ConflictCandidate{Value: cand.Value, Deleted: cand.Deleted}
+			}
+		}
+		return out, nil
+	})
+}
+
+// ResolveConflicts publishes a decision for every conflicted key. heads are the
+// ConflictSet.Heads the person decided from; if anyone wrote since, nothing is
+// published and the call fails with CodeConflict.
+func (s *Service) ResolveConflicts(env string, heads []string, choices []ConflictChoice) error {
+	picked := make(map[string]app.SecretChoice, len(choices))
+	for _, c := range choices {
+		if _, dup := picked[c.Key]; dup {
+			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s was decided twice", c.Key), apperr.Params{"key": c.Key})
+		}
+		picked[c.Key] = app.SecretChoice{Value: c.Value, Delete: c.Delete}
+	}
+	return s.withRepo(func() error { return s.app.ResolveSecrets(s.context(), env, heads, picked) })
 }
 
 func (s *Service) ListHistory(env string) ([]HistoryEntry, error) {

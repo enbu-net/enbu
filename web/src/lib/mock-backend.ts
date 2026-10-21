@@ -1,5 +1,7 @@
 import type {
   AuthStatus,
+  ConflictChoice,
+  ConflictSet,
   Environment,
   GUIRepoStatus,
   InitResult,
@@ -33,6 +35,23 @@ let mockSecretsByEnv: Record<string, { key: string; value: string }[]> = {
     { key: "API_KEY", value: "sk-stg-abc123" },
     { key: "DATABASE_URL", value: "postgres://staging.example.com:5432/enbu" },
   ],
+};
+
+// Staging shows what two people editing one secret at the same time looks like.
+let mockConflictsByEnv: Record<string, ConflictSet> = {
+  staging: {
+    environment: "staging",
+    heads: ["mock-head-a", "mock-head-b"],
+    conflicts: [
+      {
+        key: "API_KEY",
+        candidates: [
+          { value: "sk-stg-abc123", deleted: false },
+          { value: "sk-stg-rotated", deleted: false },
+        ],
+      },
+    ],
+  },
 };
 
 let mockMembers: Member[] = [
@@ -178,6 +197,9 @@ export const mockBackend = {
 
   async listSecrets(env = ""): Promise<SecretsResponse> {
     const name = env || currentEnvName();
+    const conflicted = mockConflictsByEnv[name]?.conflicts.map((c) => c.key) ?? [];
+    if (conflicted.length > 0)
+      throw createAppError("secret_conflict", { keys: conflicted.join(", ") });
     return { environment: name, secrets: [...secretsForEnv(name)] };
   },
 
@@ -209,6 +231,25 @@ export const mockBackend = {
 
   async syncSecrets(_env = ""): Promise<void> {
     // no-op in mock
+  },
+  async listConflicts(env = ""): Promise<ConflictSet> {
+    const name = env || currentEnvName();
+    return mockConflictsByEnv[name] ?? { environment: name, heads: [], conflicts: [] };
+  },
+  async resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void> {
+    const name = env || currentEnvName();
+    const set = mockConflictsByEnv[name];
+    if (!set || set.heads.join() !== heads.join()) throw createAppError("conflict");
+    if (set.conflicts.some((c) => !choices.some((choice) => choice.key === c.key))) {
+      throw createAppError("secret_conflict", { keys: set.conflicts.map((c) => c.key).join(", ") });
+    }
+    const secrets = secretsForEnv(name).filter((s) => !choices.some((c) => c.key === s.key));
+    for (const choice of choices) {
+      if (!choice.delete) secrets.push({ key: choice.key, value: choice.value });
+    }
+    mockSecretsByEnv[name] = secrets.sort((a, b) => a.key.localeCompare(b.key));
+    const { [name]: _resolved, ...rest } = mockConflictsByEnv;
+    mockConflictsByEnv = rest;
   },
   async listRepositories(): Promise<NonNullable<GUIRepoStatus["repo"]>[]> {
     return [...mockRepoHistory];
