@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -63,67 +63,87 @@ func (a *App) ListMembers(ctx context.Context) (members []MemberInfo, err error)
 
 // ListJoinRequests returns verified requests from devices that are not yet
 // principals, newest first. Invalid requests are skipped: they are only hints.
+// Storage listing order says nothing about which request is newest, so a device
+// that asked twice with different keys material appears once per distinct
+// recipient and the admin chooses.
 func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo, err error) {
 	defer apperr.NormalizeInto(&err)
 	s, err := a.openControl(ctx)
 	if err != nil {
 		return nil, err
 	}
-	refs, err := s.store.Refs.List(ctx, wsp.JoinRequestPrefix)
+	pending, err := s.pendingRequests(ctx)
 	if err != nil {
-		return nil, storageError(err)
+		return nil, err
 	}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 8)
-	// Filter before capping: requests left behind by existing members and junk
-	// refs must not crowd out the genuine pending ones.
-	var devices []signing.DeviceID
-	for _, ref := range refs {
-		device := signing.DeviceID(ref[len(wsp.JoinRequestPrefix):])
-		if device.Validate() != nil {
-			continue
-		}
-		if _, member := s.head.Principal(device); member {
-			continue
-		}
-		devices = append(devices, device)
+	for _, p := range pending {
+		requests = append(requests, JoinRequestInfo{DeviceID: string(p.DeviceID()), Fingerprint: p.DeviceID().Fingerprint(), Recipient: p.Recipient,
+			Algorithm: string(p.Signing.Alg), RequestedAt: time.Unix(p.CreatedAt, 0).UTC()})
 	}
-	if len(devices) > maxJoinRequests {
-		devices = devices[:maxJoinRequests]
-	}
-	for _, device := range devices {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			req, err := s.readJoinRequest(ctx, device)
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			requests = append(requests, JoinRequestInfo{DeviceID: string(device), Fingerprint: device.Fingerprint(), Recipient: req.Recipient,
-				Algorithm: string(req.Signing.Alg), RequestedAt: time.Unix(req.CreatedAt, 0).UTC()})
-			mu.Unlock()
-		}()
-	}
-	wg.Wait()
 	sort.Slice(requests, func(i, j int) bool {
 		if !requests[i].RequestedAt.Equal(requests[j].RequestedAt) {
 			return requests[i].RequestedAt.After(requests[j].RequestedAt)
 		}
-		return requests[i].DeviceID < requests[j].DeviceID
+		if requests[i].DeviceID != requests[j].DeviceID {
+			return requests[i].DeviceID < requests[j].DeviceID
+		}
+		return requests[i].Recipient < requests[j].Recipient
 	})
 	return requests, nil
 }
 
-func (s *session) readJoinRequest(ctx context.Context, device signing.DeviceID) (*wsp.JoinRequest, error) {
-	blob, _, err := getRef(ctx, s.store, wsp.JoinRequestRef(device))
+// pendingRequests lists the verified requests of devices that are not members,
+// with identical requests of one device merged. At most maxJoinRequests are
+// read, so someone able to write to storage cannot make the list unbounded.
+func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, error) {
+	all, err := wsp.ListJoinRequests(ctx, s.store, s.workspace)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	type key struct {
+		device    signing.DeviceID
+		recipient string
+	}
+	seen := map[key]bool{}
+	var out []wsp.PendingRequest
+	for _, p := range all {
+		if _, member := s.head.Principal(p.DeviceID()); member {
+			continue
+		}
+		k := key{p.DeviceID(), p.Recipient}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, p)
+		if len(out) >= maxJoinRequests {
+			break
+		}
+	}
+	return out, nil
+}
+
+// requestFor returns the one pending request of device, or an error when the
+// device filed requests with different recipients and a person has to look.
+func (s *session) requestFor(ctx context.Context, device signing.DeviceID) (*wsp.PendingRequest, error) {
+	pending, err := s.pendingRequests(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return wsp.VerifyJoinRequest(s.workspace, device, blob)
+	var found []wsp.PendingRequest
+	for _, p := range pending {
+		if p.DeviceID() == device {
+			found = append(found, p)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return nil, apperr.New(apperr.CodeInvalidArgument, "no join request from that device", nil)
+	case 1:
+		return &found[0], nil
+	default:
+		return nil, apperr.New(apperr.CodeInvalidArgument, "that device filed requests with different recipients; ask it to run 'enbu init' again after removing the stale ones", nil)
+	}
 }
 
 // ApproveMember adds a pending device to the workspace Control as a member,
@@ -139,12 +159,9 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 		if _, ok := c.Principal(device); ok {
 			return apperr.New(apperr.CodeInvalidArgument, "device is already a member", nil)
 		}
-		req, err := s.readJoinRequest(ctx, device)
-		if errors.Is(err, storage.ErrNotFound) {
-			return apperr.New(apperr.CodeInvalidArgument, "no join request from that device", nil)
-		}
+		req, err := s.requestFor(ctx, device)
 		if err != nil {
-			return wspError(err)
+			return err
 		}
 		c.Principals = append(c.Principals, wsp.Principal{ID: device, Signing: req.Signing, Recipient: req.Recipient})
 		return nil
@@ -205,36 +222,26 @@ func (a *App) SetAdmin(ctx context.Context, deviceID string, admin bool) (err er
 // re-encrypts every environment for the new recipient set. Changing who is an
 // admin does not change the recipients, so it passes false.
 func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*session, *wsp.Control) error) error {
-	const attempts = 3
-	var s *session
-	for attempt := 0; ; attempt++ {
-		var err error
-		if s, err = a.openSession(ctx); err != nil {
-			return err
-		}
-		if p, _ := s.head.Principal(s.self()); !p.Admin {
-			s.Close()
-			return apperr.New(apperr.CodeAccessDenied, "only a workspace admin can change members", nil)
-		}
-		v, err := wsp.UpdateControl(ctx, s.store, s.head, s.signer, func(c *wsp.Control) error { return mutate(s, c) })
-		if err == nil {
-			err = s.cps.AcceptControl(v)
-		}
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return err
+	}
+	if p, _ := s.head.Principal(s.self()); !p.Admin {
 		s.Close()
-		if err == nil {
-			break
-		}
-		if errors.Is(err, storage.ErrConflict) && attempt+1 < attempts {
-			continue // another admin changed the Control; retry on the new head
-		}
+		return apperr.New(apperr.CodeAccessDenied, "only a workspace admin can change members", nil)
+	}
+	v, err := wsp.UpdateControl(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error { return mutate(s, c) })
+	s.Close()
+	if err != nil {
 		var appErr *apperr.Error
 		if errors.As(err, &appErr) {
 			return err // validation from mutate keeps its own code
 		}
-		if errors.Is(err, wsp.ErrInvalid) {
-			return wspError(err)
-		}
-		return storageError(err)
+		return wspError(err)
+	}
+	// The new Control is published. Record it so storage cannot later hide it.
+	if err := a.acceptControlHead(ctx, v); err != nil {
+		return err
 	}
 	if !reencrypt {
 		return nil
@@ -248,19 +255,96 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*se
 	return nil
 }
 
+// acceptControlHead reloads the Control DAG, which records the newest heads in
+// the checkpoint, and checks that v is part of it.
+func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
+	s, err := a.openControlView(ctx)
+	if err != nil {
+		return err
+	}
+	if _, ok := s.view.Get(v.Digest); !ok {
+		return wspError(fmt.Errorf("%w: the control just published is missing from storage", wsp.ErrRollback))
+	}
+	return nil
+}
+
+// ResolveControlFork joins competing Control heads. Two admins changed the
+// members at the same time; the resolution keeps only principals every head
+// lists and admin rights every head grants, so nothing is granted by chance.
+// Anyone it dropped, or anything it did not grant, is added again afterwards
+// by a normal approval.
+func (a *App) ResolveControlFork(ctx context.Context) (err error) {
+	defer apperr.NormalizeInto(&err)
+	s, err := a.openControlView(ctx)
+	if err != nil {
+		return err
+	}
+	if s.head != nil {
+		return apperr.New(apperr.CodeInvalidArgument, "the workspace members are not forked", nil)
+	}
+	if a.Identities == nil {
+		return fmt.Errorf("identity store is not initialized")
+	}
+	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
+		return identityError(fmt.Errorf("loading signing key: %w", err))
+	}
+	defer s.Close()
+	_, err = wsp.ResolveFork(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error {
+		kept := c.Principals[:0:0]
+		for _, p := range c.Principals {
+			inAll, adminInAll := true, true
+			for _, h := range s.view.Heads {
+				q, ok := h.Principal(p.ID)
+				inAll = inAll && ok
+				adminInAll = adminInAll && ok && q.Admin
+			}
+			if inAll {
+				p.Admin = adminInAll
+				kept = append(kept, p)
+			}
+		}
+		c.Principals = kept
+		return requireAdmin(c)
+	})
+	if err != nil {
+		var appErr *apperr.Error
+		if errors.As(err, &appErr) {
+			return err
+		}
+		return wspError(err)
+	}
+	// The resolution may have dropped members that the existing ciphertext is
+	// still encrypted for, so it re-encrypts exactly as a removal does.
+	if err := a.reencryptAll(ctx); err != nil {
+		return apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
+	}
+	return nil
+}
+
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
-// of the current Control.
+// of the current Control: the ones enbu.toml names and any other storage holds,
+// so an environment another member created, whose enbu.toml this device has not
+// pulled, does not stay encrypted for the old members.
 func (a *App) reencryptAll(ctx context.Context) error {
-	cfg, err := a.loadProject()
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return err
+	}
+	targets, err := s.environmentResources(ctx)
+	s.Close()
 	if err != nil {
 		return err
 	}
 	// Keep going after a failure: every environment left behind stays encrypted
 	// for the old recipient set, and the error should name all of them.
 	var errs []error
-	for _, env := range cfg.EnvironmentNames() {
-		if err := a.SyncSecrets(ctx, env); err != nil {
-			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", env, err))
+	for _, t := range targets {
+		s, err := a.openSession(ctx)
+		if err == nil {
+			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))
 		}
 	}
 	if len(errs) > 0 {
@@ -273,16 +357,117 @@ func (a *App) reencryptAll(ctx context.Context) error {
 // in this device's checkpoint. It is best effort: an environment that cannot be
 // read now will fail to re-encrypt later with its own error.
 func (a *App) acceptCurrentStates(ctx context.Context) {
-	cfg, err := a.loadProject()
-	if err != nil {
-		return
-	}
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return
 	}
 	defer s.Close()
-	for _, env := range cfg.EnvironmentNames() {
-		_, _ = s.readState(ctx, secretsTag(env), env, true)
+	targets, err := s.environmentResources(ctx)
+	if err != nil {
+		return
 	}
+	for _, t := range targets {
+		_, _ = s.readResource(ctx, t.resource, nil, true)
+	}
+}
+
+// maxDiscoveredResources bounds how many environments missing from enbu.toml are
+// taken from storage, so someone able to write to storage cannot make a
+// membership change unbounded.
+var maxDiscoveredResources = 256
+
+// maxResourceProbes bounds how many revisions of one listed scope are read to
+// learn which resource it holds.
+const maxResourceProbes = 16
+
+type environmentResource struct {
+	name     string // the environment's name, or the resource when enbu.toml lacks it
+	resource string
+}
+
+// environmentResources lists the environments enbu.toml names, then any other
+// secrets resource storage holds a trusted revision of. A scope that holds only
+// revisions from non-members is skipped: anyone able to write to storage can
+// make one, and it has no content to re-encrypt.
+func (s *session) environmentResources(ctx context.Context) ([]environmentResource, error) {
+	var out []environmentResource
+	known := map[string]bool{}
+	for _, env := range s.cfg.EnvironmentNames() {
+		r := s.resource(env)
+		out = append(out, environmentResource{name: env, resource: r})
+		known[storage.StateScope(s.workspace, r)] = true
+	}
+	scopes, err := s.store.Scopes(ctx)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	discovered := 0
+	for _, scope := range scopes {
+		if known[scope] {
+			continue
+		}
+		if discovered >= maxDiscoveredResources {
+			break
+		}
+		resource, err := s.scopeResource(ctx, scope)
+		if err != nil {
+			return nil, err
+		}
+		if resource == "" {
+			continue
+		}
+		trusted, err := s.hasTrustedHead(ctx, resource)
+		if err != nil {
+			return nil, err
+		}
+		if trusted {
+			discovered++
+			out = append(out, environmentResource{name: resource, resource: resource})
+		}
+	}
+	return out, nil
+}
+
+// scopeResource learns which secrets resource of this workspace a listed scope
+// holds, from the first revision that names one. The scope is derived from the
+// workspace and resource, so a revision naming another resource cannot claim
+// this scope. It returns "" when no revision says.
+func (s *session) scopeResource(ctx context.Context, scope string) (string, error) {
+	revs, err := s.store.Discover(ctx, storage.KindState, scope)
+	if err != nil {
+		return "", storageError(err)
+	}
+	for i, rev := range revs {
+		if i >= maxResourceProbes {
+			break
+		}
+		head, err := s.store.FetchHead(ctx, storage.KindState, scope, rev)
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrCorrupt) {
+			continue
+		}
+		if err != nil {
+			return "", storageError(err)
+		}
+		workspace, resource, err := wsp.StateResource(head)
+		if err != nil || workspace != s.workspace || !strings.HasPrefix(resource, "secrets/") ||
+			storage.StateScope(workspace, resource) != scope {
+			continue
+		}
+		return resource, nil
+	}
+	return "", nil
+}
+
+// hasTrustedHead reports whether resource has a head this device may read as
+// current, the same test reading it applies.
+func (s *session) hasTrustedHead(ctx context.Context, resource string) (bool, error) {
+	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource)
+	if err != nil {
+		return false, wspError(err)
+	}
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		return false, err
+	}
+	return len(s.trustedHeads(sv, accepted)) > 0, nil
 }
