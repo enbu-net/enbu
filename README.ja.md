@@ -232,7 +232,7 @@ Storageは信頼しません。名前は場所を示すヒントにすぎず、�
 - **ローカルcheckpoint** この端末が受け入れたControlとStateのheadを覚え、Storageが黙って隠せないようにします。一覧の反映遅れは再試行で、データの損失とは扱いません。
 - recipientは検証済みControlだけから作られます。署名鍵は暗号化鍵とは別で、Storageへは保存されません。
 
-対象外: Storageによるサービス拒否、checkpointのない新規端末に最新revisionを隠すこと、悪意ある管理者、盗まれた管理者の署名鍵、Storageに書き込める削除済みメンバーが、知っていたControlを名乗ってrevisionを置くこと。
+対象外: Storageによるサービス拒否、checkpointのない新規端末に最新revisionを隠すこと、悪意ある管理者、盗まれた管理者の署名鍵。Storageに書き込める削除済みメンバーは、知っていたControlを名乗ってrevisionを置けます。読み取りと履歴はそれを除外しますが、まだ削除を見ていない端末は受け入れます。
 
 1. `enbu add`  - 新規シークレットを検証済みメンバーの公開鍵で暗号化し、署名付きrevisionとして公開  
 2. `enbu edit` - 既存シークレットを更新し、新しいrevisionとして公開  

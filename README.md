@@ -269,8 +269,9 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
   is never written to storage.
 
 Not covered: storage denying service, hiding the newest revision from a fresh device with no
-checkpoint, a malicious admin, stolen admin keys, and a removed member who can still write to
-storage publishing a revision that claims the control they knew.
+checkpoint, a malicious admin, and stolen admin keys. A removed member who can still write to
+storage can publish a revision that claims the control they knew; reads and history set it aside,
+but a device that has not yet seen the removal still accepts it.
 
 1. `enbu add` — Creates a new secret, encrypts for the verified members, signs a new revision, and publishes it
 2. `enbu edit` — Updates an existing secret and publishes a new revision

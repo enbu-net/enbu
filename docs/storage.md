@@ -4,7 +4,9 @@ Identity and Storage are independent. TPM, Secure Enclave and OS keyring identit
 can each use OCI or S3 storage. The application stores encrypted environment
 bundles, public recipients and signed membership through the same
 `pkg/storage.Store` interface: `Publish` a revision, `Discover` revisions, then
-`FetchHead` and `OpenBlob` to read them.
+`FetchHead` and `OpenBlob` to read them. `Scopes` lists the state scopes that hold
+revisions, so a membership change re-encrypts environments missing from the local
+`enbu.toml`.
 
 ## Configuration
 
