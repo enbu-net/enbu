@@ -144,7 +144,7 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cur.Close()
-	read, err := cur.readResource(bg, "default", nil, false)
+	read, err := cur.readResource(bg, cur.resource("default"), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

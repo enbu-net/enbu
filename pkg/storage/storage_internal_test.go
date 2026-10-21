@@ -214,3 +214,24 @@ func TestLocalDiscoverIgnoresForeignFiles(t *testing.T) {
 		t.Fatalf("discover = %v %v", revs, err)
 	}
 }
+
+func TestScopeFromName(t *testing.T) {
+	scope := StateScope("ws", "secrets/dev")
+	rev := digest.FromString("head")
+	name, err := Name(KindState, scope, rev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := scopeFromName(name); !ok || got != scope {
+		t.Fatalf("scopeFromName(%q) = %q %v", name, got, ok)
+	}
+	control, _ := Name(KindControl, "", rev)
+	for _, bad := range []string{control, "s-" + scope, "s-" + scope + "-abc", "s-" + strings.ToUpper(scope) + "-" + rev.Encoded(), "secrets-dev", ""} {
+		if got, ok := scopeFromName(bad); ok {
+			t.Fatalf("scopeFromName(%q) = %q, want no scope", bad, got)
+		}
+	}
+	if got := sortedScopes([]string{name, name, control}); len(got) != 1 || got[0] != scope {
+		t.Fatalf("sortedScopes = %v", got)
+	}
+}

@@ -25,7 +25,7 @@ const stagingEnv = "staging"
 
 func writeStaging(t *testing.T, s *session, secrets map[string]string, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	rev, err := s.writeState(bg, stagingEnv, secrets, parents)
+	rev, err := s.writeState(bg, s.resource(stagingEnv), secrets, parents)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,12 +45,12 @@ func TestSessionStateRoundTrip(t *testing.T) {
 	}
 	defer s.Close()
 	first := writeStaging(t, s, map[string]string{"A": "1"})
-	read, err := s.readResource(bg, stagingEnv, nil, true)
+	read, err := s.readResource(bg, s.resource(stagingEnv), nil, true)
 	if err != nil || read.secrets["A"] != "1" || len(read.heads) != 1 || read.heads[0].Digest != first {
 		t.Fatalf("first read: %+v %v", read, err)
 	}
 	second := writeStaging(t, s, map[string]string{"A": "2"}, first)
-	read, err = s.readResource(bg, stagingEnv, nil, true)
+	read, err = s.readResource(bg, s.resource(stagingEnv), nil, true)
 	if err != nil || read.secrets["A"] != "2" || read.heads[0].Digest != second || read.heads[0].Parents[0] != first {
 		t.Fatalf("second read: %+v %v", read, err)
 	}
@@ -65,7 +65,7 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	}
 	defer s.Close()
 	rev := writeStaging(t, s, map[string]string{"A": "1"})
-	read, err := s.readResource(bg, stagingEnv, nil, false)
+	read, err := s.readResource(bg, s.resource(stagingEnv), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,12 +112,12 @@ func TestSessionIgnoresRevisionsWithoutAuthority(t *testing.T) {
 	}
 	// A valid signature by a device that is not a principal.
 	publishRevision(t, alice.Storage, attacker, ws, resource, s.head.Digest, raw)
-	if _, err := s.readResource(bg, stagingEnv, nil, true); !IsNotFoundError(err) {
+	if _, err := s.readResource(bg, s.resource(stagingEnv), nil, true); !IsNotFoundError(err) {
 		t.Fatalf("revisions without authority were read: %v", err)
 	}
 
 	genuine := writeStaging(t, s, map[string]string{"A": "genuine"})
-	read, err := s.readResource(bg, stagingEnv, nil, true)
+	read, err := s.readResource(bg, s.resource(stagingEnv), nil, true)
 	if err != nil || read.secrets["A"] != "genuine" || len(read.heads) != 1 || read.heads[0].Digest != genuine {
 		t.Fatalf("genuine head not read beside the junk: %+v %v", read, err)
 	}
@@ -145,7 +145,7 @@ func TestSessionRejectsStateOfAnotherResource(t *testing.T) {
 	if err := alice.Storage.Publish(bg, replay); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.readResource(bg, "dev", nil, true); !IsNotFoundError(err) {
+	if _, err := s.readResource(bg, s.resource("dev"), nil, true); !IsNotFoundError(err) {
 		t.Fatalf("state replayed under another environment accepted: %v", err)
 	}
 }
@@ -188,19 +188,19 @@ func TestSessionDetectsStateRollback(t *testing.T) {
 	defer s.Close()
 	first := writeStaging(t, s, map[string]string{"A": "1"})
 	second := writeStaging(t, s, map[string]string{"A": "2"}, first)
-	if _, err := s.readResource(bg, stagingEnv, nil, true); err != nil { // accepts the second revision
+	if _, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil { // accepts the second revision
 		t.Fatal(err)
 	}
 	// Storage stops showing the newest revision.
 	real := alice.Storage
 	alice.Storage = hide(real, second)
 	s.store = alice.Storage
-	if _, err := s.readResource(bg, stagingEnv, nil, true); !apperr.Is(err, apperr.CodeRollback) {
+	if _, err := s.readResource(bg, s.resource(stagingEnv), nil, true); !apperr.Is(err, apperr.CodeRollback) {
 		t.Fatalf("storage that lost an accepted revision: %v", err)
 	}
 	// Seeing it again is not a rollback: a stale listing is temporary.
 	s.store = real
-	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "2" {
+	if read, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil || read.secrets["A"] != "2" {
 		t.Fatalf("after storage recovered: %v", err)
 	}
 }
@@ -355,7 +355,7 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.writeState(bg, stagingEnv, map[string]string{"A": "1"}, nil)
+	_, err = s.writeState(bg, s.resource(stagingEnv), map[string]string{"A": "1"}, nil)
 	if !errors.Is(err, errControlMoved) {
 		t.Fatalf("write on a stale control: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fresh.Close()
-	if _, err := fresh.writeState(bg, stagingEnv, map[string]string{"A": "1"}, nil); err != nil {
+	if _, err := fresh.writeState(bg, fresh.resource(stagingEnv), map[string]string{"A": "1"}, nil); err != nil {
 		t.Fatalf("write on the current control: %v", err)
 	}
 }
@@ -422,7 +422,7 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	bobsRev := publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), s.head.Digest, raw)
-	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "by bob" {
+	if read, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil || read.secrets["A"] != "by bob" {
 		t.Fatalf("bob's state while he is a member: %v", err)
 	}
 	s.Close()
@@ -441,7 +441,7 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if read, err := s.readResource(bg, stagingEnv, nil, true); err != nil || read.secrets["A"] != "by bob" {
+	if read, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil || read.secrets["A"] != "by bob" {
 		t.Fatalf("the state alice already accepted was refused after bob left: %v", err)
 	}
 
@@ -452,7 +452,7 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), oldControl, forged, bobsRev)
-	read, err := s.readResource(bg, stagingEnv, nil, true)
+	read, err := s.readResource(bg, s.resource(stagingEnv), nil, true)
 	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Digest != bobsRev {
 		t.Fatalf("a revision signed after the removal changed what is read: %+v %v", read, err)
 	}
@@ -486,7 +486,7 @@ func TestSessionSetsAsideAHeadOfAMemberRemovedBeforeItWasAccepted(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err := s.readResource(bg, stagingEnv, nil, true); !apperr.Is(err, apperr.CodeUntrusted) {
+	if _, err := s.readResource(bg, s.resource(stagingEnv), nil, true); !apperr.Is(err, apperr.CodeUntrusted) {
 		t.Fatalf("a head by a removed member, never accepted: %v", err)
 	}
 }

@@ -147,6 +147,24 @@ type StateView struct {
 }
 
 // maxRevisions bounds how many revisions one load reads.
+// StateResource reads the workspace and resource a stored state names, without
+// verifying anything. The answer is untrusted; it only tells a caller that
+// found a revision by listing storage which resource to verify it against.
+func StateResource(blob []byte) (workspace, resource string, err error) {
+	signed, err := DecodeSigned(blob)
+	if err != nil {
+		return "", "", err
+	}
+	var s State
+	if err := decodeCanonical(signed.Body, &s); err != nil {
+		return "", "", err
+	}
+	if err := s.validate(); err != nil {
+		return "", "", err
+	}
+	return s.Workspace, s.Resource, nil
+}
+
 var maxRevisions = 20000
 
 // LoadStates reads the head of every revision of a resource that storage lists,

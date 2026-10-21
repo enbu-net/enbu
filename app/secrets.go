@@ -35,7 +35,7 @@ func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]st
 		return nil, err
 	}
 	defer s.Close()
-	read, err := s.readResource(ctx, resolved.Name, nil, true)
+	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
 		return map[string]string{}, nil
 	}
@@ -118,7 +118,7 @@ func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, 
 		return nil, err
 	}
 	defer s.Close()
-	read, err := s.readResource(ctx, resolved.Name, nil, true)
+	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
 		return &ConflictSet{}, nil
 	}
@@ -208,6 +208,12 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 	if err != nil {
 		return err
 	}
+	return a.changeResource(ctx, s, s.resource(resolved.Name), op, choices, seen, change)
+}
+
+// changeResource is changeSecretWith for one storage resource. It takes over s
+// and closes it.
+func (a *App) changeResource(ctx context.Context, s *session, resource, op string, choices map[string]merge.Choice, seen []string, change func(map[string]string) error) error {
 	defer func() { // s is replaced when the member list changes
 		if s != nil {
 			s.Close()
@@ -220,7 +226,7 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 	var published []digest.Digest // revisions this call made; a stale listing may not show them yet
 	for attempt := 0; attempt < attempts; attempt++ {
 		a.emitStepProgress(op, "pull_secrets", "start")
-		cur, err := s.readResource(ctx, resolved.Name, choices, true, published...)
+		cur, err := s.readResource(ctx, resource, choices, true, published...)
 		var secrets map[string]string
 		var parents []digest.Digest
 		if err != nil {
@@ -256,11 +262,11 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 		// Look once more just before publishing: heads that appeared during the
 		// edit are merged now, in the same revision.
 		if cur != nil {
-			latest, err := s.loadResource(ctx, resolved.Name, published...)
+			latest, err := s.loadResource(ctx, resource, published...)
 			if err != nil {
 				return err
 			}
-			accepted, err := s.cps.State(s.resource(resolved.Name))
+			accepted, err := s.cps.State(resource)
 			if err != nil {
 				return err
 			}
@@ -271,7 +277,7 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 		}
 		a.emitStepProgress(op, "encrypt", "start")
 		a.emitStepProgress(op, "push", "start")
-		rev, err := s.writeState(ctx, resolved.Name, secrets, parents)
+		rev, err := s.writeState(ctx, resource, secrets, parents)
 		if rev != "" {
 			published = append(published, rev)
 		}
@@ -299,7 +305,7 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 		if err != nil {
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
-		if err := s.acceptPublished(ctx, resolved.Name, rev); err != nil {
+		if err := s.acceptPublished(ctx, resource, rev); err != nil {
 			return err
 		}
 		a.emitStepProgress(op, "push", "done")
@@ -358,7 +364,7 @@ func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*
 	defer s.Close()
 	a.emitStepProgress("pull", "pull_secrets", "start")
 	a.emitStepProgress("pull", "decrypt", "start")
-	read, err := s.readResource(ctx, resolved.Name, nil, true)
+	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if err != nil {
 		return nil, fmt.Errorf("pulling secrets: %w", err)
 	}

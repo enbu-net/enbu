@@ -83,7 +83,7 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 						if err != nil {
 							t.Fatal(err)
 						}
-						sv, err := s.loadResource(ctx, "default")
+						sv, err := s.loadResource(ctx, s.resource("default"))
 						if err != nil {
 							t.Fatal(err)
 						}

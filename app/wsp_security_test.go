@@ -110,7 +110,7 @@ func TestRecipientInjection(t *testing.T) {
 		t.Fatalf("recipients: %+v %v", recipients, err)
 	}
 	// The ciphertext alice just wrote cannot be opened with the attacker's key.
-	read, err := s.readResource(bg, "default", nil, true)
+	read, err := s.readResource(bg, s.resource("default"), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	ciphertext, _ := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
 	cur, _ := alice.openSession(bg)
 	defer cur.Close()
-	sv, err := cur.loadResource(bg, "default")
+	sv, err := cur.loadResource(bg, cur.resource("default"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldRead, err := before.readResource(bg, "default", nil, true)
+	oldRead, err := before.readResource(bg, before.resource("default"), nil, true)
 	before.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readResource(bg, "default", nil, true)
+	read, err := s.readResource(bg, s.resource("default"), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +494,7 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readResource(bg, "default", nil, true)
+	read, err := s.readResource(bg, s.resource("default"), nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}

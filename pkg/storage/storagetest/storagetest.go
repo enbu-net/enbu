@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -132,6 +133,24 @@ func (m *Memory) Discover(ctx context.Context, kind storage.Kind, scope string) 
 	}
 	sort.Slice(revs, func(i, j int) bool { return revs[i] < revs[j] })
 	return revs, nil
+}
+
+func (m *Memory) Scopes(ctx context.Context) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	seen := map[string]bool{}
+	var scopes []string
+	for _, o := range m.objs {
+		if o.Kind == storage.KindState && !seen[o.Scope] {
+			seen[o.Scope] = true
+			scopes = append(scopes, o.Scope)
+		}
+	}
+	sort.Strings(scopes)
+	return scopes, nil
 }
 
 func (m *Memory) Delete(ctx context.Context, kind storage.Kind, scope string, rev digest.Digest) error {
@@ -277,6 +296,10 @@ func Contract(t *testing.T, s storage.Store) {
 	if revs, err := s.Discover(ctx, storage.KindState, Scope("secrets/none")); err != nil || len(revs) != 0 {
 		t.Fatalf("discover empty scope = %v %v", revs, err)
 	}
+	// Scopes lists every state scope once, and nothing of other kinds.
+	if scopes, err := s.Scopes(ctx); err != nil || !slices.Equal(scopes, sortedScopes(scope, other)) {
+		t.Fatalf("scopes = %v %v, want %v", scopes, err, sortedScopes(scope, other))
+	}
 
 	// Missing and invalid references.
 	if _, err := s.FetchHead(ctx, storage.KindState, scope, digest.FromString("missing")); !errors.Is(err, storage.ErrNotFound) {
@@ -349,6 +372,12 @@ func Contract(t *testing.T, s storage.Store) {
 	if _, err := s.Discover(cctx, storage.KindState, scope); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled discover: %v", err)
 	}
+}
+
+func sortedScopes(scopes ...string) []string {
+	out := slices.Clone(scopes)
+	sort.Strings(out)
+	return out
 }
 
 func sortedRevs(revs ...digest.Digest) []digest.Digest {

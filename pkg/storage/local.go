@@ -239,6 +239,31 @@ func (s local) Discover(ctx context.Context, kind Kind, scope string) ([]digest.
 	return revs, ctx.Err()
 }
 
+func (s local) Scopes(ctx context.Context) ([]string, error) {
+	root, err := s.openRoot()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(revisionDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	entries, err := f.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(entries))
+	for i, entry := range entries {
+		names[i] = entry.Name()
+	}
+	return sortedScopes(names), ctx.Err()
+}
+
 func (s local) Delete(ctx context.Context, kind Kind, scope string, rev digest.Digest) error {
 	name, err := Name(kind, scope, rev)
 	if err != nil {

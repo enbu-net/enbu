@@ -51,15 +51,20 @@ func (a *App) history(ctx context.Context, env string) ([]HistoryEntry, map[dige
 		return nil, nil, err
 	}
 	defer s.Close()
-	sv, err := s.loadResource(ctx, resolved.Name)
+	resource := s.resource(resolved.Name)
+	sv, err := s.loadResource(ctx, resource)
 	if IsNotFoundError(err) {
 		return nil, nil, nil
 	}
 	if err != nil {
 		return nil, nil, err
 	}
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		return nil, nil, err
+	}
 	revisions := map[digest.Digest]historyRevision{}
-	for d, st := range sv.States {
+	for d, st := range historyStates(sv, s.trustedHeads(sv, accepted)) {
 		secrets, err := s.decrypt(ctx, st)
 		var noMatch *agecrypto.NoIdentityMatchError
 		if errors.As(err, &noMatch) {
@@ -93,6 +98,23 @@ func (a *App) history(ctx context.Context, env string) ([]HistoryEntry, map[dige
 // parents. Between revisions that do not depend on each other it follows the
 // recorded time, then the digest, so the order is the same on every device.
 // The clock only breaks ties; it can never put a child before its parent.
+// historyStates keeps the revisions that lead to the current content: the heads
+// a read trusts and their ancestors. Any member can sign a revision that names
+// an older Control, so a removed member who can still write to storage can
+// publish one; reading sets it aside as a head, and history must too, or
+// restoring it would publish its content under the restorer's signature.
+func historyStates(sv *wsp.StateView, heads []*wsp.VerifiedState) map[digest.Digest]*wsp.VerifiedState {
+	out := map[digest.Digest]*wsp.VerifiedState{}
+	for _, h := range heads {
+		for d := range sv.Graph.Ancestors(h.Digest) {
+			if st, ok := sv.States[d]; ok {
+				out[d] = st
+			}
+		}
+	}
+	return out
+}
+
 func chronological(revisions map[digest.Digest]historyRevision) []digest.Digest {
 	waiting := map[digest.Digest]int{}
 	children := map[digest.Digest][]digest.Digest{}

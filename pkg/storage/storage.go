@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
@@ -92,6 +93,9 @@ type Store interface {
 	// Discover lists the revisions it can currently see. The list may be stale
 	// but never names an object that does not exist.
 	Discover(ctx context.Context, kind Kind, scope string) ([]digest.Digest, error)
+	// Scopes lists the state scopes that hold at least one revision it can
+	// currently see, sorted. Like Discover it may be stale.
+	Scopes(ctx context.Context) ([]string, error)
 	// Delete removes an object. Backends without Capabilities.PhysicalDelete return ErrUnsupported.
 	Delete(ctx context.Context, kind Kind, scope string, rev digest.Digest) error
 	Capabilities() Capabilities
@@ -219,6 +223,38 @@ func revFromName(prefix, name string) (digest.Digest, bool) {
 		return "", false
 	}
 	return d, true
+}
+
+// scopeFromName extracts the state scope from a listed name, or reports that
+// the name is not a well-formed state revision.
+func scopeFromName(name string) (string, bool) {
+	l, _ := KindState.letter()
+	rest, ok := strings.CutPrefix(name, l+"-")
+	if !ok || len(rest) <= scopeHexLen || rest[scopeHexLen] != '-' {
+		return "", false
+	}
+	scope := rest[:scopeHexLen]
+	if validScope(KindState, scope) != nil {
+		return "", false
+	}
+	if _, ok := revFromName(l+"-"+scope+"-", name); !ok {
+		return "", false
+	}
+	return scope, true
+}
+
+// sortedScopes returns the distinct state scopes among names, sorted.
+func sortedScopes(names []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range names {
+		if scope, ok := scopeFromName(n); ok && !seen[scope] {
+			seen[scope] = true
+			out = append(out, scope)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ValidateKey checks that a name is a legal OCI tag and a legal file name.

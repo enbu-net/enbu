@@ -179,8 +179,7 @@ func (r *resourceRead) parents() []digest.Digest {
 
 // loadResource verifies every revision of env that storage shows and checks it
 // against what this device accepted before. It decrypts nothing.
-func (s *session) loadResource(ctx context.Context, env string, also ...digest.Digest) (*wsp.StateView, error) {
-	resource := s.resource(env)
+func (s *session) loadResource(ctx context.Context, resource string, also ...digest.Digest) (*wsp.StateView, error) {
 	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
 	if err != nil {
 		return nil, wspError(err)
@@ -210,16 +209,15 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 // (so an admin can take over what a since-removed member last wrote). choices
 // settles conflicts a person has already decided. With record set the verified
 // view becomes this device's checkpoint.
-func (s *session) readResource(ctx context.Context, env string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
-	sv, err := s.loadResource(ctx, env, also...)
+func (s *session) readResource(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
+	sv, err := s.loadResource(ctx, resource, also...)
 	if err != nil {
 		return nil, err
 	}
-	return s.mergeResource(ctx, env, sv, choices, record)
+	return s.mergeResource(ctx, resource, sv, choices, record)
 }
 
-func (s *session) mergeResource(ctx context.Context, env string, sv *wsp.StateView, choices map[string]merge.Choice, record bool) (*resourceRead, error) {
-	resource := s.resource(env)
+func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice, record bool) (*resourceRead, error) {
 	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return nil, err
@@ -329,7 +327,7 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // revision that merges parents. Storage has no compare-and-swap, so publishing
 // never replaces anything: a concurrent writer's revision stays beside this one
 // and the next reader merges them.
-func (s *session) writeState(ctx context.Context, env string, secrets map[string]string, parents []digest.Digest) (digest.Digest, error) {
+func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (digest.Digest, error) {
 	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
 		return "", err
@@ -337,7 +335,6 @@ func (s *session) writeState(ctx context.Context, env string, secrets map[string
 	if err := s.controlUnchanged(ctx); err != nil {
 		return "", err
 	}
-	resource := s.resource(env)
 	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
 		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
@@ -363,12 +360,12 @@ func (s *session) writeState(ctx context.Context, env string, secrets map[string
 
 // acceptPublished records the view that includes a revision just published, so
 // a later view without it is a rollback.
-func (s *session) acceptPublished(ctx context.Context, env string, rev digest.Digest) error {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, s.resource(env), rev)
+func (s *session) acceptPublished(ctx context.Context, resource string, rev digest.Digest) error {
+	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, rev)
 	if err != nil {
 		return wspError(err)
 	}
-	accepted, err := s.cps.State(s.resource(env))
+	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return err
 	}
@@ -377,5 +374,5 @@ func (s *session) acceptPublished(ctx context.Context, env string, rev digest.Di
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return wspError(s.cps.AcceptStates(s.resource(env), sv.Graph, digests))
+	return wspError(s.cps.AcceptStates(resource, sv.Graph, digests))
 }

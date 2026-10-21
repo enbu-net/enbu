@@ -300,3 +300,18 @@ func (s ociStore) Discover(ctx context.Context, kind Kind, scope string) ([]dige
 	sort.Slice(revs, func(i, j int) bool { return revs[i] < revs[j] })
 	return revs, remoteError(err)
 }
+
+func (s ociStore) Scopes(ctx context.Context) ([]string, error) {
+	var names []string
+	err := s.repo.Tags(ctx, "", func(tags []string) error {
+		names = append(names, tags...)
+		return nil
+	})
+	if errors.Is(err, errdef.ErrNotFound) || repositoryUnknown(err) {
+		return nil, nil // nothing was ever published here
+	}
+	if err != nil {
+		return nil, remoteError(err)
+	}
+	return sortedScopes(names), nil
+}

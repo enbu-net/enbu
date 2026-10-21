@@ -80,7 +80,7 @@ func TestConcurrentWritesOfDifferentKeysBothSurvive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readResource(bg, "default", nil, false)
+	read, err := s.readResource(bg, s.resource("default"), nil, false)
 	if err != nil || len(read.heads) != 1 || len(read.heads[0].Parents) != 2 {
 		t.Fatalf("heads did not converge: %+v %v", read, err)
 	}
@@ -204,7 +204,7 @@ func TestStaleListingMakesAForkNotALostUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sv, err := bs.loadResource(bg, "default")
+	sv, err := bs.loadResource(bg, bs.resource("default"))
 	bs.Close()
 	if err != nil || len(sv.Heads) != 1 {
 		t.Fatalf("bob's view: %v", err)
@@ -276,7 +276,7 @@ func TestResolveRefusesWhenAValueAppearedAfterTheListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	read, err := s.readResource(bg, "default", nil, false)
+	read, err := s.readResource(bg, s.resource("default"), nil, false)
 	if err != nil {
 		t.Fatal(err)
 	}

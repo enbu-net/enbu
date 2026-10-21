@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
@@ -320,18 +322,29 @@ func (a *App) ResolveControlFork(ctx context.Context) (err error) {
 }
 
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
-// of the current Control.
+// of the current Control: the ones enbu.toml names and any other storage holds,
+// so an environment another member created, whose enbu.toml this device has not
+// pulled, does not stay encrypted for the old members.
 func (a *App) reencryptAll(ctx context.Context) error {
-	cfg, err := a.loadProject()
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return err
+	}
+	targets, err := s.environmentResources(ctx)
+	s.Close()
 	if err != nil {
 		return err
 	}
 	// Keep going after a failure: every environment left behind stays encrypted
 	// for the old recipient set, and the error should name all of them.
 	var errs []error
-	for _, env := range cfg.EnvironmentNames() {
-		if err := a.SyncSecrets(ctx, env); err != nil {
-			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", env, err))
+	for _, t := range targets {
+		s, err := a.openSession(ctx)
+		if err == nil {
+			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))
 		}
 	}
 	if len(errs) > 0 {
@@ -344,16 +357,117 @@ func (a *App) reencryptAll(ctx context.Context) error {
 // in this device's checkpoint. It is best effort: an environment that cannot be
 // read now will fail to re-encrypt later with its own error.
 func (a *App) acceptCurrentStates(ctx context.Context) {
-	cfg, err := a.loadProject()
-	if err != nil {
-		return
-	}
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return
 	}
 	defer s.Close()
-	for _, env := range cfg.EnvironmentNames() {
-		_, _ = s.readResource(ctx, env, nil, true)
+	targets, err := s.environmentResources(ctx)
+	if err != nil {
+		return
 	}
+	for _, t := range targets {
+		_, _ = s.readResource(ctx, t.resource, nil, true)
+	}
+}
+
+// maxDiscoveredResources bounds how many environments missing from enbu.toml are
+// taken from storage, so someone able to write to storage cannot make a
+// membership change unbounded.
+var maxDiscoveredResources = 256
+
+// maxResourceProbes bounds how many revisions of one listed scope are read to
+// learn which resource it holds.
+const maxResourceProbes = 16
+
+type environmentResource struct {
+	name     string // the environment's name, or the resource when enbu.toml lacks it
+	resource string
+}
+
+// environmentResources lists the environments enbu.toml names, then any other
+// secrets resource storage holds a trusted revision of. A scope that holds only
+// revisions from non-members is skipped: anyone able to write to storage can
+// make one, and it has no content to re-encrypt.
+func (s *session) environmentResources(ctx context.Context) ([]environmentResource, error) {
+	var out []environmentResource
+	known := map[string]bool{}
+	for _, env := range s.cfg.EnvironmentNames() {
+		r := s.resource(env)
+		out = append(out, environmentResource{name: env, resource: r})
+		known[storage.StateScope(s.workspace, r)] = true
+	}
+	scopes, err := s.store.Scopes(ctx)
+	if err != nil {
+		return nil, storageError(err)
+	}
+	discovered := 0
+	for _, scope := range scopes {
+		if known[scope] {
+			continue
+		}
+		if discovered >= maxDiscoveredResources {
+			break
+		}
+		resource, err := s.scopeResource(ctx, scope)
+		if err != nil {
+			return nil, err
+		}
+		if resource == "" {
+			continue
+		}
+		trusted, err := s.hasTrustedHead(ctx, resource)
+		if err != nil {
+			return nil, err
+		}
+		if trusted {
+			discovered++
+			out = append(out, environmentResource{name: resource, resource: resource})
+		}
+	}
+	return out, nil
+}
+
+// scopeResource learns which secrets resource of this workspace a listed scope
+// holds, from the first revision that names one. The scope is derived from the
+// workspace and resource, so a revision naming another resource cannot claim
+// this scope. It returns "" when no revision says.
+func (s *session) scopeResource(ctx context.Context, scope string) (string, error) {
+	revs, err := s.store.Discover(ctx, storage.KindState, scope)
+	if err != nil {
+		return "", storageError(err)
+	}
+	for i, rev := range revs {
+		if i >= maxResourceProbes {
+			break
+		}
+		head, err := s.store.FetchHead(ctx, storage.KindState, scope, rev)
+		if errors.Is(err, storage.ErrNotFound) || errors.Is(err, storage.ErrCorrupt) {
+			continue
+		}
+		if err != nil {
+			return "", storageError(err)
+		}
+		workspace, resource, err := wsp.StateResource(head)
+		if err != nil || workspace != s.workspace || !strings.HasPrefix(resource, "secrets/") ||
+			storage.StateScope(workspace, resource) != scope {
+			continue
+		}
+		return resource, nil
+	}
+	return "", nil
+}
+
+// hasTrustedHead reports whether resource has a head this device may read as
+// current, the same test reading it applies.
+func (s *session) hasTrustedHead(ctx context.Context, resource string) (bool, error) {
+	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource)
+	if err != nil {
+		return false, wspError(err)
+	}
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		return false, err
+	}
+	return len(s.trustedHeads(sv, accepted)) > 0, nil
 }

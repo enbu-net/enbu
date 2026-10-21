@@ -203,6 +203,21 @@ func (s s3) Discover(ctx context.Context, kind Kind, scope string) ([]digest.Dig
 	return revs, ctx.Err()
 }
 
+func (s s3) Scopes(ctx context.Context) ([]string, error) {
+	l, _ := KindState.letter()
+	base := s.key("")
+	var names []string
+	listCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + l + "-", Recursive: true}) {
+		if entry.Err != nil {
+			return nil, s3Error(entry.Err)
+		}
+		names = append(names, strings.TrimPrefix(entry.Key, base))
+	}
+	return sortedScopes(names), ctx.Err()
+}
+
 func (s s3) Delete(ctx context.Context, kind Kind, scope string, rev digest.Digest) error {
 	name, err := Name(kind, scope, rev)
 	if err != nil {

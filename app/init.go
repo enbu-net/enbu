@@ -109,7 +109,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		}
 		return result, nil
 	}
-	_, err = s.readResource(ctx, cfg.CurrentEnvironment(), nil, true)
+	_, err = s.readResource(ctx, s.resource(cfg.CurrentEnvironment()), nil, true)
 	switch {
 	case err == nil:
 		result.Mode, result.HasSecrets = "join", true

@@ -294,7 +294,9 @@ func TestReencryptionTriesEveryEnvironment(t *testing.T) {
 }
 
 // A removed member's revision is still history: it is judged by the control it
-// was written under, not by who is a member now. It is not current, though.
+// was written under, not by who is a member now. The removal takes it over even
+// though the environment is missing from the admin's enbu.toml: re-encryption
+// finds it in storage and publishes it again under the new member list.
 func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	alice := newEmptyAlice(t)
 	bob := approved(t, alice)
@@ -304,7 +306,8 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	}
 	defer bs.Close()
 	bobsEnv := "staging"
-	if _, err := bs.writeState(bg, bobsEnv, map[string]string{"A": "by bob"}, nil); err != nil {
+	bobsRev, err := bs.writeState(bg, bs.resource(bobsEnv), map[string]string{"A": "by bob"}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.RemoveMember(bg, mustMember(t, alice, bob).DeviceID); err != nil {
@@ -315,18 +318,17 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer as.Close()
-	if _, err := as.readResource(bg, bobsEnv, nil, true); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("a removed author's revision is not current: %v", err)
+	read, err := as.readResource(bg, as.resource(bobsEnv), nil, true)
+	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Author != as.self() {
+		t.Fatalf("the removal did not take over the environment: %+v %v", read, err)
 	}
-	sv, err := as.loadResource(bg, bobsEnv)
-	if err != nil || len(sv.States) != 1 {
+	sv, err := as.loadResource(bg, as.resource(bobsEnv))
+	if err != nil || len(sv.States) != 2 || sv.States[bobsRev] == nil {
 		t.Fatalf("history by a removed author: %v", err)
 	}
-	for _, st := range sv.States {
-		secrets, err := as.decrypt(bg, st) // alice could decrypt it: she was a recipient then
-		if err != nil || secrets["A"] != "by bob" {
-			t.Fatalf("secrets = %v %v", secrets, err)
-		}
+	secrets, err := as.decrypt(bg, sv.States[bobsRev]) // alice could decrypt it: she was a recipient then
+	if err != nil || secrets["A"] != "by bob" {
+		t.Fatalf("secrets = %v %v", secrets, err)
 	}
 }
 
