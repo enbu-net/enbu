@@ -286,7 +286,7 @@ func (a *App) ResolveControlFork(ctx context.Context) (err error) {
 		return fmt.Errorf("identity store is not initialized")
 	}
 	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
-		return fmt.Errorf("loading signing key: %w", err)
+		return identityError(fmt.Errorf("loading signing key: %w", err))
 	}
 	defer s.Close()
 	_, err = wsp.ResolveFork(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error {

@@ -94,7 +94,7 @@ func (m *Manager) LoadSigner(workspaceID string) (signing.Signer, error) {
 	} else {
 		hw, ok := m.Hardware.(SignerBackend)
 		if !ok {
-			return nil, errors.New("saved hardware signing backend unavailable")
+			return nil, unavailable("saved hardware signing backend unavailable", nil)
 		}
 		s, err = hw.LoadSigner(md)
 		if err != nil {
@@ -117,11 +117,11 @@ func (m *Manager) loadSoftwareSigner(md *SignerMetadata) (signing.Signer, error)
 		return nil, errors.New("invalid keyring signing metadata")
 	}
 	if m.Vault == nil {
-		return nil, errors.New("keyring unavailable")
+		return nil, unavailable("keyring unavailable", nil)
 	}
 	secret, err := m.Vault.Load(vaultService, md.Reference)
 	if err != nil {
-		return nil, fmt.Errorf("loading saved keyring signing key: %w", err)
+		return nil, keyringError("loading saved keyring signing key", err)
 	}
 	defer clear(secret) // the key is derived below; the encoded seed need not linger
 	seed, err := hex.DecodeString(string(secret))
@@ -189,7 +189,7 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 			}
 		} else {
 			if mode == "hardware" {
-				return nil, info, "", fmt.Errorf("hardware signing key unavailable: %s", reason)
+				return nil, info, "", unavailable("hardware signing key unavailable: "+reason, nil)
 			}
 			warning = "Hardware signing key unavailable: " + reason + "; using OS keyring (Ed25519)."
 		}
@@ -219,11 +219,11 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 
 func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error) {
 	if m.Vault == nil {
-		return nil, nil, errors.New("OS keyring unavailable")
+		return nil, nil, unavailable("OS keyring unavailable", nil)
 	}
 	if probe, ok := m.Vault.(interface{ Probe() error }); ok {
 		if err := probe.Probe(); err != nil {
-			return nil, nil, fmt.Errorf("OS keyring unavailable: %w", err)
+			return nil, nil, unavailable("OS keyring unavailable", err)
 		}
 	}
 	seed := make([]byte, ed25519.SeedSize)
@@ -237,7 +237,7 @@ func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error
 	}
 	md := &SignerMetadata{Backend: "keyring", Algorithm: "Ed25519", Reference: signerVaultPrefix + hex.EncodeToString(ref)}
 	if err := m.Vault.Store(vaultService, md.Reference, []byte(hex.EncodeToString(seed))); err != nil {
-		return nil, nil, fmt.Errorf("saving OS keyring signing key: %w", err)
+		return nil, nil, keyringError("saving OS keyring signing key", err)
 	}
 	return signing.NewEd25519Signer(ed25519.NewKeyFromSeed(seed)), md, nil
 }
