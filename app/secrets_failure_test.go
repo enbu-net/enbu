@@ -197,6 +197,7 @@ func TestPullSecretsDataUsesRepositoryOutput(t *testing.T) {
 	}
 	got, err := os.ReadFile(filepath.Join(a.RepositoryDir, "custom.env"))
 	want, marshalErr := bundle.ToDotEnv(result.Secrets)
+	want = append(want, "\n"+keptMarker+"\n"...)
 	if err != nil || marshalErr != nil || string(got) != string(want) {
 		t.Fatalf("file = %q, %v, want %q", got, err, want)
 	}
