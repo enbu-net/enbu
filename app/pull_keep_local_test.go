@@ -35,7 +35,7 @@ func TestPullKeepsVariablesEnbuDoesNotStore(t *testing.T) {
 	if !strings.Contains(text, "KEY=\"v1\"") || !strings.Contains(text, "LOCAL_ONLY=\"1\"") || strings.Contains(text, "\"old\"") {
 		t.Fatalf("file:\n%s", text)
 	}
-	if !strings.Contains(text, "# Kept from the previous file") {
+	if !strings.Contains(text, keptMarker+"\nLOCAL_ONLY") {
 		t.Fatalf("no marker:\n%s", text)
 	}
 	// Pulling again keeps it again, once, without piling up markers.
@@ -43,7 +43,7 @@ func TestPullKeepsVariablesEnbuDoesNotStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = os.ReadFile(path)
-	if strings.Count(string(got), "LOCAL_ONLY=") != 1 || strings.Count(string(got), "# Kept") != 1 {
+	if strings.Count(string(got), "LOCAL_ONLY=") != 1 || strings.Count(string(got), keptMarker) != 1 {
 		t.Fatalf("second pull:\n%s", got)
 	}
 }
@@ -71,13 +71,50 @@ func TestPullRefusesToOverwriteWhatItCannotRead(t *testing.T) {
 	}
 }
 
-func TestPullWritesAFreshFileWithoutAMarker(t *testing.T) {
+// A fresh file holds the secrets and the marker, below which local variables go.
+func TestPullWritesAFreshFileWithTheMarker(t *testing.T) {
 	alice := newAlice(t)
 	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(alice.RepositoryDir, ".env"))
-	if string(got) != "KEY=\"v1\"\n" {
+	if string(got) != "KEY=\"v1\"\n\n"+keptMarker+"\n" {
 		t.Fatalf("file:\n%s", got)
+	}
+}
+
+// A secret deleted from the environment leaves the file on the next pull and
+// is reported, instead of staying on disk in plaintext as a "local" variable.
+// Variables below the marker stay.
+func TestPullRemovesSecretsTheEnvironmentNoLongerHas(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(bg, "default", "TOKEN", "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(alice.RepositoryDir, ".env")
+	got, _ := os.ReadFile(path)
+	if err := os.WriteFile(path, append(got, "LOCAL_ONLY=\"1\"\n"...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.DeleteSecret(bg, "default", "TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	written, err := alice.PullSecretsToFileWith(bg, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written.Removed) != 1 || written.Removed[0] != "TOKEN" || len(written.Kept) != 1 || written.Kept[0] != "LOCAL_ONLY" {
+		t.Fatalf("written = %+v", written)
+	}
+	got, _ = os.ReadFile(path)
+	if text := string(got); strings.Contains(text, "revoked") || !strings.Contains(text, keptMarker+"\nLOCAL_ONLY=\"1\"\n") {
+		t.Fatalf("file:\n%s", text)
+	}
+	messages := strings.Join(written.Messages(), "\n")
+	if !strings.Contains(messages, "Removed 1 variable(s) no longer in the environment: TOKEN") || !strings.Contains(messages, "Kept 1 local variable(s)") {
+		t.Fatalf("messages = %q", messages)
 	}
 }

@@ -114,10 +114,14 @@ enbu pull  # Writes to .env file
 enbu pull --env dev  # Writes to the configured output for dev
 ```
 
-Variables the file already holds that enbu does not store (a local `DEBUG=1`,
-say) are kept below a marker and listed on stderr, so a pull never throws them
-away silently. `enbu pull --replace` overwrites the file completely. A file that
-is not valid dotenv is not overwritten without `--replace`.
+Each pull writes the secrets, then a marker line. Variables below the marker
+(a local `DEBUG=1`, say), or anywhere in a file enbu has not written yet, that
+enbu does not store are kept there and listed on stderr, so a pull never throws
+them away silently. Variables above the marker belong to enbu: one deleted from
+the environment leaves the file on the next pull and is listed as removed. Kept
+variables are rewritten in sorted order without their comments.
+`enbu pull --replace` overwrites the file completely. A file that is not valid
+dotenv is not overwritten without `--replace`.
 
 ### 6. Add a team member
 

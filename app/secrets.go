@@ -387,8 +387,8 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 	if err != nil {
 		return err
 	}
-	if len(written.Kept) > 0 {
-		a.emit(keptMessage(written.Kept))
+	for _, message := range written.Messages() {
+		a.emit(message)
 	}
 	return nil
 }
@@ -398,12 +398,29 @@ type WrittenFile struct {
 	Output string   // the file, as configured for the environment
 	Count  int      // secrets written
 	Kept   []string // variables of the previous file that enbu does not store
+	// Removed are variables an earlier pull wrote that the environment no
+	// longer has; they are not kept, so a deleted secret leaves the file.
+	Removed []string
 }
 
-// PullSecretsToFileWith writes the environment's secrets to its output file.
-// Variables the file already holds that enbu does not store are kept below a
-// marker and reported, unless replace is set; a file that cannot be read as
-// dotenv is not overwritten without replace.
+// Messages tells the user what the pull kept and removed besides the secrets.
+func (w *WrittenFile) Messages() []string {
+	var out []string
+	if len(w.Kept) > 0 {
+		out = append(out, fmt.Sprintf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)", len(w.Kept), strings.Join(w.Kept, ", ")))
+	}
+	if len(w.Removed) > 0 {
+		out = append(out, fmt.Sprintf("Removed %d variable(s) no longer in the environment: %s", len(w.Removed), strings.Join(w.Removed, ", ")))
+	}
+	return out
+}
+
+// PullSecretsToFileWith writes the environment's secrets to its output file,
+// followed by a marker. Variables below the marker, or in a file without one,
+// that enbu does not store are kept there and reported, unless replace is set;
+// variables above it were written by an earlier pull and leave the file once
+// the environment no longer has them. A file that cannot be read as dotenv is
+// not overwritten without replace.
 func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {
 	defer apperr.NormalizeInto(&err)
 
@@ -417,7 +434,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 		outputPath = filepath.Join(a.RepositoryDir, result.Output)
 	}
 	a.emitStepProgress("pull", "write", "start")
-	dotenv, kept, err := dotenvWithLocal(outputPath, result.Secrets, replace)
+	dotenv, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace)
 	if err != nil {
 		return nil, err
 	}
@@ -427,56 +444,81 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 
 	a.emitStepProgress("pull", "write", "done")
 	a.emit(fmt.Sprintf("Written %s (%d secrets)", result.Output, len(result.Secrets)))
-	return &WrittenFile{Output: result.Output, Count: len(result.Secrets), Kept: kept}, nil
+	return &WrittenFile{Output: result.Output, Count: len(result.Secrets), Kept: kept, Removed: removed}, nil
 }
 
-const keptMarker = "# Kept from the previous file; enbu does not store these (pull --replace drops them):"
+// keptMarker separates the secrets a pull writes from the local variables it
+// keeps. Every pull writes it, so the next one can tell the two apart.
+const keptMarker = "# Local variables below are kept by enbu pull; enbu does not store them (pull --replace drops them):"
 
-func keptMessage(kept []string) string {
-	return fmt.Sprintf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)", len(kept), strings.Join(kept, ", "))
-}
-
-// dotenvWithLocal renders secrets as dotenv and appends the variables of the
-// file at path that are not in secrets, so a pull does not throw away what a
-// person put there by hand. With replace the file's content is ignored.
-func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data []byte, kept []string, err error) {
+// dotenvWithLocal renders secrets as dotenv, then the marker and the local
+// variables of the file at path that are not in secrets, so a pull does not
+// throw away what a person put there by hand. Variables above the marker of
+// an earlier pull are enbu's own: those not in secrets are removed. With
+// replace the file's content is ignored.
+func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data []byte, kept, removed []string, err error) {
 	data, err = bundle.ToDotEnv(secrets)
 	if err != nil {
-		return nil, nil, err
-	}
-	if replace {
-		return data, nil, nil
-	}
-	existing, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return data, nil, nil
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
-	}
-	vars, err := secretmap.ImportDotenv(existing)
-	if err != nil {
-		return nil, nil, apperr.Wrap(apperr.CodeInvalidArgument,
-			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", filepath.Base(path)), err, nil)
-	}
-	local := map[string]string{}
-	for key, value := range vars {
-		if _, stored := secrets[key]; !stored {
-			local[key] = value
-			kept = append(kept, key)
-		}
-	}
-	if len(kept) == 0 {
-		return data, nil, nil
-	}
-	sort.Strings(kept)
-	extra, err := bundle.ToDotEnv(local)
-	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	data = append(data, '\n')
 	data = append(data, keptMarker...)
 	data = append(data, '\n')
-	data = append(data, extra...)
-	return data, kept, nil
+	if replace {
+		return data, nil, nil, nil
+	}
+	existing, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return data, nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	pulled, local := splitAtMarker(existing)
+	unreadable := func(err error) error {
+		return apperr.Wrap(apperr.CodeInvalidArgument,
+			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", filepath.Base(path)), err, nil)
+	}
+	previous, err := secretmap.ImportDotenv(pulled)
+	if err != nil {
+		return nil, nil, nil, unreadable(err)
+	}
+	vars, err := secretmap.ImportDotenv(local)
+	if err != nil {
+		return nil, nil, nil, unreadable(err)
+	}
+	for key := range previous {
+		if _, stored := secrets[key]; !stored {
+			removed = append(removed, key)
+		}
+	}
+	sort.Strings(removed)
+	keep := map[string]string{}
+	for key, value := range vars {
+		if _, stored := secrets[key]; !stored {
+			keep[key] = value
+			kept = append(kept, key)
+		}
+	}
+	if len(kept) == 0 {
+		return data, nil, removed, nil
+	}
+	sort.Strings(kept)
+	extra, err := bundle.ToDotEnv(keep)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return append(data, extra...), kept, removed, nil
+}
+
+// splitAtMarker returns what an earlier pull wrote above its marker and the
+// local part below it. A file without a marker is all local.
+func splitAtMarker(file []byte) (pulled, local []byte) {
+	lines := strings.SplitAfter(string(file), "\n")
+	for i, line := range lines {
+		if strings.TrimRight(line, "\r\n") == keptMarker {
+			return []byte(strings.Join(lines[:i], "")), []byte(strings.Join(lines[i+1:], ""))
+		}
+	}
+	return nil, file
 }

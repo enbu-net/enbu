@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"strings"
-
 	"github.com/enbu-net/enbu/app"
 	"github.com/spf13/cobra"
 )
@@ -45,8 +43,8 @@ func newPullCommand(a *app.App) *cobra.Command {
 				return err
 			}
 			cmd.PrintErrf("✓ Written %s (%d secrets)\n", written.Output, written.Count)
-			if len(written.Kept) > 0 {
-				cmd.PrintErrf("Kept %d local variable(s) enbu does not store: %s (pull --replace drops them)\n", len(written.Kept), strings.Join(written.Kept, ", "))
+			for _, message := range written.Messages() {
+				cmd.PrintErrln(message)
 			}
 			return nil
 		},
