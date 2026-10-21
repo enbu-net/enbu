@@ -98,12 +98,6 @@ export interface AuthStatus {
   repo?: { owner: string; name: string };
 }
 
-export interface Recipient {
-  username: string;
-  fingerprint: string;
-  public_key: string;
-}
-
 export interface Member {
   device_id: string;
   fingerprint: string;

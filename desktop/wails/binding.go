@@ -153,11 +153,6 @@ func (s *DesktopService) RemoveRepository(path string) BindingResponse {
 	return bindingError(s.service.RemoveRepository(path))
 }
 
-func (s *DesktopService) ListRecipients() BindingResponse {
-	value, err := s.service.ListRecipients()
-	return bindingResult(value, err)
-}
-
 func (s *DesktopService) ListMembers() BindingResponse {
 	value, err := s.service.ListMembers()
 	return bindingResult(value, err)

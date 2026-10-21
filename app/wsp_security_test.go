@@ -105,9 +105,9 @@ func TestRecipientInjection(t *testing.T) {
 	if err := alice.AddSecret(bg, "default", "NEW", "secret"); err != nil {
 		t.Fatal(err)
 	}
-	recipients, err := alice.ListRecipients(bg)
-	if err != nil || len(recipients) != 1 || recipients[0].PublicKey == attacker.PublicKey {
-		t.Fatalf("recipients: %+v %v", recipients, err)
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 || members[0].Recipient == attacker.PublicKey {
+		t.Fatalf("members: %+v %v", members, err)
 	}
 	// The ciphertext alice just wrote cannot be opened with the attacker's key.
 	read, err := s.readResource(bg, s.resource("default"), nil, true)
@@ -129,8 +129,8 @@ func TestFakeSecretRejected(t *testing.T) {
 	alice := newAlice(t)
 	attacker := newDevice(t, alice)
 	requestJoin(t, attacker)
-	recipients, _ := alice.ListRecipients(bg)
-	forged, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "evil"}), []string{recipients[0].PublicKey})
+	members, _ := alice.ListMembers(bg)
+	forged, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "evil"}), []string{members[0].Recipient})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -159,7 +158,6 @@ func TestJSONInit(t *testing.T) {
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
-		Platform:      &jsonInitPlatform{},
 	}
 	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
 	data := objectField(t, envelope, "data")
@@ -215,7 +213,6 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 		RepoDetector:  &deleteTestRepoDetector{},
 		Identities:    &staticKeyStore{},
 		Git:           &jsonInitGit{root: dir},
-		Platform:      &jsonInitPlatform{},
 		CheckpointDir: t.TempDir(),
 	}
 	a.RepositoryDir = dir
@@ -273,15 +270,3 @@ func (*jsonInitGit) Init(context.Context, string) error { return nil }
 func (*jsonInitGit) AddRemote(context.Context, string, string, string) error { return nil }
 
 func (*jsonInitGit) CommitFiles(context.Context, string, []string, string) error { return nil }
-
-type jsonInitPlatform struct{}
-
-func (*jsonInitPlatform) GetUser(context.Context) (*provider.User, error) {
-	return &provider.User{ID: 1, Login: "alice"}, nil
-}
-
-func (*jsonInitPlatform) IsOrganization(context.Context, string) bool { return false }
-
-func (*jsonInitPlatform) SourceRepoURL(owner, repo string) string {
-	return "https://github.com/" + owner + "/" + repo
-}

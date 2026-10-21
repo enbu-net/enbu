@@ -25,7 +25,6 @@ type App struct {
 	Identities    IdentityStore
 	RepoDetector  RepoDetector
 	Git           gitprovider.Client
-	Platform      PlatformClient
 	Events        EventHandler
 	RepositoryDir string
 	// CheckpointDir holds the local rollback checkpoints. Empty means the

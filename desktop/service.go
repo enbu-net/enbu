@@ -187,12 +187,6 @@ type HistoryEntry struct {
 	Tag       string    `json:"tag"`
 }
 
-type Recipient struct {
-	Username    string `json:"username"`
-	Fingerprint string `json:"fingerprint"`
-	PublicKey   string `json:"public_key"`
-}
-
 // Member is a device trusted by the workspace's signed Control.
 type Member struct {
 	DeviceID    string `json:"device_id"`
@@ -477,24 +471,6 @@ func (s *Service) GitCreateRemote(path, owner, repoName string, private bool) (R
 
 func preferredRemoteURL(result *gh.CreateRepoResult) string {
 	return result.HTTPSURL
-}
-
-func (s *Service) ListRecipients() ([]Recipient, error) {
-	return withRepoResult(s, func() ([]Recipient, error) {
-		infos, err := s.app.ListRecipients(s.context())
-		if err != nil {
-			return nil, err
-		}
-		out := make([]Recipient, len(infos))
-		for i, r := range infos {
-			out[i] = Recipient{
-				Username:    r.Username,
-				Fingerprint: r.Fingerprint,
-				PublicKey:   r.PublicKey,
-			}
-		}
-		return out, nil
-	})
 }
 
 func (s *Service) ListMembers() ([]Member, error) {
