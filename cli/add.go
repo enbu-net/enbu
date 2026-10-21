@@ -7,13 +7,19 @@ import (
 
 func newAddCommand(a *app.App) *cobra.Command {
 	var envName string
+	var valueFile string
 
 	cmd := &cobra.Command{
-		Use:   "add KEY VALUE",
+		Use:   "add KEY [VALUE]",
 		Short: "Add a secret to the repository",
-		Args:  appArgs(cobra.ExactArgs(2)),
+		Long:  "Without VALUE the value is read from stdin (a hidden prompt on a terminal) or from --value-file, so it stays out of shell history.",
+		Args:  appArgs(cobra.RangeArgs(1, 2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := a.AddSecret(cmd.Context(), envName, args[0], args[1]); err != nil {
+			value, err := secretValue(cmd, args, valueFile)
+			if err != nil {
+				return err
+			}
+			if err := a.AddSecret(cmd.Context(), envName, args[0], value); err != nil {
 				return err
 			}
 			if jsonEnabled(cmd) {
@@ -29,5 +35,6 @@ func newAddCommand(a *app.App) *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
+	cmd.Flags().StringVar(&valueFile, "value-file", "", "Read the value from this file (\"-\" for stdin)")
 	return cmd
 }

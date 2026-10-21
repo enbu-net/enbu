@@ -11,14 +11,6 @@ import (
 func newHistoryCommand(a *app.App) *cobra.Command {
 	var env string
 
-	cmd := &cobra.Command{
-		Use:   "history",
-		Short: "Manage secret history",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return renderHelp(cmd)
-		},
-	}
-
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List history entries",
@@ -47,17 +39,27 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 				cmd.Println("No history found.")
 				return nil
 			}
-			cmd.Printf("%-4s %-20s %s\n", "#", "TIMESTAMP", "TAG")
+			// The tag is a storage name; people refer to entries by number.
+			cmd.Printf("%-4s %s\n", "#", "TIMESTAMP")
 			for _, e := range entries {
 				latest := ""
 				if e.Index == len(entries) {
-					latest = " (latest)"
+					latest = "  (latest)"
 				}
-				cmd.Printf("%-4d %-20s %s%s\n", e.Index, e.Timestamp.Format("2006-01-02 15:04:05"), e.Tag, latest)
+				cmd.Printf("%-4d %s%s\n", e.Index, e.Timestamp.Local().Format(time.DateTime), latest)
 			}
 			return nil
 		},
 	}
+
+	// `enbu history` alone lists, like `git log`.
+	cmd := &cobra.Command{
+		Use:   "history",
+		Short: "List and restore secret history",
+		Args:  appArgs(cobra.NoArgs),
+		RunE:  listCmd.RunE,
+	}
+	cmd.Flags().StringVarP(&env, "env", "e", "", "Environment name")
 
 	diffCmd := &cobra.Command{
 		Use:   "diff <from> <to>",

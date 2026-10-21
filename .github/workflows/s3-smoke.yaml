@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   s3:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     environment: s3-smoke
     timeout-minutes: 15
     env:

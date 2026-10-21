@@ -1,9 +1,7 @@
 package apptest
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/config"
@@ -24,7 +22,7 @@ type KeyStore interface {
 // it writes the genesis Control and records its digest as control_genesis. It
 // does nothing when the repository already has a genesis, so it is safe to call
 // on a workspace that was initialized through the real flow.
-func Control(ctx context.Context, store *storage.Store, repoDir string, ids KeyStore) error {
+func Control(ctx context.Context, store storage.Store, repoDir string, ids KeyStore) error {
 	cfg, err := config.LoadProjectFrom(repoDir)
 	if err != nil {
 		return err
@@ -53,7 +51,7 @@ func Control(ctx context.Context, store *storage.Store, repoDir string, ids KeyS
 
 // JoinRequest makes this device ask to join the workspace, as `enbu init` does
 // for a device that is not a member. It returns the device id.
-func JoinRequest(ctx context.Context, store *storage.Store, workspaceID string, ids KeyStore) (string, error) {
+func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, ids KeyStore) (string, error) {
 	id, _, _, err := ids.Create(workspaceID)
 	if err != nil {
 		return "", err
@@ -68,13 +66,9 @@ func JoinRequest(ctx context.Context, store *storage.Store, workspaceID string, 
 	if err != nil {
 		return "", err
 	}
-	d, err := store.Blobs.Put(ctx, bytes.NewReader(request))
-	if err != nil {
+	if _, err := wsp.PublishJoinRequest(ctx, store, request); err != nil {
 		return "", err
 	}
 	device := signer.Public().DeviceID()
-	if err := store.Refs.Put(ctx, wsp.JoinRequestRef(device), d, ""); err != nil && !errors.Is(err, storage.ErrConflict) {
-		return "", err
-	}
 	return string(device), nil
 }
