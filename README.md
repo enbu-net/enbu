@@ -227,6 +227,8 @@ The command writes exactly one JSON value to stdout.
 
 Successful commands exit with status 0.
 Errors are also written to stdout as JSON and exit with status 1.
+Errors enbu cannot classify show a generic message; set `ENBU_DEBUG=1` to print
+the underlying cause on stderr.
 `enbu pull --json` does not write an `.env` file; it returns the decrypted secrets in `data.secrets`.
 Do not log or persist this response.
 `enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
