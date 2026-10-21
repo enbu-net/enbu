@@ -2,8 +2,10 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
@@ -204,10 +206,19 @@ func requestedJSON(cmd *cobra.Command, args []string) bool {
 // RenderExecutionError writes one command execution error using the selected
 // output format. JSON errors intentionally go to stdout for process consumers.
 func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
+	var exit *apperr.ExitError
+	if errors.As(err, &exit) {
+		return // the command enbu ran has already said what it had to say
+	}
 	err = apperr.Normalize(err)
 	if requestedJSON(cmd, args) || jsonEnabled(cmd) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
 		return
 	}
 	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", apperr.PayloadOf(err).Message)
+	// Unclassified errors show only a generic message; the cause chain is for
+	// logs, and ENBU_DEBUG puts it on stderr when someone is debugging.
+	if os.Getenv("ENBU_DEBUG") != "" {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Debug: %v\n", err)
+	}
 }

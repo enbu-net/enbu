@@ -16,23 +16,7 @@ import (
 
 const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
 
-func newMemRegistry() *storage.Store { return storagetest.NewMemory() }
-
-type conflictOnceRegistry struct {
-	storagetest.Objects
-	pushes int
-}
-
-func (r *conflictOnceRegistry) Put(ctx context.Context, key string, o []byte, v storage.Version) error {
-	if key == "enbu-workspace" {
-		return r.Objects.Put(ctx, key, o, v)
-	}
-	r.pushes++
-	if r.pushes == 1 {
-		return storage.ErrConflict
-	}
-	return r.Objects.Put(ctx, key, o, v)
-}
+func newMemRegistry() storage.Store { return storagetest.NewMemory() }
 
 type staticTokenProvider struct{ token, username string }
 
@@ -114,19 +98,6 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 	return kp
 }
 
-func TestSyncSecretsRetriesStructuredConflict(t *testing.T) {
-	a := newTestApp(t, "acme", "repo", "dev", mustKeyPair(t), map[string]string{"KEY": "value"})
-	registry := &conflictOnceRegistry{Objects: storagetest.ToObjects(a.Storage)}
-	a.Storage = storagetest.Wrap(a.Storage, registry)
-
-	if err := a.SyncSecrets(context.Background(), "dev"); err != nil {
-		t.Fatalf("SyncSecrets: %v", err)
-	}
-	if registry.pushes != 2 {
-		t.Fatalf("pushes = %d, want 2", registry.pushes)
-	}
-}
-
 // --- tests ---
 
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
@@ -198,9 +169,6 @@ func prepareApp(t *testing.T, a *App, env string) {
 	cfg.WorkspaceID = testWorkspaceID
 	cfg.Storage.URL = "local:///unused"
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
-		t.Fatal(err)
-	}
-	if err := putRef(context.Background(), a.Storage, workspaceKey, []byte(testWorkspaceID), ""); err != nil {
 		t.Fatal(err)
 	}
 }

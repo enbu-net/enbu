@@ -243,3 +243,26 @@ func TestGrantingAdminAsksForConfirmation(t *testing.T) {
 		}
 	}
 }
+
+// Naming this device by fingerprint is a mistake worth explaining, not an
+// unknown device.
+func TestMemberCommandsExplainWhyThisDeviceIsNotOffered(t *testing.T) {
+	alice := newFounder(t)
+	var self map[string]any
+	for _, m := range list(t, alice, "member", "list", "--json") {
+		if m.(map[string]any)["self"] == true {
+			self = m.(map[string]any)
+		}
+	}
+	for _, args := range [][]string{
+		{"member", "remove", "--device", self["fingerprint"].(string), "--yes", "--json"},
+		{"member", "admin", "--device", self["device_id"].(string), "--revoke", "--yes", "--json"},
+	} {
+		cmd := NewWithApp("test", alice)
+		cmd.SetArgs(args)
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "this device") {
+			t.Fatalf("%v: err = %v", args, err)
+		}
+	}
+}

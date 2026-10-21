@@ -16,14 +16,14 @@ func (a *App) CreateIdentity() (info identity.PublicInfo, warning string, err er
 	}
 	id, info, warning, err := a.Identities.Create(workspaceID)
 	if err != nil {
-		return info, warning, err
+		return info, warning, identityError(err)
 	}
 	if err := id.Close(); err != nil {
 		return info, warning, err
 	}
 	signer, signerInfo, signerWarning, err := a.Identities.CreateSigner(workspaceID)
 	if err != nil {
-		return info, warning, err
+		return info, warning, identityError(err)
 	}
 	info.DeviceID, info.Fingerprint = string(signerInfo.DeviceID), signerInfo.Fingerprint
 	if warning == "" {
@@ -40,7 +40,7 @@ func (a *App) IdentityInfo() (info identity.PublicInfo, err error) {
 	}
 	info, err = a.Identities.Info(workspaceID)
 	if err != nil {
-		return info, err
+		return info, identityError(err)
 	}
 	signerInfo, err := a.Identities.SignerInfo(workspaceID)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -48,7 +48,7 @@ func (a *App) IdentityInfo() (info identity.PublicInfo, err error) {
 		return info, nil
 	}
 	if err != nil {
-		return info, err
+		return info, identityError(err)
 	}
 	info.DeviceID, info.Fingerprint = string(signerInfo.DeviceID), signerInfo.Fingerprint
 	return info, nil

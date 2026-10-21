@@ -15,7 +15,10 @@ runs:
 
     - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
       with:
-        version: v0.13.0
+        # The tobari CLI must match the github.com/goccy/tobari module in go.mod:
+        # a mismatch fails the test link with "fingerprint mismatch". Renovate
+        # updates both together (customManagers in renovate.json).
+        version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
 
     - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
       with:

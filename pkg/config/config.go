@@ -39,6 +39,10 @@ type ProjectConfig struct {
 
 type EnvironmentConfig struct {
 	Output string `toml:"output"`
+	// Incarnation names this environment's lineage in storage. Creating an
+	// environment draws a new one, so re-creating a deleted name never mixes
+	// with the old revisions, and renaming keeps the lineage.
+	Incarnation string `toml:"incarnation,omitempty"`
 }
 
 type LocalConfig struct {
@@ -181,7 +185,7 @@ func NewProjectWithEnvironment(name string) *ProjectConfig {
 		name = "default"
 	}
 	envs := map[string]EnvironmentConfig{
-		name: {Output: DefaultOutput(name)},
+		name: {Output: DefaultOutput(name), Incarnation: uuid.NewV4().String()},
 	}
 	return &ProjectConfig{
 		Version:      currentVersion,
@@ -210,13 +214,13 @@ func (cfg *ProjectConfig) AddEnvironment(name string) error {
 		cfg.Environments = make(map[string]EnvironmentConfig)
 	}
 	if len(cfg.Environments) == 0 && cfg.DefaultEnv == "" {
-		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default")}
+		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default"), Incarnation: uuid.NewV4().String()}
 		cfg.DefaultEnv = "default"
 	}
 	if _, exists := cfg.Environments[name]; exists {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", name), apperr.Params{"name": name})
 	}
-	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name)}
+	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name), Incarnation: uuid.NewV4().String()}
 	return nil
 }
 
@@ -249,6 +253,20 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 		cfg.DefaultEnv = newName
 	}
 	return nil
+}
+
+// Resource names the storage lineage of an environment's secrets. An
+// environment with an incarnation is named by it, so renaming keeps its
+// history; one without (an implicit default, or an older enbu.toml) is named by
+// its own name.
+func (cfg *ProjectConfig) Resource(env string) string {
+	if env == "" {
+		env = cfg.CurrentEnvironment()
+	}
+	if inc := cfg.Environments[env].Incarnation; inc != "" {
+		return "secrets/" + inc
+	}
+	return "secrets/" + env
 }
 
 func (cfg *ProjectConfig) HasEnvironment(name string) bool {
