@@ -28,6 +28,8 @@ const (
 	CodeUntrusted           Code = "untrusted_state"      // signature, author or encoding failed verification
 	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
 	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
+	CodeSecretConflict      Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
+	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin must resolve it
 	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
 )
 
@@ -51,6 +53,8 @@ var knownCodes = map[Code]struct{}{
 	CodeUntrusted:           {},
 	CodeRollback:            {},
 	CodeIncompatibleStorage: {},
+	CodeSecretConflict:      {},
+	CodeControlForked:       {},
 	CodeReencryptIncomplete: {},
 }
 

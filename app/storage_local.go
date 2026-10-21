@@ -12,7 +12,7 @@ import (
 
 // openLocalStorage opens the filesystem backend. It exists only in fixture
 // builds (tests and E2E); release binaries do not accept local:// URLs.
-func openLocalStorage(u *url.URL) (*storage.Store, error) {
+func openLocalStorage(u *url.URL) (storage.Store, error) {
 	if u.Host != "" {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "local URL must have an empty host", nil)
 	}
