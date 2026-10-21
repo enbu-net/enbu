@@ -66,8 +66,10 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		newAddCommand(a),
 		newEditCommand(a),
 		newDeleteCommand(a),
+		newImportCommand(a),
 		newPullCommand(a),
 		newSyncCommand(a),
+		newResolveCommand(a),
 		newHistoryCommand(a),
 		newCompletionCommand(rootCmd),
 	)

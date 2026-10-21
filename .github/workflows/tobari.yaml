@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   unit:
     name: Go unit coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -40,7 +40,7 @@ jobs:
 
   scenario:
     name: Go scenario coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -67,7 +67,7 @@ jobs:
 
   e2e:
     name: CLI E2E coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -101,7 +101,7 @@ jobs:
 
   identity:
     name: Identity E2E coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -135,7 +135,7 @@ jobs:
 
   frontend:
     name: React coverage
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: read
@@ -162,7 +162,7 @@ jobs:
   coverage:
     name: Tobari Go coverage
     needs: [unit, scenario, e2e, identity]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read

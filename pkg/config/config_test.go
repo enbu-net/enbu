@@ -267,7 +267,7 @@ func TestMarshalProjectUsesFlatEnvironmentTables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalProject: %v", err)
 	}
-	want := "version = \"v1alpha2\"\ndefault_env = \"default\"\nworkspace_id = \"" + cfg.WorkspaceID + "\"\n\n[env.default]\noutput = \".env\"\n"
+	want := "version = \"v1alpha2\"\ndefault_env = \"default\"\nworkspace_id = \"" + cfg.WorkspaceID + "\"\n\n[env.default]\noutput = \".env\"\nincarnation = \"" + cfg.Environments["default"].Incarnation + "\"\n"
 	if string(content) != want {
 		t.Fatalf("unexpected TOML:\n%s\nwant:\n%s", content, want)
 	}

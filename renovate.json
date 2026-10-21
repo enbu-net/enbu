@@ -12,6 +12,17 @@
   "minimumReleaseAge": "3 days",
   "automerge": true,
   "platformAutomerge": false,
+  "postUpdateOptions": ["gomodTidy"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "tobari CLI pinned for tobari-action; it must match the go module version",
+      "managerFilePatterns": ["/^\\.github/actions/setup-coverage/action\\.yaml$/"],
+      "matchStrings": [
+        "version:\\s*(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)"
+      ]
+    }
+  ],
   "packageRules": [
     {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
@@ -22,6 +33,11 @@
     {
       "matchPackageNames": ["aquaproj/aqua-registry"],
       "extends": ["schedule:earlyMondays"]
+    },
+    {
+      "description": "Update the tobari module and the tobari CLI in one PR so their versions never diverge",
+      "matchPackageNames": ["github.com/goccy/tobari"],
+      "groupName": "tobari"
     },
     {
       "description": "Major updates - block automerge",
