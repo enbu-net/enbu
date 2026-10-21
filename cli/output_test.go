@@ -26,7 +26,7 @@ func TestJSONMetadataCommands(t *testing.T) {
 		{name: "root", args: []string{"--json"}, key: "command", want: "enbu"},
 		{name: "root help", args: []string{"--help", "--json"}, key: "command", want: "enbu"},
 		{name: "auth help", args: []string{"auth", "--json"}, key: "command", want: "enbu auth"},
-		{name: "history help", args: []string{"history", "--json"}, key: "command", want: "enbu history"},
+		{name: "history help", args: []string{"history", "--help", "--json"}, key: "command", want: "enbu history"},
 		{name: "help command", args: []string{"help", "add", "--json"}, key: "command", want: "enbu add"},
 		{name: "version", args: []string{"--version", "--json"}, key: "version", want: "test-version"},
 		{name: "completion", args: []string{"completion", "bash", "--json"}, key: "shell", want: "bash"},

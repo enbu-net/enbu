@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
@@ -210,4 +211,9 @@ func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
 		return
 	}
 	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %s\n", apperr.PayloadOf(err).Message)
+	// Unclassified errors show only a generic message; the cause chain is for
+	// logs, and ENBU_DEBUG puts it on stderr when someone is debugging.
+	if os.Getenv("ENBU_DEBUG") != "" {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Debug: %v\n", err)
+	}
 }

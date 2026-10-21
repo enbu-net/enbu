@@ -45,9 +45,9 @@ jobs:
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
 
       - name: Test core
         run: task core/test
@@ -68,9 +68,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
       - name: Install Linux Secret Service
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
@@ -91,7 +91,7 @@ jobs:
 
   storage-e2e:
     name: Storage E2E (OCI / RustFS)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,9 +101,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
       - name: Storage E2E with unlocked keyring
@@ -115,7 +115,7 @@ jobs:
 
   aws-export-e2e:
     name: AWS Secrets Manager export E2E (Kumo)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -125,9 +125,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
       - name: Test core with race detector
         run: go test -race ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
       - name: AWS SDK export E2E
@@ -154,11 +154,11 @@ jobs:
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
 
-      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
           run-install: false
           package-manager: false
@@ -166,6 +166,9 @@ jobs:
 
       - name: Check
         run: task all/check
+
+      - name: Vulnerability check
+        run: task cli/vuln
 
       - name: Verify no diff
         run: |
@@ -197,11 +200,11 @@ jobs:
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
 
-      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
           run-install: false
           package-manager: false
@@ -234,11 +237,11 @@ jobs:
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
 
-      - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
         with:
           run-install: false
           package-manager: false
@@ -268,9 +271,9 @@ jobs:
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
         with:
-          aqua_version: v2.63.0
+          aqua_version: v2.64.0
 
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
@@ -285,7 +288,7 @@ jobs:
 
       - name: Upload atago failure artifacts
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: atago-failure-artifacts
           path: .tmp/atago-artifacts

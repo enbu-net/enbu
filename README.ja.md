@@ -78,6 +78,20 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 
 `add` は新規シークレット専用で、同じキーが既にある場合は失敗します。既存シークレットの更新には `edit` を使います。
 
+値を省略するとコマンドラインに残らず、シェル履歴にも載りません。
+`enbu add API_KEY` は端末では非表示プロンプトで値を尋ね、パイプなら stdin から読み、
+`--value-file PATH`（`-` で stdin）でも渡せます。証明書のような複数行の値もこの経路で扱えます。
+
+既存の `.env` をまとめて取り込むには:
+
+```bash
+enbu import            # 現在の環境の .env を読む
+enbu import app.env    # 任意の dotenv ファイル。"-" で stdin
+```
+
+同じ値で既に存在する変数はそのまま、別の値で存在する変数があると取り込みは止まります。
+置き換えるには `--overwrite` を付けます。
+
 ### 4. シークレットの削除
 
 ```bash
@@ -139,7 +153,7 @@ output = ".env.dev"
 output = ".env.prod"
 ```
 
-`add`、`edit`、`delete`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有され、アクセス制御は sync 時の OPA/Rego ポリシーで行います。`-e` を省略すると `switch` で設定した環境が使われます。
+`add`、`edit`、`delete`、`pull`、`sync` で `-e`/`--env` を指定すると現在の環境を一時的に上書きします。recipient は全環境で共有されます。`-e` を省略すると `switch` で設定した環境が使われます。
 
 ## Identityの保管
 
@@ -195,6 +209,7 @@ VS Code拡張などのプロセスからenbuを実行する場合は、任意の
 
 成功時の終了コードは0です。
 失敗時も標準出力へJSONを出力し、終了コード1で終了します。
+分類できないエラーは汎用メッセージだけを出します。`ENBU_DEBUG=1` を付けると原因を stderr に表示します。
 `enbu pull --json` は `.env` を書き込まず、復号したシークレットを `data.secrets` で返します。
 このレスポンスをログへ記録したり、永続化したりしないでください。
 Device Flowは認証完了前にコードを表示する必要があるため、`enbu auth login --device --json` には対応していません。

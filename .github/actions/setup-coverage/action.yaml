@@ -9,15 +9,18 @@ runs:
         go-version-file: go.mod
         cache: true
 
-    - uses: aquaproj/aqua-installer@96a9bc20066c5bf5e275b41019cfc165b25f4e2e # v4.0.5
+    - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
       with:
-        aqua_version: v2.63.0
+        aqua_version: v2.64.0
 
     - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
       with:
-        version: v0.13.0
+        # The tobari CLI must match the github.com/goccy/tobari module in go.mod:
+        # a mismatch fails the test link with "fingerprint mismatch". Renovate
+        # updates both together (customManagers in renovate.json).
+        version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
 
-    - uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+    - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
       with:
         run-install: false
         package-manager: false

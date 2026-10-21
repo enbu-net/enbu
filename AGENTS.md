@@ -62,7 +62,7 @@ test/                    → scenario tests (build tag: scenario)
 - Each revision is a SignedState naming its `Parents` and the ciphertext; readers verify author and signature, set aside heads from non-members, and check the local checkpoint (the heads already accepted) before decrypting. Concurrent heads are merged 3-way (`pkg/merge`); a key changed differently stops reads and writes until `enbu resolve` (ADR-13). The signing key is separate from the encryption key and never stored in Storage
 - New devices publish a self-signed join request `r-{digest}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
 - `enbu switch` manages environments (create, switch, delete, rename) with state tracked in `enbu.toml` (shared) and `.enbu.local` (per-user)
-- Access control is delegated to OPA/Rego policy evaluated at sync time — not per-environment recipient lists
+- Recipients are shared across environments: there are no per-environment recipient lists, and no policy engine (an OPA/Rego policy is only an idea in the README's planned list)
 - `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
 - Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin reclaims storage with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
