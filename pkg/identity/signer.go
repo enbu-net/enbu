@@ -94,7 +94,7 @@ func (m *Manager) LoadSigner(workspaceID string) (signing.Signer, error) {
 	} else {
 		hw, ok := m.Hardware.(SignerBackend)
 		if !ok {
-			return nil, fmt.Errorf("%w: saved hardware signing backend unavailable", ErrUnavailable)
+			return nil, unavailable("saved hardware signing backend unavailable", nil)
 		}
 		s, err = hw.LoadSigner(md)
 		if err != nil {
@@ -117,7 +117,7 @@ func (m *Manager) loadSoftwareSigner(md *SignerMetadata) (signing.Signer, error)
 		return nil, errors.New("invalid keyring signing metadata")
 	}
 	if m.Vault == nil {
-		return nil, fmt.Errorf("%w: keyring unavailable", ErrUnavailable)
+		return nil, unavailable("keyring unavailable", nil)
 	}
 	secret, err := m.Vault.Load(vaultService, md.Reference)
 	if err != nil {
@@ -189,7 +189,7 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 			}
 		} else {
 			if mode == "hardware" {
-				return nil, info, "", fmt.Errorf("%w: hardware signing key unavailable: %s", ErrUnavailable, reason)
+				return nil, info, "", unavailable("hardware signing key unavailable: "+reason, nil)
 			}
 			warning = "Hardware signing key unavailable: " + reason + "; using OS keyring (Ed25519)."
 		}
@@ -219,11 +219,11 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 
 func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error) {
 	if m.Vault == nil {
-		return nil, nil, fmt.Errorf("%w: OS keyring unavailable", ErrUnavailable)
+		return nil, nil, unavailable("OS keyring unavailable", nil)
 	}
 	if probe, ok := m.Vault.(interface{ Probe() error }); ok {
 		if err := probe.Probe(); err != nil {
-			return nil, nil, fmt.Errorf("%w: OS keyring unavailable: %w", ErrUnavailable, err)
+			return nil, nil, unavailable("OS keyring unavailable", err)
 		}
 	}
 	seed := make([]byte, ed25519.SeedSize)

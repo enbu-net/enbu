@@ -10,7 +10,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
-	"strings"
 	"time"
 	"uuid"
 )
@@ -171,10 +170,10 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 // the user can act on: it carries the reason doctor would show and points at
 // doctor, instead of surfacing as an internal error.
 func identityError(err error) error {
-	if !errors.Is(err, identity.ErrUnavailable) {
+	var unavailable *identity.UnavailableError
+	if !errors.As(err, &unavailable) {
 		return err
 	}
-	reason := strings.TrimPrefix(err.Error(), identity.ErrUnavailable.Error()+": ")
 	return apperr.Wrap(apperr.CodeIdentityUnavailable,
-		"no usable identity backend on this device: "+reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": reason})
+		"no usable identity backend on this device: "+unavailable.Reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": unavailable.Reason})
 }

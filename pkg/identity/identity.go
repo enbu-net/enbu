@@ -21,6 +21,25 @@ import (
 // show the reason and point at `enbu doctor`; it is not an internal error.
 var ErrUnavailable = errors.New("identity backend unavailable")
 
+// UnavailableError is an ErrUnavailable that carries the reason to show.
+type UnavailableError struct {
+	Reason string
+	Err    error // the backend's own error, if any
+}
+
+func (e *UnavailableError) Error() string        { return ErrUnavailable.Error() + ": " + e.Reason }
+func (e *UnavailableError) Is(target error) bool { return target == ErrUnavailable }
+func (e *UnavailableError) Unwrap() error        { return e.Err }
+
+// unavailable reports that no backend can hold a key, for reason and, when
+// the backend said why, its cause.
+func unavailable(reason string, cause error) error {
+	if cause != nil {
+		reason += ": " + cause.Error()
+	}
+	return &UnavailableError{Reason: reason, Err: cause}
+}
+
 type Recipient interface {
 	age.Recipient
 	String() string

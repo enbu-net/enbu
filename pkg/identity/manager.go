@@ -127,7 +127,7 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 		id = FromX25519(key)
 	} else {
 		if m.Hardware == nil {
-			return nil, fmt.Errorf("%w: saved hardware backend unavailable", ErrUnavailable)
+			return nil, unavailable("saved hardware backend unavailable", nil)
 		}
 		id, err = m.Hardware.Load(md)
 		if err != nil {
@@ -195,18 +195,18 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 			}
 		} else {
 			if mode == "hardware" {
-				return nil, info, "", fmt.Errorf("%w: hardware identity unavailable: %s", ErrUnavailable, d.Reason)
+				return nil, info, "", unavailable("hardware identity unavailable: "+d.Reason, nil)
 			}
 			warning = "Hardware identity unavailable: " + d.Reason + "; using OS keyring (X25519)."
 		}
 	}
 	if id == nil {
 		if m.Vault == nil {
-			return nil, info, warning, fmt.Errorf("%w: OS keyring unavailable", ErrUnavailable)
+			return nil, info, warning, unavailable("OS keyring unavailable", nil)
 		}
 		if probe, ok := m.Vault.(interface{ Probe() error }); ok {
 			if err := probe.Probe(); err != nil {
-				return nil, info, warning, fmt.Errorf("%w: OS keyring unavailable: %w", ErrUnavailable, err)
+				return nil, info, warning, unavailable("OS keyring unavailable", err)
 			}
 		}
 		key, err := age.GenerateX25519Identity()

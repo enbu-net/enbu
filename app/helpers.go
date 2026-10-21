@@ -27,7 +27,7 @@ func LoadIdentities(store IdentityStore, workspaceID string) ([]agecrypto.Identi
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, apperr.New(apperr.CodeNotInitialized, "no identity found (run 'enbu init' first)", nil)
 		}
-		return nil, fmt.Errorf("loading identity: %w", err)
+		return nil, identityError(fmt.Errorf("loading identity: %w", err))
 	}
 	return []agecrypto.Identity{id}, nil
 }
