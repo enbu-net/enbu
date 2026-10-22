@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 )
@@ -88,6 +89,27 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 	}
 	if md.Device != native.Device {
 		t.Fatalf("metadata device = %q, want %q", md.Device, native.Device)
+	}
+
+	rec.sensitive = nil
+	s, _, err := b.CreateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if !slices.Equal(rec.sensitive, []int{0}) {
+		t.Fatalf("signer TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
+	}
+	before = len(rec.sent())
+	sig, err := s.Sign(signing.DomainState, []byte("native TPM"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signing.Verify(s.Public(), signing.DomainState, []byte("native TPM"), sig); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(rec.sent()[before:], tpm2.TPMCCSign) {
+		t.Fatal("signing did not run TPM2_Sign on the host TPM")
 	}
 
 	template, err := ecdhTemplate()

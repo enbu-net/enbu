@@ -32,6 +32,10 @@ func (r *recordingTransport) Send(command []byte) ([]byte, error) {
 func (r *recordingTransport) record(command []byte) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(command) < 10 {
+		r.commands = append(r.commands, 0)
+		return
+	}
 	code := tpm2.TPMCC(binary.BigEndian.Uint32(command[6:10]))
 	r.commands = append(r.commands, code)
 	if code == tpm2.TPMCCCreate {
@@ -49,12 +53,20 @@ func (r *recordingTransport) sent() []tpm2.TPMCC {
 
 // createSensitiveSize returns the length of inSensitive.data in a TPM2_Create
 // command: header (10), parent handle (4), authorization area, then
-// TPM2B_SENSITIVE_CREATE { size, userAuth, data }.
+// TPM2B_SENSITIVE_CREATE { size, userAuth, data }. It returns -1 when the
+// command does not have that layout, so a check for 0 cannot pass by mistake.
 func createSensitiveSize(command []byte) int {
-	authSize := int(binary.BigEndian.Uint32(command[14:18]))
-	p := 18 + authSize + 2
-	userAuth := int(binary.BigEndian.Uint16(command[p:]))
-	p += 2 + userAuth
+	if len(command) < 18 || tpm2.TPMISTCommandTag(binary.BigEndian.Uint16(command[0:2])) != tpm2.TPMSTSessions {
+		return -1
+	}
+	p := 18 + int(binary.BigEndian.Uint32(command[14:18])) + 2
+	if p < 18 || len(command) < p+2 {
+		return -1
+	}
+	p += 2 + int(binary.BigEndian.Uint16(command[p:]))
+	if len(command) < p+2 {
+		return -1
+	}
 	return int(binary.BigEndian.Uint16(command[p:]))
 }
 
@@ -167,7 +179,7 @@ func TestTPMIdentityIsGeneratedAndUsedInTheTPM(t *testing.T) {
 func TestTPMSignerIsGeneratedAndUsedInTheTPM(t *testing.T) {
 	rec := &recordingTransport{next: &virtualTransport{newVirtualTPM(t)}}
 	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return rec, nil }}
-	s, _, err := b.CreateSigner()
+	s, md, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +189,17 @@ func TestTPMSignerIsGeneratedAndUsedInTheTPM(t *testing.T) {
 	}
 	if !slices.Equal(rec.sensitive, []int{0}) {
 		t.Fatalf("TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
+	}
+	public, err := tpm2.Unmarshal[tpm2.TPM2BPublic](md.TPMPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := public.Contents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := pub.ObjectAttributes; !a.FixedTPM || !a.FixedParent || !a.SensitiveDataOrigin {
+		t.Fatalf("signer attributes = %+v, want fixedTPM, fixedParent and sensitiveDataOrigin", a)
 	}
 	before := len(rec.sent())
 	sig, err := s.Sign(signing.DomainState, []byte("state"))
