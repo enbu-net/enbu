@@ -25,14 +25,18 @@ type recordingTransport struct {
 }
 
 func (r *recordingTransport) Send(command []byte) ([]byte, error) {
+	r.record(command)
+	return r.next.Send(command)
+}
+
+func (r *recordingTransport) record(command []byte) {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	code := tpm2.TPMCC(binary.BigEndian.Uint32(command[6:10]))
 	r.commands = append(r.commands, code)
 	if code == tpm2.TPMCCCreate {
 		r.sensitive = append(r.sensitive, createSensitiveSize(command))
 	}
-	r.mu.Unlock()
-	return r.next.Send(command)
 }
 
 func (r *recordingTransport) Close() error { return r.next.Close() }

@@ -3,6 +3,7 @@
 package identity
 
 import (
+	"errors"
 	"os"
 	"slices"
 	"testing"
@@ -56,14 +57,15 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 	if native.Device != "/dev/tpmrm0" && native.Device != "/dev/tpm0" && native.Device != "Windows TBS" {
 		t.Fatalf("device = %q, want the host TPM", native.Device)
 	}
-	var rec *recordingTransport
+	// Create opens the TPM more than once, so every connection records into
+	// one log.
+	rec := &recordingTransport{}
 	b := &TPMBackend{Device: native.Device, Open: func() (transport.TPMCloser, error) {
 		next, err := native.Open()
 		if err != nil {
 			return nil, err
 		}
-		rec = &recordingTransport{next: next}
-		return rec, nil
+		return &sharedRecording{rec: rec, next: next}, nil
 	}}
 	id, md, err := b.Create()
 	if err != nil {
@@ -92,10 +94,28 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The TPM must refuse the import because of the attributes, not by accident.
 	if _, _, err := importSoftwareKey(t, native, template); err == nil {
 		t.Fatal("the TPM imported a software key marked fixedTPM; enbu cannot tell such a key from one the TPM generated")
+	} else if !errors.Is(err, tpm2.TPMRCAttributes) {
+		t.Fatalf("ECDH import failed with %v, want TPM_RC_ATTRIBUTES", err)
 	}
 	if _, _, err := importSoftwareKey(t, native, signTemplate()); err == nil {
 		t.Fatal("the TPM imported a software signing key marked fixedTPM")
+	} else if !errors.Is(err, tpm2.TPMRCAttributes) {
+		t.Fatalf("signing import failed with %v, want TPM_RC_ATTRIBUTES", err)
 	}
 }
+
+// sharedRecording is one TPM connection that records into a shared log.
+type sharedRecording struct {
+	rec  *recordingTransport
+	next transport.TPMCloser
+}
+
+func (s *sharedRecording) Send(command []byte) ([]byte, error) {
+	s.rec.record(command)
+	return s.next.Send(command)
+}
+
+func (s *sharedRecording) Close() error { return s.next.Close() }
