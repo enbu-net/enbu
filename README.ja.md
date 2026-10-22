@@ -210,6 +210,7 @@ Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtur
 通常のCLIにはsoftware TPM transportを組み込みません。
 実TPM／Secure Enclaveの実機テストは`ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity`で実行します。
 実機検証はGitHub-hosted runnerの必須E2E matrixとは別です。
+TPM鍵の生成方法と、それを確かめるテストは[docs/identity.md](docs/identity.md)にまとめています。
 Linux／Windowsの実TPMでは、`ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`でCLI全体を検証できます。
 通常ビルドのCLI、一時リポジトリ、ホストの実TPM、ローカルHTTP fixtureを使い、init/add/pull/edit/sync/historyとCLIプロセス間のIdentity再ロードを確認します。
 
