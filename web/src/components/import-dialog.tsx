@@ -3,6 +3,7 @@ import { HStack, VStack, styled } from "styled-system/jsx";
 import { Text } from "./ui";
 import { ConfirmDialog } from "./confirm-dialog";
 import { useI18n } from "../lib/i18n";
+import { formatDisplayError, type DisplayError } from "../lib/app-error";
 
 /**
  * Collects a dotenv file to import into the current environment, by choosing
@@ -14,6 +15,7 @@ export function ImportDialog({
   open,
   environment,
   loading,
+  error = null,
   triggerRef,
   onClose,
   onImport,
@@ -21,11 +23,13 @@ export function ImportDialog({
   open: boolean;
   environment: string;
   loading: boolean;
+  /** Why the last import failed; the dialog stays open so it can be retried. */
+  error?: DisplayError | null;
   triggerRef?: RefObject<HTMLElement | null>;
   onClose: () => void;
   onImport: (dotenv: string, overwrite: boolean) => void | Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const contentId = useId();
   const fileId = useId();
   const [content, setContent] = useState("");
@@ -45,6 +49,11 @@ export function ImportDialog({
       onConfirm={() => onImport(content, overwrite)}
     >
       <VStack alignItems="stretch" gap="3">
+        {error && (
+          <Text role="alert" fontSize="sm" color="status.danger">
+            {formatDisplayError(error, locale)}
+          </Text>
+        )}
         <VStack alignItems="stretch" gap="1">
           <styled.label htmlFor={fileId} fontSize="sm" fontWeight="semibold">
             {t("import.file")}

@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { I18nProvider } from "../lib/i18n";
+import { displayError } from "../lib/app-error";
 import { ImportDialog } from "./import-dialog";
 
 function typeInto(textarea: HTMLTextAreaElement | null, value: string) {
@@ -55,6 +56,24 @@ describe("ImportDialog", () => {
     act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click());
     act(() => importButton()?.click());
     expect(onImport).toHaveBeenCalledWith("A=1\nB=2\n", true);
+  });
+
+  it("shows why the last import failed", () => {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <ImportDialog
+            open
+            environment="prod"
+            loading={false}
+            error={displayError("secret_already_exists", { key: "A, B" })}
+            onClose={() => {}}
+            onImport={onImport}
+          />
+        </I18nProvider>,
+      );
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("A, B");
   });
 
   it("does not overwrite unless asked", () => {

@@ -235,6 +235,7 @@ export function HomePage() {
   const [actionNotice, setActionNotice] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<DisplayError | null>(null);
   const importTriggerRef = useRef<HTMLButtonElement>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const historyTriggerRef = useRef<HTMLButtonElement>(null);
@@ -837,7 +838,10 @@ export function HomePage() {
                   variant="outline"
                   title={t("import.description")}
                   disabled={Boolean(conflicts && conflicts.conflicts.length > 0)}
-                  onClick={() => setImportOpen(true)}
+                  onClick={() => {
+                    setImportError(null);
+                    setImportOpen(true);
+                  }}
                 >
                   <Upload size={14} />
                   {t("import.button")}
@@ -1086,13 +1090,16 @@ export function HomePage() {
             open
             environment={currentEnvironment}
             loading={importLoading}
+            error={importError}
             triggerRef={importTriggerRef}
             onClose={() => {
               if (!importLoading) setImportOpen(false);
             }}
+            // A failed import keeps the dialog and its contents, so the person
+            // can tick overwrite after secret_already_exists and try again.
             onImport={async (dotenv, overwrite) => {
               setImportLoading(true);
-              setActionError(null);
+              setImportError(null);
               setActionNotice("");
               try {
                 const result = await backend.importSecrets(dotenv, overwrite, currentEnvironment);
@@ -1104,12 +1111,12 @@ export function HomePage() {
                     unchanged: String(result.unchanged.length),
                   }),
                 );
+                setImportOpen(false);
                 await refreshWorkspace(currentEnvironment);
               } catch (err) {
-                setActionError(toDisplayError(err));
+                setImportError(toDisplayError(err));
               } finally {
                 setImportLoading(false);
-                setImportOpen(false);
               }
             }}
           />

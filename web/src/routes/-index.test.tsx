@@ -48,6 +48,7 @@ vi.mock("../lib/backend", () => ({
     syncSecrets: vi.fn(),
     listConflicts: vi.fn(),
     resolveConflicts: vi.fn(),
+    importSecrets: vi.fn(),
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(),
     listMembers: vi.fn(async () => []),
@@ -901,6 +902,61 @@ describe("dashboard review regressions", () => {
     );
     expect(container.textContent).not.toContain("Choose a value");
     expect(container.querySelector('input[aria-label="Value: KEY"]')).not.toBeNull();
+  });
+
+  it("keeps the import dialog and its contents when an import is refused", async () => {
+    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
+    backendMock.listMembers.mockResolvedValue([]);
+    const { AppError } = await import("../lib/app-error");
+    backendMock.importSecrets
+      .mockRejectedValueOnce(
+        new AppError({ code: "secret_already_exists", params: { key: "KEY", keys: "KEY" } }),
+      )
+      .mockResolvedValueOnce({
+        environment: "default",
+        added: [],
+        updated: ["KEY"],
+        unchanged: [],
+      });
+    renderAuthenticatedHome();
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    act(() => queryButton("Import")?.click());
+    const textarea = container.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
+    act(() => {
+      if (!textarea) return;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        textarea,
+        "KEY=new\n",
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const importButton = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+        (b) => b.textContent?.trim() === "Import",
+      );
+    await act(async () => {
+      importButton()?.click();
+      for (let i = 0; i < 4; i++) await Promise.resolve();
+    });
+    expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
+      'Secret "KEY" already exists.',
+    );
+    expect(container.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.value).toBe(
+      "KEY=new\n",
+    );
+
+    act(() =>
+      container.querySelector<HTMLInputElement>('[role="dialog"] input[type="checkbox"]')?.click(),
+    );
+    await act(async () => {
+      importButton()?.click();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    expect(backendMock.importSecrets).toHaveBeenLastCalledWith("KEY=new\n", true, "default");
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("1 updated");
   });
 
   it("reloads members by repository path and ignores stale completions", async () => {
