@@ -1,6 +1,4 @@
 enbu
-tui-demo
-test/preview/out/
 dist/
 .env
 .worktrees/

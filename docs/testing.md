@@ -1,8 +1,8 @@
 # Test coverage
 
 The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React.
-It runs every Go package with unit tests, including `pkg/`, `desktop/`, `tui/`,
-the root command, and repository tools. Separate suites cover the Go scenarios,
+It runs every Go package with unit tests, including `pkg/`, `desktop/`, the root
+command, and repository tools. Separate suites cover the Go scenarios,
 Atago CLI E2E, and Identity E2E (vTPM and OS keyring).
 
 The Go report instruments all production packages and tools. Each test binary
@@ -38,7 +38,7 @@ Individual tasks:
 |------|----------|
 | `cli/test/coverage` | All Go unit tests, with shuffle and race detection |
 | `cli/test/coverage/scenario` | Go scenarios against the local OCI registry |
-| `cli/test/coverage/e2e` | Atago CLI processes, including errors and TUI |
+| `cli/test/coverage/e2e` | Atago CLI processes, including errors |
 | `identity/test/coverage` | Identity E2E parent tests and child CLI processes |
 | `coverage/report` | Merge the four Go suites and generate HTML and coverprofile |
 | `gui/test/coverage` | All React tests, with HTML and LCOV |

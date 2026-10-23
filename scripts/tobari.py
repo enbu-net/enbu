@@ -13,10 +13,7 @@ MODULE = "github.com/enbu-net/enbu"
 COVERPKG = ",".join(
     [
         MODULE,
-        *(
-            f"{MODULE}/{p}/..."
-            for p in ("app", "cli", "pkg", "desktop", "tui", "tools")
-        ),
+        *(f"{MODULE}/{p}/..." for p in ("app", "cli", "pkg", "desktop", "tools")),
     ]
 )
 

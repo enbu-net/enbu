@@ -45,36 +45,9 @@ jobs:
           path: web/dist-preview
           retention-days: 1
 
-  build-tui:
-    name: Build TUI Preview
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build TUI WASI module
-        run: |
-          ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
-          gzip -9 test/preview/out/tui/out.wasm
-
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: tui-preview
-          path: test/preview/out
-          retention-days: 1
-
   deploy:
     name: Deploy to GitHub Pages
-    needs: [build-web, build-tui]
+    needs: [build-web]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -91,19 +64,12 @@ jobs:
           name: web-preview
           path: site/web
 
-      - name: Download TUI artifact
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: tui-preview
-          path: site
-
       - name: Copy preview page
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
             test/preview/index.html
             test/preview/preview-metadata.js
-            test/preview/coi-serviceworker.min.js
           sparse-checkout-cone-mode: false
           path: src
           persist-credentials: false
@@ -126,9 +92,6 @@ jobs:
             --arg sha "$PREVIEW_SHA" \
             '{pullRequest: $pullRequest, pullRequestURL: $pullRequestURL, ref: $ref, sha: $sha}' \
             > site/preview-metadata.json
-
-      - name: Copy cross-origin isolation worker
-        run: cp src/test/preview/coi-serviceworker.min.js site/coi-serviceworker.min.js
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

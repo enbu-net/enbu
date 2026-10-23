@@ -20,9 +20,6 @@ importers:
       '@ark-ui/react':
         specifier: ^5.37.2
         version: 5.39.3(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@bjorn3/browser_wasi_shim':
-        specifier: 0.4.2
-        version: 0.4.2
       '@icons-pack/react-simple-icons':
         specifier: ^13.13.0
         version: 13.15.1(react@19.3.1)
@@ -38,9 +35,6 @@ importers:
       '@taplo/lsp':
         specifier: ^0.8.0
         version: 0.8.0
-      ghostty-web:
-        specifier: 0.4.0
-        version: 0.4.0
       lucide-react:
         specifier: ^1.23.0
         version: 1.60.0(@types/react@19.3.0)(react@19.3.1)
@@ -197,9 +191,6 @@ packages:
 
   '@better-fetch/fetch@1.1.18':
     resolution: {integrity: sha512-rEFOE1MYIsBmoMJtQbl32PGHHXuG2hDxvEd7rUHE0vCBoFQVSDqaVs9hkZEtHCxRoY+CljXKFCOuJ8uxqw1LcA==}
-
-  '@bjorn3/browser_wasi_shim@0.4.2':
-    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@blazediff/core@1.10.0':
     resolution: {integrity: sha512-AOQff0zgR7cGsZL+4E7hVkmujoPUpm0J9xzWGWZj5wCjd3gmxESXAPfKyuzs93VdpQNFhHlBhfOjrcZ+XTERtQ==}
@@ -2100,9 +2091,6 @@ packages:
     resolution: {integrity: sha512-XjH1AECxf0giL2V1aU8vKyRR2ppRUb5c0EvT7zuJTokQ74bNo52zOtghqdWIqrhUD79fo3x0WfKZdOqxF6LG1Q==}
     engines: {node: '>=18'}
 
-  ghostty-web@0.4.0:
-    resolution: {integrity: sha512-0puDBik2qapbD/QQBW9o5ZHfXnZBqZWx/ctBiVtKZ6ZLds4NYb+wZuw1cRLXZk9zYovIQ908z3rvFhexAvc5Hg==}
-
   goober@2.1.19:
     resolution: {integrity: sha512-U7veizMqxyKlM58+Z5j2ngJBH/r9siDmxpvNxSw0PylF6WQvrASJEZrxh1hidRBJc2jqoBVSyOban5u8m+6Rxg==}
     peerDependencies:
@@ -3001,8 +2989,6 @@ snapshots:
   '@bcoe/v8-coverage@1.0.2': {}
 
   '@better-fetch/fetch@1.1.18': {}
-
-  '@bjorn3/browser_wasi_shim@0.4.2': {}
 
   '@blazediff/core@1.10.0': {}
 
@@ -5148,8 +5134,6 @@ snapshots:
   gensync@1.0.0-beta.2: {}
 
   get-east-asian-width@1.7.0: {}
-
-  ghostty-web@0.4.0: {}
 
   goober@2.1.19(csstype@3.2.3):
     dependencies:

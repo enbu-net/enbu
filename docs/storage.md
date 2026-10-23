@@ -25,7 +25,7 @@ output = ".env"
 `enbu init --storage URL` persists the chosen backend. On other commands,
 `--storage URL` overrides the URL for that invocation. `identity create` and
 `identity show` use the workspace UUID in `enbu.toml`. `doctor` requires no config.
-OCI (with Docker credentials) and S3 require neither Git nor GitHub. TUI and Desktop read the configured
+OCI (with Docker credentials) and S3 require neither Git nor GitHub. Desktop reads the configured
 backend; configure a new backend with the CLI before opening it in Desktop.
 
 Each storage location belongs to one workspace. Copy `enbu.toml` to share that

@@ -42,7 +42,7 @@ tasks:
       - go test -v -shuffle=on -race -tags=fixture,scenario ./...
 
   cli/test/coverage:
-    desc: Collect all Go unit tests with tobari, including desktop and TUI
+    desc: Collect all Go unit tests with tobari, including desktop
     deps:
       - gui/build/frontend
     cmds:
@@ -268,21 +268,6 @@ tasks:
     dir: web
     cmds:
       - vp run build:preview
-
-  cli/preview:
-    desc: Build TUI demo and run VHS tapes locally
-    cmds:
-      - go build -o tui-demo ./test/preview/tui-demo
-      - mkdir -p test/preview/vhs/out
-      - sh -c 'export PATH="$PWD:$PATH"; for tape in test/preview/vhs/*.tape; do vhs "$tape"; done'
-    preconditions:
-      - sh: command -v vhs
-        msg: "VHS not installed. Install with: go install github.com/charmbracelet/vhs@latest"
-
-  cli/preview/wasm:
-    desc: Build the browser TUI as a WASI module
-    cmds:
-      - ./test/preview/build-wasi.sh test/preview/out/tui/out.wasm
 
   gui/install:
     internal: true

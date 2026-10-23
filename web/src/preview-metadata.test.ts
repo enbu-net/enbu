@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it } from "vite-plus/test";
-import { applyPreviewMetadata } from "../../../test/preview/preview-metadata.js";
+import { applyPreviewMetadata } from "../../test/preview/preview-metadata.js";
 
 const metadata = {
   pullRequest: "197",
