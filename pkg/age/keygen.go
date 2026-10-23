@@ -19,3 +19,20 @@ func GenerateKeyPair() (*KeyPair, error) {
 		PublicKey: identity.Recipient().String(),
 	}, nil
 }
+
+type HybridKeyPair struct {
+	Identity  *age.HybridIdentity
+	PublicKey string
+}
+
+// GenerateHybridKeyPair generates an ML-KEM-768 + X25519 (X-Wing) identity.
+func GenerateHybridKeyPair() (*HybridKeyPair, error) {
+	identity, err := age.GenerateHybridIdentity()
+	if err != nil {
+		return nil, err
+	}
+	return &HybridKeyPair{
+		Identity:  identity,
+		PublicKey: identity.Recipient().String(),
+	}, nil
+}

@@ -191,6 +191,16 @@ New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave
 Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
 X25519 recipients can be included in the same encrypted file.
 
+New identities are post-quantum hybrids, so ciphertext stored today stays safe against a
+future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
+ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
+P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
+kept in the Keychain). A file is post-quantum only when every member has a hybrid key;
+with any classical member it is encrypted classically. Members created before this
+switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
+the new key with `enbu member approve`, and `enbu member list` shows how many members
+have upgraded. Members on an enbu that predates hybrid keys must update enbu first.
+
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
 | Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
@@ -201,8 +211,10 @@ X25519 recipients can be included in the same encrypted file.
 enbu doctor                  # No authentication or persistent key creation
 enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
+enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
-# Other choices: hardware (required), keyring (X25519 stored in the OS keyring)
+# Other choices: hardware (required), keyring (stored in the OS keyring)
+export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
 Fallback is allowed only when hardware is unavailable before creation begins.

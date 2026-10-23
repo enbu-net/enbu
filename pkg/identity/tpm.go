@@ -144,7 +144,7 @@ func (b *TPMBackend) Create() (Identity, *Metadata, error) {
 func (b *TPMBackend) Load(md *Metadata) (Identity, error) { return b.load(md, true) }
 
 func (b *TPMBackend) load(md *Metadata, verify bool) (Identity, error) {
-	if md.Backend != "tpm" || md.Algorithm != "P-256" {
+	if md.Backend != "tpm" || !hardwareAlgorithm(md.Algorithm) {
 		return nil, errors.New("invalid TPM backend metadata")
 	}
 	public, err := tpm2.Unmarshal[tpm2.TPM2BPublic](md.TPMPublic)

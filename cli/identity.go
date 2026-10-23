@@ -33,6 +33,25 @@ func newIdentityCommand(a *app.App) *cobra.Command {
 			}
 			return printIdentity(cmd, info, warning)
 		}})
+	cmd.AddCommand(&cobra.Command{Use: "upgrade", Short: "Switch this device to a post-quantum (hybrid ML-KEM) encryption key", Args: appArgs(cobra.NoArgs),
+		Long: "Create a hybrid ML-KEM-768 encryption key and ask an admin to approve it, keeping this device's signing key and fingerprint.\n" +
+			"An admin's own key is switched at once. Secrets are post-quantum once every member has upgraded.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			res, err := a.UpgradeIdentity(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, res, res.Warnings...)
+			}
+			cmd.Printf("Backend: %s\nAlgorithm: %s\nFingerprint: %s\n", res.Backend, res.Algorithm, res.Fingerprint)
+			if res.Pending {
+				cmd.Println("Ask an admin to run 'enbu member approve' and compare this fingerprint.")
+			} else {
+				cmd.Println("Switched to the post-quantum key and re-encrypted every environment.")
+			}
+			return nil
+		}})
 	cmd.AddCommand(&cobra.Command{Use: "show", Short: "Show validated Identity public information", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := a.IdentityInfo()

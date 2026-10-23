@@ -42,7 +42,7 @@ desktop/                 → Wails desktop app (service layer + bindings)
 app/                     → application layer (use-cases)
 pkg/config/              → repo detection (git remote), enbu.toml, XDG data dir
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
-pkg/age/                 → key generation, encrypt/decrypt with age (X25519 only)
+pkg/age/                 → key generation, encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256)
 pkg/keystore/            → pluggable private key storage (OS keyring or plaintext file)
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/wsp/                 → workspace security protocol: signed Control chain, SignedState, local checkpoints
@@ -65,7 +65,7 @@ test/                    → scenario tests (build tag: scenario)
 - `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
 - Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin reclaims storage with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - Private keys are stored via a pluggable keystore backend (OS keyring by default, plaintext file via `ENBU_BACKEND=text`)
-- Only age X25519 keys are used — no SSH key support
+- Encryption uses age recipients only — no SSH key support. New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling

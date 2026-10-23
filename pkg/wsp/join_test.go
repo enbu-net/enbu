@@ -53,3 +53,42 @@ func TestJoinRequestRejectsBadRecipient(t *testing.T) {
 		t.Fatalf("request with an invalid recipient accepted: %v", err)
 	}
 }
+
+func TestKeyUpdateRequest(t *testing.T) {
+	bob, carol := newActor(t, false), newActor(t, false)
+	blob, err := NewKeyUpdateRequest(testWorkspace, carol.p.Recipient, bob.p.Recipient, time.Now(), bob.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := VerifyJoinRequest(testWorkspace, blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.DeviceID() != bob.p.ID || req.Recipient != carol.p.Recipient || req.Replaces != bob.p.Recipient {
+		t.Fatalf("unexpected request: %+v", req)
+	}
+	// A plain join request encodes as before: no replaces field at all.
+	plain, _ := NewJoinRequest(testWorkspace, bob.p.Recipient, time.Now(), bob.signer)
+	signed, _ := DecodeSigned(plain)
+	var fields map[string]any
+	if err := decMode.Unmarshal(signed.Body, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["replaces"]; ok {
+		t.Fatal("a join request carries a replaces field")
+	}
+	for _, replaces := range []string{"", carol.p.Recipient} {
+		if _, err := NewKeyUpdateRequest(testWorkspace, carol.p.Recipient, replaces, time.Now(), bob.signer); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("key update replacing %q accepted: %v", replaces, err)
+		}
+	}
+	// A signed update that replaces its own or a malformed recipient is refused.
+	for _, replaces := range []string{carol.p.Recipient, "not an age recipient"} {
+		body, _ := encMode.Marshal(JoinRequest{Workspace: testWorkspace, Signing: bob.signer.Public(), Recipient: carol.p.Recipient, Replaces: replaces})
+		sig, _ := bob.signer.Sign("enbu.join-request.v1", body)
+		forged, _ := Signed{Body: body, Signature: sig}.Encode()
+		if _, err := VerifyJoinRequest(testWorkspace, forged); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("key update replacing %q verified: %v", replaces, err)
+		}
+	}
+}
