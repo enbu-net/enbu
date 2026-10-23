@@ -193,3 +193,28 @@ func TestReadAcceptsWhatAnotherProcessAcceptedAfterListing(t *testing.T) {
 		t.Fatalf("secrets = %v, %v", got, err)
 	}
 }
+
+// Another process can also accept a head while this read decrypts, before it
+// records what it read. The read then reads again rather than reporting a
+// rollback or recording heads older than the accepted one.
+func TestReadRecordsAfterAnotherProcessAcceptedMeanwhile(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	twin := *a // same storage, keys and checkpoint, as a second process
+	real := a.Storage
+	done := false
+	a.Storage = storagetest.Wrap(real, storagetest.Hooks{
+		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+			if !done {
+				done = true
+				if err := twin.AddSecret(ctx, "default", "B", "2"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return next.OpenBlob(ctx, kind, scope, rev, index)
+		},
+	})
+	got, err := a.ListSecrets(context.Background(), "default")
+	if err != nil || got["B"] != "2" {
+		t.Fatalf("secrets = %v, %v", got, err)
+	}
+}

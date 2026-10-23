@@ -304,14 +304,28 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 // settles conflicts a person has already decided. With record set the verified
 // view becomes this device's checkpoint.
 func (s *session) readResource(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
-	sv, err := s.loadResource(ctx, resource, also...)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		sv, err := s.loadResource(ctx, resource, also...)
+		if err != nil {
+			return nil, err
+		}
+		r, err := s.mergeResource(ctx, resource, sv, choices)
+		if err != nil || !record {
+			return r, err
+		}
+		err = s.cps.AcceptStates(resource, sv.Graph, r.parents())
+		if err == nil {
+			return r, nil
+		}
+		// Another process of this device accepted a newer head while this one
+		// was reading; a fresh read includes it.
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return nil, wspError(err)
+		}
 	}
-	return s.mergeResource(ctx, resource, sv, choices, record)
 }
 
-func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice, record bool) (*resourceRead, error) {
+func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice) (*resourceRead, error) {
 	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return nil, err
@@ -342,11 +356,6 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 			bases = append(bases, m)
 		}
 		r.secrets, r.conflicts = merge.Merge(bases, maps, choices)
-	}
-	if record {
-		if err := s.cps.AcceptStates(resource, sv.Graph, r.parents()); err != nil {
-			return nil, wspError(err)
-		}
 	}
 	return r, nil
 }
@@ -465,11 +474,16 @@ func (s *session) acceptPublished(ctx context.Context, resource string, before *
 	if !errors.Is(err, wsp.ErrRollback) {
 		return wspError(err)
 	}
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, st.Digest)
-	if err != nil {
-		return wspError(err)
+	for attempt := 0; ; attempt++ {
+		sv, err := s.loadResource(ctx, resource, st.Digest)
+		if err != nil {
+			return err
+		}
+		err = s.acceptView(resource, sv)
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return wspError(err)
+		}
 	}
-	return wspError(s.acceptView(resource, sv))
 }
 
 func (s *session) acceptView(resource string, sv *wsp.StateView) error {
