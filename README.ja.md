@@ -300,6 +300,7 @@ Storageは信頼しません。名前は場所を示すヒントにすぎず、�
 - **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは親の管理者が署名し、`enbu.toml` のgenesis digestから検証します。2人の管理者が同時にメンバーを変更するとControlが分岐し、`enbu member resolve-fork` まで全部が止まります。
 - **署名付きState** 暗号文のdigestと親revisionを、書き込んだ端末に結び付けます。読む側は作者と署名を確認してから復号し、メンバーでない者が置いたものは脇に置きます。
 - **ローカルcheckpoint** この端末が受け入れたControlとStateのheadを覚え、Storageが黙って隠せないようにします。一覧の反映遅れは再試行で、データの損失とは扱いません。
+- **信頼の根の固定** 各端末はワークスペースで最初に検証した `control_genesis` と、チェックアウトごとの `enbu.toml` が最初に指したワークスペースとgenesisを覚えます。あとから `enbu.toml` が別のものを指すと、すべてのコマンドが `trust_root_changed` で止まります。管理者がワークスペースを作り直したことを別経路で確認してから `enbu init --accept-new-genesis` を実行してください。新しいフォルダへの新規cloneは、最初の `enbu.toml` を信頼します。
 - recipientは検証済みControlだけから作られます。署名鍵は暗号化鍵とは別で、Storageへは保存されません。
 
 対象外: Storageによるサービス拒否、checkpointのない新規端末に最新revisionを隠すこと、悪意ある管理者、盗まれた管理者の署名鍵。Storageに書き込める削除済みメンバーは、知っていたControlを名乗ってrevisionを置けます。読み取りと履歴はそれを除外しますが、まだ削除を見ていない端末は受け入れます。
