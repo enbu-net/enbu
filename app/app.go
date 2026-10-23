@@ -30,6 +30,10 @@ type App struct {
 	// CheckpointDir holds the local rollback checkpoints. Empty means the
 	// per-user data directory.
 	CheckpointDir string
+	// AcceptNewGenesis lets InitializeRepository replace the genesis this
+	// device pinned for the workspace with the one enbu.toml names. Only a
+	// person who confirmed the workspace was re-founded sets it.
+	AcceptNewGenesis bool
 }
 
 func (a *App) SetRepositoryDir(dir string) {
