@@ -1,12 +1,19 @@
 package app
 
 import (
+	"context"
+	"fmt"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
 
 // addEnvironmentOn creates env in d's own enbu.toml only, as a member does
@@ -153,5 +160,148 @@ func TestHistoryOmitsRevisionsSetAsideAsHeads(t *testing.T) {
 	}
 	if got := mustSecrets(t, alice, "default"); got["KEY"] == "planted" {
 		t.Fatal("restoring the newest entry published the planted content")
+	}
+}
+
+// Anyone able to write to storage can create scopes without limit. The bound
+// counts every unlisted scope examined, not only those with a trusted head, so
+// junk scopes cannot make a membership change examine all of them.
+func TestScopeDiscoveryIsBounded(t *testing.T) {
+	prev := maxExaminedScopes
+	maxExaminedScopes = 2
+	t.Cleanup(func() { maxExaminedScopes = prev })
+
+	alice := newAlice(t)
+	outsider := newDevice(t, alice)
+	requestJoin(t, outsider)
+	s, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"X": "junk"}), s.head.Recipients())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 5 {
+		publishRevision(t, alice.Storage, outsider, s.workspace, fmt.Sprintf("secrets/junk-%d", i), s.head.Digest, ciphertext)
+	}
+	defaultScope := storage.StateScope(s.workspace, s.resource("default"))
+	s.Close()
+
+	var mu sync.Mutex
+	touched := map[string]bool{}
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState && scope != defaultScope {
+				mu.Lock()
+				touched[scope] = true
+				mu.Unlock()
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	s, err = alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	targets, unexamined, err := s.environmentResources(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unexamined != 3 || len(touched) != 2 {
+		t.Fatalf("examined %d scopes and left %d, want 2 and 3", len(touched), unexamined)
+	}
+	if len(targets) != 1 || targets[0].resource != s.resource("default") {
+		t.Fatalf("targets = %+v, want only the listed environment", targets)
+	}
+
+	// A membership change still re-encrypts what enbu.toml lists, and says
+	// that some scopes were left unexamined instead of hiding it.
+	bob := newDevice(t, alice)
+	err = alice.ApproveMember(bg, requestJoin(t, bob).DeviceID)
+	if !apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("approval with unexamined scopes: %v", err)
+	}
+	if got := mustSecrets(t, bob, "default"); got["KEY"] != "v1" {
+		t.Fatalf("the listed environment was not re-encrypted: %v", got)
+	}
+}
+
+// A revision signed by someone the current Control does not list, built on the
+// current head and dated last, must not reach history: not as an entry, not
+// through a diff, and not through a restore of any entry.
+func TestHistoryNeverShowsRevisionsFromNonMembers(t *testing.T) {
+	for name, author := range map[string]func(t *testing.T, alice *App) *App{
+		"never a member": func(t *testing.T, alice *App) *App {
+			outsider := newDevice(t, alice)
+			requestJoin(t, outsider)
+			return outsider
+		},
+		"removed member": func(t *testing.T, alice *App) *App {
+			bob := approved(t, alice)
+			if err := alice.RemoveMember(bg, mustMember(t, alice, bob).DeviceID); err != nil {
+				t.Fatal(err)
+			}
+			return bob
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			alice := newAlice(t)
+			if err := alice.EditSecret(bg, "default", "KEY", "v2"); err != nil {
+				t.Fatal(err)
+			}
+			forger := author(t, alice)
+			before, err := alice.ListHistory(bg, "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			s, err := alice.openSession(bg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "v2", "PLANTED": "x"}), s.head.Recipients())
+			if err != nil {
+				t.Fatal(err)
+			}
+			sv, err := s.loadResource(bg, s.resource("default"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// It names the current Control and the current head, as a member's would.
+			publishRevisionAt(t, alice.Storage, forger, s.workspace, s.resource("default"), s.head.Digest, ciphertext, 4000000000, sv.Heads[0].Digest)
+			s.Close()
+
+			after, err := alice.ListHistory(bg, "default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after) != len(before) {
+				t.Fatalf("history lists the forged revision: %d -> %d entries", len(before), len(after))
+			}
+			for i := range after {
+				if after[i].Tag != before[i].Tag {
+					t.Fatalf("entry %d changed from %s to %s", i+1, before[i].Tag, after[i].Tag)
+				}
+			}
+			if len(after) >= 2 {
+				diff, err := alice.DiffHistory(bg, "default", len(after)-1, len(after))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if slices.Contains(diff.Added, "PLANTED") {
+					t.Fatalf("diff shows the forged key: %+v", diff)
+				}
+			}
+			for i := range after {
+				if err := alice.RestoreHistory(bg, "default", i+1); err != nil {
+					t.Fatal(err)
+				}
+				if got := mustSecrets(t, alice, "default"); got["PLANTED"] != "" {
+					t.Fatalf("restoring entry %d published the forged content", i+1)
+				}
+			}
+		})
 	}
 }

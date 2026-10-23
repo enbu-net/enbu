@@ -357,7 +357,7 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	targets, err := s.environmentResources(ctx)
+	targets, unexamined, err := s.environmentResources(ctx)
 	s.Close()
 	if err != nil {
 		return err
@@ -365,6 +365,9 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	// Keep going after a failure: every environment left behind stays encrypted
 	// for the old recipient set, and the error should name all of them.
 	var errs []error
+	if unexamined > 0 {
+		errs = append(errs, fmt.Errorf("storage holds %d more scopes than the %d examined; any environment among them that enbu.toml does not list was not re-encrypted, so add it to enbu.toml and run enbu sync", unexamined, maxExaminedScopes))
+	}
 	for _, t := range targets {
 		s, err := a.openSession(ctx)
 		if err == nil {
@@ -389,7 +392,7 @@ func (a *App) acceptCurrentStates(ctx context.Context) {
 		return
 	}
 	defer s.Close()
-	targets, err := s.environmentResources(ctx)
+	targets, _, err := s.environmentResources(ctx)
 	if err != nil {
 		return
 	}
@@ -398,10 +401,11 @@ func (a *App) acceptCurrentStates(ctx context.Context) {
 	}
 }
 
-// maxDiscoveredResources bounds how many environments missing from enbu.toml are
-// taken from storage, so someone able to write to storage cannot make a
-// membership change unbounded.
-var maxDiscoveredResources = 256
+// maxExaminedScopes bounds how many scopes missing from enbu.toml are examined
+// for an environment. Examining one lists and fetches revisions, and anyone
+// able to write to storage can create scopes, so the bound counts every scope
+// examined, trusted or not, to keep a membership change bounded.
+var maxExaminedScopes = 256
 
 // maxResourceProbes bounds how many revisions of one listed scope are read to
 // learn which resource it holds.
@@ -415,9 +419,9 @@ type environmentResource struct {
 // environmentResources lists the environments enbu.toml names, then any other
 // secrets resource storage holds a trusted revision of. A scope that holds only
 // revisions from non-members is skipped: anyone able to write to storage can
-// make one, and it has no content to re-encrypt.
-func (s *session) environmentResources(ctx context.Context) ([]environmentResource, error) {
-	var out []environmentResource
+// make one, and it has no content to re-encrypt. At most maxExaminedScopes
+// unlisted scopes are examined; unexamined counts the rest.
+func (s *session) environmentResources(ctx context.Context) (out []environmentResource, unexamined int, err error) {
 	known := map[string]bool{}
 	for _, env := range s.cfg.EnvironmentNames() {
 		r := s.resource(env)
@@ -426,33 +430,34 @@ func (s *session) environmentResources(ctx context.Context) ([]environmentResour
 	}
 	scopes, err := s.store.Scopes(ctx)
 	if err != nil {
-		return nil, storageError(err)
+		return nil, 0, storageError(err)
 	}
-	discovered := 0
+	examined := 0
 	for _, scope := range scopes {
 		if known[scope] {
 			continue
 		}
-		if discovered >= maxDiscoveredResources {
-			break
+		if examined >= maxExaminedScopes {
+			unexamined++
+			continue
 		}
+		examined++
 		resource, err := s.scopeResource(ctx, scope)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if resource == "" {
 			continue
 		}
 		trusted, err := s.hasTrustedHead(ctx, resource)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if trusted {
-			discovered++
 			out = append(out, environmentResource{name: resource, resource: resource})
 		}
 	}
-	return out, nil
+	return out, unexamined, nil
 }
 
 // scopeResource learns which secrets resource of this workspace a listed scope

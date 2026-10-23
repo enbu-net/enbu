@@ -32,6 +32,7 @@ const (
 	CodeSecretConflict      Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
 	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin must resolve it
 	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
+	CodeTrustRootChanged    Code = "trust_root_changed"   // enbu.toml names a genesis other than the one this device pinned
 
 	// Local device.
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
@@ -62,6 +63,7 @@ var knownCodes = map[Code]struct{}{
 	CodeSecretConflict:      {},
 	CodeControlForked:       {},
 	CodeReencryptIncomplete: {},
+	CodeTrustRootChanged:    {},
 
 	CodeIdentityUnavailable: {},
 	CodeOutputUnreadable:    {},
