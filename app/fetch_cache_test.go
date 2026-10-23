@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -12,25 +13,26 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// storageCalls counts what an operation asks of storage.
+// storageCalls counts what an operation asks of storage. Heads are fetched
+// concurrently, so the counters are atomic.
 type storageCalls struct {
-	heads, blobs, stateListings int
+	heads, blobs, stateListings atomic.Int64
 }
 
 func countCalls(a *App) *storageCalls {
 	c := &storageCalls{}
 	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
 		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
-			c.heads++
+			c.heads.Add(1)
 			return next.FetchHead(ctx, kind, scope, rev)
 		},
 		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
-			c.blobs++
+			c.blobs.Add(1)
 			return next.OpenBlob(ctx, kind, scope, rev, index)
 		},
 		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
 			if kind == storage.KindState {
-				c.stateListings++
+				c.stateListings.Add(1)
 			}
 			return next.Discover(ctx, kind, scope)
 		},
@@ -49,8 +51,8 @@ func TestReadsUseCachedHeads(t *testing.T) {
 		t.Fatalf("secrets = %v", got)
 	}
 	// Every head was fetched while writing; only the current ciphertext is read.
-	if calls.heads != 0 || calls.blobs != 1 {
-		t.Fatalf("heads = %d, blobs = %d; want 0 and 1", calls.heads, calls.blobs)
+	if calls.heads.Load() != 0 || calls.blobs.Load() != 1 {
+		t.Fatalf("heads = %d, blobs = %d; want 0 and 1", calls.heads.Load(), calls.blobs.Load())
 	}
 }
 
@@ -62,8 +64,8 @@ func TestWriteListsStatesTwice(t *testing.T) {
 	if err := a.AddSecret(context.Background(), "default", "B", "2"); err != nil {
 		t.Fatal(err)
 	}
-	if calls.stateListings != 2 {
-		t.Fatalf("state listings = %d, want 2", calls.stateListings)
+	if calls.stateListings.Load() != 2 {
+		t.Fatalf("state listings = %d, want 2", calls.stateListings.Load())
 	}
 	got, err := a.ListSecrets(context.Background(), "default")
 	if err != nil || got["B"] != "2" {
@@ -85,39 +87,39 @@ func TestHistoryDecryptsOnlyWhatIsNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cold) != 2 || calls.blobs != 3 {
-		t.Fatalf("entries = %d, blobs = %d; want 2 entries from 3 revisions", len(cold), calls.blobs)
+	if len(cold) != 2 || calls.blobs.Load() != 3 {
+		t.Fatalf("entries = %d, blobs = %d; want 2 entries from 3 revisions", len(cold), calls.blobs.Load())
 	}
 
-	calls.blobs = 0
+	calls.blobs.Store(0)
 	warm, err := a.ListHistory(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(warm, cold) || calls.blobs != 0 {
-		t.Fatalf("warm listing = %v with %d blobs, want %v with none", warm, calls.blobs, cold)
+	if !reflect.DeepEqual(warm, cold) || calls.blobs.Load() != 0 {
+		t.Fatalf("warm listing = %v with %d blobs, want %v with none", warm, calls.blobs.Load(), cold)
 	}
 
-	calls.blobs = 0
+	calls.blobs.Store(0)
 	diff, err := a.DiffHistory(ctx, "default", 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(diff.Modified, []string{"A"}) || calls.blobs != 2 {
-		t.Fatalf("diff = %+v with %d blobs, want A modified from 2 blobs", diff, calls.blobs)
+	if !reflect.DeepEqual(diff.Modified, []string{"A"}) || calls.blobs.Load() != 2 {
+		t.Fatalf("diff = %+v with %d blobs, want A modified from 2 blobs", diff, calls.blobs.Load())
 	}
 
 	if err := a.AddSecret(ctx, "default", "B", "3"); err != nil {
 		t.Fatal(err)
 	}
-	calls.blobs = 0
+	calls.blobs.Store(0)
 	after, err := a.ListHistory(ctx, "default")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The new revision and the parent it is compared with.
-	if len(after) != 3 || calls.blobs != 2 {
-		t.Fatalf("entries = %d, blobs = %d; want 3 entries from 2 blobs", len(after), calls.blobs)
+	if len(after) != 3 || calls.blobs.Load() != 2 {
+		t.Fatalf("entries = %d, blobs = %d; want 3 entries from 2 blobs", len(after), calls.blobs.Load())
 	}
 }
 
@@ -163,6 +165,31 @@ func TestWriteAcceptsWhatAnotherProcessAcceptedMeanwhile(t *testing.T) {
 	a.Storage = real
 	got, err := a.ListSecrets(context.Background(), "default")
 	if err != nil || got["B"] != "2" || got["C"] != "3" {
+		t.Fatalf("secrets = %v, %v", got, err)
+	}
+}
+
+// Another process of the same device can accept a head after this read listed
+// storage. The read fetches that head by name instead of calling it a rollback.
+func TestReadAcceptsWhatAnotherProcessAcceptedAfterListing(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	twin := *a // same storage, keys and checkpoint, as a second process
+	real := a.Storage
+	done := false
+	a.Storage = storagetest.Wrap(real, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revs, err := next.Discover(ctx, kind, scope)
+			if kind == storage.KindState && !done {
+				done = true
+				if err := twin.AddSecret(ctx, "default", "B", "2"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			return revs, err
+		},
+	})
+	got, err := a.ListSecrets(context.Background(), "default")
+	if err != nil || got["A"] != "1" || got["B"] != "2" {
 		t.Fatalf("secrets = %v, %v", got, err)
 	}
 }

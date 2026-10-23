@@ -181,18 +181,35 @@ func (r *resourceRead) parents() []digest.Digest {
 // loadResource verifies every revision of env that storage shows and checks it
 // against what this device accepted before. It decrypts nothing.
 func (s *session) loadResource(ctx context.Context, resource string, also ...digest.Digest) (*wsp.StateView, error) {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
-	if err != nil {
-		return nil, wspError(err)
+	for attempt := 0; ; attempt++ {
+		sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
+		if err != nil {
+			return nil, wspError(err)
+		}
+		if sv.Graph.Len() == 0 {
+			return nil, storageError(storage.ErrNotFound)
+		}
+		err = s.cps.CheckStates(resource, sv.Graph)
+		if err == nil {
+			return sv, nil
+		}
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return nil, wspError(err)
+		}
+		// Another process of this device may have accepted a revision after
+		// the listing above was taken. Fetch the accepted heads by name: one
+		// that storage really lost is still missing, and that stays a rollback.
+		accepted, err := s.cps.State(resource)
+		if err != nil {
+			return nil, err
+		}
+		also = append(append([]digest.Digest(nil), also...), accepted...)
 	}
-	if sv.Graph.Len() == 0 {
-		return nil, storageError(storage.ErrNotFound)
-	}
-	if err := s.cps.CheckStates(resource, sv.Graph); err != nil {
-		return nil, wspError(err)
-	}
-	return sv, nil
 }
+
+// acceptedRetries bounds how often loadResource reads storage again for heads
+// that other processes of this device accepted meanwhile.
+const acceptedRetries = 2
 
 // decrypt reads the ciphertext of one verified revision, checks it is the one
 // the signed State names, and decrypts it. This is the only place a revision's
