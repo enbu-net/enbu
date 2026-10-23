@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -224,4 +226,68 @@ func TestKeyUpdateForAnotherDeviceIsIgnored(t *testing.T) {
 			t.Fatalf("a non-member's key update was offered: %+v", r)
 		}
 	}
+}
+
+// failControl makes publishing a Control fail while set.
+type failControl struct {
+	storage.Store
+	fail bool
+}
+
+func (f *failControl) Publish(ctx context.Context, o storage.Object) error {
+	if f.fail && o.Kind == storage.KindControl {
+		return errors.New("registry unavailable")
+	}
+	return f.Store.Publish(ctx, o)
+}
+
+// When an admin's own approval fails, the upgrade reports the error and keeps
+// the pending key. Running it again reuses that key, offers one request, and
+// completes the update.
+func TestUpgradeIdentityRecoversFromFailedSelfApproval(t *testing.T) {
+	store := &failControl{Store: newMemRegistry()}
+	alice := &App{Storage: store, Identities: classicalKeys(t), CheckpointDir: t.TempDir(),
+		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
+	prepareApp(t, alice, "default")
+	if _, err := alice.InitializeRepository(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.AddSecret(bg, "default", "KEY", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	old := mustRecipient(t, alice)
+
+	store.fail = true
+	if _, err := alice.UpgradeIdentity(bg); err == nil {
+		t.Fatal("upgrade succeeded although the Control could not be published")
+	}
+	store.fail = false
+	if got := mustRecipient(t, alice); got != old {
+		t.Fatalf("recipient changed without an approval: %.16s", got)
+	}
+	mustRead(t, alice, "KEY", "v1")
+	ws := mustWorkspace(t, alice)
+	pending, err := alice.Identities.(keyUpdater).PendingInfo(ws)
+	if err != nil {
+		t.Fatalf("pending key lost: %v", err)
+	}
+	requests, err := alice.ListJoinRequests(bg)
+	if err != nil || len(requests) != 1 || !requests[0].KeyUpdate || requests[0].Recipient != pending.Recipient {
+		t.Fatalf("requests after failure = %+v, %v", requests, err)
+	}
+
+	res, err := alice.UpgradeIdentity(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Pending || res.Recipient != pending.Recipient {
+		t.Fatalf("retry did not reuse the pending key: %+v", res)
+	}
+	if got := mustRecipient(t, alice); got != pending.Recipient {
+		t.Fatalf("recipient after retry: %.16s", got)
+	}
+	if requests, err := alice.ListJoinRequests(bg); err != nil || len(requests) != 0 {
+		t.Fatalf("requests after retry = %+v, %v", requests, err)
+	}
+	mustRead(t, alice, "KEY", "v1")
 }

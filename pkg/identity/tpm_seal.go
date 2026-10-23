@@ -91,7 +91,9 @@ func (b *TPMBackend) UnsealSeed(md *Metadata) ([]byte, error) {
 		return nil, fmt.Errorf("unsealing ML-KEM seed: %w", err)
 	}
 	if len(rsp.OutData.Buffer) != mlkem.SeedSize {
+		clear(rsp.OutData.Buffer)
 		return nil, errors.New("sealed ML-KEM seed has the wrong size")
 	}
+	// The caller owns the response buffer and clears it once the key is derived.
 	return rsp.OutData.Buffer, nil
 }

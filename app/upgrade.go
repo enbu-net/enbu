@@ -53,7 +53,13 @@ func (a *App) UpgradeIdentity(ctx context.Context) (result *KeyUpdateResult, err
 	if err != nil {
 		return nil, err
 	}
-	self, _ := s.head.Principal(s.self())
+	self, member := s.head.Principal(s.self())
+	if !member {
+		// openSession already refuses non-members; this keeps an empty
+		// recipient from ever reaching a key update.
+		s.Close()
+		return nil, apperr.New(apperr.CodeNotMember, "this device is not a member of the workspace", nil)
+	}
 	if age.IsPostQuantum(self.Recipient) {
 		s.Close()
 		return nil, apperr.New(apperr.CodeInvalidArgument, "this device already uses a post-quantum key", nil)
@@ -83,6 +89,9 @@ func (a *App) UpgradeIdentity(ctx context.Context) (result *KeyUpdateResult, err
 	if !self.Admin {
 		return result, nil
 	}
+	// If the approval fails, the request stays published and the pending key
+	// stays in the "next" slot: another admin can approve it, and running the
+	// upgrade again reuses the key, so its request merges with this one.
 	if err := a.ApproveMember(ctx, string(self.ID)); err != nil {
 		return nil, err
 	}
