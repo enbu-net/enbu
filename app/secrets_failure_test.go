@@ -127,6 +127,8 @@ func TestSecretWritesRejectUntrustedControl(t *testing.T) {
 				t.Fatal(err)
 			}
 			genesis := digest.Digest(cfg.ControlGenesis)
+			// A device that never fetched the genesis has no cached copy to fall back on.
+			a.CacheDir = t.TempDir()
 			// The genesis object is replaced by bytes that are not that control.
 			a.Storage = storagetest.Wrap(base, storagetest.Hooks{
 				FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {

@@ -25,11 +25,11 @@ const stagingEnv = "staging"
 
 func writeStaging(t *testing.T, s *session, secrets map[string]string, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	rev, err := s.writeState(bg, s.resource(stagingEnv), secrets, parents)
+	st, err := s.writeState(bg, s.resource(stagingEnv), secrets, parents)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return rev
+	return st.Digest
 }
 
 // encryptForTest encrypts secrets for the recipients of the verified Control.

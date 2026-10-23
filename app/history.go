@@ -30,68 +30,175 @@ type Diff struct {
 // oldest first. It is a change log bounded by what storage still holds, not an
 // audit log. Revisions that only re-encrypted the same content are left out, as
 // are revisions this device cannot decrypt (written before it was a member).
+//
+// Telling those apart needs each revision decrypted once. What was learned is
+// kept in a local index (two flags per revision, never content), so later
+// listings decrypt only revisions that are new since.
 func (a *App) ListHistory(ctx context.Context, env string) (history []HistoryEntry, err error) {
 	defer apperr.NormalizeInto(&err)
-	entries, _, err := a.history(ctx, env)
-	return entries, err
+	h, err := a.openHistory(ctx, env)
+	if err != nil {
+		return nil, err
+	}
+	defer h.Close()
+	return h.entries, nil
 }
 
-type historyRevision struct {
-	state   *wsp.VerifiedState
-	secrets map[string]string
+// historyView is the history of one environment with its session still open,
+// so the content of an entry is decrypted only when it is asked for.
+type historyView struct {
+	s       *session
+	entries []HistoryEntry
+	states  map[digest.Digest]*wsp.VerifiedState
+	plain   map[digest.Digest]map[string]string // decrypted during this call only
 }
 
-func (a *App) history(ctx context.Context, env string) ([]HistoryEntry, map[digest.Digest]historyRevision, error) {
+func (h *historyView) Close() {
+	if h.s != nil {
+		h.s.Close()
+	}
+}
+
+// at returns the secrets of a listed entry, counting from 1.
+func (h *historyView) at(ctx context.Context, idx int) (map[string]string, error) {
+	if idx < 1 || idx > len(h.entries) {
+		return nil, invalidHistoryIndexError(idx, len(h.entries))
+	}
+	d := digest.NewDigestFromEncoded(digest.SHA256, h.entries[idx-1].Tag)
+	return h.secrets(ctx, d)
+}
+
+func (h *historyView) secrets(ctx context.Context, d digest.Digest) (map[string]string, error) {
+	if m, ok := h.plain[d]; ok {
+		return m, nil
+	}
+	m, err := h.s.decrypt(ctx, h.states[d])
+	if err != nil {
+		return nil, err
+	}
+	h.plain[d] = m
+	return m, nil
+}
+
+func (a *App) openHistory(ctx context.Context, env string) (*historyView, error) {
 	resolved, err := a.resolveEnvironment(env)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	s, err := a.openSession(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	defer s.Close()
-	resource := s.resource(resolved.Name)
+	h := &historyView{s: s, plain: map[digest.Digest]map[string]string{}}
+	if err := h.load(ctx, s.resource(resolved.Name)); err != nil {
+		h.Close()
+		return nil, err
+	}
+	return h, nil
+}
+
+func (h *historyView) load(ctx context.Context, resource string) error {
+	s := h.s
 	sv, err := s.loadResource(ctx, resource)
 	if IsNotFoundError(err) {
-		return nil, nil, nil
+		return nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	accepted, err := s.cps.State(resource)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
-	revisions := map[digest.Digest]historyRevision{}
-	for d, st := range historyStates(sv, s.trustedHeads(sv, accepted)) {
-		secrets, err := s.decrypt(ctx, st)
+	h.states = historyStates(sv, s.trustedHeads(sv, accepted))
+	index := s.app.openHistoryIndex(s, resource)
+	known := index.load()
+	// unreadable notes revisions found unreadable in this call before their
+	// flags are complete; known holds only complete flags.
+	unreadable := map[digest.Digest]bool{}
+	readable := func(d digest.Digest) (bool, error) {
+		if f, ok := known[d]; ok {
+			return f.Readable, nil
+		}
+		if unreadable[d] {
+			return false, nil
+		}
+		_, err := h.secrets(ctx, d)
 		var noMatch *agecrypto.NoIdentityMatchError
 		if errors.As(err, &noMatch) {
+			unreadable[d] = true
+			return false, nil
+		}
+		return err == nil, err
+	}
+	revisions := map[digest.Digest]*wsp.VerifiedState{}
+	var listed []digest.Digest
+	for d := range h.states {
+		f, ok := known[d]
+		if !ok {
+			r, err := readable(d)
+			if err != nil {
+				return err
+			}
+			f = historyFlags{}
+			if r {
+				if f, err = h.flags(ctx, d, readable); err != nil {
+					return err
+				}
+			}
+			known[d] = f
+		}
+		if !f.Readable {
 			continue
 		}
-		if err != nil {
-			return nil, nil, err
+		revisions[d] = h.states[d]
+		if !f.Repeats {
+			listed = append(listed, d)
 		}
-		revisions[d] = historyRevision{state: st, secrets: secrets}
 	}
-	byDigest := map[digest.Digest]HistoryEntry{}
-	for d, r := range revisions {
-		if repeatsAParent(r, revisions) {
-			continue
-		}
-		byDigest[d] = HistoryEntry{Timestamp: time.Unix(r.state.CreatedAt, 0).UTC(), Tag: d.Encoded()}
+	index.save(known, h.states)
+	keep := map[digest.Digest]bool{}
+	for _, d := range listed {
+		keep[d] = true
 	}
-	var history []HistoryEntry
 	for _, d := range chronological(revisions) {
-		if e, ok := byDigest[d]; ok {
-			history = append(history, e)
+		if keep[d] {
+			st := h.states[d]
+			h.entries = append(h.entries, HistoryEntry{Index: len(h.entries) + 1, Timestamp: time.Unix(st.CreatedAt, 0).UTC(), Tag: d.Encoded()})
 		}
 	}
-	for i := range history {
-		history[i].Index = i + 1
+	return nil
+}
+
+// flags works out whether a readable revision only repeats the content of one
+// of its parents, as a re-encryption does.
+func (h *historyView) flags(ctx context.Context, d digest.Digest, readable func(digest.Digest) (bool, error)) (historyFlags, error) {
+	f := historyFlags{Readable: true}
+	mine, err := h.secrets(ctx, d)
+	if err != nil {
+		return f, err
 	}
-	return history, revisions, nil
+	for _, p := range h.states[d].Parents {
+		if _, ok := h.states[p]; !ok {
+			continue
+		}
+		ok, err := readable(p)
+		if err != nil {
+			return f, err
+		}
+		if !ok {
+			continue
+		}
+		parent, err := h.secrets(ctx, p)
+		if err != nil {
+			return f, err
+		}
+		if maps.Equal(parent, mine) {
+			f.Repeats = true
+			break
+		}
+	}
+	return f, nil
 }
 
 // historyStates keeps the revisions that lead to the current content: the heads
@@ -115,12 +222,12 @@ func historyStates(sv *wsp.StateView, heads []*wsp.VerifiedState) map[digest.Dig
 // parents. Between revisions that do not depend on each other it follows the
 // recorded time, then the digest, so the order is the same on every device.
 // The clock only breaks ties; it can never put a child before its parent.
-func chronological(revisions map[digest.Digest]historyRevision) []digest.Digest {
+func chronological(revisions map[digest.Digest]*wsp.VerifiedState) []digest.Digest {
 	waiting := map[digest.Digest]int{}
 	children := map[digest.Digest][]digest.Digest{}
 	var ready []digest.Digest
 	for d, r := range revisions {
-		for _, p := range r.state.Parents {
+		for _, p := range r.Parents {
 			if _, ok := revisions[p]; ok {
 				waiting[d]++
 				children[p] = append(children[p], d)
@@ -131,7 +238,7 @@ func chronological(revisions map[digest.Digest]historyRevision) []digest.Digest 
 		}
 	}
 	less := func(a, b digest.Digest) bool {
-		ta, tb := revisions[a].state.CreatedAt, revisions[b].state.CreatedAt
+		ta, tb := revisions[a].CreatedAt, revisions[b].CreatedAt
 		if ta != tb {
 			return ta < tb
 		}
@@ -152,47 +259,38 @@ func chronological(revisions map[digest.Digest]historyRevision) []digest.Digest 
 	return order
 }
 
-func repeatsAParent(r historyRevision, all map[digest.Digest]historyRevision) bool {
-	for _, p := range r.state.Parents {
-		if parent, ok := all[p]; ok && maps.Equal(parent.secrets, r.secrets) {
-			return true
-		}
-	}
-	return false
-}
-
-func (a *App) historyEntry(ctx context.Context, env string, idx int) (map[string]string, error) {
-	entries, revisions, err := a.history(ctx, env)
-	if err != nil {
-		return nil, err
-	}
-	if idx < 1 || idx > len(entries) {
-		return nil, invalidHistoryIndexError(idx, len(entries))
-	}
-	return revisions[digest.NewDigestFromEncoded(digest.SHA256, entries[idx-1].Tag)].secrets, nil
-}
-
 func (a *App) DiffHistory(ctx context.Context, env string, fromIdx, toIdx int) (diff *Diff, err error) {
 	defer apperr.NormalizeInto(&err)
-	entries, revisions, err := a.history(ctx, env)
+	h, err := a.openHistory(ctx, env)
 	if err != nil {
 		return nil, err
 	}
+	defer h.Close()
 	for _, idx := range []int{fromIdx, toIdx} {
-		if idx < 1 || idx > len(entries) {
-			return nil, invalidHistoryIndexError(idx, len(entries))
+		if idx < 1 || idx > len(h.entries) {
+			return nil, invalidHistoryIndexError(idx, len(h.entries))
 		}
 	}
-	at := func(idx int) map[string]string {
-		return revisions[digest.NewDigestFromEncoded(digest.SHA256, entries[idx-1].Tag)].secrets
+	from, err := h.at(ctx, fromIdx)
+	if err != nil {
+		return nil, err
 	}
-	return diffSecrets(at(fromIdx), at(toIdx)), nil
+	to, err := h.at(ctx, toIdx)
+	if err != nil {
+		return nil, err
+	}
+	return diffSecrets(from, to), nil
 }
 
 // RestoreHistory publishes the content of a retained revision as a new revision.
 func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err error) {
 	defer apperr.NormalizeInto(&err)
-	snapshot, err := a.historyEntry(ctx, env, idx)
+	h, err := a.openHistory(ctx, env)
+	if err != nil {
+		return err
+	}
+	snapshot, err := h.at(ctx, idx)
+	h.Close()
 	if err != nil {
 		return err
 	}

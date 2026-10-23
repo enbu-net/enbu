@@ -327,45 +327,46 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // writeState encrypts secrets for the verified recipient set and publishes a
 // revision that merges parents. Storage has no compare-and-swap, so publishing
 // never replaces anything: a concurrent writer's revision stays beside this one
-// and the next reader merges them.
-func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (digest.Digest, error) {
+// and the next reader merges them. The revision is returned once it is
+// published, even when the error says members changed meanwhile.
+func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
 	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := s.controlUnchanged(ctx); err != nil {
-		return "", err
+		return nil, err
 	}
 	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
 		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	rev := digest.FromBytes(blob)
 	// Verify what we are about to publish before it becomes public.
-	if _, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob); err != nil {
-		return "", err
+	st, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob)
+	if err != nil {
+		return nil, err
 	}
 	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
 	if err := s.store.Publish(ctx, obj); err != nil {
-		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
+		return nil, fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}
 	// Members may have changed while we were publishing. The revision stays, and
 	// the caller publishes again for the new recipient set on top of it.
 	if err := s.controlUnchanged(ctx); err != nil {
-		return rev, err
+		return st, err
 	}
-	return rev, nil
+	return st, nil
 }
 
 // acceptPublished records the view that includes a revision just published, so
-// a later view without it is a rollback.
-func (s *session) acceptPublished(ctx context.Context, resource string, rev digest.Digest) error {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, rev)
-	if err != nil {
-		return wspError(err)
-	}
+// a later view without it is a rollback. before is the view the revision was
+// written on top of (nil for the first revision); it was checked against the
+// checkpoint when it was loaded, so storage is not listed again.
+func (s *session) acceptPublished(resource string, before *wsp.StateView, st *wsp.VerifiedState) error {
+	sv := before.With(st)
 	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return err
