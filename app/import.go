@@ -51,7 +51,8 @@ func (a *App) ImportSecrets(ctx context.Context, env string, secrets map[string]
 			sort.Strings(conflicts)
 			return apperr.New(apperr.CodeSecretExists,
 				fmt.Sprintf("%d secret(s) already exist with another value (use --overwrite to replace them): %s", len(conflicts), strings.Join(conflicts, ", ")),
-				apperr.Params{"keys": strings.Join(conflicts, ",")})
+				// key fills the shared secret_already_exists message; keys is for callers.
+				apperr.Params{"key": strings.Join(conflicts, ", "), "keys": strings.Join(conflicts, ",")})
 		}
 		for key, value := range secrets {
 			current[key] = value

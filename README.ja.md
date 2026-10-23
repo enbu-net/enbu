@@ -225,7 +225,7 @@ age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号�
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
 TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではKeychainに保存）。
 全メンバーがハイブリッド鍵のときだけファイルは耐量子になり、古典鍵のメンバーが1人でもいれば古典として暗号化されます。
-切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。
+切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。デスクトップアプリではメンバー画面から同じ移行ができます。
 ハイブリッド鍵に対応する前のenbuを使っているメンバーは、先にenbuを更新する必要があります。
 
 | OS | ハードウェア | 新規作成時のfallback |

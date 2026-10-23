@@ -121,6 +121,70 @@ export const en = {
     fingerprint: "Fingerprint",
     requestedAt: "Requested {time}",
     cancel: "Cancel",
+    promote: "Make admin",
+    demote: "Remove admin",
+    promoteTitle: "Make {fingerprint} an admin?",
+    demoteTitle: "Remove admin from {fingerprint}?",
+    promoteHint:
+      "Admins can approve and remove members, change admins, and delete stored revisions.",
+    demoteHint: "This device stays a member and can still read every secret.",
+    postQuantum: "Post-quantum",
+    keyUpdate: "Key update",
+    upgrade: "Upgrade key",
+    upgradeTitle: "Switch to a post-quantum key",
+    upgradeHint:
+      "This device uses a classical encryption key. Secrets are post-quantum only once every member has upgraded.",
+    upgradeConfirm:
+      "This creates a hybrid ML-KEM key and asks an admin to approve it. The fingerprint stays the same, and this device can read secrets with either key until then.",
+    upgradeConfirmAdmin:
+      "This creates a hybrid ML-KEM key and re-encrypts every environment for it. The fingerprint stays the same.",
+    upgradePending: "Ask an admin to approve the key update for {fingerprint}.",
+    upgradeDone: "Switched to the post-quantum key and re-encrypted every environment.",
+  },
+  import: {
+    button: "Import",
+    title: "Import into {environment}",
+    description: "Add the variables of a .env file to this environment in one change.",
+    file: "File",
+    content: ".env contents",
+    overwrite: "Replace secrets that already exist with another value",
+    action: "Import",
+    result: "Imported into {environment}: {added} added, {updated} updated, {unchanged} unchanged.",
+  },
+  history: {
+    button: "History",
+    title: "{environment} history",
+    description:
+      "Revisions that changed these secrets, newest first. Compare one with the latest to see which keys differ.",
+    empty: "No history yet.",
+    latest: "latest",
+    compare: "Compare",
+    same: "Same secrets as the latest.",
+    onlyThen: "{key}: only in this revision",
+    onlyNow: "{key}: added since",
+    changed: "{key}: value changed since",
+    restore: "Restore",
+    restoreConfirm: "Publish this revision's secrets as the latest?",
+  },
+  environments: {
+    rename: "Rename",
+    renameTitle: "Rename {name}",
+    deleteTitle: "Delete {name}?",
+    deleteHint:
+      "The environment is removed from enbu.toml. Its stored revisions remain unless you also delete them.",
+    deleteCurrent: "Switch to another environment before deleting this one.",
+    deleteRevisions: "Also delete its stored revisions (admin only). This cannot be undone.",
+    purgeTitle: "Delete stored revisions",
+    purgeHint:
+      "Delete the stored revisions of an environment that was deleted earlier, by the incarnation shown when it was deleted.",
+    incarnation: "Incarnation",
+    purge: "Delete revisions",
+    purgeConfirm: "Delete these stored revisions?",
+    purgeConfirmHint:
+      "Every revision of incarnation {incarnation} is deleted from storage. This cannot be undone.",
+    revisionsKept:
+      "Its stored revisions remain. To delete them later, an admin enters incarnation {incarnation} under Delete stored revisions.",
+    purged: "Deleted {count} stored revision(s).",
   },
   config: {
     title: "enbu.toml",

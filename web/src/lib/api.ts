@@ -104,6 +104,8 @@ export interface Member {
   algorithm: string;
   admin: boolean;
   self: boolean;
+  /** The member's encryption key is a hybrid ML-KEM (post-quantum) key. */
+  post_quantum?: boolean;
 }
 
 export interface JoinRequest {
@@ -111,6 +113,23 @@ export interface JoinRequest {
   fingerprint: string;
   algorithm: string;
   requested_at: string;
+  /** A member asking to replace its encryption key, not a new device. */
+  key_update?: boolean;
+}
+
+/** The result of moving this device to a post-quantum encryption key. */
+export interface KeyUpdate {
+  algorithm: string;
+  fingerprint: string;
+  /** True while an admin has yet to approve the new key. */
+  pending: boolean;
+}
+
+export interface ImportResult {
+  environment: string;
+  added: string[];
+  updated: string[];
+  unchanged: string[];
 }
 
 export interface GUIRepoStatus {
@@ -145,6 +164,8 @@ export interface InitResult {
 export interface Environment {
   name: string;
   current: boolean;
+  /** Names the stored revisions; needed to delete them after the environment is gone. */
+  incarnation?: string;
 }
 
 export interface SecretsResponse {

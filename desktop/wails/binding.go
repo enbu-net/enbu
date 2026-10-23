@@ -171,6 +171,30 @@ func (s *DesktopService) RemoveMember(deviceID string) BindingResponse {
 	return bindingError(s.service.RemoveMember(deviceID))
 }
 
+func (s *DesktopService) SetAdmin(deviceID string, admin bool) BindingResponse {
+	return bindingError(s.service.SetAdmin(deviceID, admin))
+}
+
+func (s *DesktopService) UpgradeIdentity() BindingResponse {
+	value, err := s.service.UpgradeIdentity()
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) DeleteEnvironmentPurging(name string) BindingResponse {
+	value, err := s.service.DeleteEnvironmentPurging(name)
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) PurgeIncarnation(incarnation string) BindingResponse {
+	value, err := s.service.PurgeIncarnation(incarnation)
+	return bindingResult(value, err)
+}
+
+func (s *DesktopService) ImportSecrets(env, dotenv string, overwrite bool) BindingResponse {
+	value, err := s.service.ImportSecrets(env, dotenv, overwrite)
+	return bindingResult(value, err)
+}
+
 func (s *DesktopService) ReadConfig() BindingResponse {
 	value, err := s.service.ReadConfig()
 	return bindingResult(value, err)

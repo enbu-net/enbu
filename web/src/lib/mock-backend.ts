@@ -3,9 +3,13 @@ import type {
   ConflictChoice,
   ConflictSet,
   Environment,
+  DiffResult,
   GUIRepoStatus,
+  HistoryEntry,
+  ImportResult,
   InitResult,
   JoinRequest,
+  KeyUpdate,
   Member,
   SecretsResponse,
 } from "./api";
@@ -65,9 +69,10 @@ let mockMembers: Member[] = [
   {
     device_id: "11223344".repeat(8),
     fingerprint: "1122-3344-1122-3344-1122",
-    algorithm: "ed25519",
+    algorithm: "mlkem768-x25519",
     admin: false,
     self: false,
+    post_quantum: true,
   },
 ];
 
@@ -191,8 +196,21 @@ export const mockBackend = {
   },
 
   async deleteEnvironment(name: string): Promise<void> {
+    if (mockEnvs.find((e) => e.name === name)?.current) throw createAppError("invalid_argument");
     mockEnvs = mockEnvs.filter((e) => e.name !== name);
     delete mockSecretsByEnv[name];
+  },
+
+  async deleteEnvironmentPurging(name: string): Promise<number> {
+    const revisions = secretsForEnv(name).length;
+    await mockBackend.deleteEnvironment(name);
+    return revisions;
+  },
+
+  async purgeIncarnation(incarnation: string): Promise<number> {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(incarnation))
+      throw createAppError("invalid_argument");
+    return 0;
   },
 
   async listSecrets(env = ""): Promise<SecretsResponse> {
@@ -225,6 +243,41 @@ export const mockBackend = {
     mockSecretsByEnv[name] = secretsForEnv(env).filter((s) => s.key !== key);
   },
 
+  async importSecrets(dotenv: string, overwrite: boolean, env = ""): Promise<ImportResult> {
+    const name = env || currentEnvName();
+    const parsed: Record<string, string> = {};
+    for (const line of dotenv.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed);
+      if (!match) throw createAppError("invalid_argument");
+      parsed[match[1]] = match[2].replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+    }
+    if (Object.keys(parsed).length === 0) throw createAppError("invalid_argument");
+    const secrets = secretsForEnv(name);
+    const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
+    const conflicts: string[] = [];
+    for (const [key, value] of Object.entries(parsed)) {
+      const existing = secrets.find((s) => s.key === key);
+      if (!existing) result.added.push(key);
+      else if (existing.value === value) result.unchanged.push(key);
+      else if (overwrite) result.updated.push(key);
+      else conflicts.push(key);
+    }
+    if (conflicts.length > 0)
+      throw createAppError("secret_already_exists", {
+        key: conflicts.sort().join(", "),
+        keys: conflicts.join(","),
+      });
+    for (const [key, value] of Object.entries(parsed)) {
+      const existing = secrets.find((s) => s.key === key);
+      if (existing) existing.value = value;
+      else secrets.push({ key, value });
+    }
+    secrets.sort((a, b) => a.key.localeCompare(b.key));
+    return result;
+  },
+
   async pullSecrets(_env = ""): Promise<void> {
     // no-op in mock
   },
@@ -250,6 +303,23 @@ export const mockBackend = {
     mockSecretsByEnv[name] = secrets.sort((a, b) => a.key.localeCompare(b.key));
     const { [name]: _resolved, ...rest } = mockConflictsByEnv;
     mockConflictsByEnv = rest;
+  },
+  async listHistory(env = ""): Promise<HistoryEntry[]> {
+    const name = env || currentEnvName();
+    return secretsForEnv(name).length === 0
+      ? []
+      : [
+          { index: 1, timestamp: "2026-10-01T09:00:00Z", tag: "mock-1" },
+          { index: 2, timestamp: "2026-10-12T15:30:00Z", tag: "mock-2" },
+        ];
+  },
+  async diffHistory(from: number, to: number, _env = ""): Promise<DiffResult> {
+    if (from === to) return { added: [], removed: [], modified: [] };
+    return { added: [], removed: [], modified: ["API_KEY"] };
+  },
+  async restoreHistory(index: number, env = ""): Promise<void> {
+    if ((await mockBackend.listHistory(env)).every((e) => e.index !== index))
+      throw createAppError("invalid_argument");
   },
   async listRepositories(): Promise<NonNullable<GUIRepoStatus["repo"]>[]> {
     return [...mockRepoHistory];
@@ -284,6 +354,19 @@ export const mockBackend = {
     if (!mockMembers.some((m) => m.device_id === deviceID))
       throw createAppError("invalid_argument");
     mockMembers = mockMembers.filter((m) => m.device_id !== deviceID);
+  },
+  async setAdmin(deviceID: string, admin: boolean): Promise<void> {
+    if (!mockMembers.some((m) => m.device_id === deviceID))
+      throw createAppError("invalid_argument");
+    mockMembers = mockMembers.map((m) => (m.device_id === deviceID ? { ...m, admin } : m));
+  },
+  async upgradeIdentity(): Promise<KeyUpdate> {
+    const self = mockMembers.find((m) => m.self);
+    if (!self || self.post_quantum) throw createAppError("invalid_argument");
+    mockMembers = mockMembers.map((m) =>
+      m.self ? { ...m, algorithm: "mlkem768-p256", post_quantum: true } : m,
+    );
+    return { algorithm: "mlkem768-p256", fingerprint: self.fingerprint, pending: !self.admin };
   },
   async readConfig(): Promise<string> {
     return mockConfig;

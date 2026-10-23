@@ -799,6 +799,8 @@ describe("accessibility: live regions", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onUpgrade={async () => ({ algorithm: "", fingerprint: "", pending: true })}
             onErrorDismiss={() => {}}
           />
         </I18nProvider>,
@@ -965,6 +967,8 @@ describe("dashboard review regressions", () => {
             onSync={onSync}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onUpgrade={async () => ({ algorithm: "", fingerprint: "", pending: true })}
             onErrorDismiss={onErrorDismiss}
           />
         </I18nProvider>,
@@ -997,6 +1001,8 @@ describe("MembersPanel approval", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onUpgrade={async () => ({ algorithm: "", fingerprint: "", pending: true })}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -1072,6 +1078,83 @@ describe("MembersPanel approval", () => {
     expect(onRemove).toHaveBeenCalledWith(sampleMember.device_id);
   });
 
+  it("lets an admin promote and demote other members after confirmation", async () => {
+    const onSetAdmin = vi.fn(async () => {});
+    renderPanel({ onSetAdmin, requests: [] });
+    // Nobody is offered to change their own admin role.
+    expect(container.querySelectorAll('button[aria-label^="Make admin:"]').length).toBe(1);
+    act(() =>
+      container
+        .querySelector<HTMLButtonElement>(
+          `button[aria-label="Make admin: ${sampleMember.fingerprint}"]`,
+        )
+        ?.click(),
+    );
+    expect(onSetAdmin).not.toHaveBeenCalled();
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find((b) => b.textContent?.trim() === "Make admin")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onSetAdmin).toHaveBeenCalledWith(sampleMember.device_id, true);
+
+    renderPanel({
+      onSetAdmin,
+      requests: [],
+      members: [
+        { ...sampleMember, self: true, admin: true, device_id: "s".repeat(64) },
+        { ...sampleMember, admin: true },
+      ],
+    });
+    expect(
+      container.querySelector(`button[aria-label="Remove admin: ${sampleMember.fingerprint}"]`),
+    ).toBeTruthy();
+  });
+
+  it("does not offer admin changes to a member who is not an admin", () => {
+    renderPanel({
+      members: [{ ...sampleMember, self: true, device_id: "s".repeat(64) }, sampleMember],
+    });
+    expect(container.querySelector('button[aria-label^="Make admin:"]')).toBeNull();
+  });
+
+  it("offers a classical device the post-quantum upgrade and says who must approve", async () => {
+    const onUpgrade = vi.fn(async () => ({
+      algorithm: "MLKEM768-X25519",
+      fingerprint: "abcd-efgh-ijkl-mnop-qrst",
+      pending: true,
+    }));
+    renderPanel({
+      onUpgrade,
+      requests: [],
+      members: [{ ...sampleMember, self: true }],
+    });
+    act(() => queryButton("Upgrade key")?.click());
+    expect(onUpgrade).not.toHaveBeenCalled();
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+        .find((b) => b.textContent?.trim() === "Upgrade key")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onUpgrade).toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Ask an admin to approve the key update for abcd-efgh-ijkl-mnop-qrst.",
+    );
+  });
+
+  it("hides the upgrade once this device is post-quantum", () => {
+    renderPanel({ members: [{ ...sampleMember, self: true, post_quantum: true }] });
+    expect(queryButton("Upgrade key")).toBeNull();
+    expect(container.textContent).toContain("Post-quantum");
+  });
+
+  it("labels a key update request", () => {
+    renderPanel({ requests: [{ ...request, key_update: true }] });
+    expect(container.textContent).toContain("Key update");
+  });
+
   it("reports a failed approval as a displayable error", async () => {
     renderPanel({
       onApprove: async () => {
@@ -1129,6 +1212,8 @@ describe("MembersPanel removal", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onUpgrade={async () => ({ algorithm: "", fingerprint: "", pending: true })}
             onErrorDismiss={() => {}}
           />
         </I18nProvider>,
