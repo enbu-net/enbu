@@ -2,7 +2,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { I18nProvider } from "../lib/i18n";
-import type { HistoryEntry } from "../lib/api";
+import type { DiffResult, HistoryEntry } from "../lib/api";
 import { HistoryDialog } from "./history-dialog";
 
 const entries: HistoryEntry[] = [
@@ -15,7 +15,9 @@ describe("HistoryDialog", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
   const listHistory = vi.fn(async () => entries);
-  const diffHistory = vi.fn(async () => ({ added: ["NEW"], removed: ["GONE"], modified: [] }));
+  const diffHistory = vi.fn(
+    async (): Promise<DiffResult> => ({ added: ["NEW"], removed: ["GONE"], modified: [] }),
+  );
   const restoreHistory = vi.fn(async () => {});
   const onRestored = vi.fn();
   const onClose = vi.fn();
@@ -67,6 +69,29 @@ describe("HistoryDialog", () => {
     expect(diffHistory).toHaveBeenCalledWith(1, 3);
     expect(container.textContent).toContain("GONE: only in this revision");
     expect(container.textContent).toContain("NEW: added since");
+  });
+
+  it("ignores a comparison that finishes after a newer selection", async () => {
+    let finishFirst!: (diff: DiffResult) => void;
+    diffHistory
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ added: [], removed: [], modified: ["SECOND"] });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Compare: #1"]')?.click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Compare: #2"]')?.click();
+    });
+    await act(async () => {
+      finishFirst({ added: ["FIRST"], removed: [], modified: [] });
+    });
+    expect(container.textContent).toContain("SECOND: value changed since");
+    expect(container.textContent).not.toContain("FIRST");
   });
 
   it("restores only after a second confirmation", async () => {

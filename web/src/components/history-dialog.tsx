@@ -65,15 +65,21 @@ export function HistoryDialog({
 
   const latest = entries?.[0]?.index ?? 0;
 
+  // The comparison that answers the latest selection; an earlier one that
+  // finishes later must not show its keys under the newer selection.
+  const selectionRef = useRef(0);
+
   async function select(index: number) {
+    const request = ++selectionRef.current;
     setSelected(index);
     setDiff(null);
     setConfirming(false);
     setError(null);
     try {
-      setDiff(await diffHistory(index, latest));
+      const result = await diffHistory(index, latest);
+      if (request === selectionRef.current) setDiff(result);
     } catch (err) {
-      setError(toDisplayError(err));
+      if (request === selectionRef.current) setError(toDisplayError(err));
     }
   }
 
