@@ -165,6 +165,11 @@ func prepareApp(t *testing.T, a *App, env string) {
 	if a.RepositoryDir == "" {
 		a.RepositoryDir = t.TempDir()
 	}
+	// Every test shares testWorkspaceID, so each device needs its own trust
+	// root and checkpoints.
+	if a.CheckpointDir == "" {
+		a.CheckpointDir = t.TempDir()
+	}
 	cfg := config.NewProjectWithEnvironment(env)
 	cfg.WorkspaceID = testWorkspaceID
 	cfg.Storage.URL = "local:///unused"

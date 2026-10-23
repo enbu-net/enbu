@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/provider"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -284,4 +286,69 @@ func (*jsonInitPlatform) IsOrganization(context.Context, string) bool { return f
 
 func (*jsonInitPlatform) SourceRepoURL(owner, repo string) string {
 	return "https://github.com/" + owner + "/" + repo
+}
+
+// A device that trusts one genesis refuses an enbu.toml naming another until
+// init runs with --accept-new-genesis, which reports what it replaced.
+func TestJSONInitAcceptNewGenesis(t *testing.T) {
+	dir := enterTempRepository(t)
+	store := storagetest.NewMemory()
+	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &staticKeyStore{}, RepositoryDir: t.TempDir()}
+	bootstrapCLIApp(t, founder, store)
+	trusted, err := config.LoadProjectFrom(founder.RepositoryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Someone who can write to storage founds a second Control for the workspace.
+	rivalDir := t.TempDir()
+	rival := *trusted
+	rival.ControlGenesis = ""
+	if err := config.SaveProjectTo(rivalDir, &rival); err != nil {
+		t.Fatal(err)
+	}
+	if err := apptest.Control(context.Background(), store, rivalDir, &staticKeyStore{}); err != nil {
+		t.Fatal(err)
+	}
+	rivalCfg, err := config.LoadProjectFrom(rivalDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newApp := func() *app.App {
+		return &app.App{Storage: store, TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{},
+			Identities: &staticKeyStore{}, Git: &jsonInitGit{root: dir}, Platform: &jsonInitPlatform{}, RepositoryDir: dir}
+	}
+	checkpoints := t.TempDir()
+	run := func(args ...string) (map[string]any, error) {
+		a := newApp()
+		a.CheckpointDir = checkpoints
+		return executeJSONResult(t, NewWithApp("test", a), args...)
+	}
+	if err := config.SaveProjectTo(dir, trusted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := run("init", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveProjectTo(dir, rivalCfg); err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := run("init", "--json")
+	if err == nil {
+		t.Fatal("init accepted a different genesis")
+	}
+	if code := stringField(t, objectField(t, envelope, "error"), "code"); code != "trust_root_changed" {
+		t.Fatalf("code = %q", code)
+	}
+	envelope, err = run("init", "--accept-new-genesis", "--json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := objectField(t, envelope, "data")
+	if got := stringField(t, data, "replaced_genesis"); got != trusted.ControlGenesis {
+		t.Fatalf("replaced_genesis = %q, want %q", got, trusted.ControlGenesis)
+	}
+	if got := stringField(t, data, "control_genesis"); got != rivalCfg.ControlGenesis {
+		t.Fatalf("control_genesis = %q, want %q", got, rivalCfg.ControlGenesis)
+	}
 }

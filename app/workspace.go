@@ -36,6 +36,10 @@ type session struct {
 	cps       *wsp.Checkpoints
 	ids       []agecrypto.Identity
 	signer    signing.Signer
+	// acceptNewGenesis replaces a different pinned genesis instead of failing.
+	acceptNewGenesis bool
+	// previousGenesis is the genesis that acceptNewGenesis replaced, or "".
+	previousGenesis digest.Digest
 }
 
 func (s *session) Close() {
@@ -45,21 +49,40 @@ func (s *session) Close() {
 	}
 }
 
-func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
-	dir := a.CheckpointDir
-	if dir == "" {
-		dir = filepath.Join(config.DataDir(), "checkpoints")
+func (a *App) checkpointDir() string {
+	if a.CheckpointDir != "" {
+		return a.CheckpointDir
 	}
-	return wsp.OpenCheckpoints(dir, workspace, digest.Digest(genesis))
+	return filepath.Join(config.DataDir(), "checkpoints")
+}
+
+func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
+	return wsp.OpenCheckpoints(a.checkpointDir(), workspace, digest.Digest(genesis))
+}
+
+// trustRoot is the genesis this device pinned for workspace on first use.
+func (a *App) trustRoot(workspace string) *wsp.TrustRoot {
+	return wsp.OpenTrustRoot(a.checkpointDir(), workspace)
 }
 
 // wspError classifies verification failures so callers can tell an attack or
 // rollback from an ordinary failure.
 func wspError(err error) error {
 	var fork *wsp.ForkError
+	var changed *wsp.TrustRootChangedError
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, &changed):
+		configured := string(changed.Configured)
+		if configured == "" {
+			configured = "missing"
+		}
+		return apperr.Wrap(apperr.CodeTrustRootChanged,
+			fmt.Sprintf("control_genesis in enbu.toml is %s, but this device trusts %s for this workspace; "+
+				"unless an admin confirms out of band that they re-created the workspace, do not continue. "+
+				"After confirming, run 'enbu init --accept-new-genesis'", configured, changed.Pinned),
+			err, apperr.Params{"pinned": string(changed.Pinned), "configured": configured})
 	case errors.As(err, &fork):
 		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must resolve the fork", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
@@ -105,18 +128,36 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	if s.cfg.ControlGenesis == "" {
 		return apperr.New(apperr.CodeInvalidArgument, "enbu.toml has no control_genesis; use the enbu.toml shared by an admin and run enbu init", nil)
 	}
+	genesis := digest.Digest(s.cfg.ControlGenesis)
+	// enbu.toml travels through Git, so whoever can change it could name a
+	// genesis they founded. This device keeps trusting the first one it saw.
+	trust := a.trustRoot(s.workspace)
+	if !s.acceptNewGenesis {
+		if err := trust.Check(genesis); err != nil {
+			return wspError(err)
+		}
+	}
 	// The checkpoint belongs to this trust root; the genesis may have just been created.
 	s.cps = a.checkpoints(s.workspace, s.cfg.ControlGenesis)
 	cp, err := s.cps.Control()
 	if err != nil {
 		return err
 	}
-	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), cp)
+	view, err := wsp.LoadControl(ctx, s.store, s.workspace, genesis, cp)
 	if errors.Is(err, storage.ErrNotFound) {
 		return apperr.Wrap(apperr.CodeIncompatibleStorage, "storage has no workspace control; use an empty location", err, nil)
 	}
 	if err != nil {
 		return wspError(err)
+	}
+	// Pin only a genesis that verified, so a typo or an unreachable storage
+	// never becomes the trust root.
+	previous, err := trust.Pin(genesis, s.acceptNewGenesis)
+	if err != nil {
+		return wspError(err)
+	}
+	if previous != genesis {
+		s.previousGenesis = previous
 	}
 	if err := s.cps.AcceptControl(view); err != nil {
 		return wspError(err)

@@ -38,7 +38,7 @@ func TestLocalStorageNativePath(t *testing.T) {
 
 func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	ctx := context.Background()
-	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}}
+	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}, CheckpointDir: t.TempDir()}
 	path := "/" + strings.TrimPrefix(filepath.ToSlash(t.TempDir()), "/")
 	a.StorageURL = (&url.URL{Scheme: "local", Path: path}).String()
 	initialized, err := a.InitializeRepository(ctx)
