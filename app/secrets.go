@@ -499,10 +499,11 @@ const keptMarker = "# Local variables below are kept by enbu pull; enbu does not
 // variables of the file at path that are not in secrets, so a pull does not
 // throw away what a person put there by hand. Variables above the marker of
 // an earlier pull are enbu's own: those not in secrets are removed. In a file
-// without a marker, stored names the keys enbu ever held; those are removed
-// too. It is called only when the file has variables enbu does not hold now.
+// without a marker, everStored names the keys enbu ever held; those are
+// removed too. It is called only when the file has variables enbu does not
+// hold now, and if it fails those variables are kept.
 // With replace the file's content is ignored.
-func dotenvWithLocal(path string, secrets map[string]string, replace bool, stored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
+func dotenvWithLocal(path string, secrets map[string]string, replace bool, everStored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
 	data, err = bundle.ToDotEnv(secrets)
 	if err != nil {
 		return nil, nil, nil, err
@@ -543,9 +544,11 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, store
 			}
 		}
 		if unknown {
-			ever, err := stored()
+			// Without the history nothing can be told apart, and keeping a
+			// variable is the safe side: it is reported as kept, not lost.
+			ever, err := everStored()
 			if err != nil {
-				return nil, nil, nil, err
+				ever = nil
 			}
 			if previous == nil {
 				previous = map[string]string{}

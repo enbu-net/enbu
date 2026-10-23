@@ -160,3 +160,62 @@ func TestPullWithoutMarkerReadsHistoryOnlyWhenNeeded(t *testing.T) {
 		t.Fatalf("history read %d times for a file enbu fully owns", calls)
 	}
 }
+
+// A person who puts a deleted secret's name back by hand, with a new value,
+// still loses it in a file without a marker: the name is enbu's. This pins the
+// trade-off, since the removal rewrites a hand-written file.
+func TestPullWithoutMarkerRemovesADeletedNameEvenWithANewValue(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(bg, "default", "TOKEN", "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.DeleteSecret(bg, "default", "TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	path := writeOutput(t, alice, "KEY=\"v1\"\nTOKEN=\"mine\"\n")
+	written, err := alice.PullSecretsToFileWith(bg, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written.Removed) != 1 || written.Removed[0] != "TOKEN" || len(written.Kept) != 0 {
+		t.Fatalf("written = %+v", written)
+	}
+	if got, _ := os.ReadFile(path); strings.Contains(string(got), "TOKEN") {
+		t.Fatalf("file:\n%s", got)
+	}
+}
+
+// A revision this device cannot decrypt says nothing about its keys, so a
+// variable only that revision held is kept rather than removed.
+func TestPullWithoutMarkerKeepsWhatOnlyUnreadableHistoryHeld(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(bg, "default", "TOKEN", "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.DeleteSecret(bg, "default", "TOKEN"); err != nil {
+		t.Fatal(err)
+	}
+	bob := approved(t, alice) // the revisions before bob joined are not encrypted to bob
+	writeOutput(t, bob, "KEY=\"v1\"\nTOKEN=\"revoked\"\n")
+	written, err := bob.PullSecretsToFileWith(bg, "default", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(written.Kept) != 1 || written.Kept[0] != "TOKEN" || len(written.Removed) != 0 {
+		t.Fatalf("written = %+v", written)
+	}
+}
+
+// When the history cannot be read, the pull still writes the file and keeps
+// the variables it cannot judge.
+func TestPullWithoutMarkerKeepsVariablesWhenHistoryFails(t *testing.T) {
+	alice := newAlice(t)
+	path := writeOutput(t, alice, "KEY=\"old\"\nTOKEN=\"x\"\n")
+	failed := func() (map[string]bool, error) {
+		return map[string]bool{"TOKEN": true}, errors.New("storage unavailable")
+	}
+	_, kept, removed, err := dotenvWithLocal(path, map[string]string{"KEY": "v1"}, false, failed)
+	if err != nil || len(kept) != 1 || kept[0] != "TOKEN" || len(removed) != 0 {
+		t.Fatalf("kept = %v, removed = %v, err = %v", kept, removed, err)
+	}
+}
