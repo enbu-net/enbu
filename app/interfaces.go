@@ -1,10 +1,7 @@
 package app
 
 import (
-	"context"
-
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
@@ -25,12 +22,6 @@ type IdentityStore interface {
 
 type RepoDetector interface {
 	LoadRepo() (owner, repo string, err error)
-}
-
-type PlatformClient interface {
-	GetUser(ctx context.Context) (*provider.User, error)
-	IsOrganization(ctx context.Context, login string) bool
-	SourceRepoURL(owner, repo string) string
 }
 
 type ProgressStep struct {

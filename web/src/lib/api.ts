@@ -98,12 +98,6 @@ export interface AuthStatus {
   repo?: { owner: string; name: string };
 }
 
-export interface Recipient {
-  username: string;
-  fingerprint: string;
-  public_key: string;
-}
-
 export interface Member {
   device_id: string;
   fingerprint: string;
@@ -156,6 +150,30 @@ export interface Environment {
 export interface SecretsResponse {
   environment: string;
   secrets: { key: string; value: string }[];
+}
+
+export interface ConflictCandidate {
+  value: string;
+  deleted: boolean;
+}
+
+export interface SecretConflict {
+  key: string;
+  candidates: ConflictCandidate[];
+}
+
+/** Keys that concurrent edits changed differently, and the heads they came from. */
+export interface ConflictSet {
+  environment: string;
+  heads: string[];
+  conflicts: SecretConflict[];
+}
+
+/** A decision for one conflicted key: a value, or deleting the key. */
+export interface ConflictChoice {
+  key: string;
+  value: string;
+  delete: boolean;
 }
 
 export interface HistoryEntry {

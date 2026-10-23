@@ -60,6 +60,14 @@ export interface Messages {
     switchEnvironment: string;
     environmentSecrets: string;
   };
+  conflicts: {
+    title: string;
+    description: string;
+    candidate: string;
+    deleted: string;
+    resolve: string;
+    undecided: string;
+  };
   auth: {
     connect: string;
     waiting: string;

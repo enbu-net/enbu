@@ -72,6 +72,27 @@ beforeEach(() => {
           window.calls?.push(["sync", env]);
           return ok(undefined);
         }),
+        ListConflicts: vi.fn(async (env: string) =>
+          // Wails hands back null for empty Go slices.
+          ok({
+            environment: env,
+            heads: ["h1", "h2"],
+            conflicts: [
+              {
+                key: "KEY",
+                candidates: [
+                  { value: "a", deleted: false },
+                  { value: "", deleted: true },
+                ],
+              },
+              { key: "OTHER", candidates: null },
+            ],
+          } as never),
+        ),
+        ResolveConflicts: vi.fn(async (env: string, heads: string[], choices: unknown[]) => {
+          window.calls?.push(["resolve", env, heads, choices]);
+          return ok(undefined);
+        }),
         ListRepositories: vi.fn(async () => ok([])),
         RemoveRepository: vi.fn(async () => ok(undefined)),
         ListMembers: vi.fn(async () =>
@@ -202,6 +223,27 @@ describe("backend member operations", () => {
     ]);
   });
 
+  it("lists conflicts and passes the decisions with the heads they were made from", async () => {
+    await expect(backend.listConflicts("prod")).resolves.toEqual({
+      environment: "prod",
+      heads: ["h1", "h2"],
+      conflicts: [
+        {
+          key: "KEY",
+          candidates: [
+            { value: "a", deleted: false },
+            { value: "", deleted: true },
+          ],
+        },
+        { key: "OTHER", candidates: [] },
+      ],
+    });
+    await backend.resolveConflicts("prod", ["h1", "h2"], [{ key: "KEY", value: "", delete: true }]);
+    expect(window.calls).toEqual([
+      ["resolve", "prod", ["h1", "h2"], [{ key: "KEY", value: "", delete: true }]],
+    ]);
+  });
+
   it("treats an empty result as no members", async () => {
     window.go!.main!.DesktopService!.ListMembers = vi.fn(async () => ok(null as never));
     window.go!.main!.DesktopService!.ListJoinRequests = vi.fn(async () => ok(null as never));
@@ -217,6 +259,9 @@ describe("backend member operations", () => {
       payload: { code: "unavailable" },
     });
     await expect(backend.removeMember("d1")).rejects.toMatchObject({
+      payload: { code: "unavailable" },
+    });
+    await expect(backend.resolveConflicts("", ["h1"], [])).rejects.toMatchObject({
       payload: { code: "unavailable" },
     });
   });

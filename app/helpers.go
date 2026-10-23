@@ -69,10 +69,6 @@ type ResolvedEnvironment struct {
 	Output string
 }
 
-func ResolveEnvironment(name string) (*ResolvedEnvironment, error) {
-	return resolveEnvironment(config.LoadProject, name)
-}
-
 func (a *App) resolveEnvironment(name string) (*ResolvedEnvironment, error) {
 	return resolveEnvironment(a.loadProject, name)
 }
