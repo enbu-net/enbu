@@ -247,7 +247,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	if len(maps) == 1 {
 		r.secrets = maps[0]
 	} else {
-		if missing := sv.Graph.Missing(); len(missing) > 0 {
+		if missing := sv.MissingParents(); len(missing) > 0 {
 			return nil, wspError(fmt.Errorf("%w: revision %s is missing, so the heads cannot be merged yet", wsp.ErrRollback, missing[0]))
 		}
 		var bases []map[string]string

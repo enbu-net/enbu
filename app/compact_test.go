@@ -167,26 +167,66 @@ func TestCompactionChecks(t *testing.T) {
 	}
 
 	// Concurrent heads are merged first.
-	raceOnPublish(alice, func() {
-		if err := bob.AddSecret(context.Background(), "default", "B", "1"); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if err := alice.AddSecret(bg, "default", "A", "1"); err != nil {
-		t.Fatal(err)
+	publishConcurrent(t, alice, bob, map[string]string{"A": "1"}, map[string]string{"B": "1"})
+	if _, err := alice.CompactHistory(bg, "default", 1); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("compacting concurrent heads: %v", err)
 	}
-	alice.Storage = real
-	s, err := alice.openSession(bg)
+}
+
+// publishConcurrent publishes one revision by each of a and b on top of the
+// current head, leaving two heads.
+func publishConcurrent(t *testing.T, a, b *App, fromA, fromB map[string]string) {
+	t.Helper()
+	s, err := a.openSession(bg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	read, err := s.readResource(bg, s.resource("default"), nil, false)
-	s.Close()
-	if err != nil || len(read.heads) < 2 {
-		t.Skipf("the race did not leave two heads: %v", err)
+	defer s.Close()
+	resource := s.resource("default")
+	read, err := s.readResource(bg, resource, nil, false)
+	if err != nil || len(read.heads) != 1 {
+		t.Fatalf("read before the concurrent writes: %v", err)
 	}
-	if _, err := alice.CompactHistory(bg, "default", 1); !apperr.Is(err, apperr.CodeConflict) {
-		t.Fatalf("compacting concurrent heads: %v", err)
+	head := read.heads[0].Digest
+	for i, w := range []struct {
+		who     *App
+		secrets map[string]string
+	}{{a, fromA}, {b, fromB}} {
+		secrets := map[string]string{}
+		for k, v := range read.secrets {
+			secrets[k] = v
+		}
+		for k, v := range w.secrets {
+			secrets[k] = v
+		}
+		cipher, err := encryptForTest(s, secrets)
+		if err != nil {
+			t.Fatal(err)
+		}
+		publishRevisionAt(t, a.Storage, w.who, s.workspace, resource, s.head.Digest, cipher, 1700000000+int64(i), head)
+	}
+}
+
+// Heads written on top of the floor after a compaction merge like before: the
+// floor is their merge base, and the parents it names below itself are excused.
+func TestConcurrentHeadsMergeAfterCompaction(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	editTimes(t, alice, 3)
+	if _, err := alice.CompactHistory(bg, "default", 1); err != nil {
+		t.Fatal(err)
+	}
+	publishConcurrent(t, alice, bob, map[string]string{"A": "1"}, map[string]string{"B": "2"})
+	for name, who := range map[string]*App{"alice": alice, "bob": bob} {
+		if got := listOK(t, who); got["A"] != "1" || got["B"] != "2" || got["KEY"] != "vc" {
+			t.Fatalf("%s reads %v", name, got)
+		}
+	}
+	if err := alice.SyncSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, bob); got["A"] != "1" || got["B"] != "2" {
+		t.Fatalf("bob after sync reads %v", got)
 	}
 }
 
@@ -211,5 +251,67 @@ func TestCompactionDeletesUnverifiableRevisions(t *testing.T) {
 		if d == junk.Rev {
 			t.Fatal("junk revision kept")
 		}
+	}
+}
+
+// Only revisions storage serves and verification rejects are deleted as junk.
+// One that cannot be fetched right now, and one published after the read, stay.
+func TestCompactionKeepsRevisionsItCannotJudge(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	editTimes(t, alice, 2)
+	s, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := s.resource("default")
+	scope := storage.StateScope(s.workspace, resource)
+	read, err := s.readResource(bg, resource, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := encryptForTest(s, map[string]string{"KEY": "vb", "LATE": "1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := s.head.Digest
+	s.Close()
+	unreachable := storagetest.Object(storage.KindState, scope, "unreachable", "cipher")
+	if err := alice.Storage.Publish(bg, unreachable); err != nil {
+		t.Fatal(err)
+	}
+
+	real := alice.Storage
+	var late digest.Digest
+	listings := 0
+	alice.Storage = storagetest.Wrap(real, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			if rev == unreachable.Rev {
+				return nil, storage.ErrNotFound
+			}
+			return next.FetchHead(ctx, kind, scope, rev)
+		},
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				if listings++; listings == 2 { // the compaction's own listing, after its read
+					late = publishRevision(t, real, bob, read.heads[0].Workspace, resource, control, cipher, read.heads[0].Digest)
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	if _, err := alice.CompactHistory(bg, "default", 1); err != nil {
+		t.Fatal(err)
+	}
+	alice.Storage = real
+	left := map[digest.Digest]bool{}
+	for _, d := range revisionsOf(t, alice, "default") {
+		left[d] = true
+	}
+	if late == "" || !left[late] || !left[unreachable.Rev] {
+		t.Fatalf("late %s kept %v, unreachable kept %v", late, left[late], left[unreachable.Rev])
+	}
+	if got := listOK(t, alice); got["LATE"] != "1" {
+		t.Fatalf("reads %v", got)
 	}
 }

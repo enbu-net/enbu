@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -59,12 +60,7 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	sv := read.view
 	head := read.heads[0].Digest
 	floor := compactionFloor(sv, head, keep)
-	kept := map[digest.Digest]bool{}
-	for d := range sv.Graph.Ancestors(head) {
-		if sv.Graph.Ancestors(d)[floor] {
-			kept[d] = true
-		}
-	}
+	kept := keptRevisions(sv.Graph, head, floor)
 	var removed []digest.Digest
 	for d := range sv.States {
 		if !kept[d] {
@@ -80,7 +76,14 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	}
 	var junk []digest.Digest
 	for _, d := range listed {
-		if _, verified := sv.States[d]; !verified && !kept[d] {
+		if _, verified := sv.States[d]; verified || kept[d] {
+			continue
+		}
+		bad, err := s.unverifiable(ctx, resource, scope, d)
+		if err != nil {
+			return nil, err
+		}
+		if bad {
 			junk = append(junk, d)
 		}
 	}
@@ -100,6 +103,50 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 		result.Removed++
 	}
 	return result, nil
+}
+
+// keptRevisions returns the ancestors of head that descend from floor, floor
+// and head included.
+func keptRevisions(g *wsp.Graph, head, floor digest.Digest) map[digest.Digest]bool {
+	anc := g.Ancestors(head)
+	children := map[digest.Digest][]digest.Digest{}
+	for d := range anc {
+		for _, p := range g.Parents(d) {
+			if anc[p] {
+				children[p] = append(children[p], d)
+			}
+		}
+	}
+	kept := map[digest.Digest]bool{floor: true}
+	stack := []digest.Digest{floor}
+	for len(stack) > 0 {
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, c := range children[cur] {
+			if !kept[c] {
+				kept[c] = true
+				stack = append(stack, c)
+			}
+		}
+	}
+	return kept
+}
+
+// unverifiable reports whether a listed revision that the read did not hold is
+// one storage serves but that fails verification, so deleting it loses nothing.
+// A revision that could not be fetched may only be unreachable for now, and one
+// that verifies may have been published after the read or name a Control this
+// session does not know yet; both are left alone.
+func (s *session) unverifiable(ctx context.Context, resource, scope string, rev digest.Digest) (bool, error) {
+	head, err := s.store.FetchHead(ctx, storage.KindState, scope, rev)
+	switch {
+	case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
+		return false, nil
+	case err != nil:
+		return false, storageError(err)
+	}
+	_, err = wsp.VerifyRevision(s.view, s.workspace, resource, rev, head)
+	return err != nil && !errors.Is(err, wsp.ErrRollback), nil
 }
 
 // compactionFloor walks keep-1 steps back from head along first parents. A
