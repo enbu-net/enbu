@@ -7,6 +7,7 @@ import type {
   InitResult,
   JoinRequest,
   Member,
+  PullResult,
   SecretsResponse,
 } from "./api";
 import { createAppError } from "./app-error";
@@ -225,8 +226,8 @@ export const mockBackend = {
     mockSecretsByEnv[name] = secretsForEnv(env).filter((s) => s.key !== key);
   },
 
-  async pullSecrets(_env = ""): Promise<void> {
-    // no-op in mock
+  async pullSecrets(env = "", _replace = false): Promise<PullResult> {
+    return { output: ".env", count: secretsForEnv(env).length, kept: [], removed: [] };
   },
 
   async syncSecrets(_env = ""): Promise<void> {

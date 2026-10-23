@@ -64,9 +64,9 @@ beforeEach(() => {
           window.calls?.push(["delete", env, key]);
           return ok(undefined);
         }),
-        PullSecrets: vi.fn(async (env: string) => {
-          window.calls?.push(["pull", env]);
-          return ok(undefined);
+        PullSecrets: vi.fn(async (env: string, replace: boolean) => {
+          window.calls?.push(["pull", env, replace]);
+          return ok({ output: ".env", count: 1, kept: null, removed: ["OLD"] });
         }),
         SyncSecrets: vi.fn(async (env: string) => {
           window.calls?.push(["sync", env]);
@@ -171,7 +171,13 @@ describe("backend desktop adapter", () => {
     await backend.addSecret("TOKEN", "secret", "default");
     await backend.editSecret("TOKEN", "new", "default");
     await backend.deleteSecret("TOKEN", "default");
-    await backend.pullSecrets("default");
+    await expect(backend.pullSecrets("default")).resolves.toEqual({
+      output: ".env",
+      count: 1,
+      kept: [],
+      removed: ["OLD"],
+    });
+    await backend.pullSecrets("default", true);
     await backend.syncSecrets("default");
 
     expect(window.calls).toEqual([
@@ -182,7 +188,8 @@ describe("backend desktop adapter", () => {
       ["add", "default", "TOKEN", "secret"],
       ["edit", "default", "TOKEN", "new"],
       ["delete", "default", "TOKEN"],
-      ["pull", "default"],
+      ["pull", "default", false],
+      ["pull", "default", true],
       ["sync", "default"],
     ]);
   });

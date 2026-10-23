@@ -901,6 +901,36 @@ describe("dashboard review regressions", () => {
     expect(container.querySelector('input[aria-label="Value: KEY"]')).not.toBeNull();
   });
 
+  it("asks before overwriting an output file it cannot read, then reports what it kept", async () => {
+    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
+    backendMock.listMembers.mockResolvedValue([]);
+    const { AppError } = await import("../lib/app-error");
+    backendMock.pullSecrets.mockReset();
+    backendMock.pullSecrets
+      .mockRejectedValueOnce(new AppError({ code: "output_unreadable", params: { file: ".env" } }))
+      .mockResolvedValueOnce({ output: ".env", count: 1, kept: ["LOCAL"], removed: [] });
+    renderAuthenticatedHome();
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    vi.useFakeTimers();
+
+    await act(async () => {
+      queryButton("Pull")?.click();
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(backendMock.pullSecrets).toHaveBeenLastCalledWith("default", false);
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Overwrite .env?");
+
+    await act(async () => {
+      queryButton("Overwrite: Overwrite .env?")?.click();
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(backendMock.pullSecrets).toHaveBeenLastCalledWith("default", true);
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
+  });
+
   it("reloads members by repository path and ignores stale completions", async () => {
     type Members = Awaited<ReturnType<typeof backend.listMembers>>;
     let resolveA!: (value: Members) => void;

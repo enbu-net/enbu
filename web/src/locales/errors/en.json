@@ -21,5 +21,6 @@
   "secret_conflict": "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.",
   "control_forked": "Two admins changed the members at the same time. An admin must run \"enbu member resolve-fork\" before anything else can proceed.",
   "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.",
-  "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details."
+  "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details.",
+  "output_unreadable": "{file} is not a dotenv file enbu can read. Pull again and overwrite it to replace its content."
 }

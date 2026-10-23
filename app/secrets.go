@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/merge"
@@ -416,11 +417,13 @@ func (w *WrittenFile) Messages() []string {
 }
 
 // PullSecretsToFileWith writes the environment's secrets to its output file,
-// followed by a marker. Variables below the marker, or in a file without one,
-// that enbu does not store are kept there and reported, unless replace is set;
-// variables above it were written by an earlier pull and leave the file once
-// the environment no longer has them. A file that cannot be read as dotenv is
-// not overwritten without replace.
+// followed by a marker. Variables below the marker that enbu does not store are
+// kept there and reported, unless replace is set; variables above it were
+// written by an earlier pull and leave the file once the environment no longer
+// has them. A file without a marker was written before enbu wrote one, or by
+// hand: its variables that some retained revision of the environment held are
+// enbu's own and leave the file too, and the rest are kept. A file that cannot
+// be read as dotenv is not overwritten without replace.
 func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {
 	defer apperr.NormalizeInto(&err)
 
@@ -434,7 +437,8 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 		outputPath = filepath.Join(a.RepositoryDir, result.Output)
 	}
 	a.emitStepProgress("pull", "write", "start")
-	dotenv, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace)
+	stored := func() (map[string]bool, error) { return a.storedKeys(ctx, result.Environment) }
+	dotenv, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace, stored)
 	if err != nil {
 		return nil, err
 	}
@@ -447,6 +451,46 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	return &WrittenFile{Output: result.Output, Count: len(result.Secrets), Kept: kept, Removed: removed}, nil
 }
 
+// storedKeys returns every key that a retained revision of env held, as far as
+// this device can decrypt. It tells enbu's own variables in a file without a
+// marker apart from a person's: a key the environment once stored and no
+// longer does was deleted from enbu.
+func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, error) {
+	resolved, err := a.resolveEnvironment(env)
+	if err != nil {
+		return nil, err
+	}
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	resource := s.resource(resolved.Name)
+	sv, err := s.loadResource(ctx, resource)
+	if err != nil {
+		return nil, err
+	}
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		return nil, err
+	}
+	keys := map[string]bool{}
+	for _, st := range historyStates(sv, s.trustedHeads(sv, accepted)) {
+		secrets, err := s.decrypt(ctx, st)
+		var noMatch *agecrypto.NoIdentityMatchError
+		if errors.As(err, &noMatch) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for k := range secrets {
+			keys[k] = true
+		}
+	}
+	return keys, nil
+}
+
 // keptMarker separates the secrets a pull writes from the local variables it
 // keeps. Every pull writes it, so the next one can tell the two apart.
 const keptMarker = "# Local variables below are kept by enbu pull; enbu does not store them (pull --replace drops them):"
@@ -454,9 +498,11 @@ const keptMarker = "# Local variables below are kept by enbu pull; enbu does not
 // dotenvWithLocal renders secrets as dotenv, then the marker and the local
 // variables of the file at path that are not in secrets, so a pull does not
 // throw away what a person put there by hand. Variables above the marker of
-// an earlier pull are enbu's own: those not in secrets are removed. With
-// replace the file's content is ignored.
-func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data []byte, kept, removed []string, err error) {
+// an earlier pull are enbu's own: those not in secrets are removed. In a file
+// without a marker, stored names the keys enbu ever held; those are removed
+// too. It is called only when the file has variables enbu does not hold now.
+// With replace the file's content is ignored.
+func dotenvWithLocal(path string, secrets map[string]string, replace bool, stored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
 	data, err = bundle.ToDotEnv(secrets)
 	if err != nil {
 		return nil, nil, nil, err
@@ -474,10 +520,11 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	pulled, local := splitAtMarker(existing)
+	pulled, local, marked := splitAtMarker(existing)
 	unreadable := func(err error) error {
-		return apperr.Wrap(apperr.CodeInvalidArgument,
-			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", filepath.Base(path)), err, nil)
+		name := filepath.Base(path)
+		return apperr.Wrap(apperr.CodeOutputUnreadable,
+			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", name), err, apperr.Params{"file": name})
 	}
 	previous, err := secretmap.ImportDotenv(pulled)
 	if err != nil {
@@ -486,6 +533,30 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data
 	vars, err := secretmap.ImportDotenv(local)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)
+	}
+	if !marked {
+		var unknown bool
+		for key := range vars {
+			if _, ok := secrets[key]; !ok {
+				unknown = true
+				break
+			}
+		}
+		if unknown {
+			ever, err := stored()
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if previous == nil {
+				previous = map[string]string{}
+			}
+			for key, value := range vars {
+				if _, now := secrets[key]; !now && ever[key] {
+					previous[key] = value
+					delete(vars, key)
+				}
+			}
+		}
 	}
 	for key := range previous {
 		if _, stored := secrets[key]; !stored {
@@ -513,12 +584,12 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool) (data
 
 // splitAtMarker returns what an earlier pull wrote above its marker and the
 // local part below it. A file without a marker is all local.
-func splitAtMarker(file []byte) (pulled, local []byte) {
+func splitAtMarker(file []byte) (pulled, local []byte, marked bool) {
 	lines := strings.SplitAfter(string(file), "\n")
 	for i, line := range lines {
 		if strings.TrimRight(line, "\r\n") == keptMarker {
-			return []byte(strings.Join(lines[:i], "")), []byte(strings.Join(lines[i+1:], ""))
+			return []byte(strings.Join(lines[:i], "")), []byte(strings.Join(lines[i+1:], "")), true
 		}
 	}
-	return nil, file
+	return nil, file, false
 }

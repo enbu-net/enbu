@@ -35,6 +35,7 @@ const (
 
 	// Local device.
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
+	CodeOutputUnreadable    Code = "output_unreadable"    // the output file is not dotenv; pulling again with replace overwrites it
 )
 
 var knownCodes = map[Code]struct{}{
@@ -63,6 +64,7 @@ var knownCodes = map[Code]struct{}{
 	CodeReencryptIncomplete: {},
 
 	CodeIdentityUnavailable: {},
+	CodeOutputUnreadable:    {},
 }
 
 type Params map[string]string
@@ -190,7 +192,7 @@ func ExitCode(err error) int {
 		return exit.Code
 	}
 	switch CodeOf(err) {
-	case CodeInvalidArgument:
+	case CodeInvalidArgument, CodeOutputUnreadable:
 		return 2
 	case CodeNotAuthenticated, CodeAccessDenied:
 		return 3
