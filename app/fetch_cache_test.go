@@ -144,3 +144,25 @@ func TestHistoryIndexCannotAddRevisions(t *testing.T) {
 		t.Fatalf("entries = %v", entries)
 	}
 }
+
+// Another process of the same device can accept a newer head while a write is
+// publishing. Recording what this write published then needs a fresh look at
+// storage, or the checkpoint would see a rollback.
+func TestWriteAcceptsWhatAnotherProcessAcceptedMeanwhile(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	twin := *a // same storage, keys and checkpoint, as a second process
+	real := a.Storage
+	raceOnPublish(a, func() {
+		if err := twin.AddSecret(context.Background(), "default", "B", "2"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if err := a.AddSecret(context.Background(), "default", "C", "3"); err != nil {
+		t.Fatal(err)
+	}
+	a.Storage = real
+	got, err := a.ListSecrets(context.Background(), "default")
+	if err != nil || got["B"] != "2" || got["C"] != "3" {
+		t.Fatalf("secrets = %v, %v", got, err)
+	}
+}

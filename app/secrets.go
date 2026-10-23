@@ -309,7 +309,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		if err != nil {
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
-		if err := s.acceptPublished(resource, latest, st); err != nil {
+		if err := s.acceptPublished(ctx, resource, latest, st); err != nil {
 			return err
 		}
 		a.emitStepProgress(op, "push", "done")
