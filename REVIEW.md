@@ -131,7 +131,7 @@ Changes to the following are user-facing interfaces:
 - local state files
 - serialized secret/bundle formats
 - OCI artifact layout, tags, or metadata
-- desktop and TUI behavior
+- desktop behavior
 
 For incompatible changes, verify that the PR either provides migration behavior
 or explicitly establishes that compatibility is not required.

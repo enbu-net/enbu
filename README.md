@@ -23,10 +23,8 @@ Development requires sensitive information like API keys and database passwords,
 - **Pluggable storage** — OCI registries or S3-compatible object storage
 - **E2E encrypted** — Only each member's local private key can decrypt
 - **Simple CLI** — After setup, just `enbu add` and `enbu pull`
-<!-- Planned -->
-<!--- **Secret leak prevention** — Prevent committing .env files or hardcoded secrets -->
-<!--- **Tamper detection** — Sigstore-based signing and verification to detect tampering -->
-<!--- **Policy control** — OPA/Rego-based policy enforcement -->
+
+See [ROADMAP.md](ROADMAP.md) for planned features.
 
 ## Install
 
@@ -149,7 +147,7 @@ enbu member remove      # remove a member and re-encrypt without them
 
 Approving re-encrypts every environment, so the new member can `enbu pull` right away.
 In scripts, pass `--device <fingerprint-or-device-id>` (and `--yes` to skip the prompt).
-The TUI (`enbu`) and the desktop app have the same approval list on their Members screen.
+The desktop app has the same approval list on its Members screen.
 
 Removing a member cannot revoke secrets that device already read: rotate them.
 
