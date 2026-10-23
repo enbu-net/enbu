@@ -21,5 +21,6 @@
   "secret_conflict": "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.",
   "control_forked": "Two admins changed the members at the same time. An admin must run \"enbu member resolve-fork\" before anything else can proceed.",
   "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.",
-  "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details."
+  "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details.",
+  "trust_root_changed": "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then run 'enbu init --accept-new-genesis'."
 }
