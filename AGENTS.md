@@ -38,7 +38,6 @@ task gui/check          # Format and lint GUI code
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-tui/                     → Bubble Tea TUI (everyday operations; administration stays in the CLI)
 desktop/                 → Wails desktop app (service layer + bindings)
 web/                     → React frontend of the desktop app (and the browser preview)
 app/                     → application layer (use-cases)
@@ -48,7 +47,7 @@ pkg/wsp/                 → workspace security protocol: signed Control DAG, Si
 pkg/merge/               → 3-way merge of concurrent revisions, conflicts
 pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or X25519 in the OS keyring, plus the signing key
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
-pkg/age/                 → encrypt/decrypt with age (X25519 and hardware P-256 tagged recipients)
+pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
 pkg/keystore/            → OS keyring access; ENBU_BACKEND=text stores the GitHub token in a file (tokens only, never an Identity)
 pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
 pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
@@ -68,12 +67,13 @@ test/                    → scenario tests (build tag: scenario)
 - Each revision is a SignedState naming its `Parents` and the ciphertext; readers verify author and signature, set aside heads from non-members, and check the local checkpoint (the heads already accepted) before decrypting. Concurrent heads are merged 3-way (`pkg/merge`); a key changed differently stops reads and writes until `enbu resolve` (ADR-13). The signing key is separate from the encryption key and never stored in Storage
 - New devices publish a self-signed join request `r-{digest}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
 - `enbu switch` manages environments (create, switch, delete, rename). The environments and the team's `default_env` live in `enbu.toml` (shared); the environment a person switched to, and the previous one, live in the per-user local state in the data directory, keyed by `workspace_id`
-- Recipients are shared across environments: there are no per-environment recipient lists, and no policy engine (an OPA/Rego policy is only an idea in the README's planned list)
+- Recipients are shared across environments: there are no per-environment recipient lists, and no policy engine (an OPA/Rego policy is only an idea in ROADMAP.md)
 - `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
 - Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin reclaims storage with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - The trust root is the `control_genesis` digest in `enbu.toml`. `WriteConfig` (the desktop settings editor) refuses to change `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, X25519 in the OS keyring. There is no plaintext Identity backend and no SSH key support
-- Frontends: the CLI has every operation. The desktop app covers everyday work, member approval/removal, and choosing between conflicting secrets; the TUI covers everyday work and approval. Fork resolution, admin rights and purging are CLI only
+- New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
+- Frontends: the CLI has every operation. The desktop app covers everyday work, member approval/removal, and choosing between conflicting secrets. Fork resolution, admin rights and purging are CLI only
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling

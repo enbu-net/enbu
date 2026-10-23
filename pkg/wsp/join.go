@@ -18,13 +18,31 @@ type JoinRequest struct {
 	Signing   signing.PublicKey `cbor:"signing"`
 	Recipient string            `cbor:"recipient"`
 	CreatedAt int64             `cbor:"created_at"` // unix seconds, display only
+	// Replaces makes the request a key update from an existing member: it asks
+	// an admin to swap the member's recipient, and only while the member's
+	// recipient is still Replaces, so a stale update cannot be replayed.
+	// Empty for a device asking to join. Older clients reject the field and
+	// skip the request, which carries no authority anyway.
+	Replaces string `cbor:"replaces,omitempty"`
 }
 
 func (r JoinRequest) DeviceID() signing.DeviceID { return r.Signing.DeviceID() }
 
 // NewJoinRequest returns the stored bytes of a request signed by signer.
 func NewJoinRequest(workspace, recipient string, now time.Time, signer signing.Signer) ([]byte, error) {
-	r := JoinRequest{Workspace: workspace, Signing: signer.Public(), Recipient: recipient, CreatedAt: now.Unix()}
+	return newRequest(JoinRequest{Workspace: workspace, Signing: signer.Public(), Recipient: recipient, CreatedAt: now.Unix()}, signer)
+}
+
+// NewKeyUpdateRequest returns the stored bytes of a request, signed by a
+// member's own signing key, to replace its recipient replaces with recipient.
+func NewKeyUpdateRequest(workspace, recipient, replaces string, now time.Time, signer signing.Signer) ([]byte, error) {
+	if replaces == "" || replaces == recipient {
+		return nil, invalid("a key update must replace a different recipient")
+	}
+	return newRequest(JoinRequest{Workspace: workspace, Signing: signer.Public(), Recipient: recipient, CreatedAt: now.Unix(), Replaces: replaces}, signer)
+}
+
+func newRequest(r JoinRequest, signer signing.Signer) ([]byte, error) {
 	body, err := encMode.Marshal(r)
 	if err != nil {
 		return nil, err
@@ -55,6 +73,14 @@ func VerifyJoinRequest(workspace string, blob []byte) (*JoinRequest, error) {
 	}
 	if _, err := age.ParseRecipient(r.Recipient); err != nil {
 		return nil, invalid("join request recipient: %v", err)
+	}
+	if r.Replaces != "" {
+		if r.Replaces == r.Recipient {
+			return nil, invalid("key update replaces its own recipient")
+		}
+		if _, err := age.ParseRecipient(r.Replaces); err != nil {
+			return nil, invalid("key update replaced recipient: %v", err)
+		}
 	}
 	if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil {
 		return nil, invalid("join request signature: %v", err)

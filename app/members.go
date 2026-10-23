@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -25,6 +26,9 @@ type MemberInfo struct {
 	Algorithm   string `json:"algorithm"`
 	Admin       bool   `json:"admin"`
 	Self        bool   `json:"self"`
+	// PostQuantum is set when the member's recipient is a hybrid ML-KEM key.
+	// Secrets are post-quantum only while every member's is.
+	PostQuantum bool `json:"post_quantum"`
 }
 
 type JoinRequestInfo struct {
@@ -33,6 +37,9 @@ type JoinRequestInfo struct {
 	Recipient   string    `json:"recipient"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
+	// KeyUpdate is set for a member asking to replace its recipient, as
+	// `enbu identity upgrade` does, rather than a new device asking to join.
+	KeyUpdate bool `json:"key_update"`
 }
 
 func (a *App) selfDevice(workspace string) signing.DeviceID {
@@ -56,7 +63,7 @@ func (a *App) ListMembers(ctx context.Context) (members []MemberInfo, err error)
 	self := a.selfDevice(s.workspace)
 	for _, p := range s.head.Principals {
 		members = append(members, MemberInfo{DeviceID: string(p.ID), Fingerprint: p.ID.Fingerprint(), Recipient: p.Recipient,
-			Algorithm: string(p.Signing.Alg), Admin: p.Admin, Self: p.ID == self})
+			Algorithm: string(p.Signing.Alg), Admin: p.Admin, Self: p.ID == self, PostQuantum: age.IsPostQuantum(p.Recipient)})
 	}
 	return members, nil
 }
@@ -78,7 +85,7 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 	}
 	for _, p := range pending {
 		requests = append(requests, JoinRequestInfo{DeviceID: string(p.DeviceID()), Fingerprint: p.DeviceID().Fingerprint(), Recipient: p.Recipient,
-			Algorithm: string(p.Signing.Alg), RequestedAt: time.Unix(p.CreatedAt, 0).UTC()})
+			Algorithm: string(p.Signing.Alg), RequestedAt: time.Unix(p.CreatedAt, 0).UTC(), KeyUpdate: p.Replaces != ""})
 	}
 	sort.Slice(requests, func(i, j int) bool {
 		if !requests[i].RequestedAt.Equal(requests[j].RequestedAt) {
@@ -93,7 +100,8 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 }
 
 // pendingRequests lists the verified requests of devices that are not members,
-// with identical requests of one device merged. At most maxJoinRequests are
+// and the key updates of members whose recipient is still the one the update
+// replaces, with identical requests of one device merged. At most maxJoinRequests are
 // read, so someone able to write to storage cannot make the list unbounded.
 func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, error) {
 	all, err := wsp.ListJoinRequests(ctx, s.store, s.workspace)
@@ -107,7 +115,12 @@ func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, er
 	seen := map[key]bool{}
 	var out []wsp.PendingRequest
 	for _, p := range all {
-		if _, member := s.head.Principal(p.DeviceID()); member {
+		if current, member := s.head.Principal(p.DeviceID()); member {
+			// A stale update, or an old join request, must not swap a key back.
+			if p.Replaces == "" || p.Replaces != current.Recipient {
+				continue
+			}
+		} else if p.Replaces != "" {
 			continue
 		}
 		k := key{p.DeviceID(), p.Recipient}
@@ -122,6 +135,8 @@ func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, er
 	}
 	return out, nil
 }
+
+var errNoRequest = apperr.New(apperr.CodeInvalidArgument, "no join request from that device", nil)
 
 // requestFor returns the one pending request of device, or an error when the
 // device filed requests with different recipients and a person has to look.
@@ -138,7 +153,7 @@ func (s *session) requestFor(ctx context.Context, device signing.DeviceID) (*wsp
 	}
 	switch len(found) {
 	case 0:
-		return nil, apperr.New(apperr.CodeInvalidArgument, "no join request from that device", nil)
+		return nil, errNoRequest
 	case 1:
 		return &found[0], nil
 	default:
@@ -146,9 +161,10 @@ func (s *session) requestFor(ctx context.Context, device signing.DeviceID) (*wsp
 	}
 }
 
-// ApproveMember adds a pending device to the workspace Control as a member,
-// then re-encrypts every environment so the new member can decrypt. The caller
-// is expected to have shown the device's fingerprint to the admin.
+// ApproveMember adds a pending device to the workspace Control as a member, or
+// for a member's pending key update replaces its recipient, then re-encrypts
+// every environment for the new recipient set. The caller is expected to have
+// shown the device's fingerprint to the admin.
 func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
@@ -156,12 +172,23 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 		return apperr.New(apperr.CodeInvalidArgument, "invalid device id", nil)
 	}
 	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
-		if _, ok := c.Principal(device); ok {
+		_, member := c.Principal(device)
+		req, err := s.requestFor(ctx, device)
+		if errors.Is(err, errNoRequest) && member {
 			return apperr.New(apperr.CodeInvalidArgument, "device is already a member", nil)
 		}
-		req, err := s.requestFor(ctx, device)
 		if err != nil {
 			return err
+		}
+		if member {
+			// The update is signed by the member's own key: the device stays the
+			// same, only the recipient it decrypts with changes.
+			for i := range c.Principals {
+				if c.Principals[i].ID == device {
+					c.Principals[i].Recipient = req.Recipient
+				}
+			}
+			return nil
 		}
 		c.Principals = append(c.Principals, wsp.Principal{ID: device, Signing: req.Signing, Recipient: req.Recipient})
 		return nil

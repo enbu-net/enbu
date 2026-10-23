@@ -24,10 +24,8 @@ GitHubだけで完結する `.env` 管理ツール
 - **GitHubだけで完結** ほかのプラットフォームに依存することなく完結
 - **E2E暗号化** 復号できるのは各メンバーのローカル秘密鍵のみ  
 - **使いやすいCLI** セットアップを済ませれば `enbu add` と `enbu pull` だけすればいい  
-<!-- 実装中-->
-<!--- **機密情報の流出検知・防止** .env等の機密ファイルのcommitやべた書きを防止-->
-<!--- **改ざん検知** Sigstoreによる署名と検証により改ざんを検知  -->
-<!--- **ポリシー制御** OPA/Regoによるポリシー制御  -->
+
+今後の予定は [ROADMAP.md](ROADMAP.md) を参照してください。
 
 ## インストール
 
@@ -150,7 +148,7 @@ enbu member remove      # メンバーを削除し、その端末を除いて再
 
 承認すると全環境が再暗号化されるため、新メンバーはすぐに `enbu pull` できます。
 スクリプトでは `--device <フィンガープリントまたはdevice id>`（確認を省くなら `--yes`）を指定します。
-TUI（`enbu`）とデスクトップアプリのメンバー画面にも同じ承認リストがあります。
+デスクトップアプリのメンバー画面にも同じ承認リストがあります。
 
 メンバーを削除しても、その端末がすでに読み取ったシークレットは取り消せません。ローテーションしてください。
 
@@ -223,6 +221,13 @@ enbu history restore 3      # revision 3 の内容を新しい revision とし�
 ハードウェアのP-256秘密鍵は端末から取り出しません。
 age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号化できます。
 
+新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
+OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
+TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではKeychainに保存）。
+全メンバーがハイブリッド鍵のときだけファイルは耐量子になり、古典鍵のメンバーが1人でもいれば古典として暗号化されます。
+切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。
+ハイブリッド鍵に対応する前のenbuを使っているメンバーは、先にenbuを更新する必要があります。
+
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
 | Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
@@ -233,8 +238,10 @@ age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号�
 enbu doctor                   # 認証不要・永続鍵を作らず検査
 enbu identity create          # 現在のリポジトリ用Identityを作成・再利用
 enbu identity show            # backend、algorithm、recipient、deviceを表示
+enbu identity upgrade         # この端末を耐量子ハイブリッド鍵へ移行
 export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
-# hardware: ハードウェア必須 / keyring: X25519をOS keyringへ保存
+# hardware: ハードウェア必須 / keyring: OS keyringへ保存
+export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の鍵（X25519 / P-256）を作る
 ```
 
 fallbackは鍵作成前の利用可否検査だけで決めます。
@@ -256,6 +263,7 @@ Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtur
 通常のCLIにはsoftware TPM transportを組み込みません。
 実TPM／Secure Enclaveの実機テストは`ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity`で実行します。
 実機検証はGitHub-hosted runnerの必須E2E matrixとは別です。
+TPM鍵の生成方法と、それを確かめるテストは[docs/identity.md](docs/identity.md)にまとめています。
 Linux／Windowsの実TPMでは、`ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`でCLI全体を検証できます。
 通常ビルドのCLI、一時リポジトリ、ホストの実TPM、ローカルHTTP fixtureを使い、init/add/pull/edit/sync/historyとCLIプロセス間のIdentity再ロードを確認します。
 

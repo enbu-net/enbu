@@ -7,14 +7,30 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/spf13/cobra"
 )
 
-func recipientKind(recipient string) string {
-	if strings.HasPrefix(recipient, "age1tag1") {
-		return "P-256 (hardware)"
+func keyUpdateNote(r app.JoinRequestInfo) string {
+	if r.KeyUpdate {
+		return " (key update of a member)"
 	}
-	return "X25519"
+	return ""
+}
+
+// postQuantumSummary says whether secrets are post-quantum, which they are
+// only once every member has a hybrid key.
+func postQuantumSummary(members []app.MemberInfo) string {
+	pq := 0
+	for _, m := range members {
+		if m.PostQuantum {
+			pq++
+		}
+	}
+	if pq == len(members) {
+		return "Post-quantum: every member, so secrets are encrypted post-quantum"
+	}
+	return fmt.Sprintf("Post-quantum: %d of %d members; secrets stay classical until the rest run 'enbu identity upgrade'", pq, len(members))
 }
 
 func newMemberCommand(a *app.App) *cobra.Command {
@@ -43,8 +59,9 @@ func newMemberListCommand(a *app.App) *cobra.Command {
 				if m.Self {
 					you = "  (you)"
 				}
-				cmd.Printf("%s  %-6s  %s%s\n", m.Fingerprint, role, recipientKind(m.Recipient), you)
+				cmd.Printf("%s  %-6s  %s%s\n", m.Fingerprint, role, age.RecipientKind(m.Recipient), you)
 			}
+			cmd.Println(postQuantumSummary(members))
 			return nil
 		}}
 }
@@ -64,7 +81,7 @@ func newMemberRequestsCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 			for _, r := range requests {
-				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))
+				cmd.Printf("%s  %s%s  requested %s\n", r.Fingerprint, age.RecipientKind(r.Recipient), keyUpdateNote(r), r.RequestedAt.Local().Format(time.DateTime))
 			}
 			return nil
 		}}
@@ -144,7 +161,7 @@ func newMemberApproveCommand(a *app.App) *cobra.Command {
 			candidates := make([]memberTarget, len(requests))
 			for i, r := range requests {
 				candidates[i] = memberTarget{deviceID: r.DeviceID, fingerprint: r.Fingerprint,
-					detail: fmt.Sprintf("%s, requested %s", recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))}
+					detail: fmt.Sprintf("%s%s, requested %s", age.RecipientKind(r.Recipient), keyUpdateNote(r), r.RequestedAt.Local().Format(time.DateTime))}
 			}
 			if len(candidates) == 0 && device == "" {
 				if jsonEnabled(cmd) {
@@ -199,7 +216,7 @@ func memberCandidates(members []app.MemberInfo, includeSelf bool) []memberTarget
 		if m.Admin {
 			role = "admin"
 		}
-		out = append(out, memberTarget{deviceID: m.DeviceID, fingerprint: m.Fingerprint, detail: role + ", " + recipientKind(m.Recipient)})
+		out = append(out, memberTarget{deviceID: m.DeviceID, fingerprint: m.Fingerprint, detail: role + ", " + age.RecipientKind(m.Recipient)})
 	}
 	return out
 }

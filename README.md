@@ -23,10 +23,8 @@ Development requires sensitive information like API keys and database passwords,
 - **Pluggable storage** — OCI registries or S3-compatible object storage
 - **E2E encrypted** — Only each member's local private key can decrypt
 - **Simple CLI** — After setup, just `enbu add` and `enbu pull`
-<!-- Planned -->
-<!--- **Secret leak prevention** — Prevent committing .env files or hardcoded secrets -->
-<!--- **Tamper detection** — Sigstore-based signing and verification to detect tampering -->
-<!--- **Policy control** — OPA/Rego-based policy enforcement -->
+
+See [ROADMAP.md](ROADMAP.md) for planned features.
 
 ## Install
 
@@ -149,7 +147,7 @@ enbu member remove      # remove a member and re-encrypt without them
 
 Approving re-encrypts every environment, so the new member can `enbu pull` right away.
 In scripts, pass `--device <fingerprint-or-device-id>` (and `--yes` to skip the prompt).
-The TUI (`enbu`) and the desktop app have the same approval list on their Members screen.
+The desktop app has the same approval list on its Members screen.
 
 Removing a member cannot revoke secrets that device already read: rotate them.
 
@@ -226,6 +224,16 @@ New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave
 Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
 X25519 recipients can be included in the same encrypted file.
 
+New identities are post-quantum hybrids, so ciphertext stored today stays safe against a
+future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
+ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
+P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
+kept in the Keychain). A file is post-quantum only when every member has a hybrid key;
+with any classical member it is encrypted classically. Members created before this
+switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
+the new key with `enbu member approve`, and `enbu member list` shows how many members
+have upgraded. Members on an enbu that predates hybrid keys must update enbu first.
+
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
 | Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
@@ -236,8 +244,10 @@ X25519 recipients can be included in the same encrypted file.
 enbu doctor                  # No authentication or persistent key creation
 enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
+enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
-# Other choices: hardware (required), keyring (X25519 stored in the OS keyring)
+# Other choices: hardware (required), keyring (stored in the OS keyring)
+export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
 Fallback is allowed only when hardware is unavailable before creation begins.
@@ -262,6 +272,7 @@ local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring
 The normal CLI excludes the software TPM transport. On a real TPM or Secure Enclave
 device, run `ENBU_TEST_NATIVE_IDENTITY=1 go test -v ./pkg/identity` for native integration tests.
 Hardware device validation is separate from the required GitHub-hosted E2E matrix.
+How TPM keys are generated, and which tests check it, is in [docs/identity.md](docs/identity.md).
 On a real Linux or Windows TPM, run the complete CLI lifecycle against local HTTP
 fixtures with `ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`.
 This uses a production CLI build, temporary repository data and the host TPM,

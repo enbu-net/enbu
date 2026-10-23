@@ -17,13 +17,11 @@
   },
   "dependencies": {
     "@ark-ui/react": "^5.37.2",
-    "@bjorn3/browser_wasi_shim": "0.4.2",
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@park-ui/panda-preset": "^0.43.1",
     "@tanstack/react-router": "^1.170.17",
     "@taplo/core": "^0.2.0",
     "@taplo/lsp": "^0.8.0",
-    "ghostty-web": "0.4.0",
     "lucide-react": "^1.23.0",
     "monaco-editor": "^0.57.0",
     "react": "^19.2.7",

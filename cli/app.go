@@ -3,7 +3,6 @@ package cli
 import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -34,10 +33,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 				cmd.Printf("%s version %s\n", cmd.Name(), version)
 				return nil
 			}
-			if jsonEnabled(cmd) {
-				return renderHelp(cmd)
-			}
-			return tui.Run(a)
+			return renderHelp(cmd)
 		},
 	}
 	rootCmd.CompletionOptions.DisableDefaultCmd = true

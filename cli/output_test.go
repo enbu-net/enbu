@@ -43,6 +43,23 @@ func TestJSONMetadataCommands(t *testing.T) {
 	}
 }
 
+func TestRootWithoutSubcommandPrintsHelp(t *testing.T) {
+	cmd := NewWithApp("test", &app.App{})
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Usage:") || !strings.Contains(stdout.String(), "Available Commands:") {
+		t.Fatalf("stdout = %q, want root help", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestJSONExecutionErrorsUseOneStdoutObject(t *testing.T) {
 	tests := [][]string{
 		{"unknown", "--json"},
