@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -137,6 +138,22 @@ func TestJSONHistoryCommands(t *testing.T) {
 	}
 	if got := secretsOf(t, a); !reflect.DeepEqual(got, map[string]string{"A": "1"}) {
 		t.Fatalf("restored secrets = %v", got)
+	}
+
+	if _, err := executeJSONResult(t, NewWithApp("test", a), "history", "compact", "--json"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("compact without --keep: %v", err)
+	}
+	compact := executeJSON(t, NewWithApp("test", a), "history", "compact", "--keep", "1", "--json")
+	compactData := objectField(t, compact, "data")
+	if compactData["kept"] != float64(1) || compactData["removed"] == float64(0) {
+		t.Fatalf("compact = %#v", compactData)
+	}
+	list = executeJSON(t, NewWithApp("test", a), "history", "list", "--json")
+	if entries, _ := objectField(t, list, "data")["entries"].([]any); len(entries) != 1 {
+		t.Fatalf("entries after compaction = %#v", objectField(t, list, "data")["entries"])
+	}
+	if got := secretsOf(t, a); !reflect.DeepEqual(got, map[string]string{"A": "1"}) {
+		t.Fatalf("secrets after compaction = %v", got)
 	}
 }
 

@@ -144,6 +144,21 @@ type StateView struct {
 	States  map[digest.Digest]*VerifiedState
 	Heads   []*VerifiedState // sorted by digest
 	Skipped int              // listed revisions that failed to fetch or verify
+	// Compacted is what verified compaction records say about the view. The
+	// caller fills it in when the view lacks something (see LoadCompactions).
+	Compacted Compacted
+}
+
+// MissingParents lists the parents revisions name that are neither in the view
+// nor removed by a compaction.
+func (sv *StateView) MissingParents() []digest.Digest {
+	var out []digest.Digest
+	for _, d := range sv.Graph.Missing() {
+		if !sv.Compacted.Excuses(d) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // maxRevisions bounds how many revisions one load reads.

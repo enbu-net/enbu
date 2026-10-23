@@ -188,7 +188,17 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 	if sv.Graph.Len() == 0 {
 		return nil, storageError(storage.ErrNotFound)
 	}
-	if err := s.cps.CheckStates(resource, sv.Graph); err != nil {
+	// Compaction records are read only when the view lacks something: a parent,
+	// or a revision this device accepted. A resource never compacted costs no
+	// extra listing.
+	if len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
+		records, err := wsp.LoadCompactions(ctx, s.store, s.view, s.workspace, resource)
+		if err != nil {
+			return nil, wspError(err)
+		}
+		sv.Compacted = wsp.Compute(records, sv.Graph)
+	}
+	if err := s.cps.CheckStates(resource, sv.Graph, sv.Compacted.Excuses); err != nil {
 		return nil, wspError(err)
 	}
 	return sv, nil
@@ -251,7 +261,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 		r.secrets, r.conflicts = merge.Merge(bases, maps, choices)
 	}
 	if record {
-		if err := s.cps.AcceptStates(resource, sv.Graph, r.parents()); err != nil {
+		if err := s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents()); err != nil {
 			return nil, wspError(err)
 		}
 	}
@@ -266,6 +276,11 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 // it neither injects content nor blocks reading.
 func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*wsp.VerifiedState {
 	trusted := func(h *wsp.VerifiedState) bool {
+		// A head below a compaction floor was built on removed history: its
+		// merge base may be gone, so it cannot be merged.
+		if !sv.Compacted.AboveFloors(sv.Graph, h.Digest) {
+			return false
+		}
 		return wsp.AuthorIsCurrent(s.head, h) == nil || slices.Contains(accepted, h.Digest)
 	}
 	var heads []*wsp.VerifiedState
@@ -362,9 +377,9 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 // acceptPublished records the view that includes a revision just published, so
 // a later view without it is a rollback.
 func (s *session) acceptPublished(ctx context.Context, resource string, rev digest.Digest) error {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, rev)
+	sv, err := s.loadResource(ctx, resource, rev)
 	if err != nil {
-		return wspError(err)
+		return err
 	}
 	accepted, err := s.cps.State(resource)
 	if err != nil {
@@ -375,5 +390,5 @@ func (s *session) acceptPublished(ctx context.Context, resource string, rev dige
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return wspError(s.cps.AcceptStates(resource, sv.Graph, digests))
+	return wspError(s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests))
 }
