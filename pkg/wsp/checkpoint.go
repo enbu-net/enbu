@@ -72,14 +72,49 @@ func (c *Checkpoints) read() (checkpointFile, error) {
 }
 
 func (c *Checkpoints) write(f checkpointFile) error {
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(c.path), ".checkpoint-*")
+	return writeFileAtomic(c.path, b)
+}
+
+const lockTimeout = 5 * time.Second
+
+// lockFile takes an exclusive OS lock on path+".lock", waiting up to
+// lockTimeout, and returns the function that releases it.
+func lockFile(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(lockTimeout)
+	for {
+		ok, err := tryLock(lock)
+		if err != nil {
+			_ = lock.Close()
+			return nil, err
+		}
+		if ok {
+			return func() { unlock(lock); _ = lock.Close() }, nil
+		}
+		if time.Now().After(deadline) {
+			_ = lock.Close()
+			return nil, fmt.Errorf("timed out waiting for the lock %s.lock", path)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// writeFileAtomic replaces path with b through a synced temporary file.
+func writeFileAtomic(path string, b []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".checkpoint-*")
 	if err != nil {
 		return err
 	}
@@ -90,39 +125,19 @@ func (c *Checkpoints) write(f checkpointFile) error {
 	if err = errors.Join(err, tmp.Close()); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), c.path)
+	return os.Rename(tmp.Name(), path)
 }
-
-const lockTimeout = 5 * time.Second
 
 // update runs fn on the current contents while holding the file lock, and
 // writes the result back if fn reports a change.
 func (c *Checkpoints) update(fn func(*checkpointFile) (bool, error)) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
-		return err
-	}
-	lock, err := os.OpenFile(c.path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	release, err := lockFile(c.path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = lock.Close() }()
-	deadline := time.Now().Add(lockTimeout)
-	for {
-		ok, err := tryLock(lock)
-		if err != nil {
-			return err
-		}
-		if ok {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for the checkpoint lock %s.lock", c.path)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	defer unlock(lock)
+	defer release()
 	f, err := c.read()
 	if err != nil {
 		return err

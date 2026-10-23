@@ -12,6 +12,7 @@ import (
 
 func newInitCommand(a *app.App) *cobra.Command {
 	var settings config.StorageConfig
+	var acceptNewGenesis bool
 	cmd := &cobra.Command{Use: "init", Short: "Initialize or join a workspace", Args: appArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := config.LoadProjectFrom(a.RepositoryDir)
 		if err == nil {
@@ -36,7 +37,8 @@ func newInitCommand(a *app.App) *cobra.Command {
 			settings.URL = a.StorageURL
 		}
 		a.InitStorage = &settings
-		defer func() { a.InitStorage = nil }()
+		a.AcceptNewGenesis = acceptNewGenesis
+		defer func() { a.InitStorage, a.AcceptNewGenesis = nil, false }()
 		result, err := a.InitializeRepository(cmd.Context())
 		if err != nil {
 			return err
@@ -52,6 +54,9 @@ func newInitCommand(a *app.App) *cobra.Command {
 			return writeJSON(cmd, result, result.Warnings...)
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Workspace: %s\nStorage: %s\nRecipient: %s\n", result.WorkspaceID, result.Storage, result.PublicKey)
+		if result.ReplacedGenesis != "" {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Trust root replaced:\n  was %s\n  now %s\n", result.ReplacedGenesis, result.ControlGenesis)
+		}
 		for _, warning := range result.Warnings {
 			cmd.PrintErrln(warning)
 		}
@@ -67,6 +72,7 @@ func newInitCommand(a *app.App) *cobra.Command {
 	cmd.Flags().BoolVar(&settings.PathStyle, "path-style", false, "Use S3 path-style addressing")
 	cmd.Flags().StringVar(&settings.OCIAuth, "oci-auth", "docker", "OCI credentials: docker or github")
 	cmd.Flags().BoolVar(&settings.PlainHTTP, "plain-http", false, "Use HTTP for a local OCI registry")
+	cmd.Flags().BoolVar(&acceptNewGenesis, "accept-new-genesis", false, "Trust the control_genesis in enbu.toml although this device trusted another one (only after an admin confirms the workspace was re-created)")
 	return cmd
 }
 func cfgOrDefault(cfg *config.ProjectConfig) *config.ProjectConfig {

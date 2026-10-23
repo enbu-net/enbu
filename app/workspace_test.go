@@ -305,7 +305,9 @@ func TestOpenControlNeedsTrustedGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	// Alice already trusts the genuine genesis, so any other one is a change of
+	// trust root, whether or not storage holds it.
+	if _, err := alice.openControl(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
 		t.Fatalf("opened with a genesis storage does not hold: %v", err)
 	}
 	cfg.ControlGenesis = genuine

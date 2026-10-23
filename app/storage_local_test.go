@@ -38,7 +38,7 @@ func TestLocalStorageNativePath(t *testing.T) {
 
 func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	ctx := context.Background()
-	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}}
+	a := &App{RepositoryDir: t.TempDir(), Identities: &memKeyStore{data: make(map[string][]byte)}, CheckpointDir: t.TempDir()}
 	path := "/" + strings.TrimPrefix(filepath.ToSlash(t.TempDir()), "/")
 	a.StorageURL = (&url.URL{Scheme: "local", Path: path}).String()
 	initialized, err := a.InitializeRepository(ctx)
@@ -63,8 +63,9 @@ func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	// The trusted genesis belongs to the original workspace.
-	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
+	// This checkout pinned the original workspace, so another one is a change
+	// of trust root before the genesis is even verified.
+	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeTrustRootChanged) {
 		t.Fatalf("workspace mismatch: %v", err)
 	}
 }
