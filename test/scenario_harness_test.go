@@ -19,7 +19,6 @@ import (
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/provider"
 	"github.com/enbu-net/enbu/pkg/storage"
 )
 
@@ -319,7 +318,6 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 		TokenProvider: &mockTokenProvider{accessToken: "", username: username},
 		Identities:    ks,
 		RepoDetector:  &mockRepoDetector{owner: owner, repo: repo},
-		Platform:      &mockGitHubClient{orgs: map[string]bool{}},
 	}
 
 	return &testUser{svc: svc, keyPair: kp, name: username}
@@ -368,23 +366,6 @@ func (m *mockKeyStore) loadSecret(_, key string) ([]byte, error) {
 		return nil, fs.ErrNotExist
 	}
 	return append([]byte(nil), d...), nil
-}
-
-type mockGitHubClient struct {
-	user *provider.User
-	orgs map[string]bool
-}
-
-func (m *mockGitHubClient) GetUser(_ context.Context) (*provider.User, error) {
-	return m.user, nil
-}
-
-func (m *mockGitHubClient) IsOrganization(_ context.Context, login string) bool {
-	return m.orgs[login]
-}
-
-func (m *mockGitHubClient) SourceRepoURL(owner, repo string) string {
-	return "https://github.com/" + owner + "/" + repo
 }
 
 func captureStdout(t *testing.T, fn func()) string {

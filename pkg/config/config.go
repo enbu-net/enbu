@@ -30,22 +30,30 @@ type ProjectConfig struct {
 	WorkspaceID string `toml:"workspace_id"`
 	// ControlGenesis is the trusted digest of the workspace's first signed
 	// Control. It is the bootstrap anchor shared through the repository.
-	ControlGenesis string                       `toml:"control_genesis,omitempty"`
-	Storage        StorageConfig                `toml:"storage"`
-	Version        string                       `toml:"version"`
-	DefaultEnv     string                       `toml:"default_env,omitempty"`
-	Environments   map[string]EnvironmentConfig `toml:"env,omitempty"`
+	ControlGenesis string        `toml:"control_genesis,omitempty"`
+	Storage        StorageConfig `toml:"storage"`
+	Version        string        `toml:"version"`
+	// DefaultEnv is the team's default environment.
+	DefaultEnv   string                       `toml:"default_env,omitempty"`
+	Environments map[string]EnvironmentConfig `toml:"env,omitempty"`
+	// Current is the environment this user switched to, from the local state.
+	// It is personal, so it is never written to enbu.toml.
+	Current string `toml:"-"`
 }
 
 type EnvironmentConfig struct {
 	Output string `toml:"output"`
 	// Incarnation names this environment's lineage in storage. Creating an
 	// environment draws a new one, so re-creating a deleted name never mixes
-	// with the old revisions, and renaming keeps the lineage.
+	// with the old revisions, and renaming keeps the lineage. An environment
+	// written by hand without one is stored under its own name; renaming it
+	// records that name here so the lineage stays the same.
 	Incarnation string `toml:"incarnation,omitempty"`
 }
 
+// LocalConfig is per-user state of one workspace, kept outside the repository.
 type LocalConfig struct {
+	Current  string `toml:"current,omitempty"`
 	Previous string `toml:"previous,omitempty"`
 }
 
@@ -73,6 +81,16 @@ func ParseProject(content string) (*ProjectConfig, error) {
 	}
 	if cfg.Version != currentVersion {
 		return nil, fmt.Errorf("enbu.toml: unsupported version %q (run 'enbu init' to recreate)", cfg.Version)
+	}
+	return &cfg, nil
+}
+
+// DecodeProject reads enbu.toml content without checking its version, so the
+// values it protects can be compared even in a file enbu would refuse to use.
+func DecodeProject(content string) (*ProjectConfig, error) {
+	var cfg ProjectConfig
+	if _, err := toml.Decode(content, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing enbu.toml: %w", err)
 	}
 	return &cfg, nil
 }
@@ -195,7 +213,12 @@ func NewProjectWithEnvironment(name string) *ProjectConfig {
 	}
 }
 
+// CurrentEnvironment is the environment commands use without --env: the one
+// this user switched to while it still exists, else the team default.
 func (cfg *ProjectConfig) CurrentEnvironment() string {
+	if cfg.Current != "" && (cfg.HasEnvironment(cfg.Current) || (len(cfg.Environments) == 0 && cfg.Current == "default")) {
+		return cfg.Current
+	}
 	if cfg.DefaultEnv != "" {
 		return cfg.DefaultEnv
 	}
@@ -214,7 +237,8 @@ func (cfg *ProjectConfig) AddEnvironment(name string) error {
 		cfg.Environments = make(map[string]EnvironmentConfig)
 	}
 	if len(cfg.Environments) == 0 && cfg.DefaultEnv == "" {
-		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default"), Incarnation: uuid.NewV4().String()}
+		// The implicit default is stored under its name; keep it there.
+		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default")}
 		cfg.DefaultEnv = "default"
 	}
 	if _, exists := cfg.Environments[name]; exists {
@@ -247,7 +271,13 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", newName), apperr.Params{"name": newName})
 	}
 	delete(cfg.Environments, oldName)
-	env.Output = DefaultOutput(newName)
+	if env.Incarnation == "" {
+		// Stored under its old name: keep reading it from there.
+		env.Incarnation = oldName
+	}
+	if env.Output == "" || env.Output == DefaultOutput(oldName) {
+		env.Output = DefaultOutput(newName)
+	}
 	cfg.Environments[newName] = env
 	if cfg.DefaultEnv == oldName {
 		cfg.DefaultEnv = newName

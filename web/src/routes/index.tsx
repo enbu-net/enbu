@@ -30,13 +30,14 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
+import type { ConflictSet, Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";
 import { ConfirmDeleteDialog } from "../components/confirm-delete-dialog";
 import { FingerprintConfirmDialog } from "../components/fingerprint-confirm-dialog";
 import { TransferModal } from "../components/transfer-modal";
+import { ConflictPanel } from "../components/conflict-panel";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { LanguageSelector } from "../components/language-selector";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -218,6 +219,8 @@ export function HomePage() {
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
+  const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
+  const [resolveLoading, setResolveLoading] = useState(false);
   const [secretKey, setSecretKey] = useState("");
   const [secretValue, setSecretValue] = useState("");
   const [newEnv, setNewEnv] = useState("");
@@ -343,7 +346,15 @@ export function HomePage() {
       const envs = await backend.listEnvironments();
       const nextEnv = resolveWorkspaceEnvironment(env, envs);
       setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));
-      setSecrets(await backend.listSecrets(nextEnv));
+      setConflicts(null);
+      try {
+        setSecrets(await backend.listSecrets(nextEnv));
+      } catch (err) {
+        // Concurrent edits stop reading until a person chooses; show the choice.
+        if (toDisplayError(err).code !== "secret_conflict") throw err;
+        setSecrets({ environment: nextEnv, secrets: [] });
+        setConflicts(await backend.listConflicts(nextEnv));
+      }
     } catch (err) {
       setActionError(toDisplayError(err));
     } finally {
@@ -809,6 +820,26 @@ export function HomePage() {
                 <Spinner size="sm" aria-hidden="true" />
                 <Text color="fg.muted">{t("common.loading")}</Text>
               </HStack>
+            ) : conflicts && conflicts.conflicts.length > 0 ? (
+              <ConflictPanel
+                key={conflicts.heads.join()}
+                set={conflicts}
+                loading={resolveLoading}
+                onResolve={async (choices) => {
+                  setResolveLoading(true);
+                  let failure: DisplayError | null = null;
+                  try {
+                    await backend.resolveConflicts(currentEnvironment, conflicts.heads, choices);
+                  } catch (err) {
+                    failure = toDisplayError(err);
+                  } finally {
+                    setResolveLoading(false);
+                  }
+                  // If someone wrote meanwhile, this shows the values they added.
+                  await refreshWorkspace(currentEnvironment);
+                  if (failure) setActionError(failure);
+                }}
+              />
             ) : (
               <Box
                 overflow="hidden"
@@ -1798,15 +1829,18 @@ export type EnbuConfigDraft = {
   version: string;
   default_env: string;
   workspace_id?: string;
+  /** The trust root. The form never edits it, and saving must keep it. */
+  control_genesis?: string;
   storage?: ReturnType<typeof parseToml>;
-  env: Record<string, { output: string }>;
+  /** incarnation says where an environment's secrets are stored; it is kept as read. */
+  env: Record<string, { output: string; incarnation?: string }>;
 };
 
 export function parseConfigDraft(content: string, environments: Environment[]): EnbuConfigDraft {
   const parsed = parseToml(content) as Record<string, unknown>;
   const parsedEnv =
     parsed.env && typeof parsed.env === "object" ? (parsed.env as Record<string, unknown>) : {};
-  const env: Record<string, { output: string }> = {};
+  const env: EnbuConfigDraft["env"] = {};
   const names = new Set([...Object.keys(parsedEnv), ...environments.map((item) => item.name)]);
   for (const name of names) {
     const value = parsedEnv[name];
@@ -1818,7 +1852,13 @@ export function parseConfigDraft(content: string, environments: Environment[]): 
         : name === "default"
           ? ".env"
           : `.env.${name}`;
-    env[name] = { output };
+    const incarnation =
+      value &&
+      typeof value === "object" &&
+      typeof (value as { incarnation?: unknown }).incarnation === "string"
+        ? String((value as { incarnation: string }).incarnation)
+        : undefined;
+    env[name] = incarnation ? { output, incarnation } : { output };
   }
   const fallback =
     environments.find((item) => item.current)?.name ?? environments[0]?.name ?? "default";
@@ -1826,6 +1866,8 @@ export function parseConfigDraft(content: string, environments: Environment[]): 
     version: typeof parsed.version === "string" ? parsed.version : "v1alpha2",
     default_env: typeof parsed.default_env === "string" ? parsed.default_env : fallback,
     workspace_id: typeof parsed.workspace_id === "string" ? parsed.workspace_id : undefined,
+    control_genesis:
+      typeof parsed.control_genesis === "string" ? parsed.control_genesis : undefined,
     storage:
       parsed.storage && typeof parsed.storage === "object"
         ? (parsed.storage as ReturnType<typeof parseToml>)
@@ -1839,12 +1881,16 @@ export function serializeConfigDraft(config: EnbuConfigDraft): string {
     version: config.version,
     default_env: config.default_env,
     ...(config.workspace_id ? { workspace_id: config.workspace_id } : {}),
+    ...(config.control_genesis ? { control_genesis: config.control_genesis } : {}),
   }).trimEnd();
   const environments = Object.entries(config.env)
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, environment]) => {
       const key = /^[A-Za-z0-9_-]+$/.test(name) ? name : JSON.stringify(name);
-      return `[env.${key}]\n${stringifyToml({ output: environment.output }).trimEnd()}`;
+      const fields = environment.incarnation
+        ? { output: environment.output, incarnation: environment.incarnation }
+        : { output: environment.output };
+      return `[env.${key}]\n${stringifyToml(fields).trimEnd()}`;
     });
   const storage = config.storage ? [stringifyToml({ storage: config.storage }).trimEnd()] : [];
   return [header, ...storage, ...environments].join("\n\n") + "\n";

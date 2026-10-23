@@ -376,6 +376,70 @@ func TestRenameEnvironment(t *testing.T) {
 	}
 }
 
+func TestRenameKeepsTheStorageLineage(t *testing.T) {
+	cfg := NewProjectWithEnvironment("dev")
+	before := cfg.Resource("dev")
+	if err := cfg.RenameEnvironment("dev", "development"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Resource("development"); got != before {
+		t.Fatalf("resource after rename = %q, want %q", got, before)
+	}
+}
+
+// An environment written by hand has no incarnation and is stored under its
+// name; renaming it must not make its secrets look empty.
+func TestRenameOfAnEnvironmentWithoutIncarnationKeepsItsSecrets(t *testing.T) {
+	cfg, err := ParseProject("version = \"v1alpha2\"\n\n[env.staging]\noutput = \".env.staging\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Resource("staging"); got != "secrets/staging" {
+		t.Fatalf("resource = %q", got)
+	}
+	if err := cfg.RenameEnvironment("staging", "stage"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Resource("stage"); got != "secrets/staging" {
+		t.Fatalf("resource after rename = %q, want secrets/staging", got)
+	}
+	if env, _ := cfg.Environment("stage"); env.Output != ".env.stage" {
+		t.Fatalf("default output should follow the name, got %q", env.Output)
+	}
+}
+
+func TestRenameKeepsACustomOutput(t *testing.T) {
+	cfg := NewProjectWithEnvironment("dev")
+	env := cfg.Environments["dev"]
+	env.Output = "config/app.env"
+	cfg.Environments["dev"] = env
+	if err := cfg.RenameEnvironment("dev", "development"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Environments["development"].Output; got != "config/app.env" {
+		t.Fatalf("output = %q", got)
+	}
+}
+
+// Adding a first environment to an enbu.toml with only the implicit default
+// must keep the default's secrets where they are.
+func TestAddingAnEnvironmentKeepsTheImplicitDefault(t *testing.T) {
+	cfg, err := ParseProject("version = \"v1alpha2\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := cfg.Resource("default")
+	if err := cfg.AddEnvironment("dev"); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Resource("default"); got != before {
+		t.Fatalf("default resource = %q, want %q", got, before)
+	}
+	if cfg.Environments["dev"].Incarnation == "" {
+		t.Fatal("a new environment needs its own incarnation")
+	}
+}
+
 func TestValidEnvironmentName(t *testing.T) {
 	tests := []struct {
 		name string

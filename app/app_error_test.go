@@ -19,10 +19,10 @@ func TestExportedOperationNormalizesUnknownError(t *testing.T) {
 			return nil, cause
 		},
 	})
-	_, err := a.ListRecipients(context.Background())
+	_, err := a.ListMembers(context.Background())
 	var appErr *apperr.Error
 	if !errors.As(err, &appErr) {
-		t.Fatalf("ListRecipients() error = %T, want *apperr.Error", err)
+		t.Fatalf("ListMembers() error = %T, want *apperr.Error", err)
 	}
 	if appErr.Code() != apperr.CodeInternal {
 		t.Fatalf("code = %q", appErr.Code())

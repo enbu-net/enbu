@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
+import { parse as parseToml } from "smol-toml";
 import { I18nProvider } from "../lib/i18n";
 import { displayError } from "../lib/app-error";
 import { backend } from "../lib/backend";
@@ -45,6 +46,8 @@ vi.mock("../lib/backend", () => ({
     deleteSecret: vi.fn(),
     pullSecrets: vi.fn(),
     syncSecrets: vi.fn(),
+    listConflicts: vi.fn(),
+    resolveConflicts: vi.fn(),
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(),
     listMembers: vi.fn(async () => []),
@@ -480,6 +483,20 @@ describe("enbu config editor", () => {
   it("rejects invalid TOML before entering the GUI", () => {
     expect(() => parseConfigDraft('version = "v1alpha2', [])).toThrow();
   });
+  it("keeps the trust root and where each environment is stored when the form saves", () => {
+    const text =
+      'version = "v1alpha2"\nworkspace_id = "11111111-1111-4111-8111-111111111111"\ncontrol_genesis = "sha256:abc"\ndefault_env = "dev"\n[env.dev]\noutput = ".env.dev"\nincarnation = "22222222-2222-4222-8222-222222222222"\n[env.legacy]\noutput = ".env.legacy"\n';
+    const draft = parseConfigDraft(text, []);
+    draft.default_env = "legacy";
+    const saved = parseToml(serializeConfigDraft(draft)) as {
+      control_genesis?: string;
+      env: Record<string, { incarnation?: string }>;
+    };
+    expect(saved.control_genesis).toBe("sha256:abc");
+    expect(saved.env.dev?.incarnation).toBe("22222222-2222-4222-8222-222222222222");
+    expect(saved.env.legacy).not.toHaveProperty("incarnation");
+  });
+
   it("preserves workspace identity and S3 configuration while editing environments", () => {
     const text =
       'version = "v1alpha2"\nworkspace_id = "11111111-1111-4111-8111-111111111111"\ndefault_env = "default"\n[storage]\nurl = "s3://bucket/prefix"\nregion = "us-east-1"\nendpoint = "http://localhost:9000"\npath_style = true\n[env.default]\noutput = ".env"\n';
@@ -837,6 +854,51 @@ describe("dashboard review regressions", () => {
 
     expect(backendMock.addSecret).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Secret "KEY" already exists.');
+  });
+
+  it("asks for a value when concurrent edits conflict, then shows the resolved secrets", async () => {
+    oauthMocks.repoStatus.mockResolvedValue(initializedRepo("/a"));
+    backendMock.listMembers.mockResolvedValue([]);
+    const { AppError } = await import("../lib/app-error");
+    backendMock.listSecrets.mockRejectedValueOnce(
+      new AppError({ code: "secret_conflict", params: { keys: "KEY" } }),
+    );
+    const set = {
+      environment: "default",
+      heads: ["h1", "h2"],
+      conflicts: [
+        {
+          key: "KEY",
+          candidates: [
+            { value: "alice", deleted: false },
+            { value: "bob", deleted: false },
+          ],
+        },
+      ],
+    };
+    backendMock.listConflicts.mockResolvedValueOnce(set);
+    backendMock.resolveConflicts.mockResolvedValueOnce(undefined);
+    renderAuthenticatedHome();
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Choose a value");
+    expect(container.textContent).not.toContain("Secrets changed");
+    const bob = container.querySelectorAll<HTMLInputElement>('[data-conflict-key="KEY"] input')[1];
+    act(() => bob?.click());
+    await act(async () => {
+      queryButton("Use these values")?.click();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(backendMock.resolveConflicts).toHaveBeenCalledWith(
+      "default",
+      ["h1", "h2"],
+      [{ key: "KEY", value: "bob", delete: false }],
+    );
+    expect(container.textContent).not.toContain("Choose a value");
+    expect(container.querySelector('input[aria-label="Value: KEY"]')).not.toBeNull();
   });
 
   it("reloads members by repository path and ignores stale completions", async () => {

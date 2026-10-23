@@ -70,19 +70,23 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 	if previous == name {
 		return nil
 	}
+	return a.setCurrent(cfg, name, previous)
+}
 
-	cfg.SetDefault(name)
-
-	if err := a.saveProject(cfg); err != nil {
+// setCurrent records name as this user's environment. It is personal, so it
+// goes to the local state, not to the shared enbu.toml. An enbu.toml with no
+// workspace yet has no local state, so there it sets the team default.
+func (a *App) setCurrent(cfg *config.ProjectConfig, name, previous string) error {
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		cfg.SetDefault(name)
+		return a.saveProject(cfg)
+	}
+	local, err := config.LoadLocalState(cfg.WorkspaceID)
+	if err != nil {
 		return err
 	}
-
-	if local, err := a.loadLocal(); err == nil && local != nil {
-		local.Previous = previous
-		_ = a.saveLocal(local)
-	}
-
-	return nil
+	local.Current, local.Previous = name, previous
+	return config.SaveLocalState(cfg.WorkspaceID, local)
 }
 
 func (a *App) SwitchPrevious() (name string, err error) {
@@ -123,18 +127,10 @@ func (a *App) CreateEnvironment(name string) (err error) {
 	}
 
 	previous := cfg.CurrentEnvironment()
-	cfg.SetDefault(name)
-
 	if err := a.saveProject(cfg); err != nil {
 		return err
 	}
-
-	if local, err := a.loadLocal(); err == nil && local != nil {
-		local.Previous = previous
-		_ = a.saveLocal(local)
-	}
-
-	return nil
+	return a.setCurrent(cfg, name, previous)
 }
 
 func (a *App) DeleteEnvironment(name string) (err error) {
@@ -210,8 +206,27 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	if err := cfg.RenameEnvironment(oldName, newName); err != nil {
 		return err
 	}
-
-	return a.saveProject(cfg)
+	if err := a.saveProject(cfg); err != nil {
+		return err
+	}
+	// Follow the rename in this user's own choice too.
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		return nil
+	}
+	local, err := config.LoadLocalState(cfg.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if local.Current != oldName && local.Previous != oldName {
+		return nil
+	}
+	if local.Current == oldName {
+		local.Current = newName
+	}
+	if local.Previous == oldName {
+		local.Previous = newName
+	}
+	return config.SaveLocalState(cfg.WorkspaceID, local)
 }
 
 // PurgeEnvironment deletes every stored revision of an environment that is

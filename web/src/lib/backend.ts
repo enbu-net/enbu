@@ -1,6 +1,8 @@
 import {
   api,
   type AuthStatus,
+  type ConflictChoice,
+  type ConflictSet,
   type Environment,
   type GUIRepoStatus,
   type InitResult,
@@ -61,6 +63,8 @@ type DesktopService = {
   DeleteSecret: (env: string, key: string) => Promise<void>;
   PullSecrets: (env: string) => Promise<void>;
   SyncSecrets: (env: string) => Promise<void>;
+  ListConflicts: (env: string) => Promise<ConflictSet>;
+  ResolveConflicts: (env: string, heads: string[], choices: ConflictChoice[]) => Promise<void>;
   ListRepositories: () => Promise<
     Array<{ path: string; owner: string; repo: string; initialized: boolean }>
   >;
@@ -308,6 +312,26 @@ const realBackend = {
       return;
     }
     await svc.SyncSecrets(env);
+  },
+  async listConflicts(env = ""): Promise<ConflictSet> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    const set = await svc.ListConflicts(env);
+    return {
+      environment: set.environment,
+      heads: set.heads ?? [],
+      conflicts: (set.conflicts ?? []).map((c) => ({
+        key: c.key,
+        candidates: c.candidates ?? [],
+      })),
+    };
+  },
+  // Publishing a choice nobody made would be worse than failing, so a missing
+  // service fails loudly.
+  async resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.ResolveConflicts(env, heads, choices);
   },
   async listRepositories(): Promise<GUIRepoStatus["repo"][]> {
     const svc = service();

@@ -15,6 +15,7 @@ const (
 	CodeAuthExpired        Code = "authentication_expired"
 	CodeNotInitialized     Code = "not_initialized"
 	CodeConfigNotFound     Code = "config_not_found"
+	CodeConfigProtected    Code = "config_protected" // an edit would change the trust root or where secrets are stored
 	CodeEnvironmentMissing Code = "environment_not_found"
 	CodeEnvironmentExists  Code = "environment_already_exists"
 	CodeSecretMissing      Code = "secret_not_found"
@@ -45,6 +46,7 @@ var knownCodes = map[Code]struct{}{
 	CodeAuthExpired:        {},
 	CodeNotInitialized:     {},
 	CodeConfigNotFound:     {},
+	CodeConfigProtected:    {},
 	CodeEnvironmentMissing: {},
 	CodeEnvironmentExists:  {},
 	CodeSecretMissing:      {},
