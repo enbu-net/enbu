@@ -138,14 +138,17 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 // return s.view and s.head describe the verified DAG.
 func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Principal) error {
 	if s.cfg.ControlGenesis == "" {
+		// Accepting replaces a pin with the genesis enbu.toml names; with none
+		// named there is nothing to accept, only a new workspace to found.
+		if s.acceptNewGenesis {
+			return apperr.New(apperr.CodeInvalidArgument, "--accept-new-genesis needs the control_genesis an admin shared in enbu.toml", nil)
+		}
 		// A device that already trusts a genesis for this workspace must not
 		// found another one: emptied storage would otherwise re-root its trust.
-		if !s.acceptNewGenesis {
-			if pinned, err := a.trustRoot(s.workspace).Pinned(); err != nil {
-				return err
-			} else if pinned != (wsp.Root{}) {
-				return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: wsp.Root{Workspace: s.workspace}})
-			}
+		if pinned, err := a.trustRoot(s.workspace).Pinned(); err != nil {
+			return err
+		} else if pinned != (wsp.Root{}) {
+			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: wsp.Root{Workspace: s.workspace}})
 		}
 		// Storage must hold no workspace yet: with no trusted genesis there is
 		// nothing to tell a founder's Control from an outsider's.

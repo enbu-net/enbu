@@ -9,6 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 func setGenesis(t *testing.T, a *App, genesis string) {
@@ -132,6 +133,20 @@ func TestPinnedDeviceDoesNotFoundTheWorkspaceAgain(t *testing.T) {
 	}
 	if got := genesisOf(t, alice); got != "" {
 		t.Fatalf("enbu.toml records a new genesis %s", got)
+	}
+
+	// The flag accepts a genesis enbu.toml names; it does not allow founding.
+	alice.AcceptNewGenesis = true
+	_, err = alice.InitializeRepository(bg)
+	alice.AcceptNewGenesis = false
+	if !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("--accept-new-genesis founded the workspace again: %v", err)
+	}
+	if revs, err := alice.Storage.Discover(bg, storage.KindControl, ""); err != nil || len(revs) != 0 {
+		t.Fatalf("a genesis was published: %v %v", revs, err)
+	}
+	if pinned, err := alice.trustRoot(mustWorkspace(t, alice)).Pinned(); err != nil || pinned.Genesis != digest.Digest(trusted) {
+		t.Fatalf("the pin moved: %v %v", pinned, err)
 	}
 }
 
