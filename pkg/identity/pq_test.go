@@ -10,6 +10,7 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 )
 
@@ -139,23 +140,15 @@ func TestHybridIdentityOnTPM(t *testing.T) {
 	}
 }
 
-func TestManagerCreatesPostQuantumKeyringIdentity(t *testing.T) {
+func TestManagerCreatesHybridKeyringIdentityByDefault(t *testing.T) {
 	m := newManager(t)
-	m.PostQuantum = true
-	m.Hardware = &fakeHardware{available: true}
-	id, info, warning, err := m.Create("o/r")
+	id, info, _, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = id.Close()
 	if info.Backend != "keyring" || info.Algorithm != "MLKEM768-X25519" || !strings.HasPrefix(info.Recipient, "age1pq1") {
 		t.Fatalf("info: %+v", info)
-	}
-	if !strings.Contains(warning, "hardware-bound hybrid keys are not supported yet") {
-		t.Fatalf("warning: %q", warning)
-	}
-	if m.Hardware.(*fakeHardware).creates != 0 {
-		t.Fatal("created a classical hardware key in post-quantum mode")
 	}
 	md, err := m.read("o/r")
 	if err != nil {
@@ -164,9 +157,6 @@ func TestManagerCreatesPostQuantumKeyringIdentity(t *testing.T) {
 	if strings.Contains(string(md.PublicKey), "SECRET") {
 		t.Fatal("metadata holds the secret key")
 	}
-
-	// The saved identity loads without the flag: the metadata names it.
-	m.PostQuantum = false
 	loaded, err := m.Load("o/r")
 	if err != nil {
 		t.Fatal(err)
@@ -190,11 +180,158 @@ func TestManagerCreatesPostQuantumKeyringIdentity(t *testing.T) {
 	}
 }
 
-func TestManagerPostQuantumHardwareModeFails(t *testing.T) {
+func TestManagerClassicalModeKeepsX25519(t *testing.T) {
 	m := newManager(t)
-	m.PostQuantum = true
-	m.Mode = "hardware"
-	if _, _, _, err := m.Create("o/r"); err == nil {
-		t.Fatal("hardware mode created a keyring identity")
+	m.Classical = true
+	id, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	if info.Algorithm != "X25519" || age.IsPostQuantum(info.Recipient) {
+		t.Fatalf("info: %+v", info)
+	}
+	// A saved classical identity keeps loading after the flag is gone.
+	m.Classical = false
+	loaded, err := m.Load("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = loaded.Close()
+}
+
+func newTPMManager(t *testing.T) (*Manager, *TPMBackend) {
+	t.Helper()
+	v := newVirtualTPM(t)
+	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	return &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: b}, b
+}
+
+func TestManagerCreatesHybridTPMIdentityWithSealedSeed(t *testing.T) {
+	m, _ := newTPMManager(t)
+	id, info, warning, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Backend != "tpm" || info.Algorithm != "MLKEM768-P256" || !strings.HasPrefix(info.Recipient, "age1tagpq1") || warning != "" {
+		t.Fatalf("info: %+v %q", info, warning)
+	}
+	ct, err := age.EncryptForPublicKeys([]byte("sealed"), []string{info.Recipient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := age.Decrypt(ct, id); err != nil || string(out) != "sealed" {
+		t.Fatalf("decrypt: %q %v", out, err)
+	}
+	_ = id.Close()
+	md, err := m.read("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(md.TPMSealPublic) == 0 || len(md.TPMSealPrivate) == 0 || md.PQReference != "" {
+		t.Fatal("the ML-KEM seed is not sealed by the TPM")
+	}
+	if len(m.Vault.(memoryVault)) != 0 {
+		t.Fatal("a TPM identity put key material in the keyring")
+	}
+	loaded, err := m.Load("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := age.Decrypt(ct, loaded); err != nil || string(out) != "sealed" {
+		t.Fatalf("decrypt after reload: %q %v", out, err)
+	}
+	_ = loaded.Close()
+
+	// A sealed blob that does not match the template is refused.
+	corrupt := *md
+	pub, err := tpm2.Unmarshal[tpm2.TPM2BPublic](md.TPMSealPublic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, _ := pub.Contents()
+	contents.ObjectAttributes.FixedTPM = false
+	corrupt.TPMSealPublic = tpm2.Marshal(tpm2.New2B(*contents))
+	if err := saveMetadata(m.Path("o/r"), &corrupt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded a seed object without fixedTPM")
+	}
+	corrupt = *md
+	corrupt.TPMSealPrivate = append([]byte(nil), md.TPMSealPrivate...)
+	corrupt.TPMSealPrivate[len(corrupt.TPMSealPrivate)-1] ^= 1
+	if err := saveMetadata(m.Path("o/r"), &corrupt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded a corrupted sealed seed")
+	}
+}
+
+func TestSealedSeedDoesNotUnsealOnAnotherTPM(t *testing.T) {
+	m, _ := newTPMManager(t)
+	id, _, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	md, err := m.read("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, other := newTPMManager(t)
+	if _, err := other.UnsealSeed(md); err == nil {
+		t.Fatal("another TPM unsealed the seed")
+	}
+}
+
+// fakeEnclave is a hardware backend that cannot seal, like the Secure Enclave.
+type fakeEnclave struct{ keys map[string]*ecdh.PrivateKey }
+
+func (f *fakeEnclave) Probe() Diagnosis { return Diagnosis{Backend: "secure-enclave", Available: true} }
+func (f *fakeEnclave) Create() (Identity, *Metadata, error) {
+	k, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	ref := "ref"
+	f.keys[ref] = k
+	id, err := NewHardwareIdentity(&softwareHardwareKey{PrivateKey: k})
+	if err != nil {
+		return nil, nil, err
+	}
+	return id, &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "secure-enclave", Algorithm: "P-256", Recipient: id.Recipient().String()},
+		PublicKey: k.PublicKey().Bytes(), Reference: ref}, nil
+}
+func (f *fakeEnclave) Load(md *Metadata) (Identity, error) {
+	if !hardwareAlgorithm(md.Algorithm) {
+		return nil, errors.New("bad algorithm")
+	}
+	return NewHardwareIdentity(&softwareHardwareKey{PrivateKey: f.keys[md.Reference]})
+}
+
+func TestManagerKeepsUnsealableSeedInKeyring(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: &fakeEnclave{keys: map[string]*ecdh.PrivateKey{}}}
+	id, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	if info.Algorithm != "MLKEM768-P256" || !strings.HasPrefix(info.Recipient, "age1tagpq1") {
+		t.Fatalf("info: %+v", info)
+	}
+	md, _ := m.read("o/r")
+	if md.PQReference == "" || len(m.Vault.(memoryVault)[md.PQReference]) != mlkem.SeedSize {
+		t.Fatal("the ML-KEM seed is not in the keyring")
+	}
+	loaded, err := m.Load("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = loaded.Close()
+	delete(m.Vault.(memoryVault), md.PQReference)
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded a hybrid identity without its seed")
 	}
 }

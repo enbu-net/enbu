@@ -29,7 +29,18 @@ func LoadIdentities(store IdentityStore, workspaceID string) ([]agecrypto.Identi
 		}
 		return nil, identityError(fmt.Errorf("loading identity: %w", err))
 	}
-	return []agecrypto.Identity{id}, nil
+	ids := []agecrypto.Identity{id}
+	if r, ok := store.(retainedLoader); ok {
+		retained, err := r.LoadRetained(workspaceID)
+		if err != nil {
+			_ = id.Close()
+			return nil, identityError(err)
+		}
+		for _, i := range retained {
+			ids = append(ids, i)
+		}
+	}
+	return ids, nil
 }
 
 // CloseIdentities releases native references, TPM objects, sessions and devices.

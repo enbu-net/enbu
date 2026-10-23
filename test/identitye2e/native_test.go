@@ -34,11 +34,11 @@ func TestNativeTPMCLI(t *testing.T) {
 	t.Logf("native TPM available: %v", d["device"])
 	initialized := h.run("init")
 	recipient, ok := initialized["public_key"].(string)
-	if !ok || !strings.HasPrefix(recipient, "age1tag1") || initialized["key_created"] != true {
-		t.Fatalf("init did not create a tagged TPM Identity: %+v", initialized)
+	if !ok || !strings.HasPrefix(recipient, "age1tagpq1") || initialized["key_created"] != true {
+		t.Fatalf("init did not create a hybrid TPM Identity: %+v", initialized)
 	}
 	shown := h.run("identity", "show")
-	if shown["backend"] != "tpm" || shown["algorithm"] != "P-256" || shown["recipient"] != recipient {
+	if shown["backend"] != "tpm" || shown["algorithm"] != "MLKEM768-P256" || shown["recipient"] != recipient {
 		t.Fatalf("init did not save a native TPM Identity: %+v", shown)
 	}
 	m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}

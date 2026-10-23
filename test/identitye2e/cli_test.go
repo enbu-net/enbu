@@ -164,11 +164,11 @@ func TestIdentityCLI(t *testing.T) {
 		endpoint, stop := startVTPM(t, state)
 		h.env["ENBU_TEST_TPM_URL"] = endpoint
 		created := h.run("identity", "create")
-		if created["backend"] != "tpm" || created["algorithm"] != "P-256" {
+		if created["backend"] != "tpm" || created["algorithm"] != "MLKEM768-P256" {
 			t.Fatalf("%+v", created)
 		}
 		recipient := created["recipient"].(string)
-		if !strings.HasPrefix(recipient, "age1tag1") {
+		if !strings.HasPrefix(recipient, "age1tagpq1") {
 			t.Fatal(recipient)
 		}
 		if d := h.run("doctor"); d["available"] != true {
@@ -233,7 +233,7 @@ func TestIdentityCLI(t *testing.T) {
 		h := newHarness(t, binary, "auto")
 		h.env["ENBU_TEST_TPM_URL"] = "http://127.0.0.1:1"
 		created := h.run("identity", "create") // Mandatory real keyring, no mocks.
-		if created["backend"] != "keyring" || created["algorithm"] != "X25519" {
+		if created["backend"] != "keyring" || created["algorithm"] != "MLKEM768-X25519" {
 			t.Fatalf("fallback: %+v", created)
 		}
 		recipient := created["recipient"].(string)

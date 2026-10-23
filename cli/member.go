@@ -11,6 +11,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func keyUpdateNote(r app.JoinRequestInfo) string {
+	if r.KeyUpdate {
+		return " (key update of a member)"
+	}
+	return ""
+}
+
+// postQuantumSummary says whether secrets are post-quantum, which they are
+// only once every member has a hybrid key.
+func postQuantumSummary(members []app.MemberInfo) string {
+	pq := 0
+	for _, m := range members {
+		if m.PostQuantum {
+			pq++
+		}
+	}
+	if pq == len(members) {
+		return "Post-quantum: every member, so secrets are encrypted post-quantum"
+	}
+	return fmt.Sprintf("Post-quantum: %d of %d members; secrets stay classical until the rest run 'enbu identity upgrade'", pq, len(members))
+}
+
 func newMemberCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{Use: "member", Short: "Manage who is trusted in this workspace", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error { return renderHelp(cmd) }}
@@ -39,6 +61,7 @@ func newMemberListCommand(a *app.App) *cobra.Command {
 				}
 				cmd.Printf("%s  %-6s  %s%s\n", m.Fingerprint, role, age.RecipientKind(m.Recipient), you)
 			}
+			cmd.Println(postQuantumSummary(members))
 			return nil
 		}}
 }
@@ -58,7 +81,7 @@ func newMemberRequestsCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 			for _, r := range requests {
-				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, age.RecipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))
+				cmd.Printf("%s  %s%s  requested %s\n", r.Fingerprint, age.RecipientKind(r.Recipient), keyUpdateNote(r), r.RequestedAt.Local().Format(time.DateTime))
 			}
 			return nil
 		}}
@@ -138,7 +161,7 @@ func newMemberApproveCommand(a *app.App) *cobra.Command {
 			candidates := make([]memberTarget, len(requests))
 			for i, r := range requests {
 				candidates[i] = memberTarget{deviceID: r.DeviceID, fingerprint: r.Fingerprint,
-					detail: fmt.Sprintf("%s, requested %s", age.RecipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))}
+					detail: fmt.Sprintf("%s%s, requested %s", age.RecipientKind(r.Recipient), keyUpdateNote(r), r.RequestedAt.Local().Format(time.DateTime))}
 			}
 			if len(candidates) == 0 && device == "" {
 				if jsonEnabled(cmd) {

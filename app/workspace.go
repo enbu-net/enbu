@@ -148,6 +148,7 @@ func (a *App) openSession(ctx context.Context) (*session, error) {
 		s.Close()
 		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.signer.Public().DeviceID().Fingerprint()})
 	}
+	a.promoteApprovedKey(s)
 	if s.ids, err = LoadIdentities(a.Identities, s.workspace); err != nil {
 		s.Close()
 		return nil, err

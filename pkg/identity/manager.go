@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,6 +33,11 @@ type Metadata struct {
 	TPMPublic  []byte `json:"tpm_public,omitempty"`
 	TPMPrivate []byte `json:"tpm_private,omitempty"`
 	TPMName    []byte `json:"tpm_name,omitempty"`
+	// The ML-KEM-768 seed of a hybrid hardware identity: sealed by the TPM, or
+	// kept in the OS keyring under PQReference when the backend cannot seal.
+	PQReference    string `json:"pq_reference,omitempty"`
+	TPMSealPublic  []byte `json:"tpm_seal_public,omitempty"`
+	TPMSealPrivate []byte `json:"tpm_seal_private,omitempty"`
 }
 
 type Diagnosis struct {
@@ -49,26 +55,40 @@ type HardwareBackend interface {
 	Load(*Metadata) (Identity, error)
 }
 
+// SeedSealer is a hardware backend that can keep the ML-KEM-768 seed of a
+// hybrid identity bound to the device. A backend without it leaves the seed in
+// the OS keyring.
+type SeedSealer interface {
+	SealSeed(md *Metadata, seed []byte) error
+	UnsealSeed(md *Metadata) ([]byte, error)
+}
+
 type Manager struct {
 	Dir      string
 	Mode     string
 	Vault    Vault
 	Hardware HardwareBackend
-	// PostQuantum makes Create generate a hybrid ML-KEM-768 + X25519 keyring
-	// identity. It is an experiment: other members' enbu must accept age1pq1
-	// recipients, and hardware-bound hybrid keys are not created yet.
-	PostQuantum bool
+	// Classical makes Create generate the pre-hybrid keys (X25519, or P-256 on
+	// hardware), for a workspace whose other members still run an enbu that
+	// cannot read hybrid recipients. New identities are hybrid otherwise.
+	Classical bool
 }
 
 const (
-	algX25519       = "X25519"
-	algMLKEMX25519  = "MLKEM768-X25519"
-	postQuantumFlag = "ENBU_EXPERIMENTAL_PQ"
+	algX25519      = "X25519"
+	algMLKEMX25519 = "MLKEM768-X25519"
+	algP256        = "P-256"
+	algMLKEMP256   = "MLKEM768-P256"
+	classicalFlag  = "ENBU_IDENTITY_CLASSICAL"
 )
+
+// hardwareAlgorithm reports whether alg names a hardware P-256 identity, alone
+// or paired with an ML-KEM-768 seed.
+func hardwareAlgorithm(alg string) bool { return alg == algP256 || alg == algMLKEMP256 }
 
 func New() *Manager {
 	return &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
-		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), PostQuantum: os.Getenv(postQuantumFlag) == "1"}
+		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), Classical: os.Getenv(classicalFlag) == "1"}
 }
 
 func (m *Manager) mode() (string, error) {
@@ -88,8 +108,17 @@ func (m *Manager) Path(workspaceID string) string {
 	return filepath.Join(m.Dir, hex.EncodeToString(sum[:])+".json")
 }
 
-func (m *Manager) read(workspaceID string) (*Metadata, error) {
-	b, err := os.ReadFile(m.Path(workspaceID))
+// slotPath names the identity that replaces the current one during a key
+// update ("next") and the one it replaced ("previous").
+func (m *Manager) slotPath(workspaceID, slot string) string {
+	p := m.Path(workspaceID)
+	return p[:len(p)-len(".json")] + "." + slot + ".json"
+}
+
+func (m *Manager) read(workspaceID string) (*Metadata, error) { return m.readPath(m.Path(workspaceID)) }
+
+func (m *Manager) readPath(path string) (*Metadata, error) {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -106,12 +135,14 @@ func (m *Manager) read(workspaceID string) (*Metadata, error) {
 	return &md, nil
 }
 
-func (m *Manager) Load(workspaceID string) (Identity, error) {
+func (m *Manager) Load(workspaceID string) (Identity, error) { return m.loadPath(m.Path(workspaceID)) }
+
+func (m *Manager) loadPath(path string) (Identity, error) {
 	mode, err := m.mode()
 	if err != nil {
 		return nil, err
 	}
-	md, err := m.read(workspaceID)
+	md, err := m.readPath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +172,11 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 		id, err = m.Hardware.Load(md)
 		if err != nil {
 			return nil, fmt.Errorf("loading saved hardware identity: %w", err)
+		}
+		if md.Algorithm == algMLKEMP256 {
+			if id, err = m.hybridHardware(id, md, nil); err != nil {
+				return nil, fmt.Errorf("loading saved hardware identity: %w", err)
+			}
 		}
 	}
 	if id.Recipient().String() != md.Recipient || !publicKeyMatches(id, md.PublicKey) {
@@ -181,11 +217,14 @@ func publicKeyMatches(id Identity, public []byte) bool {
 // Create reuses only version 1 identities. The warning describes auto fallback.
 // Once creation starts, all failures are returned without selecting another key.
 func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warning string, err error) {
+	return m.create(m.Path(workspaceID), m.Classical)
+}
+
+func (m *Manager) create(path string, classical bool) (id Identity, info PublicInfo, warning string, err error) {
 	mode, err := m.mode()
 	if err != nil {
 		return nil, info, "", err
 	}
-	path := m.Path(workspaceID)
 	if err := os.MkdirAll(m.Dir, 0o700); err != nil {
 		return nil, info, "", err
 	}
@@ -195,11 +234,11 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 	}
 	defer func() { _ = lock.Close() }()
 	if _, err := os.Stat(path); err == nil {
-		id, err := m.Load(workspaceID)
+		id, err := m.loadPath(path)
 		if err != nil {
 			return nil, info, "", err
 		}
-		md, err := m.read(workspaceID)
+		md, err := m.readPath(path)
 		if err != nil {
 			_ = id.Close()
 			return nil, info, "", err
@@ -209,12 +248,7 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 		return nil, info, "", err
 	}
 	var md *Metadata
-	if m.PostQuantum && mode == "hardware" {
-		return nil, info, "", errors.New("post-quantum hardware identities are not supported yet; use ENBU_IDENTITY_BACKEND=keyring")
-	}
-	if m.PostQuantum && mode == "auto" {
-		warning = "Post-quantum identities are kept in the OS keyring (ML-KEM-768 + X25519); hardware-bound hybrid keys are not supported yet."
-	} else if mode != "keyring" {
+	if mode != "keyring" {
 		d := Diagnosis{Reason: "hardware backend unavailable"}
 		if m.Hardware != nil {
 			d = m.Hardware.Probe()
@@ -223,6 +257,17 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 			id, md, err = m.Hardware.Create()
 			if err != nil {
 				return nil, info, "", err
+			}
+			if !classical {
+				seed := make([]byte, mlkem.SeedSize)
+				if _, err := rand.Read(seed); err != nil {
+					m.deleteHardware(md)
+					return nil, info, "", err
+				}
+				if id, err = m.hybridHardware(id, md, seed); err != nil {
+					m.deleteHardware(md)
+					return nil, info, "", err
+				}
 			}
 		} else {
 			if mode == "hardware" {
@@ -240,7 +285,7 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 				return nil, info, warning, unavailable("OS keyring unavailable", err)
 			}
 		}
-		alg, secret, err := m.generateKeyringIdentity()
+		alg, secret, err := generateKeyringIdentity(classical)
 		if err != nil {
 			return nil, info, warning, err
 		}
@@ -265,9 +310,8 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 		_ = id.Close()
 		if md.Backend == "keyring" {
 			_ = m.Vault.Delete(vaultService, md.Reference)
-		}
-		if cleanup, ok := m.Hardware.(interface{ Delete(*Metadata) error }); ok && md.Backend != "keyring" {
-			_ = cleanup.Delete(md)
+		} else {
+			m.deleteHardware(md)
 		}
 		return nil, info, warning, err
 	}
@@ -276,10 +320,92 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 	return id, info, warning, nil
 }
 
+// hybridHardware pairs a loaded hardware P-256 identity with its ML-KEM-768
+// seed. With a seed it stores the seed (sealed by the TPM, or in the keyring)
+// and turns md into hybrid metadata; without one it reads the stored seed.
+// The classical identity is consumed: on error its hardware key is closed.
+func (m *Manager) hybridHardware(id Identity, md *Metadata, seed []byte) (Identity, error) {
+	t, ok := id.(*taggedIdentity)
+	if !ok {
+		_ = id.Close()
+		return nil, errors.New("hardware identity is not a P-256 key")
+	}
+	var err error
+	if seed != nil {
+		err = m.storeSeed(md, seed)
+	} else {
+		seed, err = m.loadSeed(md)
+	}
+	if err != nil {
+		_ = id.Close()
+		return nil, err
+	}
+	h, err := NewHybridHardwareIdentity(t.key, seed)
+	clear(seed)
+	if err != nil {
+		_ = id.Close()
+		return nil, err
+	}
+	if md.Algorithm != algMLKEMP256 {
+		md.Algorithm, md.Recipient = algMLKEMP256, h.Recipient().String()
+	}
+	return h, nil
+}
+
+func (m *Manager) storeSeed(md *Metadata, seed []byte) error {
+	if sealer, ok := m.Hardware.(SeedSealer); ok {
+		return sealer.SealSeed(md, seed)
+	}
+	if m.Vault == nil {
+		return unavailable("OS keyring unavailable for the ML-KEM seed", nil)
+	}
+	ref := make([]byte, 24)
+	if _, err := rand.Read(ref); err != nil {
+		return err
+	}
+	md.PQReference = hex.EncodeToString(ref)
+	if err := m.Vault.Store(vaultService, md.PQReference, seed); err != nil {
+		return keyringError("saving ML-KEM seed", err)
+	}
+	return nil
+}
+
+func (m *Manager) loadSeed(md *Metadata) ([]byte, error) {
+	if len(md.TPMSealPublic) > 0 {
+		sealer, ok := m.Hardware.(SeedSealer)
+		if !ok {
+			return nil, errors.New("hardware backend cannot unseal the ML-KEM seed")
+		}
+		return sealer.UnsealSeed(md)
+	}
+	if md.PQReference == "" {
+		return nil, errors.New("hybrid identity metadata has no ML-KEM seed")
+	}
+	if m.Vault == nil {
+		return nil, unavailable("keyring unavailable", nil)
+	}
+	seed, err := m.Vault.Load(vaultService, md.PQReference)
+	if err != nil {
+		return nil, keyringError("loading ML-KEM seed", err)
+	}
+	return seed, nil
+}
+
+// deleteHardware removes what a hardware identity left behind outside its
+// metadata, on a creation that did not finish.
+func (m *Manager) deleteHardware(md *Metadata) {
+	if md.PQReference != "" && m.Vault != nil {
+		_ = m.Vault.Delete(vaultService, md.PQReference)
+	}
+	if cleanup, ok := m.Hardware.(interface{ Delete(*Metadata) error }); ok {
+		_ = cleanup.Delete(md)
+	}
+}
+
 // generateKeyringIdentity returns the algorithm and encoded secret key of a
 // new software identity.
-func (m *Manager) generateKeyringIdentity() (string, string, error) {
-	if m.PostQuantum {
+func generateKeyringIdentity(classical bool) (string, string, error) {
+	if !classical {
 		key, err := age.GenerateHybridIdentity()
 		if err != nil {
 			return "", "", err
@@ -291,6 +417,79 @@ func (m *Manager) generateKeyringIdentity() (string, string, error) {
 		return "", "", err
 	}
 	return algX25519, key.String(), nil
+}
+
+// CreatePending creates, or reuses, a hybrid identity that replaces the current
+// one once an admin approves the key update. Until then both are loaded.
+func (m *Manager) CreatePending(workspaceID string) (Identity, PublicInfo, string, error) {
+	if _, err := m.read(workspaceID); err != nil {
+		return nil, PublicInfo{}, "", err
+	}
+	return m.create(m.slotPath(workspaceID, "next"), false)
+}
+
+// PendingInfo describes the identity waiting for approval of a key update.
+func (m *Manager) PendingInfo(workspaceID string) (PublicInfo, error) {
+	md, err := m.readPath(m.slotPath(workspaceID, "next"))
+	if err != nil {
+		return PublicInfo{}, err
+	}
+	return md.PublicInfo, nil
+}
+
+// LoadRetained loads the identities besides the current one that can still
+// decrypt: the pending one of a key update, and the one a key update
+// replaced, which revisions written before the update are encrypted for.
+func (m *Manager) LoadRetained(workspaceID string) ([]Identity, error) {
+	var ids []Identity
+	for _, slot := range []string{"next", "previous"} {
+		id, err := m.loadPath(m.slotPath(workspaceID, slot))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			for _, i := range ids {
+				_ = i.Close()
+			}
+			return nil, fmt.Errorf("loading %s identity: %w", slot, err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// PromotePending makes the pending identity current once the workspace lists
+// its recipient. The current identity is kept as the previous one; an older
+// previous identity is deleted with its key material.
+func (m *Manager) PromotePending(workspaceID string) error {
+	path, next, prev := m.Path(workspaceID), m.slotPath(workspaceID, "next"), m.slotPath(workspaceID, "previous")
+	lock, err := acquireCreationLock(path + ".lockfile")
+	if err != nil {
+		return fmt.Errorf("identity creation lock (%s): %w", path+".lockfile", err)
+	}
+	defer func() { _ = lock.Close() }()
+	if _, err := m.readPath(next); err != nil {
+		return err
+	}
+	if old, err := m.readPath(prev); err == nil {
+		m.deleteKeyMaterial(old)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(path, prev); err != nil {
+		return err
+	}
+	return os.Rename(next, path)
+}
+
+func (m *Manager) deleteKeyMaterial(md *Metadata) {
+	if md.Backend == "keyring" {
+		if m.Vault != nil {
+			_ = m.Vault.Delete(vaultService, md.Reference)
+		}
+		return
+	}
+	m.deleteHardware(md)
 }
 
 func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }

@@ -252,7 +252,7 @@ func (a *securityAPI) probeKeychainAccess() error {
 }
 
 func (b *enclaveBackend) Load(md *Metadata) (Identity, error) {
-	if md.Backend != "secure-enclave" || md.Algorithm != "P-256" || md.Reference == "" {
+	if md.Backend != "secure-enclave" || !hardwareAlgorithm(md.Algorithm) || md.Reference == "" {
 		return nil, errors.New("invalid Secure Enclave metadata")
 	}
 	// The signing key is a different key: metadata naming one must never load
