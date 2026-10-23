@@ -54,11 +54,21 @@ type Manager struct {
 	Mode     string
 	Vault    Vault
 	Hardware HardwareBackend
+	// PostQuantum makes Create generate a hybrid ML-KEM-768 + X25519 keyring
+	// identity. It is an experiment: other members' enbu must accept age1pq1
+	// recipients, and hardware-bound hybrid keys are not created yet.
+	PostQuantum bool
 }
+
+const (
+	algX25519       = "X25519"
+	algMLKEMX25519  = "MLKEM768-X25519"
+	postQuantumFlag = "ENBU_EXPERIMENTAL_PQ"
+)
 
 func New() *Manager {
 	return &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
-		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware()}
+		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), PostQuantum: os.Getenv(postQuantumFlag) == "1"}
 }
 
 func (m *Manager) mode() (string, error) {
@@ -110,7 +120,7 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 	}
 	var id Identity
 	if md.Backend == "keyring" {
-		if md.Algorithm != "X25519" || md.Reference == "" {
+		if md.Algorithm != algX25519 && md.Algorithm != algMLKEMX25519 || md.Reference == "" {
 			return nil, errors.New("invalid keyring metadata")
 		}
 		if m.Vault == nil {
@@ -120,11 +130,10 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 		if err != nil {
 			return nil, keyringError("loading saved keyring identity", err)
 		}
-		key, err := age.ParseX25519Identity(string(secret))
+		id, err = parseKeyringIdentity(md.Algorithm, string(secret))
 		if err != nil {
 			return nil, fmt.Errorf("saved keyring identity: %w", err)
 		}
-		id = FromX25519(key)
 	} else {
 		if m.Hardware == nil {
 			return nil, unavailable("saved hardware backend unavailable", nil)
@@ -141,11 +150,28 @@ func (m *Manager) Load(workspaceID string) (Identity, error) {
 	return id, nil
 }
 
+func parseKeyringIdentity(alg, secret string) (Identity, error) {
+	if alg == algMLKEMX25519 {
+		key, err := age.ParseHybridIdentity(secret)
+		if err != nil {
+			return nil, err
+		}
+		return FromHybrid(key), nil
+	}
+	key, err := age.ParseX25519Identity(secret)
+	if err != nil {
+		return nil, err
+	}
+	return FromX25519(key), nil
+}
+
 func publicKeyMatches(id Identity, public []byte) bool {
 	switch i := id.(type) {
 	case *taggedIdentity:
 		return string(i.key.PublicKey().Bytes()) == string(public)
 	case *softwareIdentity:
+		return string(i.Recipient().String()) == string(public)
+	case *hybridSoftwareIdentity:
 		return string(i.Recipient().String()) == string(public)
 	default:
 		return false
@@ -183,7 +209,12 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 		return nil, info, "", err
 	}
 	var md *Metadata
-	if mode != "keyring" {
+	if m.PostQuantum && mode == "hardware" {
+		return nil, info, "", errors.New("post-quantum hardware identities are not supported yet; use ENBU_IDENTITY_BACKEND=keyring")
+	}
+	if m.PostQuantum && mode == "auto" {
+		warning = "Post-quantum identities are kept in the OS keyring (ML-KEM-768 + X25519); hardware-bound hybrid keys are not supported yet."
+	} else if mode != "keyring" {
 		d := Diagnosis{Reason: "hardware backend unavailable"}
 		if m.Hardware != nil {
 			d = m.Hardware.Probe()
@@ -209,7 +240,11 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 				return nil, info, warning, unavailable("OS keyring unavailable", err)
 			}
 		}
-		key, err := age.GenerateX25519Identity()
+		alg, secret, err := m.generateKeyringIdentity()
+		if err != nil {
+			return nil, info, warning, err
+		}
+		key, err := parseKeyringIdentity(alg, secret)
 		if err != nil {
 			return nil, info, warning, err
 		}
@@ -217,12 +252,13 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 		if _, err := rand.Read(ref); err != nil {
 			return nil, info, warning, err
 		}
-		md = &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "keyring", Algorithm: "X25519", Recipient: key.Recipient().String()},
-			PublicKey: []byte(key.Recipient().String()), Reference: hex.EncodeToString(ref)}
-		if err := m.Vault.Store(vaultService, md.Reference, []byte(key.String())); err != nil {
+		recipient := key.Recipient().String()
+		md = &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "keyring", Algorithm: alg, Recipient: recipient},
+			PublicKey: []byte(recipient), Reference: hex.EncodeToString(ref)}
+		if err := m.Vault.Store(vaultService, md.Reference, []byte(secret)); err != nil {
 			return nil, info, warning, keyringError("saving OS keyring identity", err)
 		}
-		id = FromX25519(key)
+		id = key
 	}
 	md.Version = 1
 	if err := saveMetadata(path, md); err != nil {
@@ -238,6 +274,23 @@ func (m *Manager) Create(workspaceID string) (id Identity, info PublicInfo, warn
 	info = md.PublicInfo
 	info.Created = true
 	return id, info, warning, nil
+}
+
+// generateKeyringIdentity returns the algorithm and encoded secret key of a
+// new software identity.
+func (m *Manager) generateKeyringIdentity() (string, string, error) {
+	if m.PostQuantum {
+		key, err := age.GenerateHybridIdentity()
+		if err != nil {
+			return "", "", err
+		}
+		return algMLKEMX25519, key.String(), nil
+	}
+	key, err := age.GenerateX25519Identity()
+	if err != nil {
+		return "", "", err
+	}
+	return algX25519, key.String(), nil
 }
 
 func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }

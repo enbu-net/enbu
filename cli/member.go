@@ -7,15 +7,9 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/spf13/cobra"
 )
-
-func recipientKind(recipient string) string {
-	if strings.HasPrefix(recipient, "age1tag1") {
-		return "P-256 (hardware)"
-	}
-	return "X25519"
-}
 
 func newMemberCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{Use: "member", Short: "Manage who is trusted in this workspace", Args: appArgs(cobra.NoArgs),
@@ -43,7 +37,7 @@ func newMemberListCommand(a *app.App) *cobra.Command {
 				if m.Self {
 					you = "  (you)"
 				}
-				cmd.Printf("%s  %-6s  %s%s\n", m.Fingerprint, role, recipientKind(m.Recipient), you)
+				cmd.Printf("%s  %-6s  %s%s\n", m.Fingerprint, role, age.RecipientKind(m.Recipient), you)
 			}
 			return nil
 		}}
@@ -64,7 +58,7 @@ func newMemberRequestsCommand(a *app.App) *cobra.Command {
 				return nil
 			}
 			for _, r := range requests {
-				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))
+				cmd.Printf("%s  %s  requested %s\n", r.Fingerprint, age.RecipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))
 			}
 			return nil
 		}}
@@ -144,7 +138,7 @@ func newMemberApproveCommand(a *app.App) *cobra.Command {
 			candidates := make([]memberTarget, len(requests))
 			for i, r := range requests {
 				candidates[i] = memberTarget{deviceID: r.DeviceID, fingerprint: r.Fingerprint,
-					detail: fmt.Sprintf("%s, requested %s", recipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))}
+					detail: fmt.Sprintf("%s, requested %s", age.RecipientKind(r.Recipient), r.RequestedAt.Local().Format(time.DateTime))}
 			}
 			if len(candidates) == 0 && device == "" {
 				if jsonEnabled(cmd) {
@@ -199,7 +193,7 @@ func memberCandidates(members []app.MemberInfo, includeSelf bool) []memberTarget
 		if m.Admin {
 			role = "admin"
 		}
-		out = append(out, memberTarget{deviceID: m.DeviceID, fingerprint: m.Fingerprint, detail: role + ", " + recipientKind(m.Recipient)})
+		out = append(out, memberTarget{deviceID: m.DeviceID, fingerprint: m.Fingerprint, detail: role + ", " + age.RecipientKind(m.Recipient)})
 	}
 	return out
 }
