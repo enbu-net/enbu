@@ -1,4 +1,4 @@
-# ADR-15: What the desktop app covers
+# ADR-16: What the desktop app covers
 
 - Status: accepted
 - Date: 2026-10-23
