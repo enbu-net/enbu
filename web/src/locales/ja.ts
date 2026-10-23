@@ -42,7 +42,7 @@ export const ja = {
     duplicateKey: "キー「{key}」はすでに存在します。既存のシークレットを編集してください。",
     pull: "Pull",
     sync: "Sync",
-    pullDescription: "GHCRからシークレットを取得します。",
+    pullDescription: "Storage からシークレットを取得し、出力ファイルに書き出します。",
     syncDescription: "メンバー一覧を同期します。",
     newEnvironment: "新しい環境",
     createEnvironment: "作成",
@@ -61,6 +61,15 @@ export const ja = {
     activeEnvironment: "現在使用中の環境",
     switchEnvironment: "クリックして切り替え",
     environmentSecrets: "{environment} のシークレット",
+  },
+  conflicts: {
+    title: "値を選択",
+    description:
+      "次のシークレットが同時に別々の値へ変更されました。失われた値はありません。続けるには、それぞれ使う値を1つ選んでください。",
+    candidate: "値 {number}",
+    deleted: "（削除）",
+    resolve: "この値を使う",
+    undecided: "すべてのシークレットの値を選んでください。",
   },
   auth: {
     connect: "GitHub認証",
@@ -135,9 +144,9 @@ export const ja = {
     deleteTitle: "シークレットの削除",
     steps: {
       pull_recipients: "メンバーの公開鍵を取得中...",
-      pull_secrets: "GHCR から暗号文を取得中...",
-      encrypt: "age X25519 で暗号化中...",
-      push: "GHCR へアップロード中...",
+      pull_secrets: "Storage から暗号文を取得中...",
+      encrypt: "全メンバー宛てに age で暗号化中...",
+      push: "署名した revision を Storage へ公開中...",
       decrypt: "秘密鍵で復号中...",
       write: ".env ファイルへ書き込み中...",
       reencrypt: "全メンバーの公開鍵で再暗号化中...",

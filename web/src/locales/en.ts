@@ -42,7 +42,7 @@ export const en = {
     duplicateKey: 'Key "{key}" already exists. Edit the existing secret instead.',
     pull: "Pull",
     sync: "Sync",
-    pullDescription: "Pull secrets from GHCR.",
+    pullDescription: "Pull secrets from storage into the output file.",
     syncDescription: "Sync the member list.",
     newEnvironment: "New environment",
     createEnvironment: "Create",
@@ -61,6 +61,15 @@ export const en = {
     activeEnvironment: "Active environment",
     switchEnvironment: "Click to switch",
     environmentSecrets: "{environment} secrets",
+  },
+  conflicts: {
+    title: "Choose a value",
+    description:
+      "These secrets were changed differently at the same time. Nothing was lost. Choose one value for each to continue.",
+    candidate: "Value {number}",
+    deleted: "(deleted)",
+    resolve: "Use these values",
+    undecided: "Choose a value for every secret.",
   },
   auth: {
     connect: "Connect with GitHub",
@@ -134,9 +143,9 @@ export const en = {
     deleteTitle: "Deleting Secret",
     steps: {
       pull_recipients: "Fetching recipient public keys...",
-      pull_secrets: "Fetching encrypted secrets from GHCR...",
-      encrypt: "Encrypting with age X25519...",
-      push: "Pushing OCI artifact to GHCR...",
+      pull_secrets: "Fetching encrypted secrets from storage...",
+      encrypt: "Encrypting for every member with age...",
+      push: "Publishing the signed revision to storage...",
       decrypt: "Decrypting secrets with private key...",
       write: "Writing .env file...",
       reencrypt: "Re-encrypting for all recipients...",

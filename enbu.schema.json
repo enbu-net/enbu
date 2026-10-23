@@ -3,21 +3,65 @@
   "title": "enbu.toml",
   "description": "enbu keyless .env management configuration",
   "type": "object",
-  "required": ["version"],
+  "required": ["version", "workspace_id"],
   "additionalProperties": false,
   "properties": {
     "version": {
       "type": "string",
-      "enum": ["v1alpha1"],
-      "description": "Config schema version. Must be \"v1alpha1\"."
+      "enum": ["v1alpha2"],
+      "description": "Config schema version. Must be \"v1alpha2\"."
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Workspace UUID written by the first `enbu init`. The storage must hold the same UUID. Do not edit."
+    },
+    "control_genesis": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Digest of the workspace's first signed member list: the trust root every device verifies against. Written by the first `enbu init`. Never edit it."
     },
     "default_env": {
       "type": "string",
-      "description": "Default environment name. Defaults to \"default\" if omitted."
+      "description": "The team's default environment, used until a person runs `enbu switch`. Defaults to \"default\" if omitted."
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "description": "Where the signed ciphertext is stored.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^(oci|s3)://",
+          "description": "oci://registry/repository or s3://bucket/prefix."
+        },
+        "oci_auth": {
+          "type": "string",
+          "enum": ["docker", "github"],
+          "description": "OCI credentials: Docker credential helpers (default) or enbu's GitHub login (ghcr.io only)."
+        },
+        "plain_http": {
+          "type": "boolean",
+          "description": "Use HTTP for a local OCI registry."
+        },
+        "region": {
+          "type": "string",
+          "description": "S3 region."
+        },
+        "endpoint": {
+          "type": "string",
+          "description": "S3-compatible service endpoint."
+        },
+        "path_style": {
+          "type": "boolean",
+          "description": "Use S3 path-style addressing."
+        }
+      }
     },
     "env": {
       "type": "object",
-      "description": "Environment definitions. Each key is the environment name. Omit entirely to use auto-generated output paths.",
+      "description": "Environment definitions. Each key is the environment name. Omit entirely to use only the \"default\" environment.",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
@@ -25,6 +69,10 @@
           "output": {
             "type": "string",
             "description": "Output file path for this environment. Defaults to .env.{name} (or .env for the \"default\" environment)."
+          },
+          "incarnation": {
+            "type": "string",
+            "description": "Where this environment's secrets are stored. `enbu switch -c` writes it; keep it when editing. An environment without one is stored under its name."
           }
         }
       }

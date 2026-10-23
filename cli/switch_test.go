@@ -11,6 +11,7 @@ import (
 
 func TestSwitchCreate(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -35,13 +36,18 @@ output = ".env"
 	if !strings.Contains(string(data), "staging") {
 		t.Fatal("staging not in enbu.toml")
 	}
-	if !strings.Contains(string(data), `default_env = "staging"`) {
-		t.Fatal("default not set to staging")
+	// The switch is personal: the team default in enbu.toml stays.
+	if !strings.Contains(string(data), `default_env = "default"`) {
+		t.Fatalf("switching changed the shared default:\n%s", data)
+	}
+	if current, err := a.CurrentEnvironment(); err != nil || current != "staging" {
+		t.Fatalf("current = %q %v, want staging", current, err)
 	}
 }
 
 func TestSwitchToExisting(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -66,13 +72,17 @@ output = ".env.staging"
 	}
 
 	data, _ := os.ReadFile(filepath.Join(dir, "enbu.toml"))
-	if !strings.Contains(string(data), `default_env = "staging"`) {
-		t.Fatal("default not set to staging")
+	if string(data) != content {
+		t.Fatalf("switching changed enbu.toml:\n%s", data)
+	}
+	if current, err := a.CurrentEnvironment(); err != nil || current != "staging" {
+		t.Fatalf("current = %q %v, want staging", current, err)
 	}
 }
 
 func TestSwitchNonExistent(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -133,14 +143,14 @@ output = ".env.staging"
 		t.Fatalf("switch -: %v", err)
 	}
 
-	data, _ := os.ReadFile(filepath.Join(dir, "enbu.toml"))
-	if !strings.Contains(string(data), `default_env = "dev"`) {
-		t.Fatalf("expected default to be dev, got: %s", data)
+	if current, err := a.CurrentEnvironment(); err != nil || current != "dev" {
+		t.Fatalf("current = %q %v, want dev", current, err)
 	}
 }
 
 func TestSwitchDelete(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -172,6 +182,7 @@ output = ".env.staging"
 
 func TestSwitchDeleteCurrentFails(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -197,6 +208,7 @@ output = ".env.dev"
 
 func TestSwitchList(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -223,6 +235,7 @@ output = ".env.staging"
 
 func TestSwitchMove(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)
@@ -257,6 +270,7 @@ output = ".env.dev"
 
 func TestSwitchRejectsTwoArgs(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	origDir, _ := os.Getwd()
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 	_ = os.Chdir(dir)

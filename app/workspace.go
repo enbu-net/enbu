@@ -61,7 +61,7 @@ func wspError(err error) error {
 	case err == nil:
 		return nil
 	case errors.As(err, &fork):
-		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must resolve the fork", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
+		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must run 'enbu member resolve-fork'", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
 		return apperr.Wrap(apperr.CodeRollback, "storage shows less than this device already accepted", err, nil)
 	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrCorrupt):

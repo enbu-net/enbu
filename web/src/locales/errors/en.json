@@ -5,6 +5,7 @@
   "access_denied": "Access was denied.",
   "authentication_expired": "The authentication session expired. Try again.",
   "not_initialized": "Set up enbu for this repository first.",
+  "config_protected": "\"{key}\" in enbu.toml cannot be changed here: it decides which members the workspace trusts or where secrets are stored.",
   "config_not_found": "enbu.toml was not found.",
   "environment_not_found": "Environment \"{name}\" does not exist.",
   "environment_already_exists": "Environment \"{name}\" already exists.",
@@ -18,7 +19,7 @@
   "rollback_detected": "Storage shows less than this device already accepted. It may be a delayed listing; try again.",
   "incompatible_storage": "This storage was created without a workspace control. Use an empty location.",
   "secret_conflict": "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.",
-  "control_forked": "Two admins changed the members at the same time. An admin must resolve the fork before anything else can proceed.",
+  "control_forked": "Two admins changed the members at the same time. An admin must run \"enbu member resolve-fork\" before anything else can proceed.",
   "reencrypt_incomplete": "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.",
   "identity_unavailable": "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details."
 }

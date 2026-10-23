@@ -26,7 +26,6 @@ type App struct {
 	Identities    IdentityStore
 	RepoDetector  RepoDetector
 	Git           gitprovider.Client
-	Platform      PlatformClient
 	Events        EventHandler
 	RepositoryDir string
 	// CheckpointDir holds the local rollback checkpoints. Empty means the
@@ -52,8 +51,21 @@ func (a *App) SetRepositoryDir(dir string) {
 	}
 }
 
+// loadProject reads enbu.toml and the environment this user switched to.
 func (a *App) loadProject() (*config.ProjectConfig, error) {
-	return config.LoadProjectFrom(a.RepositoryDir)
+	cfg, err := config.LoadProjectFrom(a.RepositoryDir)
+	if err != nil {
+		return nil, err
+	}
+	if _, perr := uuid.Parse(cfg.WorkspaceID); perr == nil {
+		// A broken local state must not silently send commands to the team default.
+		local, err := config.LoadLocalState(cfg.WorkspaceID)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Current = local.Current
+	}
+	return cfg, nil
 }
 
 func (a *App) saveProject(cfg *config.ProjectConfig) error {
@@ -66,13 +78,6 @@ func (a *App) loadLocal() (*config.LocalConfig, error) {
 		return nil, err
 	}
 	return config.LoadLocalState(id)
-}
-func (a *App) saveLocal(cfg *config.LocalConfig) error {
-	id, err := a.WorkspaceID()
-	if err != nil {
-		return err
-	}
-	return config.SaveLocalState(id, cfg)
 }
 func (a *App) WorkspaceID() (id string, err error) {
 	defer apperr.NormalizeInto(&err)

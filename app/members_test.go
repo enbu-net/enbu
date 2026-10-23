@@ -46,11 +46,11 @@ func mustMember(t *testing.T, observer, who *App) MemberInfo {
 
 func mustRecipient(t *testing.T, a *App) string {
 	t.Helper()
-	r, err := a.ListRecipients(bg)
-	if err != nil || len(r) == 0 {
+	m, err := a.ListMembers(bg)
+	if err != nil || len(m) == 0 {
 		t.Fatal(err)
 	}
-	return r[0].PublicKey
+	return m[0].Recipient
 }
 
 func TestMemberCannotApprove(t *testing.T) {
