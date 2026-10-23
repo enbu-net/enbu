@@ -295,9 +295,10 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
 - **Local checkpoints** remember the Control and State heads this device accepted, so storage
   cannot silently hide them. A delayed listing is retried, not treated as lost data.
 - **Pinned trust root.** Each device remembers the first `control_genesis` it verified for a
-  workspace. If a later `enbu.toml` names another one, every command stops with
-  `trust_root_changed`; after an admin confirms out of band that they re-created the workspace,
-  run `enbu init --accept-new-genesis`.
+  workspace, and the workspace and genesis each checkout's `enbu.toml` first named. If a later
+  `enbu.toml` names another one, every command stops with `trust_root_changed`; after an admin
+  confirms out of band that they re-created the workspace, run `enbu init --accept-new-genesis`.
+  A fresh clone in a new folder still trusts its first `enbu.toml`.
 - The recipient set is built only from the verified Control. The signing key is a separate keypair
   from the encryption key (hardware P-256 when available, Ed25519 in the OS keyring otherwise) and
   is never written to storage.

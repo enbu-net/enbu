@@ -63,8 +63,9 @@ func TestLocalWorkspaceWithoutGitHub(t *testing.T) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	// The trusted genesis belongs to the original workspace.
-	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeUntrusted) {
+	// This checkout pinned the original workspace, so another one is a change
+	// of trust root before the genesis is even verified.
+	if _, err := a.ListSecrets(ctx, "default"); !apperr.Is(err, apperr.CodeTrustRootChanged) {
 		t.Fatalf("workspace mismatch: %v", err)
 	}
 }

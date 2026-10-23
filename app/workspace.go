@@ -36,10 +36,13 @@ type session struct {
 	cps       *wsp.Checkpoints
 	ids       []agecrypto.Identity
 	signer    signing.Signer
-	// acceptNewGenesis replaces a different pinned genesis instead of failing.
+	// acceptNewGenesis replaces a different pinned trust root instead of failing.
 	acceptNewGenesis bool
-	// previousGenesis is the genesis that acceptNewGenesis replaced, or "".
-	previousGenesis digest.Digest
+	// founded is set when this session just founded the workspace, which moves
+	// the repository pin to it.
+	founded bool
+	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
+	replaced wsp.Root
 }
 
 func (s *session) Close() {
@@ -65,6 +68,19 @@ func (a *App) trustRoot(workspace string) *wsp.TrustRoot {
 	return wsp.OpenTrustRoot(a.checkpointDir(), workspace)
 }
 
+// repositoryTrustRoot is the workspace and genesis this device pinned for the
+// repository's enbu.toml on first use, or nil when its path is unknown.
+func (a *App) repositoryTrustRoot() *wsp.TrustRoot {
+	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	if err != nil {
+		return nil
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return wsp.OpenRepositoryTrustRoot(a.checkpointDir(), path)
+}
+
 // wspError classifies verification failures so callers can tell an attack or
 // rollback from an ordinary failure.
 func wspError(err error) error {
@@ -74,15 +90,17 @@ func wspError(err error) error {
 	case err == nil:
 		return nil
 	case errors.As(err, &changed):
-		configured := string(changed.Configured)
+		configured := string(changed.Configured.Genesis)
 		if configured == "" {
 			configured = "missing"
 		}
 		return apperr.Wrap(apperr.CodeTrustRootChanged,
-			fmt.Sprintf("control_genesis in enbu.toml is %s, but this device trusts %s for this workspace; "+
+			fmt.Sprintf("enbu.toml names workspace %s with control_genesis %s, but this device trusts workspace %s with %s; "+
 				"unless an admin confirms out of band that they re-created the workspace, do not continue. "+
-				"After confirming, run 'enbu init --accept-new-genesis'", configured, changed.Pinned),
-			err, apperr.Params{"pinned": string(changed.Pinned), "configured": configured})
+				"After confirming, run 'enbu init --accept-new-genesis'",
+				changed.Configured.Workspace, configured, changed.Pinned.Workspace, changed.Pinned.Genesis),
+			err, apperr.Params{"pinned": string(changed.Pinned.Genesis), "configured": configured,
+				"pinned_workspace": changed.Pinned.Workspace, "configured_workspace": changed.Configured.Workspace})
 	case errors.As(err, &fork):
 		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must resolve the fork", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
@@ -130,10 +148,25 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	}
 	genesis := digest.Digest(s.cfg.ControlGenesis)
 	// enbu.toml travels through Git, so whoever can change it could name a
-	// genesis they founded. This device keeps trusting the first one it saw.
-	trust := a.trustRoot(s.workspace)
-	if !s.acceptNewGenesis {
-		if err := trust.Check(genesis); err != nil {
+	// workspace and genesis they founded. This device keeps trusting the first
+	// root it saw, both for the workspace ID and for this repository's
+	// enbu.toml, since a commit can change the workspace ID too.
+	root := wsp.Root{Workspace: s.workspace, Genesis: genesis}
+	type pin struct {
+		trust   *wsp.TrustRoot
+		replace bool
+	}
+	pins := []pin{{a.trustRoot(s.workspace), s.acceptNewGenesis}}
+	if repo := a.repositoryTrustRoot(); repo != nil {
+		// Founding cannot hand trust to anyone else, so it moves the
+		// repository pin to the new workspace.
+		pins = append(pins, pin{repo, s.acceptNewGenesis || s.founded})
+	}
+	for _, p := range pins {
+		if p.replace {
+			continue
+		}
+		if err := p.trust.Check(root); err != nil {
 			return wspError(err)
 		}
 	}
@@ -152,12 +185,14 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	}
 	// Pin only a genesis that verified, so a typo or an unreachable storage
 	// never becomes the trust root.
-	previous, err := trust.Pin(genesis, s.acceptNewGenesis)
-	if err != nil {
-		return wspError(err)
-	}
-	if previous != genesis {
-		s.previousGenesis = previous
+	for _, p := range pins {
+		previous, err := p.trust.Pin(root, p.replace)
+		if err != nil {
+			return wspError(err)
+		}
+		if previous != (wsp.Root{}) && previous != root && s.replaced == (wsp.Root{}) && !s.founded {
+			s.replaced = previous
+		}
 	}
 	if err := s.cps.AcceptControl(view); err != nil {
 		return wspError(err)

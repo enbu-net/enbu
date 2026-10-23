@@ -8,6 +8,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 func setGenesis(t *testing.T, a *App, genesis string) {
@@ -144,11 +145,82 @@ func TestUnverifiedGenesisIsNotPinned(t *testing.T) {
 	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("unknown genesis: %v", err)
 	}
-	if pinned, err := bob.trustRoot(mustWorkspace(t, bob)).Pinned(); err != nil || pinned != "" {
+	if pinned, err := bob.trustRoot(mustWorkspace(t, bob)).Pinned(); err != nil || pinned != (wsp.Root{}) {
 		t.Fatalf("an unverified genesis was pinned: %q %v", pinned, err)
 	}
 	setGenesis(t, bob, trusted)
 	if _, err := bob.InitializeRepository(bg); err != nil {
 		t.Fatalf("the real genesis was rejected after a failed first attempt: %v", err)
+	}
+}
+
+// enbu.toml holds the workspace ID as well, so a commit can change both
+// fields and point at a workspace the device has never pinned. The
+// repository's own pin still stops it.
+func TestChangedWorkspaceAndGenesisStillStops(t *testing.T) {
+	alice := newAlice(t)
+	trusted := genesisOf(t, alice)
+	original := mustWorkspace(t, alice)
+
+	// Mallory founds a workspace of their own and commits its enbu.toml.
+	mallory := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: t.TempDir()}
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.WorkspaceID = "22222222-2222-4222-8222-222222222222"
+	cfg.ControlGenesis = ""
+	if err := config.SaveProjectTo(mallory.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := apptest.Control(bg, mallory.Storage, mallory.RepositoryDir, mallory.Identities); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ControlGenesis = genesisOf(t, mallory)
+	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, op := range map[string]func() error{
+		"init": func() error { _, err := alice.InitializeRepository(bg); return err },
+		"list": func() error { _, err := alice.ListSecrets(bg, "default"); return err },
+	} {
+		err := op()
+		var ae *apperr.Error
+		if !errors.As(err, &ae) || ae.Code() != apperr.CodeTrustRootChanged {
+			t.Fatalf("%s: got %v, want trust_root_changed", name, err)
+		}
+		if p := ae.Params(); p["pinned_workspace"] != original || p["pinned"] != trusted || p["configured_workspace"] != cfg.WorkspaceID {
+			t.Fatalf("%s: params %v", name, p)
+		}
+	}
+	if revs, err := alice.Storage.Discover(bg, storage.KindRequest, ""); err != nil || len(revs) != 0 {
+		t.Fatalf("alice asked to join mallory's workspace: %v %v", revs, err)
+	}
+}
+
+// Founding a workspace hands trust to nobody else, so a checkout that founds a
+// new one moves its repository pin without --accept-new-genesis.
+func TestFoundingAgainInTheSameCheckoutMovesThePin(t *testing.T) {
+	alice := newAlice(t)
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.WorkspaceID = "33333333-3333-4333-8333-333333333333"
+	cfg.ControlGenesis = ""
+	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	alice.Storage = newMemRegistry()
+	result, err := alice.InitializeRepository(bg)
+	if err != nil {
+		t.Fatalf("founding a new workspace: %v", err)
+	}
+	if result.ReplacedGenesis != "" || result.Pending {
+		t.Fatalf("result = %+v", result)
+	}
+	if _, err := alice.ListSecrets(bg, "default"); err != nil && !IsNotFoundError(err) {
+		t.Fatalf("the new workspace is not usable: %v", err)
 	}
 }

@@ -92,7 +92,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	}
 	result = &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL,
 		KeyCreated: info.Created, Mode: "initialize", DeviceID: string(device), Fingerprint: device.Fingerprint(),
-		ControlGenesis: cfg.ControlGenesis, ReplacedGenesis: string(s.previousGenesis)}
+		ControlGenesis: cfg.ControlGenesis, ReplacedGenesis: string(s.replaced.Genesis)}
 	for _, w := range []string{warning, signerWarning} {
 		if w != "" {
 			result.Warnings = append(result.Warnings, w)
@@ -143,8 +143,8 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		if !s.acceptNewGenesis {
 			if pinned, err := a.trustRoot(s.workspace).Pinned(); err != nil {
 				return err
-			} else if pinned != "" {
-				return wspError(&wsp.TrustRootChangedError{Pinned: pinned})
+			} else if pinned != (wsp.Root{}) {
+				return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: wsp.Root{Workspace: s.workspace}})
 			}
 		}
 		// Storage must hold no workspace yet: with no trusted genesis there is
@@ -168,6 +168,7 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 			s.cfg.ControlGenesis = ""
 			return err // nothing has been published yet
 		}
+		s.founded = true
 		if cerr := wsp.PublishGenesis(ctx, s.store, blob); cerr != nil {
 			s.cfg.ControlGenesis = ""
 			if serr := a.saveProject(s.cfg); serr != nil {

@@ -15,92 +15,117 @@ import (
 
 const trustRootVersion = 1
 
-type trustRootFile struct {
-	Version int           `json:"version"`
-	Genesis digest.Digest `json:"genesis"`
+// Root is a trust root: a workspace and the digest of its genesis Control.
+type Root struct {
+	Workspace string        `json:"workspace"`
+	Genesis   digest.Digest `json:"genesis"`
 }
 
-// TrustRootChangedError means enbu.toml names a genesis other than the one this
-// device first trusted for the workspace. Anyone who can change enbu.toml (a
-// commit, a pull request, a checkout of another branch) could otherwise point
-// the device at a Control they founded themselves and receive its secrets.
+type trustRootFile struct {
+	Version int `json:"version"`
+	Root
+}
+
+// TrustRootChangedError means enbu.toml names a trust root other than the one
+// this device first accepted. Anyone who can change enbu.toml (a commit, a pull
+// request, a checkout of another branch) could otherwise point the device at a
+// Control they founded themselves and receive its secrets.
 type TrustRootChangedError struct {
-	Pinned     digest.Digest
-	Configured digest.Digest
+	Pinned     Root
+	Configured Root
 }
 
 func (e *TrustRootChangedError) Error() string {
-	return fmt.Sprintf("control genesis %s differs from the pinned %s", e.Configured, e.Pinned)
+	if e.Pinned.Workspace != e.Configured.Workspace {
+		return fmt.Sprintf("workspace %s differs from the pinned %s", e.Configured.Workspace, e.Pinned.Workspace)
+	}
+	return fmt.Sprintf("control genesis %s differs from the pinned %s", e.Configured.Genesis, e.Pinned.Genesis)
 }
 
-// TrustRoot pins, locally, the genesis a device first accepted for a
-// workspace (trust on first use). Checkpoints are kept per genesis, so without
-// the pin a new genesis would simply start an empty history.
+// TrustRoot pins, locally, the trust root a device first accepted (trust on
+// first use). Checkpoints are kept per genesis, so without the pin a new
+// genesis would simply start an empty history.
 type TrustRoot struct {
 	path string
 }
 
-// OpenTrustRoot returns the pin of workspace under dir. The workspace is hashed
-// so it cannot escape dir.
+// OpenTrustRoot returns the pin of workspace under dir: the genesis this device
+// trusts for that workspace ID, wherever its enbu.toml is.
 func OpenTrustRoot(dir, workspace string) *TrustRoot {
-	sum := sha256.Sum256([]byte(workspace))
-	return &TrustRoot{path: filepath.Join(dir, "trust-"+hex.EncodeToString(sum[:])+".json")}
+	return openTrustRoot(dir, "trust-", workspace)
 }
 
-// Pinned returns the pinned genesis, or "" when none is pinned yet.
-func (t *TrustRoot) Pinned() (digest.Digest, error) {
+// OpenRepositoryTrustRoot returns the pin of the enbu.toml at configPath: the
+// workspace and genesis this repository checkout uses. Both fields live in
+// enbu.toml, so the workspace pin alone would let a commit that changes the
+// workspace ID as well start over with no pin at all.
+func OpenRepositoryTrustRoot(dir, configPath string) *TrustRoot {
+	return openTrustRoot(dir, "repo-", configPath)
+}
+
+// openTrustRoot hashes key so it cannot escape dir.
+func openTrustRoot(dir, prefix, key string) *TrustRoot {
+	sum := sha256.Sum256([]byte(key))
+	return &TrustRoot{path: filepath.Join(dir, prefix+hex.EncodeToString(sum[:])+".json")}
+}
+
+// Pinned returns the pinned root, or a zero Root when none is pinned yet.
+func (t *TrustRoot) Pinned() (Root, error) {
 	b, err := os.ReadFile(t.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+		return Root{}, nil
 	}
 	if err != nil {
-		return "", err
+		return Root{}, err
 	}
 	var f trustRootFile
-	if err := json.Unmarshal(b, &f); err != nil || f.Version != trustRootVersion || validDigest(f.Genesis) != nil {
-		return "", fmt.Errorf("corrupt trust root file %s", t.path)
+	if err := json.Unmarshal(b, &f); err != nil || f.Version != trustRootVersion || f.Workspace == "" || validDigest(f.Genesis) != nil {
+		return Root{}, fmt.Errorf("corrupt trust root file %s", t.path)
 	}
-	return f.Genesis, nil
+	return f.Root, nil
 }
 
-// Check returns a *TrustRootChangedError when another genesis is pinned.
-func (t *TrustRoot) Check(genesis digest.Digest) error {
+// Check returns a *TrustRootChangedError when another root is pinned.
+func (t *TrustRoot) Check(root Root) error {
 	pinned, err := t.Pinned()
 	if err != nil {
 		return err
 	}
-	if pinned != "" && pinned != genesis {
-		return &TrustRootChangedError{Pinned: pinned, Configured: genesis}
+	if pinned != (Root{}) && pinned != root {
+		return &TrustRootChangedError{Pinned: pinned, Configured: root}
 	}
 	return nil
 }
 
-// Pin records genesis when nothing is pinned. A different pinned genesis is
-// kept and reported as a *TrustRootChangedError unless replace is set, which
-// is how a person confirms that the workspace was really re-founded. It
-// returns the genesis pinned before, or "".
-func (t *TrustRoot) Pin(genesis digest.Digest, replace bool) (digest.Digest, error) {
-	if err := validDigest(genesis); err != nil {
-		return "", invalid("trusted genesis digest: %v", err)
+// Pin records root when nothing is pinned. A different pinned root is kept
+// and reported as a *TrustRootChangedError unless replace is set, which is how
+// a person confirms that the workspace was really re-founded. It returns the
+// root pinned before, or a zero Root.
+func (t *TrustRoot) Pin(root Root, replace bool) (Root, error) {
+	if root.Workspace == "" {
+		return Root{}, invalid("trust root has no workspace")
+	}
+	if err := validDigest(root.Genesis); err != nil {
+		return Root{}, invalid("trusted genesis digest: %v", err)
 	}
 	release, err := lockFile(t.path)
 	if err != nil {
-		return "", err
+		return Root{}, err
 	}
 	defer release()
 	pinned, err := t.Pinned()
 	if err != nil && !replace {
-		return "", err
+		return Root{}, err
 	}
-	if pinned == genesis {
+	if pinned == root {
 		return pinned, nil
 	}
-	if pinned != "" && !replace {
-		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: genesis}
+	if pinned != (Root{}) && !replace {
+		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}
 	}
-	b, err := json.MarshalIndent(trustRootFile{Version: trustRootVersion, Genesis: genesis}, "", "  ")
+	b, err := json.MarshalIndent(trustRootFile{Version: trustRootVersion, Root: root}, "", "  ")
 	if err != nil {
-		return "", err
+		return Root{}, err
 	}
 	return pinned, writeFileAtomic(t.path, b)
 }
