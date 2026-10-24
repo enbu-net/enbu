@@ -232,7 +232,8 @@ kept in the Keychain). A file is post-quantum only when every member has a hybri
 with any classical member it is encrypted classically. Members created before this
 switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
 the new key with `enbu member approve`, and `enbu member list` shows how many members
-have upgraded. Members on an enbu that predates hybrid keys must update enbu first.
+have upgraded. In the desktop app, the same upgrade is on the Members screen.
+Members on an enbu that predates hybrid keys must update enbu first.
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|

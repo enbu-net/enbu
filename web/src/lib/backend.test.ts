@@ -113,6 +113,45 @@ beforeEach(() => {
           window.calls?.push(["remove", id]);
           return ok(undefined);
         }),
+        ListHistory: vi.fn(async () =>
+          ok([{ index: 1, timestamp: "t", tag: "a" }] as Array<{
+            index: number;
+            timestamp: string;
+            tag: string;
+          }>),
+        ),
+        DiffHistory: vi.fn(async (env: string, from: number, to: number) => {
+          window.calls?.push(["diff", env, from, to]);
+          return ok({ added: ["A"], removed: null as unknown as string[], modified: [] });
+        }),
+        RestoreHistory: vi.fn(async (env: string, index: number) => {
+          window.calls?.push(["restore", env, index]);
+          return ok(undefined);
+        }),
+        SetAdmin: vi.fn(async (id: string, admin: boolean) => {
+          window.calls?.push(["admin", id, admin]);
+          return ok(undefined);
+        }),
+        UpgradeIdentity: vi.fn(async () =>
+          ok({ algorithm: "MLKEM768-X25519", fingerprint: "aaaa", pending: true }),
+        ),
+        DeleteEnvironmentPurging: vi.fn(async (name: string) => {
+          window.calls?.push(["delete-purging", name]);
+          return ok(3);
+        }),
+        PurgeIncarnation: vi.fn(async (incarnation: string) => {
+          window.calls?.push(["purge", incarnation]);
+          return ok(2);
+        }),
+        ImportSecrets: vi.fn(async (env: string, dotenv: string, overwrite: boolean) => {
+          window.calls?.push(["import", env, dotenv, overwrite]);
+          return ok({
+            environment: env || "default",
+            added: ["A"],
+            updated: null as unknown as string[],
+            unchanged: [],
+          });
+        }),
         ReadConfig: vi.fn(async () => ok("")),
         WriteConfig: vi.fn(async () => ok(undefined)),
         GitInit: vi.fn(async (path: string) =>
@@ -207,10 +246,23 @@ describe("backend desktop adapter", () => {
 describe("backend member operations", () => {
   it("maps members and join requests from the desktop service", async () => {
     await expect(backend.listMembers()).resolves.toEqual([
-      { device_id: "d1", fingerprint: "aaaa", algorithm: "p256", admin: true, self: true },
+      {
+        device_id: "d1",
+        fingerprint: "aaaa",
+        algorithm: "p256",
+        admin: true,
+        self: true,
+        post_quantum: false,
+      },
     ]);
     await expect(backend.listJoinRequests()).resolves.toEqual([
-      { device_id: "d2", fingerprint: "bbbb", algorithm: "ed25519", requested_at: "t" },
+      {
+        device_id: "d2",
+        fingerprint: "bbbb",
+        algorithm: "ed25519",
+        requested_at: "t",
+        key_update: false,
+      },
     ]);
   });
 
@@ -221,6 +273,69 @@ describe("backend member operations", () => {
       ["approve", "d2"],
       ["remove", "d1"],
     ]);
+  });
+
+  it("passes admin changes and returns the key update", async () => {
+    await backend.setAdmin("d2", true);
+    await backend.setAdmin("d2", false);
+    expect(window.calls).toEqual([
+      ["admin", "d2", true],
+      ["admin", "d2", false],
+    ]);
+    await expect(backend.upgradeIdentity()).resolves.toEqual({
+      algorithm: "MLKEM768-X25519",
+      fingerprint: "aaaa",
+      pending: true,
+    });
+  });
+
+  it("purges environments and incarnations and returns the deleted count", async () => {
+    await expect(backend.deleteEnvironmentPurging("old")).resolves.toBe(3);
+    await expect(backend.purgeIncarnation("0b8e1f6c-1d3e-4c55-9a51-6f3d2c1b0a99")).resolves.toBe(2);
+    expect(window.calls).toEqual([
+      ["delete-purging", "old"],
+      ["purge", "0b8e1f6c-1d3e-4c55-9a51-6f3d2c1b0a99"],
+    ]);
+  });
+
+  it("imports a dotenv file and fills missing lists", async () => {
+    await expect(backend.importSecrets("A=1\n", true, "prod")).resolves.toEqual({
+      environment: "prod",
+      added: ["A"],
+      updated: [],
+      unchanged: [],
+    });
+    expect(window.calls).toEqual([["import", "prod", "A=1\n", true]]);
+  });
+
+  it("lists, compares, and restores history with desktop argument order", async () => {
+    await expect(backend.listHistory("prod")).resolves.toEqual([
+      { index: 1, timestamp: "t", tag: "a" },
+    ]);
+    await expect(backend.diffHistory(1, 2, "prod")).resolves.toEqual({
+      added: ["A"],
+      removed: [],
+      modified: [],
+    });
+    await backend.restoreHistory(1, "prod");
+    expect(window.calls).toEqual([
+      ["diff", "prod", 1, 2],
+      ["restore", "prod", 1],
+    ]);
+  });
+
+  it("refuses irreversible member and storage changes without the desktop service", async () => {
+    window.go = undefined;
+    for (const call of [
+      () => backend.setAdmin("d2", true),
+      () => backend.upgradeIdentity(),
+      () => backend.deleteEnvironmentPurging("old"),
+      () => backend.purgeIncarnation("x"),
+      () => backend.importSecrets("A=1", false),
+      () => backend.restoreHistory(1),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ payload: { code: "unavailable" } });
+    }
   });
 
   it("lists conflicts and passes the decisions with the heads they were made from", async () => {

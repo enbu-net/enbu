@@ -3,10 +3,14 @@ import {
   type AuthStatus,
   type ConflictChoice,
   type ConflictSet,
+  type DiffResult,
   type Environment,
   type GUIRepoStatus,
+  type HistoryEntry,
+  type ImportResult,
   type InitResult,
   type JoinRequest,
+  type KeyUpdate,
   type Member,
   type SecretsResponse,
 } from "./api";
@@ -57,14 +61,20 @@ type DesktopService = {
   SwitchEnvironment: (name: string) => Promise<void>;
   RenameEnvironment: (name: string, newName: string) => Promise<void>;
   DeleteEnvironment: (name: string) => Promise<void>;
+  DeleteEnvironmentPurging: (name: string) => Promise<number>;
+  PurgeIncarnation: (incarnation: string) => Promise<number>;
   ListSecrets: (env: string) => Promise<SecretsResponse>;
   AddSecret: (env: string, key: string, value: string) => Promise<void>;
   EditSecret: (env: string, key: string, value: string) => Promise<void>;
   DeleteSecret: (env: string, key: string) => Promise<void>;
+  ImportSecrets: (env: string, dotenv: string, overwrite: boolean) => Promise<ImportResult>;
   PullSecrets: (env: string) => Promise<void>;
   SyncSecrets: (env: string) => Promise<void>;
   ListConflicts: (env: string) => Promise<ConflictSet>;
   ResolveConflicts: (env: string, heads: string[], choices: ConflictChoice[]) => Promise<void>;
+  ListHistory: (env: string) => Promise<HistoryEntry[]>;
+  DiffHistory: (env: string, from: number, to: number) => Promise<DiffResult>;
+  RestoreHistory: (env: string, index: number) => Promise<void>;
   ListRepositories: () => Promise<
     Array<{ path: string; owner: string; repo: string; initialized: boolean }>
   >;
@@ -73,6 +83,8 @@ type DesktopService = {
   ListJoinRequests: () => Promise<JoinRequest[]>;
   ApproveMember: (deviceID: string) => Promise<void>;
   RemoveMember: (deviceID: string) => Promise<void>;
+  SetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
+  UpgradeIdentity: () => Promise<KeyUpdate>;
   ReadConfig: () => Promise<string>;
   WriteConfig: (content: string) => Promise<void>;
   GitInit: (path: string) => Promise<GUIRepoStatus["repo"]>;
@@ -270,6 +282,18 @@ const realBackend = {
     }
     await svc.DeleteEnvironment(name);
   },
+  // Deleting stored revisions cannot be undone, so a missing service fails
+  // loudly instead of pretending they are gone.
+  async deleteEnvironmentPurging(name: string): Promise<number> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.DeleteEnvironmentPurging(name);
+  },
+  async purgeIncarnation(incarnation: string): Promise<number> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.PurgeIncarnation(incarnation);
+  },
   async listSecrets(env = ""): Promise<SecretsResponse> {
     return service()?.ListSecrets(env) ?? api.secrets.list(env || undefined);
   },
@@ -296,6 +320,17 @@ const realBackend = {
       return;
     }
     await svc.DeleteSecret(env, key);
+  },
+  async importSecrets(dotenv: string, overwrite: boolean, env = ""): Promise<ImportResult> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    const result = await svc.ImportSecrets(env, dotenv, overwrite);
+    return {
+      environment: result.environment,
+      added: result.added ?? [],
+      updated: result.updated ?? [],
+      unchanged: result.unchanged ?? [],
+    };
   },
   async pullSecrets(env = ""): Promise<void> {
     const svc = service();
@@ -333,6 +368,29 @@ const realBackend = {
     if (!svc) throw createAppError("unavailable");
     await svc.ResolveConflicts(env, heads, choices);
   },
+  async listHistory(env = ""): Promise<HistoryEntry[]> {
+    const svc = service();
+    if (!svc) return (await api.history.list(env || undefined)).entries ?? [];
+    return (await svc.ListHistory(env)) ?? [];
+  },
+  async diffHistory(from: number, to: number, env = ""): Promise<DiffResult> {
+    const svc = service();
+    const diff = svc
+      ? await svc.DiffHistory(env, from, to)
+      : await api.history.diff(from, to, env || undefined);
+    return {
+      added: diff?.added ?? [],
+      removed: diff?.removed ?? [],
+      modified: diff?.modified ?? [],
+    };
+  },
+  // Restoring publishes a new revision for everyone, so a missing service
+  // fails loudly.
+  async restoreHistory(index: number, env = ""): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.RestoreHistory(env, index);
+  },
   async listRepositories(): Promise<GUIRepoStatus["repo"][]> {
     const svc = service();
     if (!svc) return [];
@@ -359,6 +417,7 @@ const realBackend = {
         algorithm: m.algorithm,
         admin: m.admin,
         self: m.self,
+        post_quantum: m.post_quantum ?? false,
       }));
   },
   async listJoinRequests(): Promise<JoinRequest[]> {
@@ -372,6 +431,7 @@ const realBackend = {
         fingerprint: r.fingerprint,
         algorithm: r.algorithm,
         requested_at: r.requested_at,
+        key_update: r.key_update ?? false,
       }));
   },
   // These change who can read every secret, so a missing service must fail
@@ -385,6 +445,16 @@ const realBackend = {
     const svc = service();
     if (!svc) throw createAppError("unavailable");
     await svc.RemoveMember(deviceID);
+  },
+  async setAdmin(deviceID: string, admin: boolean): Promise<void> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    await svc.SetAdmin(deviceID, admin);
+  },
+  async upgradeIdentity(): Promise<KeyUpdate> {
+    const svc = service();
+    if (!svc) throw createAppError("unavailable");
+    return svc.UpgradeIdentity();
   },
   async readConfig(): Promise<string> {
     const svc = service();

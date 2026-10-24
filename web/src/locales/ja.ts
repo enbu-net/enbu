@@ -122,6 +122,70 @@ export const ja = {
     fingerprint: "フィンガープリント",
     requestedAt: "{time} に申請",
     cancel: "キャンセル",
+    promote: "管理者にする",
+    demote: "管理者を外す",
+    promoteTitle: "{fingerprint} を管理者にしますか?",
+    demoteTitle: "{fingerprint} を管理者から外しますか?",
+    promoteHint: "管理者はメンバーの承認・削除、管理者の変更、保存済み revision の削除ができます。",
+    demoteHint: "この端末はメンバーのまま残り、引き続きすべてのシークレットを読み取れます。",
+    postQuantum: "耐量子",
+    keyUpdate: "鍵の更新",
+    upgrade: "鍵を更新",
+    upgradeTitle: "耐量子の鍵に切り替える",
+    upgradeHint:
+      "この端末は従来の暗号鍵を使っています。シークレットが耐量子になるのは、全員が鍵を更新したときです。",
+    upgradeConfirm:
+      "ハイブリッド ML-KEM の鍵を作り、管理者に承認を依頼します。フィンガープリントは変わりません。承認されるまでは、どちらの鍵でもシークレットを読み取れます。",
+    upgradeConfirmAdmin:
+      "ハイブリッド ML-KEM の鍵を作り、すべての環境をその鍵で再暗号化します。フィンガープリントは変わりません。",
+    upgradePending: "{fingerprint} の鍵の更新を承認するよう、管理者に依頼してください。",
+    upgradeDone: "耐量子の鍵に切り替え、すべての環境を再暗号化しました。",
+  },
+  import: {
+    button: "インポート",
+    title: "{environment} にインポート",
+    description: ".env ファイルの変数を、1 回の変更でこの環境に追加します。",
+    file: "ファイル",
+    content: ".env の内容",
+    overwrite: "別の値で既にあるシークレットを置き換える",
+    action: "インポート",
+    result:
+      "{environment} にインポートしました: 追加 {added}、更新 {updated}、変更なし {unchanged}。",
+  },
+  history: {
+    button: "履歴",
+    title: "{environment} の履歴",
+    description:
+      "シークレットを変更した revision を新しい順に表示します。最新と比べると、どのキーが違うかがわかります。",
+    empty: "履歴はまだありません。",
+    latest: "最新",
+    compare: "比較",
+    same: "最新と同じ内容です。",
+    onlyThen: "{key}: この revision にだけある",
+    onlyNow: "{key}: その後に追加",
+    changed: "{key}: その後に値が変更",
+    restore: "復元",
+    restoreConfirm: "この revision の内容を最新として公開しますか?",
+  },
+  environments: {
+    rename: "名前を変更",
+    renameTitle: "{name} の名前を変更",
+    deleteTitle: "{name} を削除しますか?",
+    deleteHint:
+      "enbu.toml から環境を外します。保存済みの revision は、あわせて削除しない限り残ります。",
+    deleteCurrent: "削除する前に、別の環境に切り替えてください。",
+    deleteRevisions: "保存済みの revision も削除する（管理者のみ）。元に戻せません。",
+    purgeTitle: "保存済み revision の削除",
+    purgeHint:
+      "以前に削除した環境の保存済み revision を、削除時に表示された incarnation を指定して削除します。",
+    incarnation: "Incarnation",
+    purge: "revision を削除",
+    purgeConfirm: "保存済みの revision を削除しますか?",
+    purgeConfirmHint:
+      "incarnation {incarnation} の revision をすべて Storage から削除します。元に戻せません。",
+    revisionsKept:
+      "保存済みの revision は残っています。後で削除するには、管理者が「保存済み revision の削除」に incarnation {incarnation} を入力してください。",
+    purged: "保存済みの revision を {count} 件削除しました。",
   },
   config: {
     title: "enbu.toml",

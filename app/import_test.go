@@ -20,6 +20,10 @@ func TestImportSecretsAddsUpdatesAndKeepsTheRest(t *testing.T) {
 	if !apperr.Is(err, apperr.CodeSecretExists) {
 		t.Fatalf("existing key silently changed: %v", err)
 	}
+	// key fills the shared GUI message; keys lists them for callers.
+	if params := apperr.PayloadOf(err).Params; params["key"] != "KEY" || params["keys"] != "KEY" {
+		t.Fatalf("params = %v", params)
+	}
 	got := mustSecrets(t, alice, "default")
 	if got["KEY"] != "v1" || got["NEW"] != "n" {
 		t.Fatalf("refused import changed storage: %v", got)

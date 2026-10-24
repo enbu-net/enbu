@@ -11,13 +11,17 @@ import {
   Download,
   Eye,
   EyeOff,
+  History,
   KeyRound,
   Layers3,
   ListTree,
   Plus,
   RefreshCw,
   SlidersHorizontal,
+  ShieldCheck,
+  ShieldOff,
   Trash2,
+  Upload,
   UserRound,
   Users,
   X,
@@ -30,7 +34,14 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { ConflictSet, Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
+import type {
+  ConflictSet,
+  Environment,
+  JoinRequest,
+  KeyUpdate,
+  Member,
+  SecretsResponse,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";
@@ -38,6 +49,10 @@ import { ConfirmDeleteDialog } from "../components/confirm-delete-dialog";
 import { FingerprintConfirmDialog } from "../components/fingerprint-confirm-dialog";
 import { TransferModal } from "../components/transfer-modal";
 import { ConflictPanel } from "../components/conflict-panel";
+import { ConfirmDialog } from "../components/confirm-dialog";
+import { EnvironmentsPanel } from "../components/environments-panel";
+import { ImportDialog } from "../components/import-dialog";
+import { HistoryDialog } from "../components/history-dialog";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { LanguageSelector } from "../components/language-selector";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -217,6 +232,13 @@ export function HomePage() {
   const [pullLoading, setPullLoading] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
+  const [actionNotice, setActionNotice] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<DisplayError | null>(null);
+  const importTriggerRef = useRef<HTMLButtonElement>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
   const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
@@ -315,6 +337,10 @@ export function HomePage() {
   const currentEnvironment = useMemo(
     () => environments.find((env) => env.current)?.name ?? secrets?.environment ?? "",
     [environments, secrets?.environment],
+  );
+  const listHistory = useCallback(
+    () => backend.listHistory(currentEnvironment),
+    [currentEnvironment],
   );
 
   const membersRepoPath = repoStatus?.repo?.path ?? "";
@@ -754,6 +780,11 @@ export function HomePage() {
             <ErrorAlert error={actionError} onDismiss={() => setActionError(null)} />
           </Box>
         )}
+        {actionNotice && (
+          <Box mb="4">
+            <NoticeAlert message={actionNotice} onDismiss={() => setActionNotice("")} />
+          </Box>
+        )}
 
         <Tabs.Root defaultValue="secrets" lazyMount unmountOnExit variant="line">
           <Tabs.List w="full" h="auto" display="flex" gap="0" overflow="hidden">
@@ -791,6 +822,30 @@ export function HomePage() {
               }
             >
               <HStack gap="2">
+                <Button
+                  ref={historyTriggerRef}
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(conflicts && conflicts.conflicts.length > 0)}
+                  onClick={() => setHistoryOpen(true)}
+                >
+                  <History size={14} />
+                  {t("history.button")}
+                </Button>
+                <Button
+                  ref={importTriggerRef}
+                  size="sm"
+                  variant="outline"
+                  title={t("import.description")}
+                  disabled={Boolean(conflicts && conflicts.conflicts.length > 0)}
+                  onClick={() => {
+                    setImportError(null);
+                    setImportOpen(true);
+                  }}
+                >
+                  <Upload size={14} />
+                  {t("import.button")}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -963,11 +1018,42 @@ export function HomePage() {
                 await backend.removeMember(deviceID);
                 await fetchMembers();
               }}
+              onSetAdmin={async (deviceID, admin) => {
+                await backend.setAdmin(deviceID, admin);
+                await fetchMembers();
+              }}
+              onUpgrade={async () => {
+                const result = await backend.upgradeIdentity();
+                await fetchMembers();
+                return result;
+              }}
               onErrorDismiss={() => setMembersError(null)}
             />
           </DashboardTabContent>
           <DashboardTabContent value="settings">
             <ConfigPanel environments={environments} />
+            <Box mt="8">
+              <SectionHeader title={t("dashboard.environments")} />
+              <EnvironmentsPanel
+                environments={environments}
+                admin={members.some((m) => m.self && m.admin)}
+                onRename={async (name, newName) => {
+                  await backend.renameEnvironment(name, newName);
+                  await refreshWorkspace(
+                    name === currentEnvironment ? newName : currentEnvironment,
+                  );
+                }}
+                onDelete={async (name, purge) => {
+                  let purged = 0;
+                  if (purge) purged = await backend.deleteEnvironmentPurging(name);
+                  else await backend.deleteEnvironment(name);
+                  await refreshWorkspace(currentEnvironment);
+                  return purged;
+                }}
+                onPurgeIncarnation={(incarnation) => backend.purgeIncarnation(incarnation)}
+                onError={setActionError}
+              />
+            </Box>
           </DashboardTabContent>
         </Tabs.Root>
         <CreateEnvironmentModal
@@ -999,6 +1085,53 @@ export function HomePage() {
             }
           }}
         />
+        {importOpen && (
+          <ImportDialog
+            open
+            environment={currentEnvironment}
+            loading={importLoading}
+            error={importError}
+            triggerRef={importTriggerRef}
+            onClose={() => {
+              if (!importLoading) setImportOpen(false);
+            }}
+            // A failed import keeps the dialog and its contents, so the person
+            // can tick overwrite after secret_already_exists and try again.
+            onImport={async (dotenv, overwrite) => {
+              setImportLoading(true);
+              setImportError(null);
+              setActionNotice("");
+              try {
+                const result = await backend.importSecrets(dotenv, overwrite, currentEnvironment);
+                setActionNotice(
+                  t("import.result", {
+                    environment: result.environment,
+                    added: String(result.added.length),
+                    updated: String(result.updated.length),
+                    unchanged: String(result.unchanged.length),
+                  }),
+                );
+                setImportOpen(false);
+                await refreshWorkspace(currentEnvironment);
+              } catch (err) {
+                setImportError(toDisplayError(err));
+              } finally {
+                setImportLoading(false);
+              }
+            }}
+          />
+        )}
+        {historyOpen && (
+          <HistoryDialog
+            environment={currentEnvironment}
+            triggerRef={historyTriggerRef}
+            listHistory={listHistory}
+            diffHistory={(from, to) => backend.diffHistory(from, to, currentEnvironment)}
+            restoreHistory={(index) => backend.restoreHistory(index, currentEnvironment)}
+            onRestored={() => refreshWorkspace(currentEnvironment)}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
         <TransferModal
           open={transferModal.open}
           operation={transferModal.op}
@@ -1360,6 +1493,36 @@ function ErrorAlert({ error, onDismiss }: { error: DisplayError; onDismiss?: () 
   );
 }
 
+function NoticeAlert({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  const { t } = useI18n();
+  return (
+    <Alert.Root
+      role="status"
+      borderRadius="md"
+      borderWidth="1px"
+      borderColor="border.default"
+      bg="bg.surface"
+      py={3}
+      px={4}
+    >
+      <Alert.Content>
+        <Text fontSize="sm">{message}</Text>
+      </Alert.Content>
+      <Button
+        variant="ghost"
+        w="24px"
+        h="24px"
+        p="0"
+        flexShrink="0"
+        aria-label={t("common.close")}
+        onClick={onDismiss}
+      >
+        <X size={14} />
+      </Button>
+    </Alert.Root>
+  );
+}
+
 export function SecretRow({
   secretKey,
   secretValue,
@@ -1515,6 +1678,8 @@ export function MembersPanel({
   onSync,
   onApprove,
   onRemove,
+  onSetAdmin,
+  onUpgrade,
   onErrorDismiss,
 }: {
   members: Member[];
@@ -1524,15 +1689,24 @@ export function MembersPanel({
   onSync: () => void | Promise<void>;
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
+  onSetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
+  onUpgrade: () => Promise<KeyUpdate>;
   onErrorDismiss: () => void;
 }) {
   const { t } = useI18n();
   const [approving, setApproving] = useState<JoinRequest | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
+  const [changingAdmin, setChangingAdmin] = useState<Member | null>(null);
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeResult, setUpgradeResult] = useState<KeyUpdate | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const approveTriggerRef = useRef<HTMLElement | null>(null);
   const removeTriggerRef = useRef<HTMLElement | null>(null);
+  const adminTriggerRef = useRef<HTMLElement | null>(null);
+  const upgradeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const self = members.find((m) => m.self);
+  const viewerIsAdmin = Boolean(self?.admin);
 
   // The dialog closes whether or not the action worked; a failure is shown in
   // the panel, so the admin starts again from a fresh list instead of retrying
@@ -1583,6 +1757,43 @@ export function MembersPanel({
         </HStack>
       ) : (
         <>
+          {upgradeResult && (
+            <Box mb="4">
+              <NoticeAlert
+                message={
+                  upgradeResult.pending
+                    ? t("members.upgradePending", { fingerprint: upgradeResult.fingerprint })
+                    : t("members.upgradeDone")
+                }
+                onDismiss={() => setUpgradeResult(null)}
+              />
+            </Box>
+          )}
+          {self && !self.post_quantum && (
+            <Flex
+              mb="6"
+              p="4"
+              gap="3"
+              align={{ base: "start", sm: "center" }}
+              justify="space-between"
+              flexWrap="wrap"
+              borderWidth="1px"
+              borderColor="border.default"
+              borderRadius="xl"
+            >
+              <Box minW="0" flex="1">
+                <Heading as="h3" size="md" fontWeight="bold" mb="1">
+                  {t("members.upgradeTitle")}
+                </Heading>
+                <Text fontSize="sm" color="fg.muted">
+                  {t("members.upgradeHint")}
+                </Text>
+              </Box>
+              <Button ref={upgradeTriggerRef} size="sm" onClick={() => setUpgrading(true)}>
+                {t("members.upgrade")}
+              </Button>
+            </Flex>
+          )}
           {requests.length > 0 && (
             <Box mb="6">
               <Heading as="h3" size="md" fontWeight="bold" mb="1">
@@ -1626,6 +1837,14 @@ export function MembersPanel({
                     removeTriggerRef.current = trigger;
                     setRemoving(member);
                   }}
+                  onToggleAdmin={
+                    viewerIsAdmin && !member.self
+                      ? (trigger) => {
+                          adminTriggerRef.current = trigger;
+                          setChangingAdmin(member);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </Box>
@@ -1669,6 +1888,42 @@ export function MembersPanel({
             () => setRemoving(null),
           );
         }}
+      />
+      <ConfirmDialog
+        open={changingAdmin !== null}
+        title={t(changingAdmin?.admin ? "members.demoteTitle" : "members.promoteTitle", {
+          fingerprint: changingAdmin?.fingerprint ?? "",
+        })}
+        description={t(changingAdmin?.admin ? "members.demoteHint" : "members.promoteHint")}
+        cancelLabel={t("members.cancel")}
+        confirmLabel={t(changingAdmin?.admin ? "members.demote" : "members.promote")}
+        loading={busy}
+        triggerRef={adminTriggerRef}
+        onClose={() => setChangingAdmin(null)}
+        onConfirm={() => {
+          const target = changingAdmin;
+          if (!target) return;
+          return run(
+            () => onSetAdmin(target.device_id, !target.admin),
+            () => setChangingAdmin(null),
+          );
+        }}
+      />
+      <ConfirmDialog
+        open={upgrading}
+        title={t("members.upgradeTitle")}
+        description={t(viewerIsAdmin ? "members.upgradeConfirmAdmin" : "members.upgradeConfirm")}
+        cancelLabel={t("members.cancel")}
+        confirmLabel={t("members.upgrade")}
+        loading={busy}
+        triggerRef={upgradeTriggerRef}
+        onClose={() => setUpgrading(false)}
+        onConfirm={() =>
+          run(
+            async () => setUpgradeResult(await onUpgrade()),
+            () => setUpgrading(false),
+          )
+        }
       />
     </>
   );
@@ -1733,6 +1988,7 @@ export function PendingRow({
           {request.fingerprint}
         </Text>
         <Text fontSize="2xs" color="fg.muted">
+          {request.key_update ? `${t("members.keyUpdate")} · ` : ""}
           {request.algorithm.toUpperCase()}
           {time ? ` · ${t("members.requestedAt", { time })}` : ""}
         </Text>
@@ -1748,10 +2004,13 @@ export function MemberRow({
   member,
   last = false,
   onRemove,
+  onToggleAdmin,
 }: {
   member: Member;
   last?: boolean;
   onRemove?: (trigger: HTMLElement) => void;
+  /** Set when this device may promote or demote the member. */
+  onToggleAdmin?: (trigger: HTMLElement) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -1763,6 +2022,7 @@ export function MemberRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {member.algorithm.toUpperCase()}
+          {member.post_quantum ? ` · ${t("members.postQuantum")}` : ""}
           {member.self ? ` · ${t("members.you")}` : ""}
         </Text>
       </Box>
@@ -1779,6 +2039,21 @@ export function MemberRow({
         >
           {member.admin ? t("members.admin") : t("members.member")}
         </Box>
+        {onToggleAdmin && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`${t(member.admin ? "members.demote" : "members.promote")}: ${member.fingerprint}`}
+            title={t(member.admin ? "members.demote" : "members.promote")}
+            onClick={(event) => onToggleAdmin(event.currentTarget)}
+          >
+            {member.admin ? (
+              <ShieldOff size={14} aria-hidden="true" />
+            ) : (
+              <ShieldCheck size={14} aria-hidden="true" />
+            )}
+          </Button>
+        )}
         {onRemove && !member.self && (
           <Button
             size="sm"
@@ -2034,7 +2309,8 @@ function ConfigPanel({ environments }: { environments: Environment[] }) {
                     onChange={(event) =>
                       updateGui({
                         ...gui,
-                        env: { ...gui.env, [name]: { output: event.target.value } },
+                        // Keep the incarnation: it names where the secrets are stored.
+                        env: { ...gui.env, [name]: { ...config, output: event.target.value } },
                       })
                     }
                   />

@@ -21,6 +21,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	gh "github.com/enbu-net/enbu/pkg/provider/github"
+	"github.com/enbu-net/enbu/pkg/schema/secretmap"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -143,6 +144,9 @@ type OAuthStatus struct {
 type Environment struct {
 	Name    string `json:"name"`
 	Current bool   `json:"current"`
+	// Incarnation names the environment's stored revisions. After deleting
+	// without purging, an admin purges them later by this value.
+	Incarnation string `json:"incarnation,omitempty"`
 }
 
 type SecretsResponse struct {
@@ -194,6 +198,9 @@ type Member struct {
 	Algorithm   string `json:"algorithm"`
 	Admin       bool   `json:"admin"`
 	Self        bool   `json:"self"`
+	// PostQuantum is set when the member's encryption key is a hybrid
+	// ML-KEM key. Secrets are post-quantum only while every member's is.
+	PostQuantum bool `json:"post_quantum"`
 }
 
 // JoinRequest is a device waiting for an admin to approve it.
@@ -202,6 +209,25 @@ type JoinRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
+	// KeyUpdate is set when a member asks to replace its encryption key
+	// rather than a new device asking to join.
+	KeyUpdate bool `json:"key_update"`
+}
+
+// KeyUpdate is the result of moving this device to a post-quantum key.
+type KeyUpdate struct {
+	Algorithm   string `json:"algorithm"`
+	Fingerprint string `json:"fingerprint"`
+	// Pending is set while an admin still has to approve the new key.
+	Pending bool `json:"pending"`
+}
+
+// ImportResult names the keys one import added, updated, or left alone.
+type ImportResult struct {
+	Environment string   `json:"environment"`
+	Added       []string `json:"added"`
+	Updated     []string `json:"updated"`
+	Unchanged   []string `json:"unchanged"`
 }
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
@@ -481,7 +507,7 @@ func (s *Service) ListMembers() ([]Member, error) {
 		}
 		out := make([]Member, len(infos))
 		for i, m := range infos {
-			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self}
+			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self, PostQuantum: m.PostQuantum}
 		}
 		return out, nil
 	})
@@ -495,7 +521,7 @@ func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
 		}
 		out := make([]JoinRequest, len(infos))
 		for i, r := range infos {
-			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt}
+			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt, KeyUpdate: r.KeyUpdate}
 		}
 		return out, nil
 	})
@@ -509,6 +535,22 @@ func (s *Service) ApproveMember(deviceID string) error {
 
 func (s *Service) RemoveMember(deviceID string) error {
 	return s.withRepo(func() error { return s.app.RemoveMember(s.context(), deviceID) })
+}
+
+func (s *Service) SetAdmin(deviceID string, admin bool) error {
+	return s.withRepo(func() error { return s.app.SetAdmin(s.context(), deviceID, admin) })
+}
+
+// UpgradeIdentity asks to move this device to a post-quantum encryption key.
+// An admin approves it like a join request, after comparing the fingerprint.
+func (s *Service) UpgradeIdentity() (KeyUpdate, error) {
+	return withRepoResult(s, func() (KeyUpdate, error) {
+		res, err := s.app.UpgradeIdentity(s.context())
+		if err != nil {
+			return KeyUpdate{}, err
+		}
+		return KeyUpdate{Algorithm: res.Algorithm, Fingerprint: res.Fingerprint, Pending: res.Pending}, nil
+	})
 }
 
 func (s *Service) ReadConfig() (string, error) {
@@ -601,7 +643,7 @@ func (s *Service) ListEnvironments() ([]Environment, error) {
 		}
 		items := make([]Environment, len(envs))
 		for i, env := range envs {
-			items[i] = Environment{Name: env.Name, Current: env.IsCurrent}
+			items[i] = Environment{Name: env.Name, Current: env.IsCurrent, Incarnation: env.Incarnation}
 		}
 		return items, nil
 	})
@@ -621,6 +663,18 @@ func (s *Service) RenameEnvironment(name, newName string) error {
 
 func (s *Service) DeleteEnvironment(name string) error {
 	return s.withRepo(func() error { return s.app.DeleteEnvironment(name) })
+}
+
+// DeleteEnvironmentPurging deletes an environment together with its stored
+// revisions (admin only) and returns how many revisions were deleted.
+func (s *Service) DeleteEnvironmentPurging(name string) (int, error) {
+	return withRepoResult(s, func() (int, error) { return s.app.DeleteEnvironmentPurging(s.context(), name) })
+}
+
+// PurgeIncarnation deletes the stored revisions of an environment that was
+// deleted without purging (admin only).
+func (s *Service) PurgeIncarnation(incarnation string) (int, error) {
+	return withRepoResult(s, func() (int, error) { return s.app.PurgeIncarnation(s.context(), incarnation) })
 }
 
 func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
@@ -656,6 +710,23 @@ func (s *Service) EditSecret(env, key, value string) error {
 
 func (s *Service) DeleteSecret(env, key string) error {
 	return s.withRepo(func() error { return s.app.DeleteSecret(s.context(), env, key) })
+}
+
+// ImportSecrets adds the variables of a dotenv file to env in one signed
+// state. A key that exists with another value stops the import unless
+// overwrite is set.
+func (s *Service) ImportSecrets(env, dotenv string, overwrite bool) (ImportResult, error) {
+	return withRepoResult(s, func() (ImportResult, error) {
+		secrets, err := secretmap.ImportDotenv([]byte(dotenv))
+		if err != nil {
+			return ImportResult{}, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
+		}
+		res, err := s.app.ImportSecrets(s.context(), env, secrets, overwrite)
+		if err != nil {
+			return ImportResult{}, err
+		}
+		return ImportResult{Environment: res.Environment, Added: res.Added, Updated: res.Updated, Unchanged: res.Unchanged}, nil
+	})
 }
 
 func (s *Service) PullSecrets(env string) error {
