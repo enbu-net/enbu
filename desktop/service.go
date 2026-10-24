@@ -150,6 +150,15 @@ type SecretsResponse struct {
 	Secrets     []SecretItem `json:"secrets"`
 }
 
+// PullResult says what a pull wrote, so the person sees the local variables it
+// kept and the deleted secrets it removed.
+type PullResult struct {
+	Output  string   `json:"output"`
+	Count   int      `json:"count"`
+	Kept    []string `json:"kept"`
+	Removed []string `json:"removed"`
+}
+
 type SecretItem struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -658,8 +667,25 @@ func (s *Service) DeleteSecret(env, key string) error {
 	return s.withRepo(func() error { return s.app.DeleteSecret(s.context(), env, key) })
 }
 
-func (s *Service) PullSecrets(env string) error {
-	return s.withRepo(func() error { return s.app.PullSecretsToFile(s.context(), env) })
+// PullSecrets writes the environment's secrets to its output file. With replace
+// the file's current content is dropped, including a file enbu cannot read
+// (output_unreadable), which a pull otherwise refuses to overwrite.
+func (s *Service) PullSecrets(env string, replace bool) (PullResult, error) {
+	return withRepoResult(s, func() (PullResult, error) {
+		written, err := s.app.PullSecretsToFileWith(s.context(), env, replace)
+		if err != nil {
+			return PullResult{}, err
+		}
+		return PullResult{Output: written.Output, Count: written.Count,
+			Kept: nonNil(written.Kept), Removed: nonNil(written.Removed)}, nil
+	})
+}
+
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func (s *Service) SyncSecrets(env string) error {

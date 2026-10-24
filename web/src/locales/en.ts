@@ -43,6 +43,12 @@ export const en = {
     pull: "Pull",
     sync: "Sync",
     pullDescription: "Pull secrets from storage into the output file.",
+    pullKept: "Kept local variables enbu does not store: {keys}",
+    pullRemoved: "Removed variables the environment no longer has: {keys}",
+    pullReplaceTitle: "Overwrite {file}?",
+    pullReplaceDescription:
+      "enbu cannot read this file as dotenv, so it cannot tell your local variables apart. Overwriting replaces its whole content with the environment's secrets.",
+    pullReplace: "Overwrite",
     syncDescription: "Sync the member list.",
     newEnvironment: "New environment",
     createEnvironment: "Create",

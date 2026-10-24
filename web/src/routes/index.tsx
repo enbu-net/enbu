@@ -30,7 +30,14 @@ import {
   type OAuthStatus,
   type RepositoryOwner,
 } from "../lib/backend";
-import type { ConflictSet, Environment, JoinRequest, Member, SecretsResponse } from "../lib/api";
+import type {
+  ConflictSet,
+  Environment,
+  JoinRequest,
+  Member,
+  PullResult,
+  SecretsResponse,
+} from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useAuth } from "./__root";
 import { TomlCodeEditor } from "../components/toml-code-editor";
@@ -215,6 +222,8 @@ export function HomePage() {
   const [privateRepository, setPrivateRepository] = useState(true);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [pullLoading, setPullLoading] = useState(false);
+  const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
+  const [replaceFile, setReplaceFile] = useState<string | null>(null);
   const [addLoading, setAddLoading] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -338,6 +347,30 @@ export function HomePage() {
       if (request === membersRequestRef.current) setMembersLoading(false);
     }
   }, [membersRepoPath]);
+
+  // A pull refuses to overwrite an output file it cannot read; the person
+  // confirms, and the pull runs again replacing the file.
+  async function pull(replace: boolean) {
+    setPullLoading(true);
+    try {
+      await runWithTransferAnimation("pull", async () => {
+        const result = await backend.pullSecrets(currentEnvironment, replace);
+        setPullNotice(result.kept.length > 0 || result.removed.length > 0 ? result : null);
+        await refreshWorkspace(currentEnvironment);
+      });
+      setReplaceFile(null);
+    } catch (err) {
+      const display = toDisplayError(err);
+      if (display.code === "output_unreadable" && !replace) {
+        setReplaceFile(display.params.file ?? "");
+      } else {
+        setReplaceFile(null);
+        setActionError(display);
+      }
+    } finally {
+      setPullLoading(false);
+    }
+  }
 
   async function refreshWorkspace(env = currentEnvironment) {
     setWorkspaceLoading(true);
@@ -796,25 +829,50 @@ export function HomePage() {
                   variant="outline"
                   loading={pullLoading}
                   title={t("dashboard.pullDescription")}
-                  onClick={async () => {
-                    setPullLoading(true);
-                    try {
-                      await runWithTransferAnimation("pull", async () => {
-                        await backend.pullSecrets(currentEnvironment);
-                        await refreshWorkspace(currentEnvironment);
-                      });
-                    } catch (err) {
-                      setActionError(toDisplayError(err));
-                    } finally {
-                      setPullLoading(false);
-                    }
-                  }}
+                  onClick={() => void pull(false)}
                 >
                   <Download size={14} />
                   {t("dashboard.pull")}
                 </Button>
               </HStack>
             </SectionHeader>
+            {pullNotice && (
+              <Alert.Root role="status" borderRadius="md" borderWidth="1px" py={3} px={4} mb="4">
+                <Alert.Content>
+                  {pullNotice.removed.length > 0 && (
+                    <Text fontSize="sm">
+                      {t("dashboard.pullRemoved", { keys: pullNotice.removed.join(", ") })}
+                    </Text>
+                  )}
+                  {pullNotice.kept.length > 0 && (
+                    <Text fontSize="sm">
+                      {t("dashboard.pullKept", { keys: pullNotice.kept.join(", ") })}
+                    </Text>
+                  )}
+                </Alert.Content>
+                <Button
+                  variant="ghost"
+                  w="24px"
+                  h="24px"
+                  p="0"
+                  flexShrink="0"
+                  aria-label={t("common.close")}
+                  onClick={() => setPullNotice(null)}
+                >
+                  <X size={14} />
+                </Button>
+              </Alert.Root>
+            )}
+            <ConfirmDeleteDialog
+              open={replaceFile !== null}
+              title={t("dashboard.pullReplaceTitle", { file: replaceFile ?? "" })}
+              description={t("dashboard.pullReplaceDescription")}
+              cancelLabel={t("config.cancel")}
+              confirmLabel={t("dashboard.pullReplace")}
+              loading={pullLoading}
+              onClose={() => setReplaceFile(null)}
+              onConfirm={() => pull(true)}
+            />
             {workspaceLoading ? (
               <HStack role="status" py="8" justify="center">
                 <Spinner size="sm" aria-hidden="true" />

@@ -8,6 +8,7 @@ import {
   type InitResult,
   type JoinRequest,
   type Member,
+  type PullResult,
   type SecretsResponse,
 } from "./api";
 import {
@@ -42,6 +43,12 @@ export interface RepositoryOwner {
   organization: boolean;
 }
 
+// Go encodes an empty list as null.
+type DesktopPullResult = Omit<PullResult, "kept" | "removed"> & {
+  kept: string[] | null;
+  removed: string[] | null;
+};
+
 type DesktopService = {
   GetAuthStatus: () => Promise<DesktopAuthStatus>;
   StartOAuthLogin: () => Promise<OAuthStart>;
@@ -61,7 +68,7 @@ type DesktopService = {
   AddSecret: (env: string, key: string, value: string) => Promise<void>;
   EditSecret: (env: string, key: string, value: string) => Promise<void>;
   DeleteSecret: (env: string, key: string) => Promise<void>;
-  PullSecrets: (env: string) => Promise<void>;
+  PullSecrets: (env: string, replace: boolean) => Promise<DesktopPullResult>;
   SyncSecrets: (env: string) => Promise<void>;
   ListConflicts: (env: string) => Promise<ConflictSet>;
   ResolveConflicts: (env: string, heads: string[], choices: ConflictChoice[]) => Promise<void>;
@@ -297,13 +304,15 @@ const realBackend = {
     }
     await svc.DeleteSecret(env, key);
   },
-  async pullSecrets(env = ""): Promise<void> {
+  /** With replace the output file's content is dropped, even when enbu cannot read it. */
+  async pullSecrets(env = "", replace = false): Promise<PullResult> {
     const svc = service();
     if (!svc) {
-      await api.secrets.pull(env || undefined);
-      return;
+      await api.secrets.pull(env || undefined, replace || undefined);
+      return { output: "", count: 0, kept: [], removed: [] };
     }
-    await svc.PullSecrets(env);
+    const result = await svc.PullSecrets(env, replace);
+    return { ...result, kept: result.kept ?? [], removed: result.removed ?? [] };
   },
   async syncSecrets(env = ""): Promise<void> {
     const svc = service();

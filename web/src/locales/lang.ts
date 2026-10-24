@@ -41,6 +41,11 @@ export interface Messages {
     pull: string;
     sync: string;
     pullDescription: string;
+    pullKept: string;
+    pullRemoved: string;
+    pullReplaceTitle: string;
+    pullReplaceDescription: string;
+    pullReplace: string;
     syncDescription: string;
     newEnvironment: string;
     createEnvironment: string;

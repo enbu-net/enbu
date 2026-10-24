@@ -113,8 +113,9 @@ func (s *DesktopService) DeleteSecret(env, key string) BindingResponse {
 	return bindingError(s.service.DeleteSecret(env, key))
 }
 
-func (s *DesktopService) PullSecrets(env string) BindingResponse {
-	return bindingError(s.service.PullSecrets(env))
+func (s *DesktopService) PullSecrets(env string, replace bool) BindingResponse {
+	value, err := s.service.PullSecrets(env, replace)
+	return bindingResult(value, err)
 }
 
 func (s *DesktopService) SyncSecrets(env string) BindingResponse {

@@ -72,7 +72,8 @@ export const api = {
       request<{ key: string }>("PUT", `/api/secrets/${key}`, { value, env }),
     delete: (key: string, env?: string) =>
       request<{ deleted: string }>("DELETE", `/api/secrets/${key}${env ? `?env=${env}` : ""}`),
-    pull: (env?: string) => request<{ status: string }>("POST", "/api/secrets/pull", { env }),
+    pull: (env?: string, replace?: boolean) =>
+      request<{ status: string }>("POST", "/api/secrets/pull", { env, replace }),
     sync: (env?: string) => request<{ status: string }>("POST", "/api/secrets/sync", { env }),
   },
   history: {
@@ -145,6 +146,14 @@ export interface InitResult {
 export interface Environment {
   name: string;
   current: boolean;
+}
+
+/** What a pull wrote: local variables it kept and deleted secrets it removed. */
+export interface PullResult {
+  output: string;
+  count: number;
+  kept: string[];
+  removed: string[];
 }
 
 export interface SecretsResponse {
