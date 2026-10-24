@@ -264,8 +264,9 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		}
 		// Look once more just before publishing: heads that appeared during the
 		// edit are merged now, in the same revision.
+		var latest *wsp.StateView
 		if cur != nil {
-			latest, err := s.loadResource(ctx, resource, published...)
+			latest, err = s.loadResource(ctx, resource, published...)
 			if err != nil {
 				return err
 			}
@@ -280,9 +281,9 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		}
 		a.emitStepProgress(op, "encrypt", "start")
 		a.emitStepProgress(op, "push", "start")
-		rev, err := s.writeState(ctx, resource, secrets, parents)
-		if rev != "" {
-			published = append(published, rev)
+		st, err := s.writeState(ctx, resource, secrets, parents)
+		if st != nil {
+			published = append(published, st.Digest)
 		}
 		if errors.Is(err, errControlMoved) {
 			// Members changed while we were working. Start over on the new member
@@ -308,7 +309,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		if err != nil {
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
-		if err := s.acceptPublished(ctx, resource, rev); err != nil {
+		if err := s.acceptPublished(ctx, resource, latest, st); err != nil {
 			return err
 		}
 		a.emitStepProgress(op, "push", "done")

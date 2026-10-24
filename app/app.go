@@ -7,6 +7,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"net/url"
 	"oras.land/oras-go/v2/registry/remote/auth"
+	"path/filepath"
 	"strings"
 	"uuid"
 
@@ -30,10 +31,21 @@ type App struct {
 	// CheckpointDir holds the local rollback checkpoints. Empty means the
 	// per-user data directory.
 	CheckpointDir string
+	// CacheDir holds what this device keeps to avoid fetching again: heads of
+	// stored revisions and the history index. Empty means the per-user data
+	// directory. Nothing in it is trusted or secret.
+	CacheDir string
 	// AcceptNewGenesis lets InitializeRepository replace the genesis this
 	// device pinned for the workspace with the one enbu.toml names. Only a
 	// person who confirmed the workspace was re-founded sets it.
 	AcceptNewGenesis bool
+}
+
+func (a *App) cacheDir() string {
+	if a.CacheDir != "" {
+		return a.CacheDir
+	}
+	return filepath.Join(config.DataDir(), "cache")
 }
 
 func (a *App) SetRepositoryDir(dir string) {
@@ -152,7 +164,11 @@ func (a *App) workspaceStorage(ctx context.Context) (storage.Store, error) {
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 		return nil, apperr.New(apperr.CodeNotInitialized, "workspace ID missing or invalid", nil)
 	}
-	return a.openStorage(ctx, cfg)
+	store, err := a.openStorage(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return storage.WithHeadCache(store, filepath.Join(a.cacheDir(), "heads")), nil
 }
 
 func storageError(err error) error {

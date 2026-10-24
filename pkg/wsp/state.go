@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -181,6 +182,10 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 	if err != nil {
 		return nil, err
 	}
+	if len(revs)+len(also) > maxRevisions {
+		return nil, invalid("resource has too many revisions")
+	}
+	fetched := prefetchHeads(ctx, store, scope, revs)
 	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
 	tried := map[digest.Digest]bool{}
 	// also names revisions the caller knows exist, such as one it just published
@@ -196,7 +201,11 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		if len(tried) > maxRevisions {
 			return nil, invalid("resource has too many revisions")
 		}
-		head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
+		f, ok := fetched[rev]
+		if !ok {
+			f.head, f.err = store.FetchHead(ctx, storage.KindState, scope, rev)
+		}
+		head, err := f.head, f.err
 		switch {
 		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
 			sv.Skipped++
@@ -220,6 +229,57 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		sv.Heads = append(sv.Heads, sv.States[d])
 	}
 	return sv, nil
+}
+
+// With returns a copy of the view that also holds st, such as a revision the
+// caller just published on top of it. sv may be nil for a resource that had no
+// revision yet.
+func (sv *StateView) With(st *VerifiedState) *StateView {
+	out := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
+	if sv != nil {
+		for d, v := range sv.States {
+			out.States[d] = v
+			out.Graph.Add(d, v.Parents)
+		}
+		out.Skipped = sv.Skipped
+	}
+	out.States[st.Digest] = st
+	out.Graph.Add(st.Digest, st.Parents)
+	for _, d := range out.Graph.Heads() {
+		out.Heads = append(out.Heads, out.States[d])
+	}
+	return out
+}
+
+// headFetches bounds how many heads LoadStates fetches at once.
+const headFetches = 8
+
+type fetchedHead struct {
+	head []byte
+	err  error
+}
+
+// prefetchHeads fetches the heads of the listed revisions concurrently, so a
+// device that has none of them cached waits for a few round trips rather than
+// one per revision. A failure is kept per revision and handled by the caller.
+func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) map[digest.Digest]fetchedHead {
+	out := make(map[digest.Digest]fetchedHead, len(revs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, headFetches)
+	for _, rev := range revs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
+			mu.Lock()
+			out[rev] = fetchedHead{head, err}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 // MaxCiphertextBytes bounds one revision's ciphertext.
