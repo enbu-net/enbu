@@ -208,27 +208,33 @@ func (c *Checkpoints) AcceptControl(view *ControlView) error {
 }
 
 // CheckStates rejects a view of resource that lacks a head this client
-// accepted. It does not record anything.
-func (c *Checkpoints) CheckStates(resource string, g *Graph) error {
+// accepted, unless excused reports that a compaction removed it. excused may
+// be nil. It does not record anything.
+func (c *Checkpoints) CheckStates(resource string, g *Graph, excused func(digest.Digest) bool) error {
 	accepted, err := c.State(resource)
 	if err != nil {
 		return err
 	}
-	if d, gone := missingFrom(accepted, g.Has); gone {
+	if d, gone := missingFrom(accepted, shownOrExcused(g, excused)); gone {
 		return fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
 	}
 	return nil
 }
 
+func shownOrExcused(g *Graph, excused func(digest.Digest) bool) func(digest.Digest) bool {
+	return func(d digest.Digest) bool { return g.Has(d) || excused != nil && excused(d) }
+}
+
 // AcceptStates records heads as the accepted heads of resource. Only revisions
 // the caller trusts belong here: an accepted head is later allowed even if its
-// author has been removed. The check runs again under the lock, so a view that
+// author has been removed. Accepted heads a compaction removed (excused) are
+// dropped. The check runs again under the lock, so a view that
 // became stale while the caller was working is rejected rather than silently dropped.
-func (c *Checkpoints) AcceptStates(resource string, g *Graph, heads []digest.Digest) error {
+func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest) error {
 	heads = append([]digest.Digest(nil), heads...)
 	sortDigests(heads)
 	return c.update(func(f *checkpointFile) (bool, error) {
-		if d, gone := missingFrom(f.States[resource], g.Has); gone {
+		if d, gone := missingFrom(f.States[resource], shownOrExcused(g, excused)); gone {
 			return false, fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
 		}
 		if sameDigests(f.States[resource], heads) {

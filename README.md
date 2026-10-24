@@ -212,10 +212,13 @@ enbu resolve --seen ID API_KEY=sk-new      # use a value (or --pick KEY=N, --del
 
 The desktop app shows the same choice on its Secrets screen.
 
+Revisions are never deleted on their own; an admin removes old ones (on storage that can delete):
+
 ```bash
-enbu history list           # revisions that changed the secrets, oldest first
-enbu history diff 3 5       # keys added, removed or changed between two revisions
-enbu history restore 3      # publish revision 3's content as a new revision
+enbu history list               # revisions that changed the secrets, oldest first
+enbu history diff 3 5           # keys added, removed or changed between two revisions
+enbu history restore 3          # publish revision 3's content as a new revision
+enbu history compact --keep 50  # admin: delete revisions older than the latest 50
 ```
 
 ## Identity storage

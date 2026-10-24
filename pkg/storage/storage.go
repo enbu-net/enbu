@@ -43,7 +43,13 @@ const (
 	KindState   Kind = "state"
 	KindControl Kind = "control"
 	KindRequest Kind = "request"
+	// KindCompaction holds an admin's record of the revisions of one resource
+	// that were removed. It is scoped like the resource's states.
+	KindCompaction Kind = "compaction"
 )
+
+// scoped reports whether objects of the kind belong to a state scope.
+func (k Kind) scoped() bool { return k == KindState || k == KindCompaction }
 
 func (k Kind) letter() (string, bool) {
 	switch k {
@@ -53,6 +59,8 @@ func (k Kind) letter() (string, bool) {
 		return "c", true
 	case KindRequest:
 		return "r", true
+	case KindCompaction:
+		return "k", true
 	}
 	return "", false
 }
@@ -66,7 +74,7 @@ func (k Kind) letter() (string, bool) {
 // blob is fetched only for a revision whose content is actually needed.
 type Object struct {
 	Kind  Kind
-	Scope string // StateScope for State, empty otherwise
+	Scope string // StateScope for State and Compaction, empty otherwise
 	Rev   digest.Digest
 	Head  []byte
 	Blobs [][]byte
@@ -128,7 +136,7 @@ func StateScope(workspace, resource string) string {
 }
 
 func validScope(kind Kind, scope string) error {
-	if kind != KindState {
+	if !kind.scoped() {
 		if scope != "" {
 			return fmt.Errorf("%s objects have no scope", kind)
 		}
@@ -181,13 +189,14 @@ func ValidateObject(o Object) error {
 	return nil
 }
 
-// Name is the flat tag or file name of a revision: s-<scope>-<rev>, c-<rev>, r-<rev>.
+// Name is the flat tag or file name of a revision: s-<scope>-<rev>,
+// k-<scope>-<rev>, c-<rev>, r-<rev>.
 func Name(kind Kind, scope string, rev digest.Digest) (string, error) {
 	if err := validateRef(kind, scope, rev); err != nil {
 		return "", err
 	}
 	l, _ := kind.letter()
-	if kind == KindState {
+	if kind.scoped() {
 		return l + "-" + scope + "-" + rev.Encoded(), nil
 	}
 	return l + "-" + rev.Encoded(), nil
@@ -202,7 +211,7 @@ func namePrefix(kind Kind, scope string) (string, error) {
 		return "", err
 	}
 	l, _ := kind.letter()
-	if kind == KindState {
+	if kind.scoped() {
 		return l + "-" + scope + "-", nil
 	}
 	return l + "-", nil
