@@ -113,13 +113,15 @@ enbu pull --env dev  # Writes to the configured output for dev
 ```
 
 Each pull writes the secrets, then a marker line. Variables below the marker
-(a local `DEBUG=1`, say), or anywhere in a file enbu has not written yet, that
-enbu does not store are kept there and listed on stderr, so a pull never throws
-them away silently. Variables above the marker belong to enbu: one deleted from
-the environment leaves the file on the next pull and is listed as removed. Kept
-variables are rewritten in sorted order without their comments.
-`enbu pull --replace` overwrites the file completely. A file that is not valid
-dotenv is not overwritten without `--replace`.
+(a local `DEBUG=1`, say) that enbu does not store are kept there and listed on
+stderr, so a pull never throws them away silently. Variables above the marker
+belong to enbu: one deleted from the environment leaves the file on the next pull
+and is listed as removed. In a file without the marker (written by an older enbu,
+or by hand), a variable the environment's history once held is treated as a
+deleted secret and removed; the others are kept. Kept variables are rewritten in
+sorted order without their comments. `enbu pull --replace` overwrites the file
+completely. A file that is not valid dotenv is not overwritten without `--replace`;
+the desktop app asks before overwriting it.
 
 To use the secrets without writing them to disk at all, run the command through enbu:
 

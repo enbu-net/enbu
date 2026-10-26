@@ -43,6 +43,12 @@ export const ja = {
     pull: "Pull",
     sync: "Sync",
     pullDescription: "Storage からシークレットを取得し、出力ファイルに書き出します。",
+    pullKept: "enbu が保存していないローカル変数を残しました: {keys}",
+    pullRemoved: "環境からなくなった変数を削除しました: {keys}",
+    pullReplaceTitle: "{file} を上書きしますか？",
+    pullReplaceDescription:
+      "このファイルは dotenv として読めないため、ローカル変数を見分けられません。上書きすると、中身全体が環境のシークレットに置き換わります。",
+    pullReplace: "上書き",
     syncDescription: "メンバー一覧を同期します。",
     newEnvironment: "新しい環境",
     createEnvironment: "作成",
