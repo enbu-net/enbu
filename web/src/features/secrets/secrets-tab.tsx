@@ -121,7 +121,9 @@ export function SecretsTab({
         onClose={() => setReplaceFile(null)}
         onConfirm={() => pull(true)}
       />
-      {workspace.loading ? (
+      {/* Only the first load shows the spinner: a refresh keeps the rows, and
+          with them the focused input, mounted. */}
+      {workspace.loading && !secrets ? (
         <HStack role="status" py="8" justify="center">
           <Spinner size="sm" aria-hidden="true" />
           <Text color="fg.muted">{t("common.loading")}</Text>

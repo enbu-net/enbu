@@ -77,7 +77,7 @@ describe("SignIn", () => {
     await act(async () => vi.advanceTimersByTimeAsync(1000));
 
     expect(mocked.oauthStatus).toHaveBeenCalledWith("session");
-    expect(refresh).toHaveBeenCalledWith({ force: true });
+    expect(refresh).toHaveBeenCalledWith({ force: true, invalidate: true });
     expect(reloadRepo).toHaveBeenCalledTimes(1);
     expect(queryButton("Connect with GitHub")).toBeTruthy();
   });

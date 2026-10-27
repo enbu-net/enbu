@@ -2,6 +2,12 @@ import type { AuthStatus } from "./types";
 
 export type AuthRefreshOptions = {
   force?: boolean;
+  /**
+   * What the status depends on, such as the selected repository, has changed,
+   * so a request already running may answer for the old state: fetch again
+   * once it finishes. Such calls made meanwhile share that one fetch.
+   */
+  invalidate?: boolean;
 };
 
 type AuthRefresherOptions = {
@@ -19,8 +25,16 @@ export function createAuthRefresher({
 }: AuthRefresherOptions) {
   let lastStartedAt = 0;
   let inFlight: Promise<void> | null = null;
+  let followUp: Promise<void> | null = null;
 
-  async function refresh(options: AuthRefreshOptions = {}) {
+  async function refresh(options: AuthRefreshOptions = {}): Promise<void> {
+    if (inFlight && options.invalidate) {
+      followUp ??= inFlight.then(() => {
+        followUp = null;
+        return refresh({ force: true });
+      });
+      return followUp;
+    }
     if (inFlight) {
       return inFlight;
     }

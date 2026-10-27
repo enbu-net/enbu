@@ -70,7 +70,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setRepo = useCallback(
     (next: GUIRepoStatus) => {
       setRepoState(next);
-      void refresh({ force: true });
+      void refresh({ force: true, invalidate: true });
     },
     [refresh],
   );

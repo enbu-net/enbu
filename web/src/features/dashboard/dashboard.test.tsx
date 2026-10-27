@@ -157,4 +157,19 @@ describe("Dashboard", () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
   });
+
+  it("keeps the secret rows mounted while a refresh runs", async () => {
+    await renderDashboard();
+    const row = container.querySelector('input[aria-label="Value: KEY"]');
+    expect(row).not.toBeNull();
+
+    mocked.pullSecrets.mockResolvedValueOnce({ output: ".env", count: 1, kept: [], removed: [] });
+    mocked.listEnvironments.mockClear();
+    mocked.listEnvironments.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => queryButton("Pull")?.click());
+    await settle();
+    expect(mocked.listEnvironments).toHaveBeenCalledTimes(1);
+
+    expect(container.querySelector('input[aria-label="Value: KEY"]')).toBe(row);
+  });
 });

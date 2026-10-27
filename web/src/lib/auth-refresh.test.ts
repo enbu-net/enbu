@@ -49,4 +49,28 @@ describe("createAuthRefresher", () => {
 
     expect(fetchStatus).toHaveBeenCalledTimes(2);
   });
+
+  it("fetches again after a running request when the state it depends on changed", async () => {
+    const stale = deferred<{ authenticated: boolean; workspace_configured: boolean }>();
+    const fetchStatus = vi
+      .fn()
+      .mockImplementationOnce(() => stale.promise)
+      .mockResolvedValueOnce({ authenticated: false, workspace_configured: true });
+    const setStatus = vi.fn();
+    const refresher = createAuthRefresher({ fetchStatus, setStatus, now: () => 1000 });
+
+    const running = refresher.refresh({ force: true });
+    const first = refresher.refresh({ force: true, invalidate: true });
+    const second = refresher.refresh({ force: true, invalidate: true });
+    expect(fetchStatus).toHaveBeenCalledTimes(1);
+
+    stale.resolve({ authenticated: false, workspace_configured: false });
+    await Promise.all([running, first, second]);
+
+    expect(fetchStatus).toHaveBeenCalledTimes(2);
+    expect(setStatus).toHaveBeenLastCalledWith({
+      authenticated: false,
+      workspace_configured: true,
+    });
+  });
 });

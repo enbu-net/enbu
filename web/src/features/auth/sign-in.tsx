@@ -51,7 +51,7 @@ export function SignIn() {
         window.clearInterval(poll);
         setStart(null);
         setStatus(null);
-        await Promise.all([refresh({ force: true }), reloadRepo()]);
+        await Promise.all([refresh({ force: true, invalidate: true }), reloadRepo()]);
       } catch (err) {
         setStatus({ state: "error", error: toDisplayError(err) });
       }
