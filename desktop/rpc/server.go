@@ -206,6 +206,14 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 }
 
 func (s *Server) handle(msg message) {
+	// A panic in one method must not end the process and every other call with
+	// it. Its value and stack can hold arguments, which can be secret values,
+	// so neither is logged.
+	defer func() {
+		if recover() != nil {
+			s.reply(msg.ID, nil, applicationError(msg.Method, errors.New("method panicked")))
+		}
+	}()
 	if msg.JSONRPC != "2.0" {
 		s.reply(msg.ID, nil, &Error{Code: codeInvalidRequest, Message: "jsonrpc must be 2.0"})
 		return

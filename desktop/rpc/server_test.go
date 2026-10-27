@@ -9,7 +9,9 @@ import (
 	"go/token"
 	"io"
 	"path/filepath"
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +31,12 @@ type client struct {
 
 func startServer(t *testing.T) *client {
 	t.Helper()
+	return startServerWith(t, nil)
+}
+
+// startServerWith serves a server that patch can change before it starts.
+func startServerWith(t *testing.T, patch func(*Server)) *client {
+	t.Helper()
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
 
@@ -37,8 +45,12 @@ func startServer(t *testing.T) *client {
 	reqR, reqW := io.Pipe()
 	respR, respW := io.Pipe()
 	done := make(chan error, 1)
+	server := NewServer(core)
+	if patch != nil {
+		patch(server)
+	}
 	go func() {
-		done <- NewServer(core).Serve(context.Background(), reqR, respW)
+		done <- server.Serve(context.Background(), reqR, respW)
 		_ = respW.Close()
 	}()
 	c := &client{t: t, in: reqW, out: bufio.NewScanner(respR), done: done, core: core}
@@ -264,4 +276,25 @@ func TestPendingCallsFailWhenClientLeaves(t *testing.T) {
 	}
 	// Closing stdin must not leave Serve waiting for the dialog; the cleanup
 	// fails the test if Serve does not return.
+}
+
+func TestPanicRepliesInternalAndKeepsServing(t *testing.T) {
+	c := startServerWith(t, func(s *Server) {
+		s.methods["ListSecrets"] = reflect.ValueOf(func(env string) (desktop.SecretsResponse, error) {
+			panic("secret value " + env)
+		})
+	})
+	c.request(1, "ListSecrets", "dev")
+	resp := c.receive()
+	if resp.Error == nil || resp.Error.Data == nil || resp.Error.Data.Code != apperr.CodeInternal {
+		t.Fatalf("error = %+v, want an internal application error", resp.Error)
+	}
+	if strings.Contains(resp.Error.Message, "secret") {
+		t.Errorf("error message %q leaks the panic value", resp.Error.Message)
+	}
+
+	c.request(2, "GetAppVersion")
+	if resp := c.receive(); string(resp.Result) != `"1.2.3"` {
+		t.Errorf("after a panic GetAppVersion = %s, %+v", resp.Result, resp.Error)
+	}
 }
