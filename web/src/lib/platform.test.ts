@@ -10,7 +10,14 @@ vi.mock("@wailsio/runtime", async (importOriginal) => ({
   Events: { On: runtime.On },
 }));
 
+// Importing the real runtime starts a window.setInterval that polls for its
+// environment. A tick after jsdom tears the window down throws an unhandled
+// ReferenceError, so the runtime's timers are registered as fakes and dropped.
+vi.useFakeTimers();
 const { installExternalLinkHandling, onProgress, openURL } = await import("./platform");
+expect(vi.getTimerCount()).toBeGreaterThan(0);
+vi.clearAllTimers();
+vi.useRealTimers();
 
 describe("platform", () => {
   it("opens links in the OS browser", () => {
