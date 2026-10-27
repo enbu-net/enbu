@@ -10,7 +10,7 @@ function setup() {
   const bridge = new VsCodeBridge({ postMessage: (message) => posted.push(message) }, target);
   const reply = (message: HostMessage) =>
     target.dispatchEvent(new MessageEvent("message", { data: message }));
-  return { bridge, posted, reply };
+  return { bridge, posted, reply, target };
 }
 
 describe("VsCodeBridge", () => {
@@ -38,10 +38,10 @@ describe("VsCodeBridge", () => {
   });
 
   it("ignores messages that are not for a pending call", async () => {
-    const { bridge, reply } = setup();
+    const { bridge, reply, target } = setup();
     const call = bridge.call("GetAppVersion", []);
     reply({ type: "result", id: 99, result: "stray" });
-    window.dispatchEvent(new MessageEvent("message", { data: "not an object" }));
+    target.dispatchEvent(new MessageEvent("message", { data: "not an object" }));
     reply({ type: "result", id: 1, result: "1.2.3" });
     await expect(call).resolves.toBe("1.2.3");
   });

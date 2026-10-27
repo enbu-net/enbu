@@ -118,8 +118,14 @@ func TestMethodsMatchDesktopBindings(t *testing.T) {
 		if !ok || fn.Recv == nil || !fn.Name.IsExported() {
 			continue
 		}
-		star, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
-		if ident, isIdent := star.X.(*ast.Ident); ok && isIdent && ident.Name == "DesktopService" {
+		var ident *ast.Ident
+		switch receiver := fn.Recv.List[0].Type.(type) {
+		case *ast.StarExpr:
+			ident, _ = receiver.X.(*ast.Ident)
+		case *ast.Ident:
+			ident = receiver
+		}
+		if ident != nil && ident.Name == "DesktopService" {
 			bound = append(bound, fn.Name.Name)
 		}
 	}
@@ -266,6 +272,18 @@ func TestClientErrorFailsServerCall(t *testing.T) {
 	resp := c.receive()
 	if resp.Error == nil || resp.Error.Data == nil || resp.Error.Data.Code != apperr.CodeInternal {
 		t.Errorf("error = %+v, want an internal application error", resp.Error)
+	}
+}
+
+func TestClientErrorWithAnyDataFailsServerCall(t *testing.T) {
+	c := startServer(t)
+	c.request(1, "BrowseRepository")
+	ask := c.receive()
+	c.send(`{"jsonrpc":"2.0","id":` + string(ask.ID) + `,"error":{"code":-32000,"message":"no window","data":"plain text"}}`)
+
+	resp := c.receive()
+	if string(resp.ID) != "1" || resp.Error == nil || resp.Error.Data == nil || resp.Error.Data.Code != apperr.CodeInternal {
+		t.Errorf("response = %+v, want BrowseRepository to fail as internal", resp)
 	}
 }
 

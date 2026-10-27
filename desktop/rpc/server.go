@@ -117,6 +117,26 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
+// UnmarshalJSON accepts any data a client puts in an error, as JSON-RPC allows;
+// only an AppError payload is kept. A response that failed to decode would
+// leave the call waiting for it.
+func (e *Error) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	e.Code, e.Message, e.Data = wire.Code, wire.Message, nil
+	var payload apperr.Payload
+	if len(wire.Data) > 0 && json.Unmarshal(wire.Data, &payload) == nil && payload.Code != "" {
+		e.Data = &payload
+	}
+	return nil
+}
+
 // InitializeResult answers the "initialize" request a client sends first.
 type InitializeResult struct {
 	ProtocolVersion int      `json:"protocol_version"`
