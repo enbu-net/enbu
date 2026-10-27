@@ -72,10 +72,14 @@ const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
 	writeFixture(t, root, "desktop/wails/binding.go", `package main
-type BindingResponse struct{}
-type DesktopService struct{}
-func (s *DesktopService) Raw() error { return nil }
-func (s *DesktopService) Bypass() BindingResponse { return BindingResponse{} }`)
+type DesktopService struct{ core interface{ List() ([]string, error); Save() error } }
+func result[T any](v T, err error) (T, error) { return v, err }
+func publicError(err error) error { return err }
+func (s *DesktopService) Raw() error { return s.core.Save() }
+func (s *DesktopService) RawResult() ([]string, error) { return s.core.List() }
+func (s *DesktopService) Saved() error { return publicError(s.core.Save()) }
+func (s *DesktopService) Listed() ([]string, error) { return result(s.core.List()) }
+func (s *DesktopService) Version() string { return "v1" }`)
 	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal"}`)
 	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部"}`)
 
@@ -84,11 +88,15 @@ func (s *DesktopService) Bypass() BindingResponse { return BindingResponse{} }`)
 		t.Fatal(err)
 	}
 	joined := strings.Join(violations, "\n")
-	if !strings.Contains(joined, "Raw must return BindingResponse") {
-		t.Fatalf("missing response violation:\n%s", joined)
+	for _, method := range []string{"Raw", "RawResult"} {
+		if !strings.Contains(joined, method+" must return its error through result or publicError") {
+			t.Fatalf("missing violation for %s:\n%s", method, joined)
+		}
 	}
-	if !strings.Contains(joined, "Bypass must call bindingResult or bindingError") {
-		t.Fatalf("missing helper violation:\n%s", joined)
+	for _, method := range []string{"Saved", "Listed", "Version"} {
+		if strings.Contains(joined, "method "+method+" ") {
+			t.Fatalf("unexpected violation for %s:\n%s", method, joined)
+		}
 	}
 }
 

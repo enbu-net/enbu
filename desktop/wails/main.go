@@ -6,46 +6,40 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/web"
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/logger"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/linux"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 var Version string
 
-type slogWailsLogger struct{}
-
-type windowActions struct {
-	show       func(context.Context)
-	unminimise func(context.Context)
-	center     func(context.Context)
+// Typed events let the binding generator emit their payload types for the
+// frontend.
+func init() {
+	application.RegisterEvent[app.ProgressStep](desktop.EventProgress)
+	application.RegisterEvent[string](desktop.EventProgressMessage)
+	application.RegisterEvent[desktop.ConflictRetry](desktop.EventConflictRetry)
 }
 
-var wailsWindowActions = windowActions{
-	show:       runtime.WindowShow,
-	unminimise: runtime.WindowUnminimise,
-	center:     runtime.WindowCenter,
+// singleInstance keeps one app running per user. On Linux Wails finds the
+// running app over the D-Bus session bus and stops with a fatal error when
+// there is none, so without a session bus a second window is the lesser harm.
+func singleInstance(goos string, getenv func(string) string, onSecond func(application.SecondInstanceData)) *application.SingleInstanceOptions {
+	if goos == "linux" && getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		slog.Warn("no D-Bus session bus; more than one enbu window may open")
+		return nil
+	}
+	return &application.SingleInstanceOptions{
+		UniqueID:               "net.enbu.desktop",
+		OnSecondInstanceLaunch: onSecond,
+	}
 }
-
-func (slogWailsLogger) Print(message string) { slog.Debug("wails print", "message", message) }
-func (slogWailsLogger) Trace(message string) { slog.Debug("wails trace", "message", message) }
-func (slogWailsLogger) Debug(message string) { slog.Debug("wails debug", "message", message) }
-func (slogWailsLogger) Info(message string)  { slog.Info("wails info", "message", message) }
-func (slogWailsLogger) Warning(message string) {
-	slog.Warn("wails warning", "message", message)
-}
-func (slogWailsLogger) Error(message string) { slog.Error("wails error", "message", message) }
-func (slogWailsLogger) Fatal(message string) { slog.Error("wails fatal", "message", message) }
 
 func setupLogger() *os.File {
 	dir, err := os.UserCacheDir()
@@ -68,23 +62,44 @@ func setupLogger() *os.File {
 	return f
 }
 
-func showWindow(ctx context.Context, actions windowActions) {
-	if ctx == nil {
-		return
-	}
-	actions.show(ctx)
-	actions.unminimise(ctx)
-	actions.center(ctx)
+// minLevel drops records below min, whatever the wrapped handler accepts.
+type minLevel struct {
+	slog.Handler
+	min slog.Level
 }
 
-func activationHandlers(contextProvider func() context.Context, activate func(context.Context)) (func(options.SecondInstanceData), func(string)) {
-	return func(data options.SecondInstanceData) {
-			slog.Info("second instance launch", "args", data.Args, "cwd", data.WorkingDirectory)
-			activate(contextProvider())
-		}, func(_ string) {
-			slog.Info("URL opened")
-			activate(contextProvider())
-		}
+func (h minLevel) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.min && h.Handler.Enabled(ctx, level)
+}
+
+func (h minLevel) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return minLevel{h.Handler.WithAttrs(attrs), h.min}
+}
+
+func (h minLevel) WithGroup(name string) slog.Handler {
+	return minLevel{h.Handler.WithGroup(name), h.min}
+}
+
+// wailsLogger is the app's logger without debug records: at debug level Wails
+// logs every binding call with its arguments and result, which include secret
+// values.
+func wailsLogger(logger *slog.Logger) *slog.Logger {
+	return slog.New(minLevel{logger.Handler(), slog.LevelInfo})
+}
+
+// window is the part of the main window that activation needs.
+type window interface {
+	Show() application.Window
+	UnMinimise()
+	Focus()
+}
+
+// activate brings the window to the front when a second launch or an enbu://
+// link reaches the running app.
+func activate(w window) {
+	w.Show()
+	w.UnMinimise()
+	w.Focus()
 }
 
 func main() {
@@ -97,60 +112,75 @@ func main() {
 	if err := registerProtocolHandler(); err != nil {
 		slog.Warn("registering enbu protocol handler", "err", err)
 	}
+	if err := run(); err != nil {
+		slog.Error("desktop app failed", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	core := desktop.NewService(app.New())
 	core.AppVersion = Version
-	service := &DesktopService{service: core}
-	onSecondInstanceLaunch, onURLOpen := activationHandlers(
-		core.Context,
-		func(ctx context.Context) { showWindow(ctx, wailsWindowActions) },
-	)
-	core.SetDirectoryPicker(func(ctx context.Context) (string, error) {
-		slog.Debug("OpenDirectoryDialog called")
-		return runtime.OpenDirectoryDialog(ctx, runtime.OpenDialogOptions{
-			Title: "Select Git repository",
-		})
-	})
-	core.SetBrowserOpener(func(url string) error {
-		slog.Info("BrowserOpenURL")
-		runtime.BrowserOpenURL(core.Context(), url)
-		return nil
-	})
+	core.Start(ctx)
 
-	if err := wails.Run(&options.App{
-		Title:              "enbu",
-		Width:              1100,
-		Height:             760,
-		Logger:             slogWailsLogger{},
-		LogLevel:           logger.TRACE,
-		LogLevelProduction: logger.TRACE,
-		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId:               "net.enbu.desktop",
-			OnSecondInstanceLaunch: onSecondInstanceLaunch,
+	var mainWindow *application.WebviewWindow
+	wailsApp := application.New(application.Options{
+		Name:        "enbu",
+		Description: "Keyless .env management",
+		Icon:        assets.Icon,
+		Logger:      wailsLogger(slog.Default()),
+		Services: []application.Service{
+			application.NewService(&DesktopService{core: core}),
 		},
-		AssetServer: &assetserver.Options{
-			Assets: web.FrontendFS(),
+		MarshalError: marshalError,
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(web.FrontendFS()),
 		},
-		Mac: &mac.Options{
-			About: &mac.AboutInfo{
-				Title: "enbu",
-				Icon:  assets.Icon,
-			},
-			OnUrlOpen: onURLOpen,
+		SingleInstance: singleInstance(runtime.GOOS, os.Getenv, func(data application.SecondInstanceData) {
+			slog.Info("second instance launch", "args", data.Args, "cwd", data.WorkingDir)
+			if mainWindow != nil {
+				activate(mainWindow)
+			}
+		}),
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		Linux: &linux.Options{
-			Icon:        assets.Icon,
+		Linux: application.LinuxOptions{
 			ProgramName: "enbu",
 		},
-		OnStartup: core.Startup,
-		OnDomReady: func(ctx context.Context) {
-			slog.Info("Wails.OnDomReady called")
-		},
-		Bind: []interface{}{
-			service,
-		},
-	}); err != nil {
-		slog.Error("wails.Run failed", "err", err)
-		os.Exit(1)
-	}
+		OnShutdown: cancel,
+	})
+
+	core.SetDirectoryPicker(func(context.Context) (string, error) {
+		return wailsApp.Dialog.OpenFile().
+			SetTitle("Select Git repository").
+			CanChooseFiles(false).
+			CanChooseDirectories(true).
+			CanCreateDirectories(true).
+			PromptForSingleSelection()
+	})
+	core.SetBrowserOpener(wailsApp.Browser.OpenURL)
+	core.SetEventEmitter(func(name string, data any) {
+		wailsApp.Event.Emit(name, data)
+	})
+
+	mainWindow = wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:  "enbu",
+		Width:  1100,
+		Height: 760,
+		// Wide enough for the repository sidebar, which shows from 768px.
+		MinWidth:         800,
+		MinHeight:        520,
+		URL:              "/",
+		BackgroundColour: application.NewRGB(0xfa, 0xfa, 0xfa),
+	})
+	wailsApp.Event.OnApplicationEvent(events.Common.ApplicationLaunchedWithUrl, func(*application.ApplicationEvent) {
+		slog.Info("URL opened")
+		activate(mainWindow)
+	})
+
+	return wailsApp.Run()
 }

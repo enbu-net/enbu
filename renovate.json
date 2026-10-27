@@ -40,6 +40,12 @@
       "groupName": "tobari"
     },
     {
+      "description": "Update Wails, the wails3 CLI and the JS runtime together; run task gui/bindings and commit web/src/bindings",
+      "matchPackageNames": ["github.com/wailsapp/wails/v3", "@wailsio/runtime"],
+      "groupName": "wails",
+      "automerge": false
+    },
+    {
       "description": "Major updates - block automerge",
       "matchUpdateTypes": ["major"],
       "automerge": false,

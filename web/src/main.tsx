@@ -2,12 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
-import { installWailsEventLogging } from "./lib/wails-events";
+import { installExternalLinkHandling } from "./lib/platform";
 import "./app.css";
 
 const router = createRouter({ routeTree, basepath: import.meta.env.BASE_URL });
 
-installWailsEventLogging();
+installExternalLinkHandling();
 
 declare module "@tanstack/react-router" {
   interface Register {

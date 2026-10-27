@@ -28,18 +28,22 @@ task cli/test           # All CLI tests
 task cli/test/unit      # Unit tests
 task cli/test/scenario  # Scenario tests
 task cli/check          # Format and lint CLI code
-task gui/build          # Build GUI desktop app
+task gui/build          # Build GUI desktop app (desktop/wails/build/bin)
+task gui/run            # Run the desktop app against the Vite dev server
+task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
 task gui/test           # GUI tests
-task gui/check          # Format and lint GUI code
+task gui/check          # Format and lint GUI code, and fail on stale bindings
 ```
+
+The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
 
 ## Architecture
 
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-desktop/                 → Wails desktop app (service layer + bindings)
-web/                     → React frontend of the desktop app (and the browser preview)
+desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/)
+web/                     → React frontend of the desktop app (and the browser preview): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
@@ -86,4 +90,4 @@ test/                    → scenario tests (build tag: scenario)
 - Never inspect `err.Error()` to control behavior.
 - Desktop UI error state and error component props must use `DisplayError`; never render `err.message`, `String(err)`, an HTTP response body, or an `AppError` payload message directly.
 - Convert unknown frontend and backend failures with `toDisplayError`. Unknown or invalid codes must display the localized `internal` message; detailed causes belong only in logs.
-- Access Wails bindings only through the frontend backend adapter. Every exported Wails `DesktopService` method must return `BindingResponse` through `bindingResult` or `bindingError`.
+- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts`. Every exported `DesktopService` method that returns an error must return it through `result` or `publicError`, so the frontend receives the AppError payload and never an internal cause.

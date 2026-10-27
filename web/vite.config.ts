@@ -27,7 +27,7 @@ export default defineConfig(({ mode }) => ({
       "postcss.config.cjs",
       "src/components/**",
       "src/routeTree.gen.ts",
-      "src/wailsjs/**",
+      "src/bindings/**",
       "styled-system/**",
       "tsconfig*.json",
     ],
@@ -37,7 +37,7 @@ export default defineConfig(({ mode }) => ({
       "dist/**",
       "dist-preview/**",
       "src/routeTree.gen.ts",
-      "src/wailsjs/**",
+      "src/bindings/**",
       "styled-system/**",
     ],
     options: {
@@ -60,6 +60,8 @@ export default defineConfig(({ mode }) => ({
         files: ["**/*.test.ts", "**/*.test.tsx"],
         rules: {
           "typescript/no-unsafe-assignment": "off",
+          // expect(vi.mocked(backend).method) reads a mock, never calls it unbound.
+          "typescript/unbound-method": "off",
         },
       },
       {
@@ -69,7 +71,12 @@ export default defineConfig(({ mode }) => ({
         },
       },
       {
-        files: ["src/lib/backend.test.ts", "src/lib/backend.ts"],
+        files: [
+          "src/lib/backend.ts",
+          "src/lib/platform.ts",
+          "src/lib/types.ts",
+          "src/lib/*.test.ts",
+        ],
         rules: {
           "enbu/no-direct-wails-binding": "off",
         },
@@ -93,14 +100,6 @@ export default defineConfig(({ mode }) => ({
       "~/components": resolve(__dirname, "src/components"),
     },
   },
-  server: {
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:3939",
-        changeOrigin: true,
-      },
-    },
-  },
   test: {
     environment: "jsdom",
     coverage: {
@@ -108,7 +107,7 @@ export default defineConfig(({ mode }) => ({
       reportsDirectory: "../.tmp/coverage/frontend",
       reporter: ["text", "html", "lcov", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/routeTree.gen.ts", "src/wailsjs/**"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/routeTree.gen.ts", "src/bindings/**", "src/test/**"],
       reportOnFailure: true,
     },
   },

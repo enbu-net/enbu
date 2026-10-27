@@ -1,201 +1,210 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"log/slog"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
-type BindingResponse struct {
-	Data  any             `json:"data"`
-	Error *apperr.Payload `json:"error,omitempty"`
-}
-
+// DesktopService is everything the frontend can call. The binding generator
+// writes a typed TypeScript client for it into web/src/bindings.
 type DesktopService struct {
-	service *desktop.Service
+	core *desktop.Service
 }
 
-func bindingResult[T any](data T, err error) BindingResponse {
+// bindingError carries the payload of a normalized AppError to the frontend.
+// Its message is the payload's, so the cause of an internal error never
+// leaves the process; it is logged here instead.
+type bindingError struct {
+	payload apperr.Payload
+}
+
+func (e *bindingError) Error() string { return e.payload.Message }
+
+func publicError(err error) error {
 	if err == nil {
-		return BindingResponse{Data: data}
+		return nil
 	}
+	return toBindingError(err)
+}
+
+func toBindingError(err error) *bindingError {
 	normalized := apperr.Normalize(err)
 	payload := apperr.PayloadOf(normalized)
 	if payload.Code == apperr.CodeInternal || payload.Code == apperr.CodeUnavailable {
 		slog.Error("desktop operation failed", "err", normalized)
 	}
-	return BindingResponse{Error: &payload}
+	return &bindingError{payload: payload}
 }
 
-func bindingError(err error) BindingResponse {
-	return bindingResult[any](nil, err)
+func result[T any](value T, err error) (T, error) {
+	return value, publicError(err)
 }
 
-func (s *DesktopService) GetAuthStatus() BindingResponse {
-	value, err := s.service.GetAuthStatus()
-	return bindingResult(value, err)
+// marshalError is the cause the frontend receives with a failed call: the
+// AppError payload of errors from DesktopService, and an internal one for
+// anything else.
+func marshalError(err error) []byte {
+	var be *bindingError
+	if !errors.As(err, &be) {
+		be = toBindingError(err)
+	}
+	data, err := json.Marshal(be.payload)
+	if err != nil {
+		return nil
+	}
+	return data
 }
 
-func (s *DesktopService) StartOAuthLogin() BindingResponse {
-	value, err := s.service.StartOAuthLogin()
-	return bindingResult(value, err)
+func (s *DesktopService) GetAuthStatus() (desktop.AuthStatus, error) {
+	return result(s.core.GetAuthStatus())
 }
 
-func (s *DesktopService) GetOAuthLoginStatus(sessionID string) BindingResponse {
-	value, err := s.service.GetOAuthLoginStatus(sessionID)
-	return bindingResult(value, err)
+func (s *DesktopService) StartOAuthLogin() (desktop.OAuthStart, error) {
+	return result(s.core.StartOAuthLogin())
 }
 
-func (s *DesktopService) CancelOAuthLogin(sessionID string) BindingResponse {
-	return bindingError(s.service.CancelOAuthLogin(sessionID))
+func (s *DesktopService) GetOAuthLoginStatus(sessionID string) (desktop.OAuthStatus, error) {
+	return result(s.core.GetOAuthLoginStatus(sessionID))
 }
 
-func (s *DesktopService) Logout() BindingResponse {
-	return bindingError(s.service.Logout())
+func (s *DesktopService) CancelOAuthLogin(sessionID string) error {
+	return publicError(s.core.CancelOAuthLogin(sessionID))
 }
 
-func (s *DesktopService) BrowseRepository() BindingResponse {
-	value, err := s.service.BrowseRepository()
-	return bindingResult(value, err)
+func (s *DesktopService) Logout() error {
+	return publicError(s.core.Logout())
 }
 
-func (s *DesktopService) SelectRepository(path string) BindingResponse {
-	value, err := s.service.SelectRepository(path)
-	return bindingResult(value, err)
+func (s *DesktopService) BrowseRepository() (desktop.RepoInfo, error) {
+	return result(s.core.BrowseRepository())
 }
 
-func (s *DesktopService) GetRepoStatus() BindingResponse {
-	value, err := s.service.GetRepoStatus()
-	return bindingResult(value, err)
+func (s *DesktopService) SelectRepository(path string) (desktop.RepoInfo, error) {
+	return result(s.core.SelectRepository(path))
 }
 
-func (s *DesktopService) Initialize() BindingResponse {
-	value, err := s.service.Initialize()
-	return bindingResult(value, err)
+func (s *DesktopService) GetRepoStatus() (desktop.RepoInfo, error) {
+	return result(s.core.GetRepoStatus())
 }
 
-func (s *DesktopService) ListEnvironments() BindingResponse {
-	value, err := s.service.ListEnvironments()
-	return bindingResult(value, err)
+func (s *DesktopService) Initialize() (desktop.InitResult, error) {
+	return result(s.core.Initialize())
 }
 
-func (s *DesktopService) CreateEnvironment(name string) BindingResponse {
-	return bindingError(s.service.CreateEnvironment(name))
+func (s *DesktopService) ListEnvironments() ([]desktop.Environment, error) {
+	return result(s.core.ListEnvironments())
 }
 
-func (s *DesktopService) SwitchEnvironment(name string) BindingResponse {
-	return bindingError(s.service.SwitchEnvironment(name))
+func (s *DesktopService) CreateEnvironment(name string) error {
+	return publicError(s.core.CreateEnvironment(name))
 }
 
-func (s *DesktopService) RenameEnvironment(name, newName string) BindingResponse {
-	return bindingError(s.service.RenameEnvironment(name, newName))
+func (s *DesktopService) SwitchEnvironment(name string) error {
+	return publicError(s.core.SwitchEnvironment(name))
 }
 
-func (s *DesktopService) DeleteEnvironment(name string) BindingResponse {
-	return bindingError(s.service.DeleteEnvironment(name))
+func (s *DesktopService) RenameEnvironment(name, newName string) error {
+	return publicError(s.core.RenameEnvironment(name, newName))
 }
 
-func (s *DesktopService) ListSecrets(env string) BindingResponse {
-	value, err := s.service.ListSecrets(env)
-	return bindingResult(value, err)
+func (s *DesktopService) DeleteEnvironment(name string) error {
+	return publicError(s.core.DeleteEnvironment(name))
 }
 
-func (s *DesktopService) AddSecret(env, key, value string) BindingResponse {
-	return bindingError(s.service.AddSecret(env, key, value))
+func (s *DesktopService) ListSecrets(env string) (desktop.SecretsResponse, error) {
+	return result(s.core.ListSecrets(env))
 }
 
-func (s *DesktopService) EditSecret(env, key, value string) BindingResponse {
-	return bindingError(s.service.EditSecret(env, key, value))
+func (s *DesktopService) AddSecret(env, key, value string) error {
+	return publicError(s.core.AddSecret(env, key, value))
 }
 
-func (s *DesktopService) DeleteSecret(env, key string) BindingResponse {
-	return bindingError(s.service.DeleteSecret(env, key))
+func (s *DesktopService) EditSecret(env, key, value string) error {
+	return publicError(s.core.EditSecret(env, key, value))
 }
 
-func (s *DesktopService) PullSecrets(env string, replace bool) BindingResponse {
-	value, err := s.service.PullSecrets(env, replace)
-	return bindingResult(value, err)
+func (s *DesktopService) DeleteSecret(env, key string) error {
+	return publicError(s.core.DeleteSecret(env, key))
 }
 
-func (s *DesktopService) SyncSecrets(env string) BindingResponse {
-	return bindingError(s.service.SyncSecrets(env))
+func (s *DesktopService) PullSecrets(env string, replace bool) (desktop.PullResult, error) {
+	return result(s.core.PullSecrets(env, replace))
 }
 
-func (s *DesktopService) ListConflicts(env string) BindingResponse {
-	value, err := s.service.ListConflicts(env)
-	return bindingResult(value, err)
+func (s *DesktopService) SyncSecrets(env string) error {
+	return publicError(s.core.SyncSecrets(env))
 }
 
-func (s *DesktopService) ResolveConflicts(env string, heads []string, choices []desktop.ConflictChoice) BindingResponse {
-	return bindingError(s.service.ResolveConflicts(env, heads, choices))
+func (s *DesktopService) ListConflicts(env string) (desktop.ConflictSet, error) {
+	return result(s.core.ListConflicts(env))
 }
 
-func (s *DesktopService) ListHistory(env string) BindingResponse {
-	value, err := s.service.ListHistory(env)
-	return bindingResult(value, err)
+func (s *DesktopService) ResolveConflicts(env string, heads []string, choices []desktop.ConflictChoice) error {
+	return publicError(s.core.ResolveConflicts(env, heads, choices))
 }
 
-func (s *DesktopService) DiffHistory(env string, from, to int) BindingResponse {
-	value, err := s.service.DiffHistory(env, from, to)
-	return bindingResult(value, err)
+func (s *DesktopService) ListHistory(env string) ([]desktop.HistoryEntry, error) {
+	return result(s.core.ListHistory(env))
 }
 
-func (s *DesktopService) RestoreHistory(env string, index int) BindingResponse {
-	return bindingError(s.service.RestoreHistory(env, index))
+func (s *DesktopService) DiffHistory(env string, from, to int) (*app.Diff, error) {
+	return result(s.core.DiffHistory(env, from, to))
 }
 
-func (s *DesktopService) ListRepositories() BindingResponse {
-	value, err := s.service.ListRepositories()
-	return bindingResult(value, err)
+func (s *DesktopService) RestoreHistory(env string, index int) error {
+	return publicError(s.core.RestoreHistory(env, index))
 }
 
-func (s *DesktopService) RemoveRepository(path string) BindingResponse {
-	return bindingError(s.service.RemoveRepository(path))
+func (s *DesktopService) ListRepositories() ([]desktop.RepoInfo, error) {
+	return result(s.core.ListRepositories())
 }
 
-func (s *DesktopService) ListMembers() BindingResponse {
-	value, err := s.service.ListMembers()
-	return bindingResult(value, err)
+func (s *DesktopService) RemoveRepository(path string) error {
+	return publicError(s.core.RemoveRepository(path))
 }
 
-func (s *DesktopService) ListJoinRequests() BindingResponse {
-	value, err := s.service.ListJoinRequests()
-	return bindingResult(value, err)
+func (s *DesktopService) ListMembers() ([]desktop.Member, error) {
+	return result(s.core.ListMembers())
 }
 
-func (s *DesktopService) ApproveMember(deviceID string) BindingResponse {
-	return bindingError(s.service.ApproveMember(deviceID))
+func (s *DesktopService) ListJoinRequests() ([]desktop.JoinRequest, error) {
+	return result(s.core.ListJoinRequests())
 }
 
-func (s *DesktopService) RemoveMember(deviceID string) BindingResponse {
-	return bindingError(s.service.RemoveMember(deviceID))
+func (s *DesktopService) ApproveMember(deviceID string) error {
+	return publicError(s.core.ApproveMember(deviceID))
 }
 
-func (s *DesktopService) ReadConfig() BindingResponse {
-	value, err := s.service.ReadConfig()
-	return bindingResult(value, err)
+func (s *DesktopService) RemoveMember(deviceID string) error {
+	return publicError(s.core.RemoveMember(deviceID))
 }
 
-func (s *DesktopService) WriteConfig(content string) BindingResponse {
-	return bindingError(s.service.WriteConfig(content))
+func (s *DesktopService) ReadConfig() (string, error) {
+	return result(s.core.ReadConfig())
 }
 
-func (s *DesktopService) GetAppVersion() BindingResponse {
-	return bindingResult(s.service.GetAppVersion(), nil)
+func (s *DesktopService) WriteConfig(content string) error {
+	return publicError(s.core.WriteConfig(content))
 }
 
-func (s *DesktopService) GitInit(path string) BindingResponse {
-	value, err := s.service.GitInit(path)
-	return bindingResult(value, err)
+func (s *DesktopService) GetAppVersion() string {
+	return s.core.GetAppVersion()
 }
 
-func (s *DesktopService) ListRepositoryOwners() BindingResponse {
-	value, err := s.service.ListRepositoryOwners()
-	return bindingResult(value, err)
+func (s *DesktopService) GitInit(path string) (desktop.RepoInfo, error) {
+	return result(s.core.GitInit(path))
 }
 
-func (s *DesktopService) GitCreateRemote(path, owner, repoName string, private bool) BindingResponse {
-	value, err := s.service.GitCreateRemote(path, owner, repoName, private)
-	return bindingResult(value, err)
+func (s *DesktopService) ListRepositoryOwners() ([]gh.RepositoryOwner, error) {
+	return result(s.core.ListRepositoryOwners())
+}
+
+func (s *DesktopService) GitCreateRemote(path, owner, repoName string, private bool) (desktop.RepoInfo, error) {
+	return result(s.core.GitCreateRemote(path, owner, repoName, private))
 }

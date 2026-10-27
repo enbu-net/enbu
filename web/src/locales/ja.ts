@@ -93,6 +93,8 @@ export const ja = {
     logout: "ログアウト",
     authorizeTitle: "GitHub 認証",
     browserInstruction: "ブラウザで開いたGitHubのページで認証を完了してください。",
+    account: "アカウント",
+    accountMenu: "アカウントメニュー",
   },
   common: {
     loading: "読み込み中...",

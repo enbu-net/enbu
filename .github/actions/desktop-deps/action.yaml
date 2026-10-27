@@ -1,0 +1,12 @@
+name: Install desktop build dependencies
+description: Install the GTK 4 and WebKitGTK 6.0 headers the Wails v3 desktop app links against on Linux
+
+runs:
+  using: composite
+  steps:
+    - name: Install GTK 4 and WebKitGTK 6.0
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev

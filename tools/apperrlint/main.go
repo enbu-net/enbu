@@ -165,13 +165,9 @@ func inspectGoFile(root, path string) ([]string, map[string]int, error) {
 				position := fset.Position(current.Pos())
 				violations = append(violations, fmt.Sprintf("%s:%d: exported app operation %s must defer apperr.NormalizeInto", relative, position.Line, current.Name.Name))
 			}
-			if isDesktopBindingMethod(current) {
+			if isDesktopBindingMethod(current) && returnsError(current) && !callsBindingHelper(current.Body) {
 				position := fset.Position(current.Pos())
-				if !returnsBindingResponse(current) {
-					violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must return BindingResponse", relative, position.Line, current.Name.Name))
-				} else if !callsBindingHelper(current.Body) {
-					violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must call bindingResult or bindingError", relative, position.Line, current.Name.Name))
-				}
+				violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must return its error through result or publicError", relative, position.Line, current.Name.Name))
 			}
 		}
 		return true
@@ -198,12 +194,15 @@ func receiverTypeName(receiver *ast.FieldList) string {
 	return ""
 }
 
-func returnsBindingResponse(function *ast.FuncDecl) bool {
-	if function.Type.Results == nil || len(function.Type.Results.List) != 1 {
+// returnsError reports whether the last result is an error, which a bound
+// method must normalize before it reaches the frontend.
+func returnsError(function *ast.FuncDecl) bool {
+	results := function.Type.Results
+	if results == nil || len(results.List) == 0 {
 		return false
 	}
-	ident, ok := function.Type.Results.List[0].Type.(*ast.Ident)
-	return ok && ident.Name == "BindingResponse"
+	ident, ok := results.List[len(results.List)-1].Type.(*ast.Ident)
+	return ok && ident.Name == "error"
 }
 
 func callsBindingHelper(body *ast.BlockStmt) bool {
@@ -219,7 +218,7 @@ func callsBindingHelper(body *ast.BlockStmt) bool {
 				name = ident.Name
 			}
 		}
-		found = name == "bindingResult" || name == "bindingError"
+		found = name == "result" || name == "publicError"
 		return !found
 	})
 	return found

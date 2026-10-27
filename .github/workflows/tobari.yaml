@@ -24,6 +24,8 @@ jobs:
 
       - uses: ./.github/actions/setup-coverage
 
+      - uses: ./.github/actions/desktop-deps
+
       - name: Collect Go unit coverage
         run: task cli/test/coverage
 
@@ -50,6 +52,8 @@ jobs:
           persist-credentials: false
 
       - uses: ./.github/actions/setup-coverage
+
+      - uses: ./.github/actions/desktop-deps
 
       - name: Collect Go scenario coverage
         run: task cli/test/coverage/scenario

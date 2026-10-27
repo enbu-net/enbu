@@ -10,10 +10,6 @@ export type AppErrorPayload = {
   params?: Record<string, string>;
 };
 
-export type BindingResult<T> =
-  | { data: T; error?: never }
-  | { data?: never; error: AppErrorPayload };
-
 declare const displayErrorBrand: unique symbol;
 
 export type DisplayError = {
@@ -61,13 +57,6 @@ export function formatDisplayError(error: DisplayError, locale: Locale): string 
     (text, [name, value]) => text.replaceAll(`{${name}}`, () => value),
     template,
   );
-}
-
-export function unwrapBindingResult<T>(result: BindingResult<T>): T {
-  if (result.error) {
-    throw new AppError(result.error);
-  }
-  return result.data;
 }
 
 function isErrorCode(code: string): code is ErrorCode {
