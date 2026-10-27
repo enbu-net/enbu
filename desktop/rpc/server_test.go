@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"go/ast"
@@ -296,5 +297,63 @@ func TestPanicRepliesInternalAndKeepsServing(t *testing.T) {
 	c.request(2, "GetAppVersion")
 	if resp := c.receive(); string(resp.Result) != `"1.2.3"` {
 		t.Errorf("after a panic GetAppVersion = %s, %+v", resp.Result, resp.Error)
+	}
+}
+
+func TestOversizedMessageIsRejectedAndServingGoesOn(t *testing.T) {
+	old := maxMessageSize
+	maxMessageSize = 1 << 10
+	t.Cleanup(func() { maxMessageSize = old })
+
+	c := startServer(t)
+	c.send(`{"jsonrpc":"2.0","id":1,"method":"AddSecret","params":["dev","KEY","` + strings.Repeat("x", 4<<10) + `"]}`)
+	resp := c.receive()
+	if resp.Error == nil || resp.Error.Code != codeInvalidRequest || string(resp.ID) != "null" {
+		t.Fatalf("response = %+v, want an invalid request error", resp)
+	}
+
+	c.request(2, "GetAppVersion")
+	if resp := c.receive(); string(resp.Result) != `"1.2.3"` {
+		t.Errorf("after an oversized message GetAppVersion = %s, %+v", resp.Result, resp.Error)
+	}
+}
+
+func TestReadsLastMessageWithoutNewline(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	core := desktop.NewService(app.New())
+	var out bytes.Buffer
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"GetAppVersion"}`)
+	if err := NewServer(core).Serve(context.Background(), in, &out); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":1`) {
+		t.Errorf("output = %q, want the response to id 1", out.String())
+	}
+}
+
+// failAfterServe fails the test on any write once Serve has returned.
+type failAfterServe struct {
+	t      *testing.T
+	closed bool
+}
+
+func (w *failAfterServe) Write(p []byte) (int, error) {
+	if w.closed {
+		w.t.Errorf("write after Serve returned: %q", p)
+	}
+	return len(p), nil
+}
+
+func TestServiceStopsWritingAfterServeReturns(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	core := desktop.NewService(app.New())
+	out := &failAfterServe{t: t}
+	if err := NewServer(core).Serve(context.Background(), strings.NewReader(""), out); err != nil {
+		t.Fatalf("Serve() error = %v", err)
+	}
+	out.closed = true
+	core.OnProgress("late")
+	if _, err := core.BrowseRepository(); err == nil {
+		t.Error("BrowseRepository after Serve returned succeeded, want no picker")
 	}
 }

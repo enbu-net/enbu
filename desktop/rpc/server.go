@@ -7,11 +7,17 @@
 // the editor: "pickDirectory" (a native folder dialog) and "openExternal" (the
 // OS browser).
 //
+// Requests are handled concurrently, as the desktop app's binding calls are:
+// a folder dialog or a GitHub sign-in waits on the client while other calls go
+// on. A client that needs one call to finish before the next, such as a write
+// before a sync, waits for its response first, as the UI does.
+//
 // Params and results carry secret values. Nothing here logs them.
 package rpc
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -90,7 +96,8 @@ const (
 	codeApplication    = -32000
 )
 
-const maxMessageSize = 16 << 20
+// maxMessageSize bounds one message; a variable so tests can lower it.
+var maxMessageSize = 16 << 20
 
 type message struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -157,8 +164,8 @@ func NewServer(core *desktop.Service) *Server {
 	return s
 }
 
-// Serve reads requests from r and writes responses to w until r ends or ctx is
-// cancelled, then waits for the calls in flight.
+// Serve reads requests from r and writes responses to w until r ends, then
+// waits for the calls in flight. Cancelling ctx cancels the calls in flight.
 func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -177,10 +184,20 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 		return s.call(ctx, methodOpenURL, []string{url}, nil)
 	})
 
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64<<10), maxMessageSize)
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	reader := bufio.NewReaderSize(r, 64<<10)
+	var readErr error
+	for {
+		line, err := readLine(reader)
+		if errors.Is(err, errTooLong) {
+			s.reply(nil, nil, &Error{Code: codeInvalidRequest, Message: "message too large"})
+			continue
+		}
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				readErr = err
+			}
+			break
+		}
 		if len(line) == 0 {
 			continue
 		}
@@ -202,7 +219,40 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	cancel()
 	s.failPending()
 	s.wg.Wait()
-	return scanner.Err()
+	// Nothing is left to answer; the service must not write to a closed stream.
+	s.core.SetEventEmitter(nil)
+	s.core.SetDirectoryPicker(nil)
+	s.core.SetBrowserOpener(nil)
+	return readErr
+}
+
+var errTooLong = errors.New("rpc message too large")
+
+// readLine reads one message. A line over maxMessageSize is skipped to its end
+// and reported as errTooLong, so the next message is read as usual.
+func readLine(r *bufio.Reader) ([]byte, error) {
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > maxMessageSize {
+				tooLong, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		switch {
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case err != nil && (len(line) == 0 || !errors.Is(err, io.EOF)):
+			return nil, err
+		case tooLong:
+			return nil, errTooLong
+		default:
+			return bytes.TrimSpace(line), nil
+		}
+	}
 }
 
 func (s *Server) handle(msg message) {
