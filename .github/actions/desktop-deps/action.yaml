@@ -1,0 +1,58 @@
+name: Install desktop build dependencies
+description: Install the GTK 4 and WebKitGTK 6.0 headers the Wails v3 desktop app links against on Linux
+
+runs:
+  using: composite
+  steps:
+    # The packages weigh over 100 MB, and a slow Ubuntu mirror has stalled
+    # their download past job timeouts. The downloaded .deb files are cached,
+    # keyed by the package list, so a package update saves a fresh entry and
+    # apt fetches only the packages that changed.
+    - name: List GTK 4 and WebKitGTK 6.0 packages
+      id: packages
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        # Each line names a .deb and its SHA256 from the signed package index.
+        list="$RUNNER_TEMP/desktop-deps-packages"
+        apt-get install -y --print-uris -qq --no-install-recommends \
+          -o Acquire::ForceHash=SHA256 \
+          libgtk-4-dev libwebkitgtk-6.0-dev > "$list"
+        . /etc/os-release
+        prefix="desktop-deps-apt-ubuntu$VERSION_ID-$RUNNER_ARCH-"
+        echo "restore-key=$prefix" >> "$GITHUB_OUTPUT"
+        echo "key=$prefix$(sha256sum "$list" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+    - name: Cache GTK 4 and WebKitGTK 6.0 packages
+      if: runner.os == 'Linux'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/desktop-deps-apt
+        key: ${{ steps.packages.outputs.key }}
+        restore-keys: ${{ steps.packages.outputs.restore-key }}
+    - name: Install GTK 4 and WebKitGTK 6.0
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        archives="$HOME/.cache/desktop-deps-apt"
+        list="$RUNNER_TEMP/desktop-deps-packages"
+        mkdir -p "$archives/partial"
+        # apt trusts a cached .deb whose name and size match, so keep only the
+        # ones the signed index lists with the same SHA256. This also drops
+        # the ones an update replaced.
+        for deb in "$archives"/*.deb; do
+          [ -e "$deb" ] || continue
+          want=$(awk -v f="$(basename "$deb")" '$2 == f { sub(/^SHA256:/, "", $4); print $4 }' "$list")
+          have=$(sha256sum "$deb" | cut -d' ' -f1)
+          if [ -z "$want" ] || [ "$want" != "$have" ]; then
+            rm -f "$deb"
+          fi
+        done
+        sudo apt-get install -y --no-install-recommends \
+          -o Dir::Cache::Archives="$archives" \
+          -o APT::Keep-Downloaded-Packages=true \
+          -o Acquire::Retries=3 \
+          libgtk-4-dev libwebkitgtk-6.0-dev
+        # apt writes as root; the cache step saves as the runner user.
+        sudo rm -f "$archives/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$archives"

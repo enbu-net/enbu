@@ -21,11 +21,28 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	gh "github.com/enbu-net/enbu/pkg/provider/github"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-type DirectoryPicker func(context.Context) (string, error)
-type BrowserOpener func(string) error
+// The shell supplies native dialogs, the OS browser and events to the
+// frontend, so this package stays independent of the GUI toolkit.
+type (
+	DirectoryPicker func(context.Context) (string, error)
+	BrowserOpener   func(string) error
+	EventEmitter    func(name string, data any)
+)
+
+// Events the frontend can subscribe to.
+const (
+	EventProgress        = "enbu:progress"
+	EventProgressMessage = "enbu:progress_message"
+	EventConflictRetry   = "enbu:conflict_retry"
+)
+
+// ConflictRetry reports that a publish found new heads and starts over.
+type ConflictRetry struct {
+	Attempt     int `json:"attempt"`
+	MaxAttempts int `json:"max_attempts"`
+}
 
 type repositoryPlatform interface {
 	ListRepositoryOwners(context.Context) ([]gh.RepositoryOwner, error)
@@ -44,7 +61,7 @@ type Service struct {
 	repoPath   string
 	sessions   map[string]*oauthSession
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
-	emitEvent  func(context.Context, string, ...interface{})
+	emit       EventEmitter
 	AppVersion string
 }
 
@@ -64,7 +81,6 @@ func NewService(a *app.App) *Service {
 		},
 		sessions:  make(map[string]*oauthSession),
 		authLogin: auth.Login,
-		emitEvent: wailsruntime.EventsEmit,
 	}
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()
@@ -75,33 +91,27 @@ func NewService(a *app.App) *Service {
 }
 
 func (s *Service) OnProgress(msg string) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:progress_message", msg)
-	}
+	s.emitEvent(EventProgressMessage, msg)
 }
 
 func (s *Service) OnStepProgress(step app.ProgressStep) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:progress", step)
-	}
+	s.emitEvent(EventProgress, step)
 }
 
 func (s *Service) OnConflictRetry(attempt, maxAttempts int) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:conflict_retry", map[string]int{
-			"attempt":      attempt,
-			"max_attempts": maxAttempts,
-		})
+	s.emitEvent(EventConflictRetry, ConflictRetry{Attempt: attempt, MaxAttempts: maxAttempts})
+}
+
+func (s *Service) emitEvent(name string, data any) {
+	if s.emit != nil {
+		s.emit(name, data)
 	}
 }
 
-func (s *Service) Startup(ctx context.Context) {
-	slog.Info("Service.Startup called")
+// Start gives the service the context of the running app; operations started
+// from the frontend are cancelled with it when the app quits.
+func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
-}
-
-func (s *Service) Context() context.Context {
-	return s.ctx
 }
 
 func (s *Service) SetDirectoryPicker(picker DirectoryPicker) {
@@ -110,6 +120,10 @@ func (s *Service) SetDirectoryPicker(picker DirectoryPicker) {
 
 func (s *Service) SetBrowserOpener(opener BrowserOpener) {
 	s.openURL = opener
+}
+
+func (s *Service) SetEventEmitter(emit EventEmitter) {
+	s.emit = emit
 }
 
 type AuthStatus struct {
@@ -211,6 +225,17 @@ type JoinRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
+}
+
+// InitResult describes this device after initializing a workspace. Pending
+// is set while an admin still has to approve the device.
+type InitResult struct {
+	PublicKey   string `json:"public_key"`
+	Username    string `json:"username"`
+	Environment string `json:"environment"`
+	DeviceID    string `json:"device_id"`
+	Fingerprint string `json:"fingerprint"`
+	Pending     bool   `json:"pending"`
 }
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
@@ -582,22 +607,22 @@ func (s *Service) GetRepoStatus() (RepoInfo, error) {
 	return s.repoInfo(repo)
 }
 
-func (s *Service) Initialize() (map[string]any, error) {
-	return withRepoResult(s, func() (map[string]any, error) {
+func (s *Service) Initialize() (InitResult, error) {
+	return withRepoResult(s, func() (InitResult, error) {
 		result, err := s.app.InitializeRepository(s.context())
 		if err != nil {
-			return nil, err
+			return InitResult{}, err
 		}
 		if err := ensureGitignore(s.app.RepositoryDir); err != nil {
 			slog.Warn("failed to update .gitignore", "err", err)
 		}
-		return map[string]any{
-			"public_key":  result.PublicKey,
-			"username":    result.Username,
-			"environment": result.Environment,
-			"device_id":   result.DeviceID,
-			"fingerprint": result.Fingerprint,
-			"pending":     result.Pending,
+		return InitResult{
+			PublicKey:   result.PublicKey,
+			Username:    result.Username,
+			Environment: result.Environment,
+			DeviceID:    result.DeviceID,
+			Fingerprint: result.Fingerprint,
+			Pending:     result.Pending,
 		}, nil
 	})
 }

@@ -89,6 +89,8 @@ export interface Messages {
     logout: string;
     authorizeTitle: string;
     browserInstruction: string;
+    account: string;
+    accountMenu: string;
   };
   common: {
     loading: string;

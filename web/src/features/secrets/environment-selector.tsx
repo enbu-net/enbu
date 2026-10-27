@@ -1,0 +1,217 @@
+import { type RefObject, useEffect, useId, useRef } from "react";
+import { Check, ChevronDown, Layers3, Plus, X } from "lucide-react";
+import { Box, Flex, HStack, VStack, styled } from "styled-system/jsx";
+import { Button, Heading, Input, Popover, Text } from "../../components/ui";
+import { useI18n } from "../../lib/i18n";
+import { useFocusTrap } from "../../lib/use-focus-trap";
+import type { Environment } from "../../lib/types";
+
+export function EnvironmentSelector({
+  environments,
+  value,
+  addTriggerRef,
+  onSelect,
+  onAdd,
+}: {
+  environments: Environment[];
+  value: string;
+  addTriggerRef?: RefObject<HTMLButtonElement | null>;
+  onSelect: (environment: string) => void | Promise<void>;
+  onAdd: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <HStack gap="2" flexWrap="wrap">
+      <Popover.Root positioning={{ placement: "bottom-start", gutter: 6 }}>
+        <Popover.Trigger asChild>
+          <Button
+            ref={addTriggerRef}
+            type="button"
+            variant="outline"
+            h="40px"
+            px="3"
+            color="fg.default"
+            bg="bg.surface"
+            borderColor="border.default"
+            borderRadius="lg"
+            fontSize="lg"
+            fontWeight="extrabold"
+            aria-label={t("dashboard.currentEnvironment")}
+          >
+            <Layers3 size={16} />
+            {value}
+            <ChevronDown size={15} />
+          </Button>
+        </Popover.Trigger>
+        <Popover.Positioner>
+          <Popover.Content
+            minW="240px"
+            p="1.5"
+            bg="bg.surface"
+            borderWidth="1px"
+            borderColor="border.default"
+            borderRadius="lg"
+            boxShadow="dropdown"
+          >
+            <VStack alignItems="stretch" gap="1">
+              {environments.map((environment) => {
+                const selected = environment.name === value;
+                return (
+                  <Popover.CloseTrigger key={environment.name} asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      w="full"
+                      justifyContent="space-between"
+                      color="fg.default"
+                      bg={selected ? "accent.subtle" : undefined}
+                      onClick={() => void onSelect(environment.name)}
+                    >
+                      <HStack gap="2">
+                        <Layers3 size={15} />
+                        {environment.name}
+                      </HStack>
+                      {selected && <Check size={15} color="currentColor" />}
+                    </Button>
+                  </Popover.CloseTrigger>
+                );
+              })}
+              <Box h="1px" my="1" bg="border.default" />
+              <Popover.CloseTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  w="full"
+                  justifyContent="start"
+                  color="accent.default"
+                  onClick={onAdd}
+                >
+                  <Plus size={15} />
+                  {t("dashboard.addEnvironment")}
+                </Button>
+              </Popover.CloseTrigger>
+            </VStack>
+          </Popover.Content>
+        </Popover.Positioner>
+      </Popover.Root>
+      <Text as="span" fontSize="xl" fontWeight="extrabold">
+        {t("dashboard.secretHeadingSuffix")}
+      </Text>
+    </HStack>
+  );
+}
+
+export function CreateEnvironmentModal({
+  open,
+  value,
+  loading,
+  triggerRef,
+  onValueChange,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  value: string;
+  loading: boolean;
+  triggerRef?: RefObject<HTMLElement | null>;
+  onValueChange: (value: string) => void;
+  onClose: () => void;
+  onCreate: () => void | Promise<void>;
+}) {
+  const { t } = useI18n();
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, dialogRef, triggerRef);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !loading) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [loading, onClose, open]);
+
+  if (!open) return null;
+  return (
+    <Box
+      position="fixed"
+      inset="0"
+      zIndex="50"
+      display="grid"
+      placeItems="center"
+      p="4"
+      bg="rgba(15, 23, 42, 0.48)"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !loading) onClose();
+      }}
+    >
+      <Box
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        w="full"
+        maxW="440px"
+        p="5"
+        bg="bg.surface"
+        borderWidth="1px"
+        borderColor="border.default"
+        borderRadius="2xl"
+        boxShadow="xl"
+      >
+        <Flex justify="space-between" align="start" gap="4" mb="5">
+          <Heading id={titleId} size="lg" fontWeight="extrabold">
+            {t("dashboard.createEnvironmentTitle")}
+          </Heading>
+          <Button
+            type="button"
+            variant="ghost"
+            w="32px"
+            h="32px"
+            p="0"
+            aria-label={t("config.cancel")}
+            disabled={loading}
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </Button>
+        </Flex>
+        <styled.label
+          htmlFor="new-environment-name"
+          display="block"
+          mb="2"
+          fontSize="sm"
+          fontWeight="semibold"
+        >
+          {t("dashboard.environmentName")}
+        </styled.label>
+        <Input
+          id="new-environment-name"
+          autoFocus
+          value={value}
+          placeholder={t("dashboard.newEnvironment")}
+          disabled={loading}
+          onChange={(event) => onValueChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && value.trim() && !loading) void onCreate();
+          }}
+        />
+        <HStack justify="end" gap="2" mt="5">
+          <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
+            {t("config.cancel")}
+          </Button>
+          <Button
+            type="button"
+            colorPalette="accent"
+            loading={loading}
+            disabled={!value.trim()}
+            onClick={() => void onCreate()}
+          >
+            {t("dashboard.createEnvironment")}
+          </Button>
+        </HStack>
+      </Box>
+    </Box>
+  );
+}

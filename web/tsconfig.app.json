@@ -19,13 +19,13 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
+    // The generated Wails bindings (src/bindings) declare Go constant types as enums.
+    "erasableSyntaxOnly": false,
     "noFallthroughCasesInSwitch": true,
     "paths": {
       "styled-system/*": ["./styled-system/*"],
       "~/components/*": ["./src/components/*"]
     }
   },
-  "include": ["src", "styled-system"],
-  "exclude": ["src/wailsjs"]
+  "include": ["src", "styled-system"]
 }

@@ -1,284 +1,97 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { backend } from "./backend";
+import { AppError, toDisplayError } from "./app-error";
 
-declare global {
-  interface Window {
-    calls?: unknown[][];
-  }
+// The generated bindings call into the Wails runtime; the adapter is tested
+// against stand-ins with the same names.
+const desktop = vi.hoisted(() => ({}) as Record<string, ReturnType<typeof vi.fn>>);
+vi.mock("../bindings/github.com/enbu-net/enbu/desktop/wails", () => ({
+  DesktopService: new Proxy(desktop, {
+    get: (target, name: string) => (target[name] ??= vi.fn(async () => undefined)),
+  }),
+}));
+
+const { desktopBackend: backend, toAppError } = await import("./backend");
+
+/** A rejection shaped like the runtime's: the AppError payload is the cause. */
+function rejection(code: string, params: Record<string, string> = {}) {
+  return Object.assign(new Error(code), { cause: { code, message: code, params } });
 }
 
-const ok = <T>(data: T) => ({ data });
-
 beforeEach(() => {
-  window.calls = [];
-  window.go = {
-    main: {
-      DesktopService: {
-        GetAuthStatus: vi.fn(),
-        StartOAuthLogin: vi.fn(),
-        GetOAuthLoginStatus: vi.fn(),
-        CancelOAuthLogin: vi.fn(),
-        Logout: vi.fn(),
-        BrowseRepository: vi.fn(),
-        SelectRepository: vi.fn(),
-        GetRepoStatus: vi.fn(),
-        Initialize: vi.fn(async () =>
-          ok({
-            public_key: "age1test",
-            username: "octo",
-            environment: "default",
-          }),
-        ),
-        ListEnvironments: vi.fn(async () => ok([{ name: "default", current: true }])),
-        CreateEnvironment: vi.fn(async (name: string) => {
-          window.calls?.push(["create", name]);
-          return ok(undefined);
-        }),
-        SwitchEnvironment: vi.fn(async (name: string) => {
-          window.calls?.push(["switch", name]);
-          return ok(undefined);
-        }),
-        RenameEnvironment: vi.fn(async (name: string, newName: string) => {
-          window.calls?.push(["rename", name, newName]);
-          return ok(undefined);
-        }),
-        DeleteEnvironment: vi.fn(async (name: string) => {
-          window.calls?.push(["deleteEnv", name]);
-          return ok(undefined);
-        }),
-        ListSecrets: vi.fn(async (env: string) =>
-          ok({
-            environment: env,
-            secrets: [{ key: "TOKEN", value: "secret" }],
-          }),
-        ),
-        AddSecret: vi.fn(async (env: string, key: string, value: string) => {
-          window.calls?.push(["add", env, key, value]);
-          return ok(undefined);
-        }),
-        EditSecret: vi.fn(async (env: string, key: string, value: string) => {
-          window.calls?.push(["edit", env, key, value]);
-          return ok(undefined);
-        }),
-        DeleteSecret: vi.fn(async (env: string, key: string) => {
-          window.calls?.push(["delete", env, key]);
-          return ok(undefined);
-        }),
-        PullSecrets: vi.fn(async (env: string, replace: boolean) => {
-          window.calls?.push(["pull", env, replace]);
-          return ok({ output: ".env", count: 1, kept: null, removed: ["OLD"] });
-        }),
-        SyncSecrets: vi.fn(async (env: string) => {
-          window.calls?.push(["sync", env]);
-          return ok(undefined);
-        }),
-        ListConflicts: vi.fn(async (env: string) =>
-          // Wails hands back null for empty Go slices.
-          ok({
-            environment: env,
-            heads: ["h1", "h2"],
-            conflicts: [
-              {
-                key: "KEY",
-                candidates: [
-                  { value: "a", deleted: false },
-                  { value: "", deleted: true },
-                ],
-              },
-              { key: "OTHER", candidates: null },
-            ],
-          } as never),
-        ),
-        ResolveConflicts: vi.fn(async (env: string, heads: string[], choices: unknown[]) => {
-          window.calls?.push(["resolve", env, heads, choices]);
-          return ok(undefined);
-        }),
-        ListRepositories: vi.fn(async () => ok([])),
-        RemoveRepository: vi.fn(async () => ok(undefined)),
-        ListMembers: vi.fn(async () =>
-          // Wails can hand back null entries; the adapter must drop them.
-          ok([
-            { device_id: "d1", fingerprint: "aaaa", algorithm: "p256", admin: true, self: true },
-            null,
-          ] as never),
-        ),
-        ListJoinRequests: vi.fn(async () =>
-          ok([{ device_id: "d2", fingerprint: "bbbb", algorithm: "ed25519", requested_at: "t" }]),
-        ),
-        ApproveMember: vi.fn(async (id: string) => {
-          window.calls?.push(["approve", id]);
-          return ok(undefined);
-        }),
-        RemoveMember: vi.fn(async (id: string) => {
-          window.calls?.push(["remove", id]);
-          return ok(undefined);
-        }),
-        ReadConfig: vi.fn(async () => ok("")),
-        WriteConfig: vi.fn(async () => ok(undefined)),
-        GitInit: vi.fn(async (path: string) =>
-          ok({
-            path,
-            owner: "",
-            repo: "",
-            initialized: false,
-            has_git: true,
-            has_remote: false,
-          }),
-        ),
-        ListRepositoryOwners: vi.fn(async () =>
-          ok([
-            { login: "octo", organization: false },
-            { login: "octo-org", organization: true },
-          ]),
-        ),
-        GitCreateRemote: vi.fn(
-          async (path: string, owner: string, repo: string, privateRepository: boolean) => {
-            window.calls?.push(["createRemote", path, owner, repo, privateRepository]);
-            return ok({
-              path,
-              owner,
-              repo,
-              initialized: false,
-              has_git: true,
-              has_remote: true,
-            });
-          },
-        ),
-        GetAppVersion: vi.fn(async () => ok("v0.7.5")),
-      },
-    },
-  };
+  for (const name of Object.keys(desktop)) delete desktop[name];
 });
 
-describe("backend desktop adapter", () => {
-  it("delegates initialization and workspace reads to Wails", async () => {
-    await expect(backend.initialize()).resolves.toMatchObject({
-      environment: "default",
-      username: "octo",
-    });
-    await expect(backend.listEnvironments()).resolves.toEqual([{ name: "default", current: true }]);
-    await expect(backend.listSecrets("default")).resolves.toEqual({
-      environment: "default",
-      secrets: [{ key: "TOKEN", value: "secret" }],
-    });
+describe("toAppError", () => {
+  it("keeps the payload the desktop service marshalled", () => {
+    const err = toAppError(rejection("secret_conflict", { keys: "A" }));
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.payload).toMatchObject({ code: "secret_conflict", params: { keys: "A" } });
   });
 
-  it("passes environment and secret operations to Wails with desktop argument order", async () => {
-    await backend.createEnvironment("staging");
-    await backend.switchEnvironment("staging");
-    await backend.renameEnvironment("staging", "prod");
-    await backend.deleteEnvironment("prod");
+  it("turns anything else into internal without exposing its message", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(toAppError(new Error("binding missing")).payload.code).toBe("internal");
+    expect(toAppError("boom").payload.code).toBe("internal");
+    expect(log).toHaveBeenCalledTimes(2);
+    log.mockRestore();
+  });
+
+  it("passes an AppError through", () => {
+    const err = new AppError({ code: "conflict" });
+    expect(toAppError(err)).toBe(err);
+  });
+});
+
+describe("desktop backend", () => {
+  it("passes arguments in the desktop service's order", async () => {
     await backend.addSecret("TOKEN", "secret", "default");
     await backend.editSecret("TOKEN", "new", "default");
     await backend.deleteSecret("TOKEN", "default");
-    await expect(backend.pullSecrets("default")).resolves.toEqual({
-      output: ".env",
-      count: 1,
-      kept: [],
-      removed: ["OLD"],
-    });
     await backend.pullSecrets("default", true);
-    await backend.syncSecrets("default");
+    await backend.syncSecrets();
+    await backend.renameEnvironment("staging", "prod");
+    await backend.resolveConflicts("prod", ["h1"], [{ key: "KEY", value: "", delete: true }]);
+    await backend.gitCreateRemote("C:/repo", "octo-org", "example", true);
 
-    expect(window.calls).toEqual([
-      ["create", "staging"],
-      ["switch", "staging"],
-      ["rename", "staging", "prod"],
-      ["deleteEnv", "prod"],
-      ["add", "default", "TOKEN", "secret"],
-      ["edit", "default", "TOKEN", "new"],
-      ["delete", "default", "TOKEN"],
-      ["pull", "default", false],
-      ["pull", "default", true],
-      ["sync", "default"],
-    ]);
+    expect(desktop.AddSecret).toHaveBeenCalledWith("default", "TOKEN", "secret");
+    expect(desktop.EditSecret).toHaveBeenCalledWith("default", "TOKEN", "new");
+    expect(desktop.DeleteSecret).toHaveBeenCalledWith("default", "TOKEN");
+    expect(desktop.PullSecrets).toHaveBeenCalledWith("default", true);
+    expect(desktop.SyncSecrets).toHaveBeenCalledWith("");
+    expect(desktop.RenameEnvironment).toHaveBeenCalledWith("staging", "prod");
+    expect(desktop.ResolveConflicts).toHaveBeenCalledWith(
+      "prod",
+      ["h1"],
+      [{ key: "KEY", value: "", delete: true }],
+    );
+    expect(desktop.GitCreateRemote).toHaveBeenCalledWith("C:/repo", "octo-org", "example", true);
   });
 
-  it("delegates repository setup to the desktop service", async () => {
-    await expect(backend.gitInit("C:/repo")).resolves.toMatchObject({
-      repo: { has_git: true, has_remote: false },
+  it("reports a repository as selected only when it has a path", async () => {
+    desktop.GetRepoStatus = vi.fn(async () => ({ path: "", initialized: false }));
+    await expect(backend.repoStatus()).resolves.toEqual({ selected: false });
+
+    const repo = { path: "/repo", initialized: true, has_git: true };
+    desktop.SelectRepository = vi.fn(async () => repo);
+    await expect(backend.selectRepository("/repo")).resolves.toEqual({ selected: true, repo });
+  });
+
+  it("rejects with the AppError the desktop service returned", async () => {
+    desktop.ApproveMember = vi.fn(async () => {
+      throw rejection("access_denied");
     });
-    await expect(backend.listRepositoryOwners()).resolves.toEqual([
-      { login: "octo", organization: false },
-      { login: "octo-org", organization: true },
-    ]);
-    await expect(
-      backend.gitCreateRemote("C:/repo", "octo-org", "example", true),
-    ).resolves.toMatchObject({
-      repo: { owner: "octo-org", repo: "example", has_remote: true },
-    });
-    expect(window.calls).toContainEqual(["createRemote", "C:/repo", "octo-org", "example", true]);
-  });
-});
-
-describe("backend member operations", () => {
-  it("maps members and join requests from the desktop service", async () => {
-    await expect(backend.listMembers()).resolves.toEqual([
-      { device_id: "d1", fingerprint: "aaaa", algorithm: "p256", admin: true, self: true },
-    ]);
-    await expect(backend.listJoinRequests()).resolves.toEqual([
-      { device_id: "d2", fingerprint: "bbbb", algorithm: "ed25519", requested_at: "t" },
-    ]);
+    const err = await backend.approveMember("d2").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect(toDisplayError(err).code).toBe("access_denied");
   });
 
-  it("passes the device id to approve and remove", async () => {
-    await backend.approveMember("d2");
-    await backend.removeMember("d1");
-    expect(window.calls).toEqual([
-      ["approve", "d2"],
-      ["remove", "d1"],
-    ]);
-  });
-
-  it("lists conflicts and passes the decisions with the heads they were made from", async () => {
-    await expect(backend.listConflicts("prod")).resolves.toEqual({
-      environment: "prod",
-      heads: ["h1", "h2"],
-      conflicts: [
-        {
-          key: "KEY",
-          candidates: [
-            { value: "a", deleted: false },
-            { value: "", deleted: true },
-          ],
-        },
-        { key: "OTHER", candidates: [] },
-      ],
-    });
-    await backend.resolveConflicts("prod", ["h1", "h2"], [{ key: "KEY", value: "", delete: true }]);
-    expect(window.calls).toEqual([
-      ["resolve", "prod", ["h1", "h2"], [{ key: "KEY", value: "", delete: true }]],
-    ]);
-  });
-
-  it("treats an empty result as no members", async () => {
-    window.go!.main!.DesktopService!.ListMembers = vi.fn(async () => ok(null as never));
-    window.go!.main!.DesktopService!.ListJoinRequests = vi.fn(async () => ok(null as never));
-    await expect(backend.listMembers()).resolves.toEqual([]);
-    await expect(backend.listJoinRequests()).resolves.toEqual([]);
-  });
-
-  it("fails instead of pretending when the desktop service is missing", async () => {
-    window.go = undefined;
-    await expect(backend.listMembers()).resolves.toEqual([]);
-    await expect(backend.listJoinRequests()).resolves.toEqual([]);
-    await expect(backend.approveMember("d2")).rejects.toMatchObject({
-      payload: { code: "unavailable" },
-    });
-    await expect(backend.removeMember("d1")).rejects.toMatchObject({
-      payload: { code: "unavailable" },
-    });
-    await expect(backend.resolveConflicts("", ["h1"], [])).rejects.toMatchObject({
-      payload: { code: "unavailable" },
-    });
-  });
-
-  it("propagates a refusal from the desktop service", async () => {
-    window.go!.main!.DesktopService!.ApproveMember = vi.fn(async () => ({
-      error: { code: "access_denied", message: "no", params: {} },
+  it("turns a failed sign-in's payload into a display error", async () => {
+    desktop.GetOAuthLoginStatus = vi.fn(async () => ({
+      state: "denied",
+      error: { code: "access_denied", message: "raw", params: {} },
     }));
-    await expect(backend.approveMember("d2")).rejects.toMatchObject({
-      payload: { code: "access_denied" },
-    });
+    const status = await backend.oauthStatus("s1");
+    expect(status.state).toBe("denied");
+    expect(status.error?.code).toBe("access_denied");
   });
 });

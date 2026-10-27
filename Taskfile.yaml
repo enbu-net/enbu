@@ -181,35 +181,87 @@ tasks:
       - go build -o enbu .
 
   gui/build:
-    desc: Build GUI desktop app
+    desc: Build GUI desktop app into desktop/wails/build/bin
+    deps:
+      - gui/build/frontend
+      - tools/wails3
+    dir: desktop/wails
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
+      # macOS bundle versions must be numeric.
+      BUNDLE_VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed -E 's/^v//; s/[^0-9.].*$//' | grep . || echo 0.0.0
+      LDFLAGS: -s -w -X main.Version={{.VERSION}}
+      WAILS3: ../../.tmp/bin/wails3{{exeExt}}
+    cmds:
+      - mkdir -p build/bin
+      - '{{.WAILS3}} generate icons -input ../../assets/icon.png -windowsfilename build/icon.ico -macfilename build/icons.icns'
+      - cmd: '{{.WAILS3}} generate syso -arch {{ARCH}} -icon build/icon.ico -manifest packaging/windows/enbu-desktop.exe.manifest -out rsrc_windows_{{ARCH}}.syso'
+        platforms: [windows]
+      - cmd: go build -tags production -trimpath -ldflags "{{.LDFLAGS}} -H windowsgui" -o build/bin/enbu-desktop.exe .
+        platforms: [windows]
+      - cmd: go build -tags production -trimpath -ldflags "{{.LDFLAGS}}" -o build/bin/enbu-desktop .
+        platforms: [linux, darwin]
+      - cmd: |
+          app=build/bin/enbu-desktop.app
+          rm -rf "$app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          mv build/bin/enbu-desktop "$app/Contents/MacOS/enbu-desktop"
+          cp build/icons.icns "$app/Contents/Resources/icons.icns"
+          cp packaging/darwin/Info.plist "$app/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "{{.BUNDLE_VERSION}}" "$app/Contents/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "{{.BUNDLE_VERSION}}" "$app/Contents/Info.plist"
+          codesign --force --deep --sign - "$app"
+        platforms: [darwin]
+
+  gui/run:
+    desc: Run GUI desktop app against the Vite dev server (frontend hot reload; Ctrl-C stops both)
+    deps:
+      - gui/run/frontend
+      - gui/run/app
+
+  gui/run/frontend:
+    internal: true
+    deps:
+      - gui/build/frontend
+    dir: web
+    cmds:
+      - vp dev --port 5173 --strictPort
+
+  gui/run/app:
+    internal: true
     deps:
       - gui/build/frontend
     dir: desktop/wails
     vars:
       VERSION:
         sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
-      PLATFORM: '{{.PLATFORM | default ""}}'
-      EXTRA_FLAGS: '{{.EXTRA_FLAGS | default ""}}'
+    env:
+      FRONTEND_DEVSERVER_URL: http://localhost:5173
     cmds:
-      - mkdir -p build
-      - cp ../../assets/icon.png build/appicon.png
-      - |
-        go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 build \
-          -nosyncgomod -m -s \
-          -tags webkit2_41 \
-          {{if .PLATFORM}}-platform "{{.PLATFORM}}"{{end}} \
-          {{.EXTRA_FLAGS}} \
-          -ldflags "-X main.Version={{.VERSION}}"
+      - curl --fail --silent --output /dev/null --retry 60 --retry-delay 1 --retry-connrefused http://localhost:5173/
+      - go run -ldflags "-X main.Version={{.VERSION}}" .
 
-  gui/run:
-    desc: Run GUI desktop app in dev mode
+  gui/bindings:
+    desc: Regenerate the frontend's TypeScript bindings of the desktop service (web/src/bindings)
+    deps:
+      - gui/build/frontend
+      - tools/wails3
     dir: desktop/wails
-    vars:
-      VERSION:
-        sh: git describe --tags --always --dirty 2>/dev/null || echo "(unset)"
     cmds:
-      - vp env off
-      - go run github.com/wailsapp/wails/v2/cmd/wails@v2.16.0 dev -tags webkit2_41 -nosyncgomod -ldflags "-X main.Version={{.VERSION}}"
+      - ../../.tmp/bin/wails3{{exeExt}} generate bindings -silent -ts -d ../../web/src/bindings .
+
+  tools/wails3:
+    internal: true
+    run: once
+    sources:
+      - tools/wails3/go.mod
+      - tools/wails3/go.sum
+    generates:
+      - .tmp/bin/wails3{{exeExt}}
+    cmds:
+      - go build -C tools/wails3 -o ../../.tmp/bin/wails3{{exeExt}} github.com/wailsapp/wails/v3/cmd/wails3
 
   all/check:
     desc: Format and lint all code
@@ -234,12 +286,14 @@ tasks:
       - govulncheck -tags fixture ./...
 
   gui/check:
-    desc: Format and lint GUI code
+    desc: Format and lint GUI code, and check the generated bindings are current
     deps:
       - gui/build/frontend
-    dir: web
     cmds:
-      - vp check
+      - task: gui/bindings
+      - git diff --exit-code -- web/src/bindings
+      - test -z "$(git status --porcelain -- web/src/bindings)"
+      - cd web && vp check
 
   scripts/check:
     desc: Check Python formatting and lint

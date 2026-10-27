@@ -45,14 +45,18 @@ describe("enbu Oxlint rules", () => {
 
   it("rejects Wails access outside the backend adapter", () => {
     const { report, visitors } = visitorsFor("no-direct-wails-binding");
-    visitors.MemberExpression({
-      type: "MemberExpression",
-      computed: false,
-      object: { type: "Identifier", name: "window" },
-      property: { type: "Identifier", name: "go" },
+    const literal = (value: string) => ({ type: "Literal", value });
+    visitors.ImportDeclaration({
+      source: literal("../bindings/github.com/enbu-net/enbu/desktop/wails"),
     });
+    visitors.ImportDeclaration({ source: literal("@wailsio/runtime") });
+    visitors.ImportExpression({ source: literal("../../bindings/events") });
+    visitors.ExportNamedDeclaration({ source: literal("./bindings/x/models") });
+    visitors.ImportDeclaration({ source: literal("../lib/backend") });
+    visitors.ImportDeclaration({ source: literal("./binding-helpers") });
+    visitors.ExportNamedDeclaration({ source: null });
 
-    expect(report).toHaveBeenCalledOnce();
+    expect(report).toHaveBeenCalledTimes(4);
   });
 
   it("rejects string-based ErrorAlert props", () => {

@@ -7,11 +7,14 @@ import type {
   InitResult,
   JoinRequest,
   Member,
+  OAuthStart,
+  OAuthStatus,
   PullResult,
+  RepoInfo,
   SecretsResponse,
-} from "./api";
+} from "./types";
 import { createAppError } from "./app-error";
-import type { OAuthStart, OAuthStatus } from "./backend";
+import type { Backend } from "./backend";
 
 const previewUsername = "yashikota";
 
@@ -81,8 +84,16 @@ let mockJoinRequests: JoinRequest[] = [
   },
 ];
 
-const mockRepoHistory: NonNullable<GUIRepoStatus["repo"]>[] = [
-  { path: "/demo/enbu", owner: "enbu-net", repo: "enbu", initialized: true },
+const mockRepoHistory: RepoInfo[] = [
+  {
+    path: "/demo/enbu",
+    owner: "enbu-net",
+    repo: "enbu",
+    initialized: true,
+    has_git: true,
+    has_remote: true,
+    storage_configured: true,
+  },
 ];
 let mockSelectedRepoPath = mockRepoHistory[0]?.path ?? "";
 
@@ -97,12 +108,12 @@ function secretsForEnv(env: string): { key: string; value: string }[] {
   return (mockSecretsByEnv[name] ??= []);
 }
 
-export const mockBackend = {
+export const mockBackend: Backend = {
   async authStatus(): Promise<AuthStatus> {
     return {
       authenticated: true,
       username: previewUsername,
-      repo: { owner: "enbu-net", name: "enbu" },
+      workspace_configured: true,
     };
   },
 
@@ -125,14 +136,7 @@ export const mockBackend = {
   async repoStatus(): Promise<GUIRepoStatus> {
     const selected = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
     if (!selected) return { selected: false };
-    return {
-      selected: true,
-      repo: {
-        ...selected,
-        has_git: true,
-        has_remote: true,
-      },
-    };
+    return { selected: true, repo: Object.assign({}, selected) };
   },
 
   async browseRepository(): Promise<GUIRepoStatus> {
@@ -145,7 +149,14 @@ export const mockBackend = {
   },
 
   async initialize(): Promise<InitResult> {
-    return { public_key: "age1demo...", username: previewUsername, environment: "development" };
+    return {
+      public_key: "age1demo...",
+      username: previewUsername,
+      environment: "development",
+      device_id: mockMembers[0].device_id,
+      fingerprint: mockMembers[0].fingerprint,
+      pending: false,
+    };
   },
 
   async gitInit(_path: string): Promise<GUIRepoStatus> {
@@ -180,11 +191,11 @@ export const mockBackend = {
   },
 
   async switchEnvironment(name: string): Promise<void> {
-    mockEnvs = mockEnvs.map((e) => ({ ...e, current: e.name === name }));
+    mockEnvs = mockEnvs.map((e) => ({ name: e.name, current: e.name === name }));
   },
 
   async renameEnvironment(name: string, newName: string): Promise<void> {
-    mockEnvs = mockEnvs.map((e) => (e.name === name ? { ...e, name: newName } : e));
+    mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
       delete mockSecretsByEnv[name];
@@ -252,7 +263,7 @@ export const mockBackend = {
     const { [name]: _resolved, ...rest } = mockConflictsByEnv;
     mockConflictsByEnv = rest;
   },
-  async listRepositories(): Promise<NonNullable<GUIRepoStatus["repo"]>[]> {
+  async listRepositories(): Promise<RepoInfo[]> {
     return [...mockRepoHistory];
   },
   async removeRepository(path: string): Promise<void> {

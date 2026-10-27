@@ -93,6 +93,8 @@ export const en = {
     logout: "Log out",
     authorizeTitle: "GitHub Login",
     browserInstruction: "Complete authorization in the GitHub page opened in your browser.",
+    account: "Account",
+    accountMenu: "Account menu",
   },
   common: {
     loading: "Loading...",

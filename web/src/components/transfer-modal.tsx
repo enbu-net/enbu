@@ -5,12 +5,8 @@ import { Button, Text } from "./ui";
 import { useI18n } from "../lib/i18n";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { formatDisplayError, type DisplayError } from "../lib/app-error";
-
-export interface ProgressStep {
-  op: "add" | "pull" | "sync" | "delete";
-  step: string;
-  status: "start" | "done";
-}
+import { onProgress } from "../lib/platform";
+import type { ProgressStep } from "../lib/types";
 
 interface TransferModalProps {
   open: boolean;
@@ -36,7 +32,8 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
   isDoneRef.current = isDone;
   useFocusTrap(open, dialogRef);
 
-  // Event listener & Fallback simulation
+  // Shows the backend's progress events; without them, steps the operation
+  // usually goes through.
   useEffect(() => {
     if (!open || !operation) {
       setCurrentStep(null);
@@ -47,32 +44,14 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
 
     let hasRealEvents = false;
 
-    const handleCustomEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<ProgressStep>;
-      if (customEvent.detail) {
-        hasRealEvents = true;
-        setCurrentStep(customEvent.detail);
-        if (customEvent.detail.status === "done") {
-          setIsDone(true);
-        }
+    const unsubscribe = onProgress((step) => {
+      hasRealEvents = true;
+      setCurrentStep(step);
+      if (step.status === "done") {
+        setIsDone(true);
       }
-    };
-    window.addEventListener("enbu:progress", handleCustomEvent);
+    });
 
-    const wailsRuntime = (window as unknown as { runtime?: { EventsOn?: (event: string, callback: (data: ProgressStep) => void) => () => void } }).runtime;
-    let unsubscribeWails: (() => void) | undefined;
-
-    if (wailsRuntime?.EventsOn) {
-      unsubscribeWails = wailsRuntime.EventsOn("enbu:progress", (step: ProgressStep) => {
-        hasRealEvents = true;
-        setCurrentStep(step);
-        if (step.status === "done") {
-          setIsDone(true);
-        }
-      });
-    }
-
-    // Fallback simulation timer for mock environment
     const fallbackSteps = DEFAULT_STEPS[operation];
     let stepIdx = 0;
 
@@ -98,10 +77,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
     });
 
     return () => {
-      window.removeEventListener("enbu:progress", handleCustomEvent);
-      if (typeof unsubscribeWails === "function") {
-        unsubscribeWails();
-      }
+      unsubscribe();
       clearInterval(timer);
     };
   }, [open, operation]);

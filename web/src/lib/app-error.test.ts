@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import {
-  AppError,
-  displayError,
-  formatDisplayError,
-  toDisplayError,
-  unwrapBindingResult,
-} from "./app-error";
+import { AppError, displayError, formatDisplayError, toDisplayError } from "./app-error";
 
 describe("display errors", () => {
   it("localizes a known code and expands params at display time", () => {
@@ -49,13 +43,5 @@ describe("display errors", () => {
     const error = displayError("secret_not_found", { key: "$&$'$`" });
 
     expect(formatDisplayError(error, "en")).toBe('Secret "$&$\'$`" does not exist.');
-  });
-
-  it("unwraps binding errors without localizing them early", () => {
-    expect(() =>
-      unwrapBindingResult({
-        error: { code: "conflict", message: "raw", params: {} },
-      }),
-    ).toThrow(AppError);
   });
 });

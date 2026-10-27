@@ -3,7 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Box, HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Text } from "./ui";
 import { useI18n } from "../lib/i18n";
-import type { ConflictChoice, ConflictSet } from "../lib/api";
+import type { ConflictChoice, ConflictSet } from "../lib/types";
 
 /**
  * ConflictPanel asks for one value per secret that concurrent edits changed

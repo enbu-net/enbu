@@ -3,7 +3,23 @@ import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { I18nProvider } from "../lib/i18n";
 import { displayError, type DisplayError } from "../lib/app-error";
-import { TransferModal, type ProgressStep } from "./transfer-modal";
+import type { ProgressStep } from "../lib/types";
+import { TransferModal } from "./transfer-modal";
+
+const progress = vi.hoisted(() => {
+  const listeners = new Set<(step: ProgressStep) => void>();
+  return {
+    listeners,
+    emit: (step: ProgressStep) => listeners.forEach((listener) => listener(step)),
+  };
+});
+
+vi.mock("../lib/platform", () => ({
+  onProgress: (listener: (step: ProgressStep) => void) => {
+    progress.listeners.add(listener);
+    return () => progress.listeners.delete(listener);
+  },
+}));
 
 describe("TransferModal", () => {
   let container: HTMLDivElement;
@@ -21,7 +37,6 @@ describe("TransferModal", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    Reflect.deleteProperty(window, "runtime");
     vi.useRealTimers();
   });
 
@@ -54,47 +69,22 @@ describe("TransferModal", () => {
     expect(container.querySelector("[data-transfer-direction]")?.getAttribute("data-transfer-direction")).toBe("upload");
   });
 
-  it("handles CustomEvent progress and terminal completion", () => {
+  it("shows backend progress and terminal completion", () => {
     renderModal();
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent<ProgressStep>("enbu:progress", {
-          detail: { op: "add", step: "push", status: "start" },
-        }),
-      );
-    });
+    act(() => progress.emit({ op: "add", step: "push", status: "start" }));
     expect(container.textContent).toContain("Publishing the signed revision to storage");
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent<ProgressStep>("enbu:progress", {
-          detail: { op: "add", step: "push", status: "done" },
-        }),
-      );
-    });
+    act(() => progress.emit({ op: "add", step: "push", status: "done" }));
     expect(container.textContent).toContain("Done ✓");
     void act(() => vi.advanceTimersByTime(2400));
     expect(container.textContent).toContain("Done ✓");
   });
 
-  it("subscribes to Wails progress events", () => {
-    let callback: ((step: ProgressStep) => void) | undefined;
-    const unsubscribe = vi.fn();
-    Object.defineProperty(window, "runtime", {
-      configurable: true,
-      value: {
-        EventsOn: vi.fn((name: string, handler: (step: ProgressStep) => void) => {
-          expect(name).toBe("enbu:progress");
-          callback = handler;
-          return unsubscribe;
-        }),
-      },
-    });
+  it("unsubscribes from progress events when closed", () => {
     renderModal();
-    act(() => callback?.({ op: "add", step: "encrypt", status: "start" }));
-    expect(container.textContent).toContain("Encrypting for every member with age");
+    expect(progress.listeners.size).toBe(1);
     act(() => root.unmount());
-    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(progress.listeners.size).toBe(0);
     root = createRoot(container);
   });
 

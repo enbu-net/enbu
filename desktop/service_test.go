@@ -110,22 +110,30 @@ func TestValidateRepoPath(t *testing.T) {
 	}
 }
 
-func TestOnStepProgressEmitsWailsEvent(t *testing.T) {
+func TestProgressEmitsEvents(t *testing.T) {
 	s := NewService(app.New())
-	s.ctx = context.Background()
-	var eventName string
-	var payload []interface{}
-	s.emitEvent = func(_ context.Context, name string, data ...interface{}) {
-		eventName = name
-		payload = data
+	// Without an emitter the hooks are no-ops.
+	s.OnStepProgress(app.ProgressStep{Op: "pull"})
+
+	type event struct {
+		name string
+		data any
 	}
-	want := app.ProgressStep{Op: "pull", Step: "decrypt", Status: "done"}
-	s.OnStepProgress(want)
-	if eventName != "enbu:progress" {
-		t.Fatalf("event name = %q", eventName)
+	var events []event
+	s.SetEventEmitter(func(name string, data any) {
+		events = append(events, event{name, data})
+	})
+	step := app.ProgressStep{Op: "pull", Step: "decrypt", Status: "done"}
+	s.OnStepProgress(step)
+	s.OnProgress("decrypting")
+	s.OnConflictRetry(2, 5)
+	want := []event{
+		{EventProgress, step},
+		{EventProgressMessage, "decrypting"},
+		{EventConflictRetry, ConflictRetry{Attempt: 2, MaxAttempts: 5}},
 	}
-	if len(payload) != 1 || !reflect.DeepEqual(payload[0], want) {
-		t.Fatalf("payload = %#v, want %#v", payload, want)
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
 	}
 }
 
