@@ -1,0 +1,65 @@
+{
+  "name": "enbu",
+  "displayName": "enbu",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Manage the team's encrypted .env secrets with enbu, in the same UI as the enbu desktop app.",
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enbu-net/enbu"
+  },
+  "publisher": "enbu-net",
+  "type": "module",
+  "main": "./dist/extension.cjs",
+  "scripts": {
+    "build": "vp pack && node scripts/copy-web.mjs",
+    "lint": "vp lint",
+    "fmt": "vp fmt",
+    "test": "vp test",
+    "check": "vp check && vp test"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/vscode": "1.95.0",
+    "typescript": "7.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "enbu.open",
+        "title": "Open enbu",
+        "category": "enbu"
+      }
+    ],
+    "configuration": {
+      "title": "enbu",
+      "properties": {
+        "enbu.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Path to the `enbu` binary. Leave empty to use the binary bundled with the extension, or `enbu` on `PATH`. On macOS, point this at the binary that created your device identity: a Secure Enclave key works only with the binary it was created with."
+        }
+      }
+    }
+  },
+  "activationEvents": [],
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "//": "Manage Node.js and pnpm versions only in ../aqua.yaml. Do not add engines.node, devEngines, or packageManager; configure Vite+ to use system tools.",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "enbu runs the enbu binary against the workspace's enbu.toml and decrypts secrets."
+    },
+    "virtualWorkspaces": false
+  }
+}

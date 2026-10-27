@@ -20,7 +20,7 @@ Keyless `.env` management. Encrypts secrets with age for each member's device ke
 ## Commands
 
 ```bash
-task all/build          # Build CLI and GUI
+task all/build          # Build CLI, GUI and the VS Code extension
 task all/test           # All tests
 task all/check          # Format and lint all code
 task cli/build          # Build CLI
@@ -33,6 +33,9 @@ task gui/run            # Run the desktop app against the Vite dev server
 task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code, and fail on stale bindings
+task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
+task vscode/test        # VS Code extension tests
+task vscode/check       # Format and lint VS Code extension code
 ```
 
 The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
@@ -43,7 +46,8 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
 desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
-web/                     → React frontend of the desktop app (and the browser preview): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend
+vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local, trusted workspaces only
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture

@@ -1,0 +1,6 @@
+**
+!dist/extension.cjs
+!media/**
+!bin/**
+!package.json
+!README.md

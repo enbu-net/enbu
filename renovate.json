@@ -31,6 +31,12 @@
       "enabled": false
     },
     {
+      "description": "@types/vscode must not be newer than engines.vscode in vscode/package.json; raise both by hand",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["@types/vscode"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["aquaproj/aqua-registry"],
       "extends": ["schedule:earlyMondays"]
     },

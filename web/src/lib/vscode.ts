@@ -100,6 +100,52 @@ export const vscodeBridge: VsCodeBridge | undefined = inVsCode
   ? new VsCodeBridge(acquireVsCodeApi(), window)
   : undefined;
 
+/**
+ * A webview's assets come from another origin than the page, and a worker
+ * script must have the page's origin. For a cross-origin script this returns a
+ * bootstrap that loads it from inside a worker, which may load other origins;
+ * otherwise undefined.
+ */
+export function crossOriginWorkerSource(
+  url: string | URL,
+  type: WorkerType | undefined,
+  baseURI: string,
+  origin: string,
+): string | undefined {
+  const target = new URL(String(url), baseURI);
+  // URL.origin is "null" for schemes such as vscode-webview:, so compare by hand.
+  const targetOrigin = `${target.protocol}//${target.host}`;
+  if (target.protocol === "blob:" || target.protocol === "data:" || targetOrigin === origin) {
+    return undefined;
+  }
+  const href = JSON.stringify(target.href);
+  return type === "module" ? `import ${href};` : `importScripts(${href});`;
+}
+
+/** Makes `new Worker(url)` work for the UI's own worker scripts in a webview. */
+export function installCrossOriginWorkers(scope: typeof globalThis): void {
+  const Base = scope.Worker;
+  if (!Base) return;
+  scope.Worker = class extends Base {
+    constructor(url: string | URL, options?: WorkerOptions) {
+      const source = crossOriginWorkerSource(
+        url,
+        options?.type,
+        scope.document.baseURI,
+        scope.location.origin,
+      );
+      super(
+        source === undefined
+          ? url
+          : URL.createObjectURL(new Blob([source], { type: "text/javascript" })),
+        options,
+      );
+    }
+  };
+}
+
+if (inVsCode) installCrossOriginWorkers(globalThis);
+
 type Result<K extends ServiceMethod> = Awaited<ReturnType<ServiceClient[K]>>;
 
 /**
