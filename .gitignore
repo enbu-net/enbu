@@ -39,6 +39,7 @@ docs/superpowers/
 web/node_modules/
 web/dist/
 web/dist-preview/
+web/dist-vscode/
 web/package.json.md5
 web/src/routeTree.gen.ts
 desktop/wails/build/

@@ -42,7 +42,7 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/)
+desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
 web/                     → React frontend of the desktop app (and the browser preview): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir

@@ -13,15 +13,24 @@ const loadPlugins = async () => {
 // Vite 0.2.9's recursive PluginOption type exceeds TypeScript's comparison depth.
 const lazyPluginFactory = loadPlugins as unknown as Parameters<typeof lazyPlugins>[0];
 
+// The VS Code extension loads the UI from its own files through webview URIs,
+// so that build uses relative asset paths.
+const bases: Record<string, string> = {
+  preview: process.env.PREVIEW_BASE ?? "/enbu/web/",
+  vscode: "./",
+};
+const outDirs: Record<string, string> = { preview: "dist-preview", vscode: "dist-vscode" };
+
 export default defineConfig(({ mode }) => ({
-  base: mode === "preview" ? (process.env.PREVIEW_BASE ?? "/enbu/web/") : undefined,
+  base: bases[mode],
   build: {
-    outDir: mode === "preview" ? "dist-preview" : "dist",
+    outDir: outDirs[mode] ?? "dist",
   },
   fmt: {
     ignorePatterns: [
       "dist/**",
       "dist-preview/**",
+      "dist-vscode/**",
       "index.html",
       "panda.config.ts",
       "postcss.config.cjs",
@@ -36,6 +45,7 @@ export default defineConfig(({ mode }) => ({
     ignorePatterns: [
       "dist/**",
       "dist-preview/**",
+      "dist-vscode/**",
       "src/routeTree.gen.ts",
       "src/bindings/**",
       "styled-system/**",
@@ -75,6 +85,7 @@ export default defineConfig(({ mode }) => ({
           "src/lib/backend.ts",
           "src/lib/platform.ts",
           "src/lib/types.ts",
+          "src/lib/vscode.ts",
           "src/lib/*.test.ts",
         ],
         rules: {
