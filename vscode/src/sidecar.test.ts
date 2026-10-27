@@ -32,7 +32,8 @@ describe("resolveBinary", () => {
 // and exits on "Exit".
 const fake = `#!/usr/bin/env node
 if (process.argv.slice(2).join(" ") !== "rpc --stdio") process.exit(2);
-const { protocol } = JSON.parse(process.env.FAKE_ENBU ?? "{}");
+const { protocol, crash } = JSON.parse(process.env.FAKE_ENBU ?? "{}");
+if (crash) process.exit(4);
 process.stderr.write("fake enbu started\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
@@ -88,6 +89,19 @@ describe.skipIf(process.platform === "win32")("startSidecar", () => {
         onExit: () => {},
       }),
     ).rejects.toThrow();
+  });
+
+  it("fails without reporting an exit when enbu exits before the handshake", async () => {
+    vi.stubEnv("FAKE_ENBU", JSON.stringify({ crash: true }));
+    const onExit = vi.fn();
+    try {
+      await expect(
+        startSidecar({ binary, cwd: dir, handlers, log: () => {}, onExit }),
+      ).rejects.toThrow("enbu exited");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(onExit).not.toHaveBeenCalled();
   });
 
   it("fails and stops enbu when it speaks another protocol version", async () => {

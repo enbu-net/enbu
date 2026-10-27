@@ -31,11 +31,15 @@ export interface Sidecar {
 
 export interface SidecarOptions {
   binary: string;
-  cwd: string | undefined;
+  /**
+   * enbu's working directory. Windows looks up a bare "enbu" there first, so
+   * it must not be a folder a repository controls.
+   */
+  cwd: string;
   handlers: ClientHandlers;
   /** Receives enbu's stderr, which holds its logs but never secret values. */
   log: (text: string) => void;
-  /** Called when enbu exits on its own, not through dispose. */
+  /** Called when enbu exits on its own after the handshake, not through dispose. */
   onExit: (code: number | null) => void;
 }
 
@@ -50,6 +54,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   if (!stdin || !stdout || !stderr) throw new Error("enbu has no stdio");
 
   let disposed = false;
+  let started = false;
   const client = new RpcClient(stdout, stdin, options.handlers);
   stderr.setEncoding("utf8");
   stderr.on("data", (chunk: string) => options.log(chunk));
@@ -62,7 +67,8 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   });
   child.once("exit", (code) => {
     client.dispose();
-    if (!disposed) options.onExit(code);
+    // An exit before the handshake completes rejects startSidecar instead.
+    if (started && !disposed) options.onExit(code);
   });
 
   const dispose = () => {
@@ -75,6 +81,7 @@ export async function startSidecar(options: SidecarOptions): Promise<Sidecar> {
   try {
     await spawned;
     const info = await initialize(client);
+    started = true;
     return { client, info, process: child, dispose };
   } catch (err) {
     dispose();

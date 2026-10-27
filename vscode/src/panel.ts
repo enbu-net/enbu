@@ -55,7 +55,7 @@ export class EnbuPanel {
     try {
       sidecar = await startSidecar({
         binary,
-        cwd: folder?.uri.fsPath,
+        cwd: context.extensionPath,
         handlers: {
           pickDirectory: () => this.#pickDirectory(),
           openExternal: (url) => this.#openExternal(url),
@@ -65,6 +65,8 @@ export class EnbuPanel {
         onExit: (code) => this.#exited(code),
       });
     } catch {
+      // Closing the panel while enbu starts is not a failure to report.
+      if (this.#disposed) return;
       this.#panel.dispose();
       void vscode.window.showErrorMessage(
         `Could not start enbu (${binary}). Install enbu, or set enbu.path to the enbu binary.`,
