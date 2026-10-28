@@ -25,6 +25,18 @@
   ],
   "packageRules": [
     {
+      "description": "Use actions.lock for actions; keep external reusable workflows SHA pinned",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "pinDigests": false
+    },
+    {
+      "description": "External reusable workflows are outside actions.lock coverage",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["workflow"],
+      "pinDigests": true
+    },
+    {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@vitest/coverage-v8"],
