@@ -257,18 +257,35 @@ func (r *resourceRead) parents() []digest.Digest {
 // loadResource verifies every revision of env that storage shows and checks it
 // against what this device accepted before. It decrypts nothing.
 func (s *session) loadResource(ctx context.Context, resource string, also ...digest.Digest) (*wsp.StateView, error) {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
-	if err != nil {
-		return nil, wspError(err)
+	for attempt := 0; ; attempt++ {
+		sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
+		if err != nil {
+			return nil, wspError(err)
+		}
+		if sv.Graph.Len() == 0 {
+			return nil, storageError(storage.ErrNotFound)
+		}
+		err = s.cps.CheckStates(resource, sv.Graph)
+		if err == nil {
+			return sv, nil
+		}
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return nil, wspError(err)
+		}
+		// Another process of this device may have accepted a revision after
+		// the listing above was taken. Fetch the accepted heads by name: one
+		// that storage really lost is still missing, and that stays a rollback.
+		accepted, err := s.cps.State(resource)
+		if err != nil {
+			return nil, err
+		}
+		also = append(append([]digest.Digest(nil), also...), accepted...)
 	}
-	if sv.Graph.Len() == 0 {
-		return nil, storageError(storage.ErrNotFound)
-	}
-	if err := s.cps.CheckStates(resource, sv.Graph); err != nil {
-		return nil, wspError(err)
-	}
-	return sv, nil
 }
+
+// acceptedRetries bounds how often loadResource reads storage again for heads
+// that other processes of this device accepted meanwhile.
+const acceptedRetries = 2
 
 // decrypt reads the ciphertext of one verified revision, checks it is the one
 // the signed State names, and decrypts it. This is the only place a revision's
@@ -287,14 +304,28 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 // settles conflicts a person has already decided. With record set the verified
 // view becomes this device's checkpoint.
 func (s *session) readResource(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
-	sv, err := s.loadResource(ctx, resource, also...)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		sv, err := s.loadResource(ctx, resource, also...)
+		if err != nil {
+			return nil, err
+		}
+		r, err := s.mergeResource(ctx, resource, sv, choices)
+		if err != nil || !record {
+			return r, err
+		}
+		err = s.cps.AcceptStates(resource, sv.Graph, r.parents())
+		if err == nil {
+			return r, nil
+		}
+		// Another process of this device accepted a newer head while this one
+		// was reading; a fresh read includes it.
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return nil, wspError(err)
+		}
 	}
-	return s.mergeResource(ctx, resource, sv, choices, record)
 }
 
-func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice, record bool) (*resourceRead, error) {
+func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice) (*resourceRead, error) {
 	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return nil, err
@@ -325,11 +356,6 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 			bases = append(bases, m)
 		}
 		r.secrets, r.conflicts = merge.Merge(bases, maps, choices)
-	}
-	if record {
-		if err := s.cps.AcceptStates(resource, sv.Graph, r.parents()); err != nil {
-			return nil, wspError(err)
-		}
 	}
 	return r, nil
 }
@@ -403,45 +429,64 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // writeState encrypts secrets for the verified recipient set and publishes a
 // revision that merges parents. Storage has no compare-and-swap, so publishing
 // never replaces anything: a concurrent writer's revision stays beside this one
-// and the next reader merges them.
-func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (digest.Digest, error) {
+// and the next reader merges them. The revision is returned once it is
+// published, even when the error says members changed meanwhile.
+func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
 	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := s.controlUnchanged(ctx); err != nil {
-		return "", err
+		return nil, err
 	}
 	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
 		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	rev := digest.FromBytes(blob)
 	// Verify what we are about to publish before it becomes public.
-	if _, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob); err != nil {
-		return "", err
+	st, err := wsp.VerifyRevision(s.view, s.workspace, resource, rev, blob)
+	if err != nil {
+		return nil, err
 	}
 	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
 	if err := s.store.Publish(ctx, obj); err != nil {
-		return "", fmt.Errorf("saving encrypted secrets: %w", storageError(err))
+		return nil, fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}
 	// Members may have changed while we were publishing. The revision stays, and
 	// the caller publishes again for the new recipient set on top of it.
 	if err := s.controlUnchanged(ctx); err != nil {
-		return rev, err
+		return st, err
 	}
-	return rev, nil
+	return st, nil
 }
 
 // acceptPublished records the view that includes a revision just published, so
-// a later view without it is a rollback.
-func (s *session) acceptPublished(ctx context.Context, resource string, rev digest.Digest) error {
-	sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, rev)
-	if err != nil {
+// a later view without it is a rollback. before is the view the revision was
+// written on top of (nil for the first revision); it was checked against the
+// checkpoint when it was loaded, so storage is usually not listed again. If
+// another process of this device accepted a newer head meanwhile, before lacks
+// it, and the resource is read again instead.
+func (s *session) acceptPublished(ctx context.Context, resource string, before *wsp.StateView, st *wsp.VerifiedState) error {
+	err := s.acceptView(resource, before.With(st))
+	if !errors.Is(err, wsp.ErrRollback) {
 		return wspError(err)
 	}
+	for attempt := 0; ; attempt++ {
+		sv, err := s.loadResource(ctx, resource, st.Digest)
+		if err != nil {
+			return err
+		}
+		err = s.acceptView(resource, sv)
+		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
+			return wspError(err)
+		}
+	}
+}
+
+func (s *session) acceptView(resource string, sv *wsp.StateView) error {
 	accepted, err := s.cps.State(resource)
 	if err != nil {
 		return err
@@ -451,5 +496,5 @@ func (s *session) acceptPublished(ctx context.Context, resource string, rev dige
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return wspError(s.cps.AcceptStates(resource, sv.Graph, digests))
+	return s.cps.AcceptStates(resource, sv.Graph, digests)
 }
