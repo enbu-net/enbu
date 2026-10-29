@@ -29,7 +29,7 @@ func stateView(edges map[string][]string) *StateView {
 
 func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
 	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
-	if err := cps.CheckStates(testResource, stateView(map[string][]string{"a": nil}).Graph); err != nil {
+	if err := cps.CheckStates(testResource, stateView(map[string][]string{"a": nil}).Graph, nil); err != nil {
 		t.Fatalf("nothing accepted yet: %v", err)
 	}
 	// Two writers raced: a and b are both heads, both accepted.
@@ -37,12 +37,12 @@ func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Storage later shows only a: b vanished.
-	if err := cps.CheckStates(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}}).Graph); !errors.Is(err, ErrRollback) {
+	if err := cps.CheckStates(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}}).Graph, nil); !errors.Is(err, ErrRollback) {
 		t.Fatalf("lost head: %v", err)
 	}
 	// A merge of a and b contains both as ancestors, so it is progress.
 	merged := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}, "m": {"a", "b"}})
-	if err := cps.CheckStates(testResource, merged.Graph); err != nil {
+	if err := cps.CheckStates(testResource, merged.Graph, nil); err != nil {
 		t.Fatalf("merge after fork: %v", err)
 	}
 	if err := acceptView(cps, merged); err != nil {
@@ -57,7 +57,7 @@ func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
 		t.Fatalf("accepting an older view: %v", err)
 	}
 	// Resources have separate checkpoints.
-	if err := cps.CheckStates("secrets/prod", stateView(map[string][]string{"x": nil}).Graph); err != nil {
+	if err := cps.CheckStates("secrets/prod", stateView(map[string][]string{"x": nil}).Graph, nil); err != nil {
 		t.Fatalf("other resource: %v", err)
 	}
 }
@@ -67,7 +67,7 @@ func acceptView(c *Checkpoints, sv *StateView) error {
 	for i, h := range sv.Heads {
 		heads[i] = h.Digest
 	}
-	return c.AcceptStates(testResource, sv.Graph, heads)
+	return c.AcceptStates(testResource, sv.Graph, nil, heads)
 }
 
 func controlView(names ...string) *ControlView {
@@ -171,7 +171,7 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 		t.Fatalf("heads = %v %v", got, err)
 	}
 	// Whatever won, the checkpoint never holds something a later view must lose.
-	if err := cps.CheckStates(testResource, views[2].Graph); err != nil {
+	if err := cps.CheckStates(testResource, views[2].Graph, nil); err != nil {
 		t.Fatalf("newest view rejected: %v", err)
 	}
 }

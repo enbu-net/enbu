@@ -131,7 +131,37 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 		},
 	}
 
-	for _, sub := range []*cobra.Command{listCmd, diffCmd, restoreCmd} {
+	var keep int
+	compactCmd := &cobra.Command{
+		Use:   "compact --keep N",
+		Short: "Delete stored revisions older than the latest N (admin only)",
+		Long: "Delete the stored revisions of an environment older than the latest N, so storage\n" +
+			"and reads stop growing with its history. The deleted versions leave the history.\n" +
+			"Other devices accept the deletion through a signed record. Admin only, and only on\n" +
+			"storage that can delete.",
+		Args: appArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("keep") {
+				return invalidArgument("--keep is required: how many of the latest revisions to keep", nil)
+			}
+			result, err := a.CompactHistory(cmd.Context(), env, keep)
+			if err != nil {
+				return err
+			}
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"environment": resolvedEnvironmentName(a, env),
+					"kept":        result.Kept,
+					"removed":     result.Removed,
+				})
+			}
+			cmd.Printf("Deleted %d stored revision(s), kept %d\n", result.Removed, result.Kept)
+			return nil
+		},
+	}
+	compactCmd.Flags().IntVar(&keep, "keep", 0, "How many of the latest revisions to keep")
+
+	for _, sub := range []*cobra.Command{listCmd, diffCmd, restoreCmd, compactCmd} {
 		sub.Flags().StringVarP(&env, "env", "e", "", "Environment name")
 		cmd.AddCommand(sub)
 	}

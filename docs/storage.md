@@ -66,7 +66,8 @@ Region uses the saved setting, `AWS_REGION`, then `AWS_DEFAULT_REGION`; when omi
 the SDK discovers the bucket region. An omitted endpoint selects Amazon S3.
 No credentials are saved in `enbu.toml` or accepted in storage URLs. Required
 permissions are ListBucket on the workspace prefix and GetObject/PutObject on its
-objects. Only `enbu switch --delete --purge` and `--purge-incarnation` delete objects (DeleteObject).
+objects. Only `enbu switch --delete --purge`, `--purge-incarnation` and
+`enbu history compact` delete objects (DeleteObject).
 
 ## Revisions and limits
 
@@ -79,6 +80,7 @@ writer's update and no compare-and-swap is needed:
 | Secret revision | `s-{scope}-{digest}` | `{prefix}/revisions/s-{scope}-{digest}` |
 | Control | `c-{digest}` | `{prefix}/revisions/c-{digest}` |
 | Join request | `r-{digest}` | `{prefix}/revisions/r-{digest}` |
+| Compaction record | `k-{scope}-{digest}` | `{prefix}/revisions/k-{scope}-{digest}` |
 
 `scope` is the first 128 bits of a hash of the workspace and the environment's
 resource name; `digest` is the SHA-256 of the signed bytes. A fetch re-derives the
@@ -118,7 +120,23 @@ Concurrent writers therefore leave several heads. The next reader merges them 3-
 against their merge base (`pkg/merge`) and publishes the result with all heads as
 parents; a key the heads changed differently is a conflict that stops reads and
 writes until `enbu resolve`. Revisions are not trimmed automatically, because a
-revision found late needs its merge base. `enbu switch --delete NAME --purge`
+revision found late needs its merge base.
+
+`enbu history compact --keep N` (admin only) deletes an environment's revisions
+older than the latest N. The revision N-1 steps behind the head, following first
+parents, becomes the *floor*: it and every revision descending from it stay, and
+everything else is deleted. Before deleting, the admin publishes a signed
+compaction record listing what goes. A device that accepted one of those revisions
+would otherwise report a rollback; it accepts the deletion when a verified record
+lists the revision and the record's floor is still shown (or was removed by a later
+record whose floor is). A head that does not descend from a shown floor was built on
+removed history, whose merge base may be gone; reads set it aside like a head from
+a non-member, and the next compaction deletes it. Records are read only when a view
+lacks a parent or an accepted revision, so an environment that was never compacted
+costs nothing extra. Devices older than compaction see a rollback after one and
+must be updated.
+
+`enbu switch --delete NAME --purge`
 (admin only) deletes an environment's revisions where the backend can, and only
 after checking that the environment itself can be deleted. An environment deleted
 without `--purge` prints its incarnation; `enbu switch --purge-incarnation ID`
