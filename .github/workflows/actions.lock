@@ -12,7 +12,7 @@ workflows:
         - 'voidzero-dev/setup-vp@v1.22.0'
     '.github/workflows/claude-code-review.yaml':
         - 'actions/checkout@v7.0.1'
-        - 'anthropics/claude-code-action@v1.0.262'
+        - 'anthropics/claude-code-action@v1.0.263'
     '.github/workflows/preview.yaml':
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'
@@ -120,9 +120,9 @@ dependencies:
         commit: 'sha1-66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c'
         owner_id: 16208487
         repo_id: 399925381
-    'anthropics/claude-code-action@v1.0.262':
-        ref: 'v1.0.262'
-        commit: 'sha1-925afb53776cf1a2b738c6bdbed37b4d4000ef13'
+    'anthropics/claude-code-action@v1.0.263':
+        ref: 'v1.0.263'
+        commit: 'sha1-8041f1d17e0e7d2f2cfe35002962e9f26237c0bb'
         owner_id: 76263028
         repo_id: 986421638
         uses:
