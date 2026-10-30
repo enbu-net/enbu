@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "github>aquaproj/aqua-renovate-config#2.13.0",
+    "github>aquaproj/aqua-renovate-config#2.14.0",
     "config:best-practices",
     ":disableRateLimiting",
     ":label(renovate)",
@@ -24,6 +24,18 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Use actions.lock for actions; keep external reusable workflows SHA pinned",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action"],
+      "pinDigests": false
+    },
+    {
+      "description": "External reusable workflows are outside actions.lock coverage",
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["workflow"],
+      "pinDigests": true
+    },
     {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
       "matchManagers": ["npm"],

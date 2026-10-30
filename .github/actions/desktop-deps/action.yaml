@@ -25,7 +25,7 @@ runs:
         echo "key=$prefix$(sha256sum "$list" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
     - name: Cache GTK 4 and WebKitGTK 6.0 packages
       if: runner.os == 'Linux'
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      uses: actions/cache@v6.1.0
       with:
         path: ~/.cache/desktop-deps-apt
         key: ${{ steps.packages.outputs.key }}
