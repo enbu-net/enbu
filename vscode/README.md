@@ -37,10 +37,9 @@ task vscode/test
 task vscode/check
 ```
 
-`scripts/package.mjs` packages a VSIX: with `--enbu PATH [--target TARGET]`
-it puts the binary in `bin/<target>/` and builds a VSIX for that VS Code
-target only; without `--enbu` it builds one VSIX for every platform that uses
-`enbu.path` or `PATH`.
+`scripts/package.mjs --enbu PATH [--target TARGET] [--version VERSION]`
+puts the binary in `bin/<target>/` and builds a VSIX for that VS Code target
+only (default: this machine). The release build runs it once per platform.
 
 To try it, open `vscode/` in VS Code and start the **Extension Development
 Host** (F5) with `enbu` on `PATH` or `enbu.path` set.
