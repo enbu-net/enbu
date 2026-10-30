@@ -12,6 +12,7 @@ tasks:
     deps:
       - cli/test
       - gui/test
+      - vscode/test
       - scripts/test
 
   cli/test:
@@ -168,10 +169,11 @@ tasks:
       - uv run pytest
 
   all/build:
-    desc: Build CLI and GUI
+    desc: Build CLI, GUI and the VS Code extension
     deps:
       - cli/build
       - gui/build
+      - vscode/build
 
   cli/build:
     desc: Build CLI
@@ -268,6 +270,7 @@ tasks:
     deps:
       - cli/check
       - gui/check
+      - vscode/check
       - scripts/check
 
   cli/check:
@@ -294,6 +297,47 @@ tasks:
       - git diff --exit-code -- web/src/bindings
       - test -z "$(git status --porcelain -- web/src/bindings)"
       - cd web && vp check
+
+  vscode/test:
+    desc: Run VS Code extension tests
+    deps:
+      - vscode/install
+    dir: vscode
+    cmds:
+      - vp test
+
+  vscode/check:
+    desc: Format and lint VS Code extension code
+    deps:
+      - vscode/install
+    dir: vscode
+    cmds:
+      - vp check
+
+  vscode/build:
+    desc: Build the VS Code extension into vscode/dist and vscode/media
+    deps:
+      - vscode/install
+      - vscode/build/frontend
+    dir: vscode
+    cmds:
+      - vp run build
+
+  vscode/install:
+    internal: true
+    run: once
+    dir: vscode
+    cmds:
+      - vp env off
+      - vp install --frozen-lockfile
+
+  vscode/build/frontend:
+    internal: true
+    run: once
+    dir: web
+    cmds:
+      - task: gui/install
+      - vp run build:vscode
 
   scripts/check:
     desc: Check Python formatting and lint

@@ -232,6 +232,7 @@ jobs:
         run: |
           task cli/test/unit
           task gui/test
+          task vscode/test
           task scripts/test
 
 

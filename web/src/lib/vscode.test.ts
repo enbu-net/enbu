@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { AppError, toDisplayError } from "./app-error";
 import { createServiceBackend } from "./backend";
-import { VsCodeBridge, vscodeService, type HostMessage, type WebviewMessage } from "./vscode";
+import {
+  crossOriginWorkerSource,
+  installCrossOriginWorkers,
+  VsCodeBridge,
+  vscodeService,
+  type HostMessage,
+  type WebviewMessage,
+} from "./vscode";
 
 /** A bridge whose extension host is the test: it sees what the webview posts and answers. */
 function setup() {
@@ -132,5 +139,68 @@ describe("VS Code backend", () => {
     const err = await call.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppError);
     expect(toDisplayError(err).code).toBe("secret_conflict");
+  });
+});
+
+describe("crossOriginWorkerSource", () => {
+  const base = "https://file+.vscode-resource.vscode-cdn.net/ext/media/web/";
+  const origin = "vscode-webview://abc";
+
+  it("loads a cross-origin module worker through an import", () => {
+    expect(crossOriginWorkerSource("./assets/taplo.worker.js", "module", base, origin)).toBe(
+      `import "${base}assets/taplo.worker.js";`,
+    );
+  });
+
+  it("loads a cross-origin classic worker through importScripts", () => {
+    expect(
+      crossOriginWorkerSource(new URL("assets/editor.worker.js", base), undefined, base, origin),
+    ).toBe(`importScripts("${base}assets/editor.worker.js");`);
+  });
+
+  it("leaves same-origin, blob and data workers alone", () => {
+    expect(
+      crossOriginWorkerSource("/w.js", "module", "vscode-webview://abc/index.html", origin),
+    ).toBeUndefined();
+    expect(
+      crossOriginWorkerSource("blob:vscode-webview://abc/1", "module", base, origin),
+    ).toBeUndefined();
+    expect(
+      crossOriginWorkerSource("data:text/javascript,1", undefined, base, origin),
+    ).toBeUndefined();
+  });
+
+  it("quotes the URL as a string literal", () => {
+    expect(crossOriginWorkerSource('https://x.test/a"b.js', "module", base, origin)).toBe(
+      'import "https://x.test/a%22b.js";',
+    );
+  });
+});
+
+describe("installCrossOriginWorkers", () => {
+  it("starts cross-origin workers from a blob bootstrap and others as given", () => {
+    const started: { url: string | URL; options?: WorkerOptions }[] = [];
+    class FakeWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        started.push({ url, options });
+      }
+    }
+    const scope = {
+      Worker: FakeWorker,
+      document: { baseURI: "https://cdn.test/web/" },
+      location: { origin: "vscode-webview://abc" },
+    } as unknown as typeof globalThis;
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x/1");
+
+    installCrossOriginWorkers(scope);
+    new scope.Worker("./assets/w.js", { type: "module" });
+    new scope.Worker("blob:vscode-webview://abc/2");
+
+    expect(started).toEqual([
+      { url: "blob:x/1", options: { type: "module" } },
+      { url: "blob:vscode-webview://abc/2", options: undefined },
+    ]);
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    createObjectURL.mockRestore();
   });
 });
