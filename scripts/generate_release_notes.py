@@ -30,49 +30,57 @@ class ReleaseNotesError(ValueError):
     """Raised when release notes cannot be generated safely."""
 
 
-def collect_assets(
-    assets_dir: Path, tag: str
-) -> tuple[dict[AssetKey, str], dict[AssetKey, str]]:
-    """Return CLI and desktop release assets keyed by OS and architecture."""
+# Each kind of asset is a column of the download table, in this order.
+ASSET_KINDS = (
+    ("cli", "CLI", "enbu", r"tar\.gz|zip"),
+    ("desktop", "Desktop", "enbu-desktop", r"tar\.gz|zip|dmg"),
+    ("vscode", "VS Code", "enbu-vscode", r"vsix"),
+)
+
+Assets = dict[str, dict[AssetKey, str]]
+
+
+def collect_assets(assets_dir: Path, tag: str) -> Assets:
+    """Return release assets by kind, keyed by OS and architecture."""
     if not assets_dir.is_dir():
         raise ReleaseNotesError(f"release assets directory not found: {assets_dir}")
 
     escaped_tag = re.escape(tag)
-    cli_pattern = re.compile(rf"^enbu_{escaped_tag}_([^_]+)_([^_.]+)\.(?:tar\.gz|zip)$")
-    desktop_pattern = re.compile(
-        rf"^enbu-desktop_{escaped_tag}_([^_]+)_([^_.]+)\.(?:tar\.gz|zip|dmg)$"
-    )
-    cli_assets: dict[AssetKey, str] = {}
-    desktop_assets: dict[AssetKey, str] = {}
+    patterns = [
+        (
+            kind,
+            label,
+            re.compile(
+                rf"^{re.escape(prefix)}_{escaped_tag}_([^_]+)_([^_.]+)\.(?:{extensions})$"
+            ),
+        )
+        for kind, label, prefix, extensions in ASSET_KINDS
+    ]
+    assets: Assets = {kind: {} for kind, *_ in ASSET_KINDS}
 
     for path in sorted(assets_dir.iterdir()):
         if not path.is_file():
             continue
 
-        match = desktop_pattern.fullmatch(path.name)
-        destination = desktop_assets
-        kind = "desktop"
-        if match is None:
-            match = cli_pattern.fullmatch(path.name)
-            destination = cli_assets
-            kind = "CLI"
-        if match is None:
-            continue
+        for kind, label, pattern in patterns:
+            match = pattern.fullmatch(path.name)
+            if match is None:
+                continue
+            key = match.group(1), match.group(2)
+            if existing := assets[kind].get(key):
+                raise ReleaseNotesError(
+                    f"multiple {label} assets found for {key[0]}/{key[1]}: "
+                    f"{existing}, {path.name}"
+                )
+            assets[kind][key] = path.name
+            break
 
-        key = match.group(1), match.group(2)
-        if existing := destination.get(key):
-            raise ReleaseNotesError(
-                f"multiple {kind} assets found for {key[0]}/{key[1]}: "
-                f"{existing}, {path.name}"
-            )
-        destination[key] = path.name
-
-    if not cli_assets and not desktop_assets:
+    if not any(assets.values()):
         raise ReleaseNotesError(
-            f"no CLI or desktop release assets found in {assets_dir} for tag {tag}"
+            f"no release assets found in {assets_dir} for tag {tag}"
         )
 
-    return cli_assets, desktop_assets
+    return assets
 
 
 def asset_url(repository: str, tag: str, name: str) -> str:
@@ -103,23 +111,29 @@ def asset_sort_key(key: AssetKey) -> tuple[int, str, int, str]:
 def render_release_notes(
     repository: str,
     tag: str,
-    cli_assets: Mapping[AssetKey, str],
-    desktop_assets: Mapping[AssetKey, str],
+    assets: Mapping[str, Mapping[AssetKey, str]],
     generated_notes: str = "",
 ) -> str:
     """Render the download table followed by GitHub-generated notes."""
-    keys = sorted(cli_assets.keys() | desktop_assets.keys(), key=asset_sort_key)
+    kinds = [(kind, assets.get(kind, {})) for kind, *_ in ASSET_KINDS]
+    keys = sorted(
+        set().union(*(by_key.keys() for _, by_key in kinds)), key=asset_sort_key
+    )
+    labels = [label for _, label, *_ in ASSET_KINDS]
     lines = [
         "## Downloads",
         "",
-        "| OS | Arch | CLI | Desktop |",
-        "| --- | --- | --- | --- |",
+        "| OS | Arch | " + " | ".join(labels) + " |",
+        "| --- | --- | " + " | ".join("---" for _ in labels) + " |",
     ]
 
     for os_name, arch in keys:
         key = os_name, arch
+        links = " | ".join(
+            asset_link(repository, tag, by_key.get(key)) for _, by_key in kinds
+        )
         lines.append(
-            f"| {OS_LABELS.get(os_name, os_name)} | {ARCH_LABELS.get(arch, arch)} | {asset_link(repository, tag, cli_assets.get(key))} | {asset_link(repository, tag, desktop_assets.get(key))} |"
+            f"| {OS_LABELS.get(os_name, os_name)} | {ARCH_LABELS.get(arch, arch)} | {links} |"
         )
 
     if generated_notes.strip():
@@ -162,7 +176,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        cli_assets, desktop_assets = collect_assets(args.assets_dir, args.tag)
+        assets = collect_assets(args.assets_dir, args.tag)
         generated_notes = (
             args.generated_notes.read_text(encoding="utf-8")
             if args.generated_notes is not None
@@ -172,8 +186,7 @@ def main(argv: list[str] | None = None) -> int:
             render_release_notes(
                 args.repository,
                 args.tag,
-                cli_assets,
-                desktop_assets,
+                assets,
                 generated_notes,
             )
         )
