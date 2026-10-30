@@ -1,7 +1,8 @@
 import { DesktopService as Desktop } from "../bindings/github.com/enbu-net/enbu/desktop/wails";
 import { AppError, createAppError, toDisplayError } from "./app-error";
+import { host } from "./host";
 import { mockBackend } from "./mock-backend";
-import { isPreview } from "./preview";
+import { vscodeBridge, vscodeService } from "./vscode";
 import type {
   AuthStatus,
   ConflictChoice,
@@ -21,9 +22,10 @@ import type {
 
 /**
  * Everything the UI asks of enbu. The desktop app implements it with the
- * generated Wails bindings; the browser preview with an in-memory mock. A new
- * operation is a method here, one in each implementation, and the Go method
- * in desktop/wails/binding.go it calls.
+ * generated Wails bindings, a VS Code webview with the same service over the
+ * extension host (see vscode.ts), and the browser preview with an in-memory
+ * mock. A new operation is a method here, one in the mock, and the Go method in
+ * desktop/wails/binding.go it calls, also listed in desktop/rpc.Methods.
  */
 export interface Backend {
   authStatus(): Promise<AuthStatus>;
@@ -104,54 +106,73 @@ function repoStatusOf(repo: RepoInfo | null | undefined): GUIRepoStatus {
   return repo?.path ? { selected: true, repo } : { selected: false };
 }
 
-export const desktopBackend: Backend = {
-  authStatus: () => call(Desktop.GetAuthStatus()),
-  startOAuthLogin: () => call(Desktop.StartOAuthLogin()),
-  async oauthStatus(sessionID) {
-    const status = await call(Desktop.GetOAuthLoginStatus(sessionID));
-    return {
-      state: status.state as OAuthStatus["state"],
-      username: status.username,
-      error: status.error ? toDisplayError(status.error) : undefined,
-    };
-  },
-  cancelOAuthLogin: (sessionID) => call(Desktop.CancelOAuthLogin(sessionID)),
-  logout: () => call(Desktop.Logout()),
+/** The desktop service's methods, by their Go names. */
+export type ServiceMethod = keyof typeof Desktop;
 
-  repoStatus: async () => repoStatusOf(await call(Desktop.GetRepoStatus())),
-  browseRepository: async () => repoStatusOf(await call(Desktop.BrowseRepository())),
-  selectRepository: async (path) => repoStatusOf(await call(Desktop.SelectRepository(path))),
-  listRepositories: () => call(Desktop.ListRepositories()),
-  removeRepository: (path) => call(Desktop.RemoveRepository(path)),
-  initialize: () => call(Desktop.Initialize()),
-  gitInit: async (path) => repoStatusOf(await call(Desktop.GitInit(path))),
-  gitCreateRemote: async (path, owner, repoName, privateRepository) =>
-    repoStatusOf(await call(Desktop.GitCreateRemote(path, owner, repoName, privateRepository))),
-  listRepositoryOwners: () => call(Desktop.ListRepositoryOwners()),
-
-  listEnvironments: () => call(Desktop.ListEnvironments()),
-  createEnvironment: (name) => call(Desktop.CreateEnvironment(name)),
-  switchEnvironment: (name) => call(Desktop.SwitchEnvironment(name)),
-  renameEnvironment: (name, newName) => call(Desktop.RenameEnvironment(name, newName)),
-  deleteEnvironment: (name) => call(Desktop.DeleteEnvironment(name)),
-
-  listSecrets: (env = "") => call(Desktop.ListSecrets(env)),
-  addSecret: (key, value, env = "") => call(Desktop.AddSecret(env, key, value)),
-  editSecret: (key, value, env = "") => call(Desktop.EditSecret(env, key, value)),
-  deleteSecret: (key, env = "") => call(Desktop.DeleteSecret(env, key)),
-  pullSecrets: (env = "", replace = false) => call(Desktop.PullSecrets(env, replace)),
-  syncSecrets: (env = "") => call(Desktop.SyncSecrets(env)),
-  listConflicts: (env = "") => call(Desktop.ListConflicts(env)),
-  resolveConflicts: (env, heads, choices) => call(Desktop.ResolveConflicts(env, heads, choices)),
-
-  listMembers: () => call(Desktop.ListMembers()),
-  listJoinRequests: () => call(Desktop.ListJoinRequests()),
-  approveMember: (deviceID) => call(Desktop.ApproveMember(deviceID)),
-  removeMember: (deviceID) => call(Desktop.RemoveMember(deviceID)),
-
-  readConfig: () => call(Desktop.ReadConfig()),
-  writeConfig: (content) => call(Desktop.WriteConfig(content)),
-  appVersion: () => call(Desktop.GetAppVersion()),
+/** A client of the desktop service: the Wails bindings, or the VS Code bridge. */
+export type ServiceClient = {
+  [K in ServiceMethod]: (
+    ...args: Parameters<(typeof Desktop)[K]>
+  ) => PromiseLike<Awaited<ReturnType<(typeof Desktop)[K]>>>;
 };
 
-export const backend: Backend = isPreview ? mockBackend : desktopBackend;
+export function createServiceBackend(svc: ServiceClient): Backend {
+  return {
+    authStatus: () => call(svc.GetAuthStatus()),
+    startOAuthLogin: () => call(svc.StartOAuthLogin()),
+    async oauthStatus(sessionID) {
+      const status = await call(svc.GetOAuthLoginStatus(sessionID));
+      return {
+        state: status.state as OAuthStatus["state"],
+        username: status.username,
+        error: status.error ? toDisplayError(status.error) : undefined,
+      };
+    },
+    cancelOAuthLogin: (sessionID) => call(svc.CancelOAuthLogin(sessionID)),
+    logout: () => call(svc.Logout()),
+
+    repoStatus: async () => repoStatusOf(await call(svc.GetRepoStatus())),
+    browseRepository: async () => repoStatusOf(await call(svc.BrowseRepository())),
+    selectRepository: async (path) => repoStatusOf(await call(svc.SelectRepository(path))),
+    listRepositories: () => call(svc.ListRepositories()),
+    removeRepository: (path) => call(svc.RemoveRepository(path)),
+    initialize: () => call(svc.Initialize()),
+    gitInit: async (path) => repoStatusOf(await call(svc.GitInit(path))),
+    gitCreateRemote: async (path, owner, repoName, privateRepository) =>
+      repoStatusOf(await call(svc.GitCreateRemote(path, owner, repoName, privateRepository))),
+    listRepositoryOwners: () => call(svc.ListRepositoryOwners()),
+
+    listEnvironments: () => call(svc.ListEnvironments()),
+    createEnvironment: (name) => call(svc.CreateEnvironment(name)),
+    switchEnvironment: (name) => call(svc.SwitchEnvironment(name)),
+    renameEnvironment: (name, newName) => call(svc.RenameEnvironment(name, newName)),
+    deleteEnvironment: (name) => call(svc.DeleteEnvironment(name)),
+
+    listSecrets: (env = "") => call(svc.ListSecrets(env)),
+    addSecret: (key, value, env = "") => call(svc.AddSecret(env, key, value)),
+    editSecret: (key, value, env = "") => call(svc.EditSecret(env, key, value)),
+    deleteSecret: (key, env = "") => call(svc.DeleteSecret(env, key)),
+    pullSecrets: (env = "", replace = false) => call(svc.PullSecrets(env, replace)),
+    syncSecrets: (env = "") => call(svc.SyncSecrets(env)),
+    listConflicts: (env = "") => call(svc.ListConflicts(env)),
+    resolveConflicts: (env, heads, choices) => call(svc.ResolveConflicts(env, heads, choices)),
+
+    listMembers: () => call(svc.ListMembers()),
+    listJoinRequests: () => call(svc.ListJoinRequests()),
+    approveMember: (deviceID) => call(svc.ApproveMember(deviceID)),
+    removeMember: (deviceID) => call(svc.RemoveMember(deviceID)),
+
+    readConfig: () => call(svc.ReadConfig()),
+    writeConfig: (content) => call(svc.WriteConfig(content)),
+    appVersion: () => call(svc.GetAppVersion()),
+  };
+}
+
+export const desktopBackend: Backend = createServiceBackend(Desktop);
+
+export const backend: Backend =
+  host === "vscode" && vscodeBridge
+    ? createServiceBackend(vscodeService(vscodeBridge))
+    : host === "preview"
+      ? mockBackend
+      : desktopBackend;

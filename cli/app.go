@@ -68,6 +68,7 @@ func NewWithApp(version string, a *app.App) *cobra.Command {
 		newSyncCommand(a),
 		newResolveCommand(a),
 		newHistoryCommand(a),
+		newRPCCommand(version, a),
 		newCompletionCommand(rootCmd),
 	)
 

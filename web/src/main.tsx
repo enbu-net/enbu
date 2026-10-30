@@ -1,11 +1,18 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { host } from "./lib/host";
 import { installExternalLinkHandling } from "./lib/platform";
 import "./app.css";
 
-const router = createRouter({ routeTree, basepath: import.meta.env.BASE_URL });
+// A VS Code webview has no address to keep the route in, and its assets load
+// from a relative base, so the router keeps its history in memory there.
+const router = createRouter(
+  host === "vscode"
+    ? { routeTree, history: createMemoryHistory({ initialEntries: ["/"] }) }
+    : { routeTree, basepath: import.meta.env.BASE_URL },
+);
 
 installExternalLinkHandling();
 

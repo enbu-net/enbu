@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 dist-preview
+dist-vscode
 *.local
 
 # Editor directories and files
