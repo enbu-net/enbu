@@ -23,7 +23,7 @@
     "check": "vp check && vp test"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.5",
     "@types/vscode": "1.95.0",
     "@vscode/vsce": "4.1.0",
     "typescript": "7.0.2",
