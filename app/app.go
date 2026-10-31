@@ -111,25 +111,11 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		}
 		return storage.NewS3(client, u.Host, strings.Trim(u.Path, "/")), nil
 	case "oci":
-		var credential auth.CredentialFunc
-		switch settings.OCIAuth {
-		case "", "docker":
-		case "github":
-			if u.Host != "ghcr.io" {
-				return nil, apperr.New(apperr.CodeInvalidArgument, "GitHub authentication is only supported for ghcr.io", nil)
-			}
-			credential = func(_ context.Context, host string) (auth.Credential, error) {
-				if host != "ghcr.io" {
-					return auth.EmptyCredential, nil
-				}
-				token, username, err := a.TokenProvider.LoadToken()
-				return auth.Credential{Username: username, Password: token}, err
-			}
-		default:
-			return nil, apperr.New(apperr.CodeInvalidArgument, "invalid OCI authentication mode", nil)
-		}
+		// ghcr.io uses enbu's GitHub login; any other registry uses the Docker
+		// credential configuration.
+		credential := a.ociCredential(u.Host)
 		var opts []storage.OCIOption
-		if settings.OCIAuth == "github" {
+		if u.Host == "ghcr.io" {
 			// Deleting needs the GitHub Packages API, which the same token can reach.
 			if g, ok := storage.GHCRPackagesFor(u.Host+u.Path, func() (string, error) {
 				token, _, err := a.TokenProvider.LoadToken()
@@ -141,6 +127,25 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP, opts...)
 	default:
 		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with oci:// or s3://", nil)
+	}
+}
+
+// ociCredential is the credential for an OCI registry host: enbu's GitHub
+// login for ghcr.io, or nil, which makes the OCI store read the Docker
+// credential configuration.
+func (a *App) ociCredential(registry string) auth.CredentialFunc {
+	if registry != "ghcr.io" {
+		return nil
+	}
+	return func(_ context.Context, host string) (auth.Credential, error) {
+		if host != "ghcr.io" {
+			return auth.EmptyCredential, nil
+		}
+		token, username, err := a.TokenProvider.LoadToken()
+		if err != nil {
+			return auth.EmptyCredential, apperr.Wrap(apperr.CodeNotAuthenticated, "ghcr.io storage uses enbu's GitHub login; run 'enbu auth login'", err, nil)
+		}
+		return auth.Credential{Username: username, Password: token}, nil
 	}
 }
 
@@ -225,5 +230,5 @@ func (d *defaultRepoDetector) LoadRepo() (string, string, error) {
 	if !repository.HasRemote {
 		return "", "", fmt.Errorf("git remote not found")
 	}
-	return config.ParseGitRemote(repository.OriginURL)
+	return config.ParseGitHubRemote(repository.OriginURL)
 }

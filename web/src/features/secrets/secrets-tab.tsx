@@ -24,6 +24,9 @@ export function SecretsTab({
   transfer: RunTransfer;
 }) {
   const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
+  // An import can finish after another environment was picked; reload that one.
+  const latestEnv = useRef(env);
+  latestEnv.current = env;
   const [pullLoading, setPullLoading] = useState(false);
   const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
@@ -105,7 +108,7 @@ export function SecretsTab({
             onError={setError}
             onImported={async (result) => {
               setImported(result);
-              await refresh(env);
+              await refresh(latestEnv.current);
             }}
           />
           <Button

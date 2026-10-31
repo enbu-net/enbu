@@ -43,12 +43,16 @@ enbu init --storage oci://registry.example.com/team/secrets
 enbu init --storage oci://localhost:5000/team/secrets --plain-http
 # GHCR using enbu's GitHub login:
 enbu auth login
-enbu init --storage oci://ghcr.io/team/secrets --oci-auth github
+enbu init --storage oci://ghcr.io/team/secrets
 ```
 
-The URL identifies a repository without a tag or digest. `oci_auth = "docker"`
-(the default) reads Docker credential helpers/configuration. `"github"` is an
-explicit GHCR-only option. Storage does not derive paths from Git remotes.
+The URL identifies a repository without a tag or digest. `ghcr.io` uses enbu's
+GitHub login; any other registry reads Docker credential helpers/configuration.
+
+When `init` founds a workspace without `--storage` and `enbu.toml` names none,
+it uses `oci://ghcr.io/OWNER/REPO-enbu` (lower-cased) for a GitHub `origin`
+remote and fails for any other. The result is written to `enbu.toml` and never
+derived again, so changing the remote later does not move the storage.
 
 ### S3
 
