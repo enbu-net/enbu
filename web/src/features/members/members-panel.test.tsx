@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { displayError } from "../../lib/app-error";
+import { createAppError, displayError } from "../../lib/app-error";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
 
@@ -362,6 +362,16 @@ describe("MembersPanel admin rights", () => {
     renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
     await act(async () => queryButton("Join member changes")?.click());
     expect(onResolveFork).toHaveBeenCalled();
+  });
+
+  it("keeps offering to join member changes after a failed attempt", async () => {
+    const onResolveFork = vi.fn(async () => {
+      throw createAppError("internal");
+    });
+    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
+    await act(async () => queryButton("Join member changes")?.click());
+    await act(async () => Promise.resolve());
+    expect(queryButton("Join member changes")).not.toBeNull();
   });
 
   it("marks a key update among the requests", () => {

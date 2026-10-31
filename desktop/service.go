@@ -247,7 +247,7 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 	s.repoMu.Unlock()
 	if path != "" {
 		if cfg, err := config.LoadProjectFrom(path); err == nil {
-			status.WorkspaceConfigured = cfg.Storage.URL != "" && cfg.Storage.OCIAuth != "github"
+			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
 	token, err := auth.LoadToken()

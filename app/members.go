@@ -316,6 +316,12 @@ func (a *App) ResolveControlFork(ctx context.Context) (err error) {
 		return identityError(fmt.Errorf("loading signing key: %w", err))
 	}
 	defer s.Close()
+	author := s.signer.Public().DeviceID()
+	for _, h := range s.view.Heads {
+		if p, ok := h.Principal(author); !ok || !p.Admin {
+			return apperr.New(apperr.CodeAccessDenied, "only an admin of every competing member list can join them", nil)
+		}
+	}
 	_, err = wsp.ResolveFork(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error {
 		kept := c.Principals[:0:0]
 		for _, p := range c.Principals {

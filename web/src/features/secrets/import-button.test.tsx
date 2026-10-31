@@ -71,4 +71,19 @@ describe("ImportButton", () => {
     expect(mocked.importSecrets).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "internal" }));
   });
+
+  it("overwrites in the environment the conflict was found in", async () => {
+    mocked.importSecrets.mockRejectedValueOnce(
+      createAppError("secret_already_exists", { keys: "A" }),
+    );
+    const props = { onImported: vi.fn(), onError: vi.fn() };
+    await renderAndSettle(<ImportButton env="staging" {...props} />);
+    await choose("A=2\n");
+    await renderAndSettle(<ImportButton env="production" {...props} />);
+
+    const dialog = container.querySelector('[role="dialog"]')!;
+    await act(async () => queryButton("Replace", dialog)?.click());
+    await settle();
+    expect(mocked.importSecrets).toHaveBeenLastCalledWith("A=2\n", true, "staging");
+  });
 });

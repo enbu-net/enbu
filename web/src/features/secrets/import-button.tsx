@@ -23,18 +23,25 @@ export function ImportButton({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
-  // The chosen file's content and the keys it would change, while confirming.
-  const [pending, setPending] = useState<{ dotenv: string; keys: string } | null>(null);
+  // The chosen file's content, its environment and the keys it would change,
+  // while confirming; the overwrite goes where the conflict was found.
+  const [pending, setPending] = useState<{ dotenv: string; env: string; keys: string } | null>(
+    null,
+  );
 
-  async function run(dotenv: string, overwrite: boolean) {
+  async function run(dotenv: string, overwrite: boolean, target: string) {
     setLoading(true);
     try {
-      await onImported(await backend.importSecrets(dotenv, overwrite, env));
+      await onImported(await backend.importSecrets(dotenv, overwrite, target));
       setPending(null);
     } catch (err) {
       const display = toDisplayError(err);
       if (display.code === "secret_already_exists" && !overwrite) {
-        setPending({ dotenv, keys: (display.params.keys ?? "").split(",").join(", ") });
+        setPending({
+          dotenv,
+          env: target,
+          keys: (display.params.keys ?? "").split(",").join(", "),
+        });
       } else {
         setPending(null);
         onError(display);
@@ -56,8 +63,9 @@ export function ImportButton({
           const file = event.target.files?.[0];
           event.target.value = "";
           if (file) {
+            const target = env;
             file.text().then(
-              (dotenv) => run(dotenv, false),
+              (dotenv) => run(dotenv, false, target),
               (err: unknown) => onError(toDisplayError(err)),
             );
           }
@@ -81,7 +89,7 @@ export function ImportButton({
         confirmLabel={m.import_overwrite()}
         loading={loading}
         onClose={() => setPending(null)}
-        onConfirm={() => (pending ? run(pending.dotenv, true) : undefined)}
+        onConfirm={() => (pending ? run(pending.dotenv, true, pending.env) : undefined)}
       />
     </>
   );
