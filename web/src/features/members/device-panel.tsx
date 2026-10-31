@@ -5,8 +5,8 @@ import { Button, Heading, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { Diagnosis, PublicInfo } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 /**
  * This device's keys, as `enbu identity show` prints them, the hardware check
@@ -23,7 +23,6 @@ export function DevicePanel({
   /** Called after an upgrade, so the member list shows the new key. */
   onUpgraded: () => void | Promise<void>;
 }) {
-  const { t } = useI18n();
   const [info, setInfo] = useState<PublicInfo | null>(null);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
   const [notice, setNotice] = useState("");
@@ -57,7 +56,7 @@ export function DevicePanel({
   return (
     <Box mt="8">
       <Heading as="h3" size="md" fontWeight="bold" mb="3">
-        {t("device.title")}
+        {m.device_title()}
       </Heading>
       {error && (
         <Box mb="3">
@@ -66,13 +65,13 @@ export function DevicePanel({
       )}
       {info && (
         <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
-          <Field label={t("device.fingerprint")} mono>
+          <Field label={m.device_fingerprint()} mono>
             {info.fingerprint ?? ""}
           </Field>
-          <Field label={t("device.algorithm")}>{info.algorithm}</Field>
-          <Field label={t("device.backend")}>{info.backend}</Field>
-          {info.device && <Field label={t("device.hardware")}>{info.device}</Field>}
-          <Field label={t("device.recipient")} mono>
+          <Field label={m.device_algorithm()}>{info.algorithm}</Field>
+          <Field label={m.device_backend()}>{info.backend}</Field>
+          {info.device && <Field label={m.device_hardware()}>{info.device}</Field>}
+          <Field label={m.device_recipient()} mono>
             {info.recipient}
           </Field>
         </Box>
@@ -86,16 +85,16 @@ export function DevicePanel({
         <VStack role="status" alignItems="stretch" gap="1" mt="3" fontSize="sm">
           <Text>
             {diagnosis.available
-              ? t("device.hardwareAvailable", { backend: diagnosis.backend })
-              : t("device.hardwareUnavailable", {
+              ? m.device_hardwareAvailable({ backend: diagnosis.backend })
+              : m.device_hardwareUnavailable({
                   backend: diagnosis.backend,
                   reason: diagnosis.reason ?? "",
                 })}
           </Text>
           <Text>
             {diagnosis.fallback_available
-              ? t("device.keyringAvailable")
-              : t("device.keyringUnavailable", { reason: diagnosis.fallback_reason ?? "" })}
+              ? m.device_keyringAvailable()
+              : m.device_keyringUnavailable({ reason: diagnosis.fallback_reason ?? "" })}
           </Text>
         </VStack>
       )}
@@ -105,21 +104,21 @@ export function DevicePanel({
             size="sm"
             variant="outline"
             loading={busy}
-            title={t("device.upgradeHint")}
+            title={m.device_upgradeHint()}
             onClick={() =>
               void run(async () => {
                 const result = await backend.upgradeIdentity();
                 setNotice(
                   result.pending
-                    ? t("device.upgradePending", { fingerprint: result.fingerprint })
-                    : t("device.upgraded"),
+                    ? m.device_upgradePending({ fingerprint: result.fingerprint })
+                    : m.device_upgraded(),
                 );
                 await Promise.all([load(), onUpgraded()]);
               })
             }
           >
             <ShieldCheck size={14} aria-hidden="true" />
-            {t("device.upgrade")}
+            {m.device_upgrade()}
           </Button>
         )}
         <Button
@@ -129,7 +128,7 @@ export function DevicePanel({
           onClick={() => void run(async () => setDiagnosis(await backend.diagnoseIdentity()))}
         >
           <Cpu size={14} aria-hidden="true" />
-          {t("device.diagnose")}
+          {m.device_diagnose()}
         </Button>
       </HStack>
     </Box>

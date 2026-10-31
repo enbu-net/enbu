@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
-import { I18nProvider } from "../lib/i18n";
+import { localStorageKey } from "../paraglide/runtime";
 import { LanguageSelector } from "./language-selector";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
 beforeEach(() => {
-  localStorage.setItem("enbu_locale", "en");
+  localStorage.setItem(localStorageKey, "en");
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -17,18 +17,12 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  localStorage.removeItem("enbu_locale");
+  localStorage.removeItem(localStorageKey);
 });
 
 describe("LanguageSelector", () => {
-  it("renders both locales and switches the shared locale", () => {
-    act(() => {
-      root.render(
-        <I18nProvider>
-          <LanguageSelector />
-        </I18nProvider>,
-      );
-    });
+  it("lists both locales and saves the one picked", () => {
+    act(() => root.render(<LanguageSelector />));
 
     const select = container.querySelector("select");
     expect(container.textContent).toContain("Language");
@@ -43,7 +37,7 @@ describe("LanguageSelector", () => {
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
-    expect(container.textContent).toContain("言語");
-    expect(localStorage.getItem("enbu_locale")).toBe("ja");
+    // The page reloads to show the new locale; what it reloads with is saved.
+    expect(localStorage.getItem(localStorageKey)).toBe("ja");
   });
 });

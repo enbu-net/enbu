@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { I18nProvider } from "../../lib/i18n";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
 
@@ -12,7 +11,7 @@ describe("environment selector", () => {
     const onAdd = vi.fn();
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <EnvironmentSelector
             environments={[
               { name: "default", current: true },
@@ -22,7 +21,7 @@ describe("environment selector", () => {
             onSelect={onSelect}
             onAdd={onAdd}
           />
-        </I18nProvider>,
+        </>,
       );
     });
 
@@ -61,7 +60,7 @@ describe("environment selector", () => {
     const onClose = vi.fn();
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <EnvironmentNameModal
             open
             value="staging"
@@ -70,7 +69,7 @@ describe("environment selector", () => {
             onClose={onClose}
             onCreate={onCreate}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
@@ -85,7 +84,7 @@ describe("accessibility: EnvironmentNameModal focus", () => {
   it("dialog has aria-modal and aria-labelledby", () => {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <EnvironmentNameModal
             open={true}
             value=""
@@ -94,7 +93,7 @@ describe("accessibility: EnvironmentNameModal focus", () => {
             onClose={() => {}}
             onCreate={() => {}}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     const dialog = container.querySelector('[role="dialog"]');

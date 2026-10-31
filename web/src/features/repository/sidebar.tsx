@@ -6,9 +6,9 @@ import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import { useSession } from "../../lib/session";
 import type { RepoInfo } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 function pathKey(path = "") {
   return path.replaceAll("\\", "/").toLowerCase();
@@ -16,7 +16,6 @@ function pathKey(path = "") {
 
 /** Lists the repositories enbu knows on this device and switches between them. */
 export function Sidebar() {
-  const { t } = useI18n();
   const { repo, setRepo } = useSession();
   const activePath = repo?.repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -82,7 +81,7 @@ export function Sidebar() {
 
   return (
     <styled.nav
-      aria-label={t("sidebar.navigation")}
+      aria-label={m.sidebar_navigation()}
       w="248px"
       minH="calc(100vh - 72px)"
       display={{ base: "none", md: "block" }}
@@ -100,7 +99,7 @@ export function Sidebar() {
       <VStack alignItems="stretch" gap="1" mb="3">
         {repos.length === 0 && (
           <Text fontSize="sm" color="fg.muted">
-            {t("sidebar.noRepositories")}
+            {m.sidebar_noRepositories()}
           </Text>
         )}
         {repos.map((item) => {
@@ -168,15 +167,15 @@ export function Sidebar() {
       )}
       <ConfirmDeleteDialog
         open={repositoryPendingRemoval != null}
-        title={t("sidebar.removeConfirm", {
+        title={m.sidebar_removeConfirm({
           repository: repositoryPendingRemoval
             ? repositoryPendingRemoval.owner
               ? `${repositoryPendingRemoval.owner}/${repositoryPendingRemoval.repo}`
               : (repositoryPendingRemoval.path ?? "")
             : "",
         })}
-        cancelLabel={t("config.cancel")}
-        confirmLabel={t("sidebar.remove")}
+        cancelLabel={m.config_cancel()}
+        confirmLabel={m.sidebar_remove()}
         loading={removingRepository}
         triggerRef={removeTriggerRef}
         onClose={() => setRepositoryPendingRemoval(null)}
@@ -225,7 +224,7 @@ export function Sidebar() {
           }
         }}
       >
-        {t("sidebar.addRepository")}
+        {m.sidebar_addRepository()}
       </Button>
     </styled.nav>
   );
@@ -242,11 +241,10 @@ export function RepositoryContextMenu({
   removing: boolean;
   onRemove: () => void | Promise<void>;
 }) {
-  const { t } = useI18n();
   return (
     <Box
       role="menu"
-      aria-label={t("sidebar.repositoryOptions")}
+      aria-label={m.sidebar_repositoryOptions()}
       position="fixed"
       style={{ left: x, top: y }}
       zIndex="40"
@@ -270,7 +268,7 @@ export function RepositoryContextMenu({
         onClick={() => void onRemove()}
       >
         <Trash2 size={15} aria-hidden="true" />
-        {t("sidebar.remove")}
+        {m.sidebar_remove()}
       </Button>
     </Box>
   );

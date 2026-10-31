@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import type { Member } from "../../lib/types";
 import { container, queryButton, root, settle, setupDom } from "../../test/dom";
 import { MembersTab } from "./members-tab";
@@ -28,9 +27,9 @@ const runTransfer = async (_op: string, task: () => Promise<void>) => task();
 function renderTab(repoPath: string, transfer = runTransfer) {
   act(() => {
     root.render(
-      <I18nProvider>
+      <>
         <MembersTab repoPath={repoPath} environment="default" transfer={transfer} />
-      </I18nProvider>,
+      </>,
     );
   });
 }

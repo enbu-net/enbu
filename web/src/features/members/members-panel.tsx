@@ -7,8 +7,8 @@ import { FingerprintConfirmDialog } from "../../components/fingerprint-confirm-d
 import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
-import { useI18n } from "../../lib/i18n";
 import type { JoinRequest, Member } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 export function MembersPanel({
   members,
@@ -34,7 +34,6 @@ export function MembersPanel({
   onResolveFork: () => Promise<void>;
   onErrorDismiss: () => void;
 }) {
-  const { t } = useI18n();
   const [approving, setApproving] = useState<JoinRequest | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [granting, setGranting] = useState<Member | null>(null);
@@ -65,16 +64,16 @@ export function MembersPanel({
   const shownError = actionError ?? error;
   return (
     <>
-      <SectionHeader title={t("members.title")}>
+      <SectionHeader title={m.members_title()}>
         <Button
           size="sm"
           variant="outline"
           loading={loading}
-          title={t("dashboard.syncDescription")}
+          title={m.dashboard_syncDescription()}
           onClick={() => void onSync()}
         >
           <RefreshCw size={14} />
-          {t("dashboard.sync")}
+          {m.dashboard_sync()}
         </Button>
       </SectionHeader>
       {shownError && (
@@ -93,7 +92,7 @@ export function MembersPanel({
               loading={busy}
               onClick={() => void run(onResolveFork, () => {})}
             >
-              {t("members.resolveFork")}
+              {m.members_resolveFork()}
             </Button>
           )}
         </Box>
@@ -101,17 +100,17 @@ export function MembersPanel({
       {loading ? (
         <HStack role="status" py="8" justify="center">
           <Spinner size="sm" aria-hidden="true" />
-          <Text color="fg.muted">{t("common.loading")}</Text>
+          <Text color="fg.muted">{m.common_loading()}</Text>
         </HStack>
       ) : (
         <>
           {requests.length > 0 && (
             <Box mb="6">
               <Heading as="h3" size="md" fontWeight="bold" mb="1">
-                {t("members.pendingTitle")}
+                {m.members_pendingTitle()}
               </Heading>
               <Text fontSize="sm" color="fg.muted" mb="3">
-                {t("members.pendingHint")}
+                {m.members_pendingHint()}
               </Text>
               <Box
                 overflow="hidden"
@@ -135,7 +134,7 @@ export function MembersPanel({
           )}
           {members.length === 0 ? (
             <Text color="fg.muted" textAlign="center" py="8">
-              {t("members.empty")}
+              {m.members_empty()}
             </Text>
           ) : (
             <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
@@ -172,12 +171,12 @@ export function MembersPanel({
       )}
       <FingerprintConfirmDialog
         open={approving !== null}
-        title={t("members.approveTitle")}
+        title={m.members_approveTitle()}
         fingerprint={approving?.fingerprint ?? ""}
-        warning={t("members.approveWarning")}
-        acknowledgeLabel={t("members.fingerprintMatches")}
-        cancelLabel={t("members.cancel")}
-        confirmLabel={t("members.approve")}
+        warning={m.members_approveWarning()}
+        acknowledgeLabel={m.members_fingerprintMatches()}
+        cancelLabel={m.members_cancel()}
+        confirmLabel={m.members_approve()}
         loading={busy}
         triggerRef={approveTriggerRef}
         onClose={() => setApproving(null)}
@@ -192,12 +191,12 @@ export function MembersPanel({
       />
       <FingerprintConfirmDialog
         open={granting !== null}
-        title={t("members.grantAdminTitle")}
+        title={m.members_grantAdminTitle()}
         fingerprint={granting?.fingerprint ?? ""}
-        warning={t("members.grantAdminWarning")}
-        acknowledgeLabel={t("members.fingerprintConfirmed")}
-        cancelLabel={t("members.cancel")}
-        confirmLabel={t("members.makeAdmin")}
+        warning={m.members_grantAdminWarning()}
+        acknowledgeLabel={m.members_fingerprintConfirmed()}
+        cancelLabel={m.members_cancel()}
+        confirmLabel={m.members_makeAdmin()}
         loading={busy}
         triggerRef={grantTriggerRef}
         onClose={() => setGranting(null)}
@@ -212,10 +211,10 @@ export function MembersPanel({
       />
       <ConfirmDeleteDialog
         open={removing !== null}
-        title={t("members.removeTitle", { fingerprint: removing?.fingerprint ?? "" })}
-        description={t("members.removeHint")}
-        cancelLabel={t("members.cancel")}
-        confirmLabel={t("members.remove")}
+        title={m.members_removeTitle({ fingerprint: removing?.fingerprint ?? "" })}
+        description={m.members_removeHint()}
+        cancelLabel={m.members_cancel()}
+        confirmLabel={m.members_remove()}
         loading={busy}
         triggerRef={removeTriggerRef}
         onClose={() => setRemoving(null)}
@@ -280,7 +279,6 @@ export function PendingRow({
   last?: boolean;
   onApprove: (trigger: HTMLElement) => void;
 }) {
-  const { t } = useI18n();
   const requested = new Date(request.requested_at);
   const time = Number.isNaN(requested.getTime()) ? "" : requested.toLocaleString();
   return (
@@ -292,12 +290,12 @@ export function PendingRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {request.algorithm.toUpperCase()}
-          {request.key_update ? ` · ${t("members.keyUpdate")}` : ""}
-          {time ? ` · ${t("members.requestedAt", { time })}` : ""}
+          {request.key_update ? ` · ${m.members_keyUpdate()}` : ""}
+          {time ? ` · ${m.members_requestedAt({ time })}` : ""}
         </Text>
       </Box>
       <Button size="sm" onClick={(event) => onApprove(event.currentTarget)}>
-        {t("members.approve")}
+        {m.members_approve()}
       </Button>
     </RowShell>
   );
@@ -315,7 +313,6 @@ export function MemberRow({
   /** Grants or revokes admin; left out when this device cannot. */
   onToggleAdmin?: (trigger: HTMLElement) => void;
 }) {
-  const { t } = useI18n();
   return (
     <RowShell last={last}>
       <FingerprintAvatar fingerprint={member.fingerprint} />
@@ -325,8 +322,8 @@ export function MemberRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {member.algorithm.toUpperCase()}
-          {member.post_quantum ? ` · ${t("device.postQuantum")}` : ""}
-          {member.self ? ` · ${t("members.you")}` : ""}
+          {member.post_quantum ? ` · ${m.device_postQuantum()}` : ""}
+          {member.self ? ` · ${m.members_you()}` : ""}
         </Text>
       </Box>
       <HStack gap="2">
@@ -340,13 +337,13 @@ export function MemberRow({
           color="fg.muted"
           fontSize="2xs"
         >
-          {member.admin ? t("members.admin") : t("members.member")}
+          {member.admin ? m.members_admin() : m.members_member()}
         </Box>
         {onToggleAdmin && (
           <Button
             size="sm"
             variant="ghost"
-            aria-label={`${member.admin ? t("members.revokeAdmin") : t("members.makeAdmin")}: ${member.fingerprint}`}
+            aria-label={`${member.admin ? m.members_revokeAdmin() : m.members_makeAdmin()}: ${member.fingerprint}`}
             onClick={(event) => onToggleAdmin(event.currentTarget)}
           >
             {member.admin ? (
@@ -360,7 +357,7 @@ export function MemberRow({
           <Button
             size="sm"
             variant="ghost"
-            aria-label={`${t("members.remove")}: ${member.fingerprint}`}
+            aria-label={`${m.members_remove()}: ${member.fingerprint}`}
             onClick={(event) => onRemove(event.currentTarget)}
           >
             <Trash2 size={14} aria-hidden="true" />

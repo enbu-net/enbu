@@ -5,11 +5,11 @@ import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import { useSession } from "../../lib/session";
 import { folderName } from "../../lib/paths";
 import type { RepoInfo, RepositoryOwner } from "../../lib/types";
 import { RepositoryOwnerSelect } from "./repository-owner-select";
+import { m } from "../../paraglide/messages";
 
 /** The step a selected folder still needs before enbu can manage it, if any. */
 export type SetupStep = "git" | "remote" | "enbu";
@@ -80,21 +80,20 @@ const primaryButton = {
 
 /** Chooses the local repository enbu should manage. */
 export function RepositorySelect() {
-  const { t } = useI18n();
   const { setRepo } = useSession();
   const [path, setPath] = useState("");
   const action = useAction();
 
   return (
     <SetupScreen
-      title={t("repo.selectTitle")}
-      description={t("repo.selectDescription")}
+      title={m.repo_selectTitle()}
+      description={m.repo_selectDescription()}
       error={action.error}
       onDismissError={() => action.setError(null)}
     >
       <HStack>
         <Input
-          aria-label={t("repo.pathPlaceholder")}
+          aria-label={m.repo_pathPlaceholder()}
           value={path}
           onChange={(e) => setPath(e.target.value)}
           onKeyDown={(event) => {
@@ -102,7 +101,7 @@ export function RepositorySelect() {
               void action.run(async () => setRepo(await backend.selectRepository(path.trim())));
             }
           }}
-          placeholder={t("repo.pathPlaceholder")}
+          placeholder={m.repo_pathPlaceholder()}
           h="38px"
           borderColor="border.default"
           borderRadius="md"
@@ -121,7 +120,7 @@ export function RepositorySelect() {
             })
           }
         >
-          {t("repo.browse")}
+          {m.repo_browse()}
         </Button>
       </HStack>
       <Button
@@ -130,7 +129,7 @@ export function RepositorySelect() {
         disabled={!path.trim()}
         onClick={() => action.run(async () => setRepo(await backend.selectRepository(path.trim())))}
       >
-        {t("repo.continue")}
+        {m.repo_continue()}
       </Button>
     </SetupScreen>
   );
@@ -138,7 +137,6 @@ export function RepositorySelect() {
 
 /** Takes a selected folder through Git, a GitHub remote, and enbu setup. */
 export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupStep }) {
-  const { t } = useI18n();
   const { setRepo, reloadRepo } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
@@ -146,8 +144,8 @@ export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupSte
   if (step === "git") {
     return (
       <SetupScreen
-        title={t("init.gitTitle")}
-        description={t("init.gitDescription")}
+        title={m.init_gitTitle()}
+        description={m.init_gitDescription()}
         error={action.error}
         onDismissError={dismiss}
       >
@@ -156,7 +154,7 @@ export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupSte
           loading={action.loading}
           onClick={() => action.run(async () => setRepo(await backend.gitInit(repo.path ?? "")))}
         >
-          {t("init.gitAction")}
+          {m.init_gitAction()}
         </Button>
       </SetupScreen>
     );
@@ -168,8 +166,8 @@ export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupSte
 
   return (
     <SetupScreen
-      title={t("init.title")}
-      description={t("init.description")}
+      title={m.init_title()}
+      description={m.init_description()}
       error={action.error}
       onDismissError={dismiss}
     >
@@ -183,14 +181,13 @@ export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupSte
           })
         }
       >
-        {t("init.action")}
+        {m.init_action()}
       </Button>
     </SetupScreen>
   );
 }
 
 function CreateRemote({ repo }: { repo: RepoInfo }) {
-  const { t } = useI18n();
   const { status, setRepo } = useSession();
   const action = useAction();
   const [name, setName] = useState(() => folderName(repo.path));
@@ -229,7 +226,7 @@ function CreateRemote({ repo }: { repo: RepoInfo }) {
 
   return (
     <SetupScreen
-      title={t("init.remoteTitle")}
+      title={m.init_remoteTitle()}
       error={action.error}
       onDismissError={() => setError(null)}
     >
@@ -240,10 +237,10 @@ function CreateRemote({ repo }: { repo: RepoInfo }) {
         onChange={setOwner}
       />
       <Input
-        aria-label={t("init.repositoryName")}
+        aria-label={m.init_repositoryName()}
         value={name}
         onChange={(event) => setName(event.target.value)}
-        placeholder={t("init.repositoryName")}
+        placeholder={m.init_repositoryName()}
         h="38px"
         borderColor="border.default"
         borderRadius="md"
@@ -256,7 +253,7 @@ function CreateRemote({ repo }: { repo: RepoInfo }) {
           onChange={(event) => setPrivateRepository(event.target.checked)}
         />
         <styled.label htmlFor="private-repository" fontSize="sm">
-          {t("init.privateRepository")}
+          {m.init_privateRepository()}
         </styled.label>
       </HStack>
       <Button
@@ -271,7 +268,7 @@ function CreateRemote({ repo }: { repo: RepoInfo }) {
           )
         }
       >
-        {t("init.createRemote")}
+        {m.init_createRemote()}
       </Button>
     </SetupScreen>
   );

@@ -8,13 +8,13 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { ImportResult, PullResult } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
 import { ImportButton } from "./import-button";
 import { SecretRow } from "./secret-row";
+import { m } from "../../paraglide/messages";
 
 export function SecretsTab({
   workspace,
@@ -23,7 +23,6 @@ export function SecretsTab({
   workspace: Workspace;
   transfer: RunTransfer;
 }) {
-  const { t } = useI18n();
   const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
   const [pullLoading, setPullLoading] = useState(false);
   const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
@@ -113,18 +112,18 @@ export function SecretsTab({
             size="sm"
             variant="outline"
             loading={pullLoading}
-            title={t("dashboard.pullDescription")}
+            title={m.dashboard_pullDescription()}
             onClick={() => void pull(false)}
           >
             <Download size={14} />
-            {t("dashboard.pull")}
+            {m.dashboard_pull()}
           </Button>
         </HStack>
       </SectionHeader>
       {pullNotice && <PullNotice result={pullNotice} onDismiss={() => setPullNotice(null)} />}
       {imported && (
         <Notice onDismiss={() => setImported(null)}>
-          {t("import.done", {
+          {m.import_done({
             environment: imported.environment,
             added: imported.added.length,
             updated: imported.updated.length,
@@ -134,10 +133,10 @@ export function SecretsTab({
       )}
       <ConfirmDeleteDialog
         open={replaceFile !== null}
-        title={t("dashboard.pullReplaceTitle", { file: replaceFile ?? "" })}
-        description={t("dashboard.pullReplaceDescription")}
-        cancelLabel={t("config.cancel")}
-        confirmLabel={t("dashboard.pullReplace")}
+        title={m.dashboard_pullReplaceTitle({ file: replaceFile ?? "" })}
+        description={m.dashboard_pullReplaceDescription()}
+        cancelLabel={m.config_cancel()}
+        confirmLabel={m.dashboard_pullReplace()}
         loading={pullLoading}
         onClose={() => setReplaceFile(null)}
         onConfirm={() => pull(true)}
@@ -147,7 +146,7 @@ export function SecretsTab({
       {workspace.loading && !secrets ? (
         <HStack role="status" py="8" justify="center">
           <Spinner size="sm" aria-hidden="true" />
-          <Text color="fg.muted">{t("common.loading")}</Text>
+          <Text color="fg.muted">{m.common_loading()}</Text>
         </HStack>
       ) : conflicts && conflicts.conflicts.length > 0 ? (
         <ConflictPanel
@@ -194,12 +193,12 @@ export function SecretsTab({
                   report(err);
                 }
               }}
-              deleteLabel={t("dashboard.delete")}
+              deleteLabel={m.dashboard_delete()}
             />
           ))}
           {(secrets?.secrets.length ?? 0) === 0 && (
             <Text color="fg.muted" textAlign="center" py="8">
-              {t("dashboard.empty")}
+              {m.dashboard_empty()}
             </Text>
           )}
         </Box>
@@ -238,14 +237,13 @@ export function SecretsTab({
 }
 
 function PullNotice({ result, onDismiss }: { result: PullResult; onDismiss: () => void }) {
-  const { t } = useI18n();
   return (
     <Notice onDismiss={onDismiss}>
       {result.removed.length > 0 && (
-        <Text fontSize="sm">{t("dashboard.pullRemoved", { keys: result.removed.join(", ") })}</Text>
+        <Text fontSize="sm">{m.dashboard_pullRemoved({ keys: result.removed.join(", ") })}</Text>
       )}
       {result.kept.length > 0 && (
-        <Text fontSize="sm">{t("dashboard.pullKept", { keys: result.kept.join(", ") })}</Text>
+        <Text fontSize="sm">{m.dashboard_pullKept({ keys: result.kept.join(", ") })}</Text>
       )}
     </Notice>
   );
@@ -262,7 +260,6 @@ function AddSecretForm({
   /** Resolves true when the secret was added, so the form clears. */
   onAdd: (key: string, value: string) => Promise<boolean>;
 }) {
-  const { t } = useI18n();
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
@@ -303,16 +300,16 @@ function AddSecretForm({
       }}
     >
       <Input
-        aria-label={t("dashboard.key")}
-        placeholder={t("dashboard.key")}
+        aria-label={m.dashboard_key()}
+        placeholder={m.dashboard_key()}
         autoComplete="off"
         spellCheck={false}
         value={key}
         onChange={(event) => setKey(event.target.value)}
       />
       <Input
-        aria-label={t("dashboard.value")}
-        placeholder={t("dashboard.value")}
+        aria-label={m.dashboard_value()}
+        placeholder={m.dashboard_value()}
         autoComplete="off"
         spellCheck={false}
         value={value}
@@ -320,7 +317,7 @@ function AddSecretForm({
       />
       <Button type="submit" colorPalette="accent" loading={loading} disabled={!key.trim()}>
         <Plus size={15} />
-        {t("dashboard.add")}
+        {m.dashboard_add()}
       </Button>
     </styled.form>
   );

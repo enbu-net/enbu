@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { displayError } from "../../lib/app-error";
-import { I18nProvider } from "../../lib/i18n";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
 
@@ -35,9 +34,9 @@ describe("MemberRow", () => {
   it("shows a device fingerprint without assuming a GitHub account", () => {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MemberRow member={sampleMember} />
-        </I18nProvider>,
+        </>,
       );
     });
     expect(container.textContent).toContain("abcd-efgh-ijkl-mnop-qrst");
@@ -50,13 +49,13 @@ describe("MemberRow", () => {
     const onRemove = vi.fn();
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MemberRow member={sampleMember} onRemove={onRemove} />
           <MemberRow
             member={{ ...sampleMember, fingerprint: "self-self", self: true, admin: true }}
             onRemove={onRemove}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     const buttons = container.querySelectorAll("button");
@@ -72,7 +71,7 @@ describe("accessibility: live regions", () => {
   it("loading state has role=status", async () => {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MembersPanel
             members={[]}
             requests={[]}
@@ -85,7 +84,7 @@ describe("accessibility: live regions", () => {
             onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     const status = container.querySelector('[role="status"]');
@@ -99,7 +98,7 @@ describe("MembersPanel actions", () => {
     const onErrorDismiss = vi.fn();
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MembersPanel
             members={[]}
             requests={[]}
@@ -112,7 +111,7 @@ describe("MembersPanel actions", () => {
             onResolveFork={async () => {}}
             onErrorDismiss={onErrorDismiss}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     act(() => queryButton("Sync")?.click());
@@ -134,7 +133,7 @@ describe("MembersPanel approval", () => {
   function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MembersPanel
             members={[{ ...sampleMember, self: true, admin: true }, sampleMember]}
             requests={[request]}
@@ -148,7 +147,7 @@ describe("MembersPanel approval", () => {
             onErrorDismiss={() => {}}
             {...props}
           />
-        </I18nProvider>,
+        </>,
       );
     });
   }
@@ -246,7 +245,7 @@ describe("PendingRow", () => {
   it("shows the algorithm and request time", () => {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <PendingRow
             request={{
               device_id: "f".repeat(64),
@@ -257,7 +256,7 @@ describe("PendingRow", () => {
             }}
             onApprove={() => {}}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     expect(container.textContent).toContain("P256");
@@ -269,7 +268,7 @@ describe("MembersPanel removal", () => {
   it("warns that secrets already read must be rotated", () => {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MembersPanel
             members={[{ ...sampleMember, self: true, admin: true }, sampleMember]}
             requests={[]}
@@ -282,7 +281,7 @@ describe("MembersPanel removal", () => {
             onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
-        </I18nProvider>,
+        </>,
       );
     });
     act(() =>
@@ -306,7 +305,7 @@ describe("MembersPanel admin rights", () => {
   function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <MembersPanel
             members={[self, other]}
             requests={[]}
@@ -320,7 +319,7 @@ describe("MembersPanel admin rights", () => {
             onErrorDismiss={() => {}}
             {...props}
           />
-        </I18nProvider>,
+        </>,
       );
     });
   }

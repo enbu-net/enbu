@@ -1,11 +1,10 @@
 import { X } from "lucide-react";
 import { Alert, Button, Text } from "./ui";
 import { formatDisplayError, type DisplayError } from "../lib/app-error";
-import { useI18n } from "../lib/i18n";
+import { m } from "../paraglide/messages";
 
 export function ErrorAlert({ error, onDismiss }: { error: DisplayError; onDismiss?: () => void }) {
-  const { locale, t } = useI18n();
-  const message = formatDisplayError(error, locale);
+  const message = formatDisplayError(error);
   return (
     <Alert.Root
       borderRadius="md"
@@ -27,7 +26,7 @@ export function ErrorAlert({ error, onDismiss }: { error: DisplayError; onDismis
           p="0"
           flexShrink="0"
           color="status.danger"
-          aria-label={t("common.close")}
+          aria-label={m.common_close()}
           onClick={onDismiss}
         >
           <X size={14} />

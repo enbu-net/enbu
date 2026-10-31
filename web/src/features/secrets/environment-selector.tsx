@@ -2,9 +2,9 @@ import { type RefObject, useEffect, useId, useRef } from "react";
 import { Check, ChevronDown, Layers3, Plus, X } from "lucide-react";
 import { Box, Flex, HStack, VStack, styled } from "styled-system/jsx";
 import { Button, Heading, Input, Popover, Text } from "../../components/ui";
-import { useI18n } from "../../lib/i18n";
 import { useFocusTrap } from "../../lib/use-focus-trap";
 import type { Environment } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 export function EnvironmentSelector({
   environments,
@@ -19,7 +19,6 @@ export function EnvironmentSelector({
   onSelect: (environment: string) => void | Promise<void>;
   onAdd: () => void;
 }) {
-  const { t } = useI18n();
   return (
     <HStack gap="2" flexWrap="wrap">
       <Popover.Root positioning={{ placement: "bottom-start", gutter: 6 }}>
@@ -36,7 +35,7 @@ export function EnvironmentSelector({
             borderRadius="lg"
             fontSize="lg"
             fontWeight="extrabold"
-            aria-label={t("dashboard.currentEnvironment")}
+            aria-label={m.dashboard_currentEnvironment()}
           >
             <Layers3 size={16} />
             {value}
@@ -87,7 +86,7 @@ export function EnvironmentSelector({
                   onClick={onAdd}
                 >
                   <Plus size={15} />
-                  {t("dashboard.addEnvironment")}
+                  {m.dashboard_addEnvironment()}
                 </Button>
               </Popover.CloseTrigger>
             </VStack>
@@ -95,7 +94,7 @@ export function EnvironmentSelector({
         </Popover.Positioner>
       </Popover.Root>
       <Text as="span" fontSize="xl" fontWeight="extrabold">
-        {t("dashboard.secretHeadingSuffix")}
+        {m.dashboard_secretHeadingSuffix()}
       </Text>
     </HStack>
   );
@@ -123,7 +122,6 @@ export function EnvironmentNameModal({
   onClose: () => void;
   onCreate: () => void | Promise<void>;
 }) {
-  const { t } = useI18n();
   const titleId = useId();
   const inputId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -168,7 +166,7 @@ export function EnvironmentNameModal({
       >
         <Flex justify="space-between" align="start" gap="4" mb="5">
           <Heading id={titleId} size="lg" fontWeight="extrabold">
-            {title ?? t("dashboard.createEnvironmentTitle")}
+            {title ?? m.dashboard_createEnvironmentTitle()}
           </Heading>
           <Button
             type="button"
@@ -176,7 +174,7 @@ export function EnvironmentNameModal({
             w="32px"
             h="32px"
             p="0"
-            aria-label={t("config.cancel")}
+            aria-label={m.config_cancel()}
             disabled={loading}
             onClick={onClose}
           >
@@ -184,13 +182,13 @@ export function EnvironmentNameModal({
           </Button>
         </Flex>
         <styled.label htmlFor={inputId} display="block" mb="2" fontSize="sm" fontWeight="semibold">
-          {t("dashboard.environmentName")}
+          {m.dashboard_environmentName()}
         </styled.label>
         <Input
           id={inputId}
           autoFocus
           value={value}
-          placeholder={t("dashboard.newEnvironment")}
+          placeholder={m.dashboard_newEnvironment()}
           disabled={loading}
           onChange={(event) => onValueChange(event.target.value)}
           onKeyDown={(event) => {
@@ -199,7 +197,7 @@ export function EnvironmentNameModal({
         />
         <HStack justify="end" gap="2" mt="5">
           <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
-            {t("config.cancel")}
+            {m.config_cancel()}
           </Button>
           <Button
             type="button"
@@ -208,7 +206,7 @@ export function EnvironmentNameModal({
             disabled={!value.trim()}
             onClick={() => void onCreate()}
           >
-            {confirmLabel ?? t("dashboard.createEnvironment")}
+            {confirmLabel ?? m.dashboard_createEnvironment()}
           </Button>
         </HStack>
       </Box>

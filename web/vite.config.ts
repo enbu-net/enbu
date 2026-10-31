@@ -2,12 +2,23 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import { resolve } from "path";
 
 const loadPlugins = async () => {
-  const [{ TanStackRouterVite }, { default: react }] = await Promise.all([
+  const [{ TanStackRouterVite }, { default: react }, { paraglideVitePlugin }] = await Promise.all([
     import("@tanstack/router-plugin/vite"),
     import("@vitejs/plugin-react"),
+    import("@inlang/paraglide-js"),
   ]);
 
-  return [TanStackRouterVite(), react()];
+  return [
+    TanStackRouterVite(),
+    react(),
+    // Keep these options in step with the compile in package.json's prepare script.
+    paraglideVitePlugin({
+      project: "./project.inlang",
+      outdir: "./src/paraglide",
+      strategy: ["localStorage", "preferredLanguage", "baseLocale"],
+      emitTsDeclarations: true,
+    }),
+  ];
 };
 
 // Vite 0.2.9's recursive PluginOption type exceeds TypeScript's comparison depth.
@@ -37,6 +48,7 @@ export default defineConfig(({ mode }) => ({
       "src/components/**",
       "src/routeTree.gen.ts",
       "src/bindings/**",
+      "src/paraglide/**",
       "styled-system/**",
       "tsconfig*.json",
     ],
@@ -48,6 +60,7 @@ export default defineConfig(({ mode }) => ({
       "dist-vscode/**",
       "src/routeTree.gen.ts",
       "src/bindings/**",
+      "src/paraglide/**",
       "styled-system/**",
     ],
     options: {
@@ -118,7 +131,13 @@ export default defineConfig(({ mode }) => ({
       reportsDirectory: "../.tmp/coverage/frontend",
       reporter: ["text", "html", "lcov", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/routeTree.gen.ts", "src/bindings/**", "src/test/**"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/routeTree.gen.ts",
+        "src/bindings/**",
+        "src/paraglide/**",
+        "src/test/**",
+      ],
       reportOnFailure: true,
     },
   },

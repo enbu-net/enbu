@@ -1,14 +1,15 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { I18nProvider } from "../lib/i18n";
+import { setLocale } from "../paraglide/runtime";
 import { UserErrorGate } from "./user-error-gate";
 
 describe("UserErrorGate", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await setLocale("ja", { reload: false });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -18,16 +19,17 @@ describe("UserErrorGate", () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("localizes unhandled rejection errors without exposing their details", async () => {
     act(() => {
       root.render(
-        <I18nProvider initialLocale="ja">
+        <>
           <UserErrorGate>
             <div>content</div>
           </UserErrorGate>
-        </I18nProvider>,
+        </>,
       );
     });
 
@@ -52,11 +54,11 @@ describe("UserErrorGate", () => {
 
     await act(async () => {
       root.render(
-        <I18nProvider initialLocale="ja">
+        <>
           <UserErrorGate>
             <Broken />
           </UserErrorGate>
-        </I18nProvider>,
+        </>,
       );
       await Promise.resolve();
     });

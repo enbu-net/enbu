@@ -3,7 +3,7 @@ import { Check, Copy, Eye, EyeOff, Trash2 } from "lucide-react";
 import { Box, HStack } from "styled-system/jsx";
 import { Button, Input, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
-import { useI18n } from "../../lib/i18n";
+import { m } from "../../paraglide/messages";
 
 export function SecretRow({
   secretKey,
@@ -18,7 +18,6 @@ export function SecretRow({
   onDelete: () => Promise<void>;
   deleteLabel: string;
 }) {
-  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState<"key" | "value" | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -64,8 +63,8 @@ export function SecretRow({
           p={0}
           flexShrink="0"
           color={copied === "key" ? "status.success" : "fg.muted"}
-          aria-label={copied === "key" ? t("dashboard.keyCopied") : t("dashboard.copyKey")}
-          title={copied === "key" ? t("dashboard.keyCopied") : t("dashboard.copyKey")}
+          aria-label={copied === "key" ? m.dashboard_keyCopied() : m.dashboard_copyKey()}
+          title={copied === "key" ? m.dashboard_keyCopied() : m.dashboard_copyKey()}
           onClick={async () => {
             await navigator.clipboard.writeText(secretKey);
             setCopied("key");
@@ -75,7 +74,7 @@ export function SecretRow({
         </Button>
       </HStack>
       <Input
-        aria-label={`${t("dashboard.value")}: ${secretKey}`}
+        aria-label={`${m.dashboard_value()}: ${secretKey}`}
         value={editValue}
         type={visible ? "text" : "password"}
         h="38px"
@@ -95,8 +94,8 @@ export function SecretRow({
           h="34px"
           p={0}
           color={copied === "value" ? "status.success" : "fg.muted"}
-          aria-label={copied === "value" ? t("dashboard.valueCopied") : t("dashboard.copyValue")}
-          title={copied === "value" ? t("dashboard.valueCopied") : t("dashboard.copyValue")}
+          aria-label={copied === "value" ? m.dashboard_valueCopied() : m.dashboard_copyValue()}
+          title={copied === "value" ? m.dashboard_valueCopied() : m.dashboard_copyValue()}
           onClick={async () => {
             await navigator.clipboard.writeText(editValue);
             setCopied("value");
@@ -110,7 +109,7 @@ export function SecretRow({
           h="34px"
           p={0}
           color="fg.muted"
-          aria-label={visible ? t("dashboard.hideValue") : t("dashboard.showValue")}
+          aria-label={visible ? m.dashboard_hideValue() : m.dashboard_showValue()}
           onClick={() => setVisible((v) => !v)}
         >
           {visible ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -132,8 +131,8 @@ export function SecretRow({
       </HStack>
       <ConfirmDeleteDialog
         open={deleteConfirmationOpen}
-        title={t("dashboard.deleteSecretConfirm", { key: secretKey })}
-        cancelLabel={t("config.cancel")}
+        title={m.dashboard_deleteSecretConfirm({ key: secretKey })}
+        cancelLabel={m.config_cancel()}
         confirmLabel={deleteLabel}
         loading={deleting}
         triggerRef={deleteTriggerRef}

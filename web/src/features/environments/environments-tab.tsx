@@ -8,17 +8,16 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { Environment } from "../../lib/types";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal } from "../secrets/environment-selector";
+import { m } from "../../paraglide/messages";
 
 /**
  * Renames and deletes environments, and deletes stored revisions, as
  * `enbu switch --move`, `--delete [--purge]` and `--purge-incarnation` do.
  */
 export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
-  const { t } = useI18n();
   const [renaming, setRenaming] = useState<Environment | null>(null);
   const [newName, setNewName] = useState("");
   const [deleting, setDeleting] = useState<Environment | null>(null);
@@ -54,7 +53,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
 
   return (
     <>
-      <SectionHeader title={t("dashboard.environments")} />
+      <SectionHeader title={m.dashboard_environments()} />
       {error && (
         <Box mb="4">
           <ErrorAlert error={error} onDismiss={() => setError(null)} />
@@ -62,20 +61,20 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
       )}
       {kept && (
         <Notice onDismiss={() => setKept(null)}>
-          <Text fontSize="sm">{t("environments.kept", { name: kept.name })}</Text>
+          <Text fontSize="sm">{m.environments_kept({ name: kept.name })}</Text>
           <Button
             size="sm"
             variant="outline"
             loading={busy}
             onClick={() => void purgeIncarnation(kept.incarnation)}
           >
-            {t("environments.purgeKept")}
+            {m.environments_purgeKept()}
           </Button>
         </Notice>
       )}
       {purged !== null && (
         <Notice onDismiss={() => setPurged(null)}>
-          <Text fontSize="sm">{t("environments.purged", { count: String(purged) })}</Text>
+          <Text fontSize="sm">{m.environments_purged({ count: String(purged) })}</Text>
         </Notice>
       )}
       <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
@@ -95,13 +94,13 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
               <Text fontWeight="semibold" truncate>
                 {environment.name}
               </Text>
-              {environment.current && <Badge size="sm">{t("environments.current")}</Badge>}
+              {environment.current && <Badge size="sm">{m.environments_current()}</Badge>}
             </HStack>
             <HStack gap="1">
               <Button
                 size="sm"
                 variant="ghost"
-                aria-label={`${t("environments.rename")}: ${environment.name}`}
+                aria-label={`${m.environments_rename()}: ${environment.name}`}
                 onClick={(event) => {
                   triggerRef.current = event.currentTarget;
                   setNewName(environment.name);
@@ -109,15 +108,15 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
                 }}
               >
                 <Pencil size={14} aria-hidden="true" />
-                {t("environments.rename")}
+                {m.environments_rename()}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 color="status.danger"
                 disabled={environment.current}
-                title={environment.current ? t("environments.currentCannotBeDeleted") : undefined}
-                aria-label={`${t("environments.delete")}: ${environment.name}`}
+                title={environment.current ? m.environments_currentCannotBeDeleted() : undefined}
+                aria-label={`${m.environments_delete()}: ${environment.name}`}
                 onClick={(event) => {
                   triggerRef.current = event.currentTarget;
                   setPurge(false);
@@ -125,7 +124,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
                 }}
               >
                 <Trash2 size={14} aria-hidden="true" />
-                {t("environments.delete")}
+                {m.environments_delete()}
               </Button>
             </HStack>
           </HStack>
@@ -134,8 +133,8 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
       <PurgeEarlier busy={busy} onPurge={purgeIncarnation} />
       <EnvironmentNameModal
         open={renaming !== null}
-        title={t("environments.renameTitle", { name: renaming?.name ?? "" })}
-        confirmLabel={t("environments.rename")}
+        title={m.environments_renameTitle({ name: renaming?.name ?? "" })}
+        confirmLabel={m.environments_rename()}
         value={newName}
         loading={busy}
         triggerRef={triggerRef}
@@ -155,10 +154,10 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
       />
       <ConfirmDeleteDialog
         open={deleting !== null}
-        title={t("environments.deleteTitle", { name: deleting?.name ?? "" })}
-        description={t("environments.deleteDescription")}
-        cancelLabel={t("config.cancel")}
-        confirmLabel={t("environments.delete")}
+        title={m.environments_deleteTitle({ name: deleting?.name ?? "" })}
+        description={m.environments_deleteDescription()}
+        cancelLabel={m.config_cancel()}
+        confirmLabel={m.environments_delete()}
         loading={busy}
         triggerRef={triggerRef}
         onClose={() => setDeleting(null)}
@@ -182,7 +181,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
             onChange={(event) => setPurge(event.target.checked)}
           />
           <styled.label htmlFor="purge-environment" fontSize="sm">
-            {t("environments.purge")}
+            {m.environments_purge()}
           </styled.label>
         </HStack>
       </ConfirmDeleteDialog>
@@ -198,13 +197,12 @@ function PurgeEarlier({
   /** Resolves true when the revisions were deleted, so the field clears. */
   onPurge: (incarnation: string) => Promise<boolean>;
 }) {
-  const { t } = useI18n();
   const [incarnation, setIncarnation] = useState("");
   return (
     <VStack mt="6" alignItems="stretch" gap="2">
-      <Text fontWeight="semibold">{t("environments.purgeEarlierTitle")}</Text>
+      <Text fontWeight="semibold">{m.environments_purgeEarlierTitle()}</Text>
       <Text fontSize="sm" color="fg.muted">
-        {t("environments.purgeEarlierDescription")}
+        {m.environments_purgeEarlierDescription()}
       </Text>
       <styled.form
         display="flex"
@@ -215,8 +213,8 @@ function PurgeEarlier({
         }}
       >
         <Input
-          aria-label={t("environments.incarnation")}
-          placeholder={t("environments.incarnation")}
+          aria-label={m.environments_incarnation()}
+          placeholder={m.environments_incarnation()}
           autoComplete="off"
           spellCheck={false}
           value={incarnation}
@@ -230,7 +228,7 @@ function PurgeEarlier({
           loading={busy}
           disabled={!incarnation.trim()}
         >
-          {t("environments.purgeEarlier")}
+          {m.environments_purgeEarlier()}
         </Button>
       </styled.form>
     </VStack>

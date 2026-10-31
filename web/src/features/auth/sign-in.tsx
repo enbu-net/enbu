@@ -7,10 +7,10 @@ import { LanguageSelector } from "../../components/language-selector";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import { useSession } from "../../lib/session";
 import type { OAuthStart, OAuthStatus } from "../../lib/types";
 import { OAuthLoginPanel } from "./oauth-login-panel";
+import { m } from "../../paraglide/messages";
 
 /** Seconds left until a sign-in started at start expires, ticking while it is pending. */
 function useSecondsLeft(start: OAuthStart | null, pending: boolean) {
@@ -30,7 +30,6 @@ function useSecondsLeft(start: OAuthStart | null, pending: boolean) {
  * polls for the result.
  */
 export function SignIn() {
-  const { t } = useI18n();
   const { refresh, reloadRepo } = useSession();
   const [start, setStart] = useState<OAuthStart | null>(null);
   const [status, setStatus] = useState<OAuthStatus | null>(null);
@@ -105,7 +104,7 @@ export function SignIn() {
           }}
         >
           <SiGithub size={16} aria-hidden="true" />
-          {t("auth.connect")}
+          {m.auth_connect()}
         </Button>
         <LanguageSelector w="full" justifyContent="flex-end" pt="3" />
       </VStack>
