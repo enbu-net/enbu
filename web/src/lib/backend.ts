@@ -15,6 +15,7 @@ import type {
   HistoryEntry,
   ImportResult,
   InitResult,
+  StorageSettings,
   JoinRequest,
   KeyUpdateResult,
   Member,
@@ -46,7 +47,7 @@ export interface Backend {
   listRepositories(): Promise<RepoInfo[]>;
   removeRepository(path: string): Promise<void>;
   /** Founds a workspace in storage ("" for the suggested one), or joins enbu.toml's. */
-  initialize(storage: string, acceptNewGenesis: boolean): Promise<InitResult>;
+  initialize(storage: StorageSettings, acceptNewGenesis: boolean): Promise<InitResult>;
   /** The GHCR repository beside the GitHub origin that founding suggests. */
   suggestStorage(): Promise<string>;
 

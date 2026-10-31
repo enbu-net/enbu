@@ -588,18 +588,37 @@ func (s *Service) SuggestStorage() (string, error) {
 	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
 }
 
+// StorageSettings is where Initialize founds a workspace: the storage URL
+// and the options `enbu init` takes as flags.
+type StorageSettings struct {
+	URL       string `json:"url"`
+	Region    string `json:"region"`
+	Endpoint  string `json:"endpoint"`
+	PathStyle bool   `json:"path_style"`
+	PlainHTTP bool   `json:"plain_http"`
+}
+
 // Initialize sets this device up in the selected repository, as `enbu init`
-// does. Without an enbu.toml it founds a workspace in storageURL, or in
-// SuggestStorage's when storageURL is empty; with one it joins the workspace
-// that enbu.toml names, and storageURL must be empty. acceptNewGenesis is
+// does. It founds a workspace in storage, or in SuggestStorage's when
+// storage.URL is empty; with an enbu.toml that names a storage it joins that
+// workspace, and storage.URL must be empty. acceptNewGenesis is
 // `--accept-new-genesis`.
-func (s *Service) Initialize(storageURL string, acceptNewGenesis bool) (InitResult, error) {
+func (s *Service) Initialize(storage StorageSettings, acceptNewGenesis bool) (InitResult, error) {
 	return withRepoResult(s, func() (InitResult, error) {
-		if _, err := config.LoadProjectFrom(s.app.RepositoryDir); storageURL != "" && err == nil {
-			return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+		if storage.URL != "" {
+			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
+				return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+			}
+			s.app.InitStorage = &config.StorageConfig{
+				URL:       storage.URL,
+				Region:    storage.Region,
+				Endpoint:  storage.Endpoint,
+				PathStyle: storage.PathStyle,
+				PlainHTTP: storage.PlainHTTP,
+			}
 		}
-		s.app.StorageURL, s.app.AcceptNewGenesis = storageURL, acceptNewGenesis
-		defer func() { s.app.StorageURL, s.app.AcceptNewGenesis = "", false }()
+		s.app.AcceptNewGenesis = acceptNewGenesis
+		defer func() { s.app.InitStorage, s.app.AcceptNewGenesis = nil, false }()
 		result, err := s.app.InitializeRepository(s.context())
 		if err != nil {
 			return InitResult{}, err

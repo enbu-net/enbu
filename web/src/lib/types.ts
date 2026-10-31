@@ -43,3 +43,12 @@ export interface OAuthStatus {
   error?: DisplayError;
   username?: string;
 }
+
+/** Where Initialize founds a workspace: the storage and `enbu init`'s flags for it. */
+export interface StorageSettings {
+  url: string;
+  region: string;
+  endpoint: string;
+  path_style: boolean;
+  plain_http: boolean;
+}

@@ -97,8 +97,8 @@ func (s *DesktopService) SuggestStorage() (string, error) {
 	return result(s.core.SuggestStorage())
 }
 
-func (s *DesktopService) Initialize(storageURL string, acceptNewGenesis bool) (desktop.InitResult, error) {
-	return result(s.core.Initialize(storageURL, acceptNewGenesis))
+func (s *DesktopService) Initialize(storage desktop.StorageSettings, acceptNewGenesis bool) (desktop.InitResult, error) {
+	return result(s.core.Initialize(storage, acceptNewGenesis))
 }
 
 func (s *DesktopService) ListEnvironments() ([]desktop.Environment, error) {

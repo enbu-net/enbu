@@ -103,8 +103,8 @@ export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): 
     });
 }
 
-export function Initialize(storageURL: string, acceptNewGenesis: boolean): $CancellablePromise<desktop$0.InitResult> {
-    return $Call.ByID(1776693451, storageURL, acceptNewGenesis).then(($result: any) => {
+export function Initialize(storage: desktop$0.StorageSettings, acceptNewGenesis: boolean): $CancellablePromise<desktop$0.InitResult> {
+    return $Call.ByID(1776693451, storage, acceptNewGenesis).then(($result: any) => {
         return $$createType9($result);
     });
 }

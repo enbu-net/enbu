@@ -6,7 +6,7 @@ import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
-import type { InitResult, RepoInfo } from "../../lib/types";
+import type { InitResult, RepoInfo, StorageSettings } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -70,6 +70,15 @@ function SetupScreen({
     </PageCenter>
   );
 }
+
+/** No storage: Initialize suggests one, or joins the one enbu.toml names. */
+const noStorage: StorageSettings = {
+  url: "",
+  region: "",
+  endpoint: "",
+  path_style: false,
+  plain_http: false,
+};
 
 const primaryButton = {
   bg: "accent.default",
@@ -162,7 +171,7 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
   }
   if (done) return <InitDone result={done} onContinue={reloadRepo} />;
 
-  async function initialize(storage: string, acceptNewGenesis: boolean) {
+  async function initialize(storage: StorageSettings, acceptNewGenesis: boolean) {
     const result = await backend.initialize(storage, acceptNewGenesis);
     // Founding or waiting for approval leaves the person something to do first.
     if (result.founded || result.pending || result.replaced_genesis) setDone(result);
@@ -181,7 +190,7 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
       <Button
         {...primaryButton}
         loading={action.loading}
-        onClick={() => action.run(() => initialize("", false))}
+        onClick={() => action.run(() => initialize(noStorage, false))}
       >
         {m.init_action()}
       </Button>
@@ -192,10 +201,12 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
             borderColor="status.danger"
             color="status.danger"
             loading={action.loading}
-            onClick={() => action.run(() => initialize("", true))}
+            onClick={() => action.run(() => initialize(noStorage, true))}
           >
             {m.init_acceptNewGenesis()}
           </Button>
+          <Text fontSize="sm">{m.init_newGenesis()}</Text>
+          <Command>{action.error.params.configured ?? ""}</Command>
           <Text fontSize="sm" color="fg.muted">
             {m.init_acceptNewGenesisHint()}
           </Text>
@@ -211,23 +222,28 @@ function FoundWorkspace({
   onFound,
 }: {
   action: ReturnType<typeof useAction>;
-  onFound: (storage: string) => Promise<void>;
+  onFound: (storage: StorageSettings) => Promise<void>;
 }) {
-  const { reloadRepo } = useSession();
-  const [storage, setStorage] = useState("");
-  // null while asking, "" when there is no suggestion (no GitHub origin).
+  const { repo, reloadRepo } = useSession();
+  const [storage, setStorage] = useState<StorageSettings>(noStorage);
+  // null while asking, "" when there is none: no GitHub origin, or one whose
+  // name GHCR does not accept.
   const [suggested, setSuggested] = useState<string | null>(null);
+  const hasRemote = repo?.repo?.has_remote ?? false;
+  const set = (change: Partial<StorageSettings>) =>
+    setStorage((current) => ({ ...current, ...change }));
 
   const suggest = useCallback(async () => {
     const value = await backend.suggestStorage().catch(() => "");
     setSuggested(value);
-    setStorage((current) => current || value);
+    setStorage((current) => (current.url ? current : { ...current, url: value }));
   }, []);
 
   useEffect(() => {
     void suggest();
   }, [suggest]);
 
+  const url = storage.url.trim();
   return (
     <SetupScreen
       title={m.init_title()}
@@ -241,8 +257,8 @@ function FoundWorkspace({
         </styled.label>
         <Input
           id="init-storage"
-          value={storage}
-          onChange={(e) => setStorage(e.target.value)}
+          value={storage.url}
+          onChange={(e) => set({ url: e.target.value })}
           placeholder="oci://ghcr.io/OWNER/REPO-enbu"
           fontFamily="mono"
           h="38px"
@@ -253,7 +269,42 @@ function FoundWorkspace({
           {m.init_storageHint()}
         </Text>
       </VStack>
-      {suggested === "" && (
+      {url.startsWith("s3://") && (
+        <VStack alignItems="stretch" gap="2">
+          <Input
+            aria-label={m.init_region()}
+            placeholder={m.init_region()}
+            value={storage.region}
+            onChange={(e) => set({ region: e.target.value })}
+            h="38px"
+            borderColor="border.default"
+            borderRadius="md"
+          />
+          <Input
+            aria-label={m.init_endpoint()}
+            placeholder={m.init_endpoint()}
+            value={storage.endpoint}
+            onChange={(e) => set({ endpoint: e.target.value })}
+            h="38px"
+            borderColor="border.default"
+            borderRadius="md"
+          />
+          <Option
+            label={m.init_pathStyle()}
+            checked={storage.path_style}
+            onChange={(path_style) => set({ path_style })}
+          />
+        </VStack>
+      )}
+      {url.startsWith("oci://") && (
+        <Option
+          label={m.init_plainHttp()}
+          checked={storage.plain_http}
+          onChange={(plain_http) => set({ plain_http })}
+        />
+      )}
+      {suggested === "" && hasRemote && <Text fontSize="sm">{m.init_noGhcrName()}</Text>}
+      {suggested === "" && !hasRemote && (
         <VStack alignItems="stretch" gap="2">
           <Text fontSize="sm">{m.init_noSuggestion()}</Text>
           <Command>git remote add origin https://github.com/OWNER/REPO.git</Command>
@@ -274,12 +325,31 @@ function FoundWorkspace({
       <Button
         {...primaryButton}
         loading={action.loading}
-        disabled={!storage.trim()}
-        onClick={() => action.run(() => onFound(storage.trim()))}
+        disabled={!url}
+        onClick={() => action.run(() => onFound({ ...storage, url }))}
       >
         {m.init_found()}
       </Button>
     </SetupScreen>
+  );
+}
+
+function Option({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label>
+      <HStack gap="2">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <Text fontSize="sm">{label}</Text>
+      </HStack>
+    </label>
   );
 }
 
@@ -290,7 +360,13 @@ function InitDone({ result, onContinue }: { result: InitResult; onContinue: () =
     : null;
   return (
     <SetupScreen
-      title={result.pending ? m.init_pendingTitle() : m.init_foundedTitle()}
+      title={
+        result.pending
+          ? m.init_pendingTitle()
+          : result.founded
+            ? m.init_foundedTitle()
+            : m.init_title()
+      }
       error={null}
       onDismissError={() => {}}
     >

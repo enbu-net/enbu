@@ -20,5 +20,6 @@ export {
     RepoInfo,
     SecretConflict,
     SecretItem,
-    SecretsResponse
+    SecretsResponse,
+    StorageSettings
 } from "./models.js";

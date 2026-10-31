@@ -5,7 +5,10 @@ describe("mockBackend preview user", () => {
   it("uses yashikota consistently", async () => {
     const [status, initialized, members] = await Promise.all([
       mockBackend.authStatus(),
-      mockBackend.initialize("", false),
+      mockBackend.initialize(
+        { url: "", region: "", endpoint: "", path_style: false, plain_http: false },
+        false,
+      ),
       mockBackend.listMembers(),
     ]);
 

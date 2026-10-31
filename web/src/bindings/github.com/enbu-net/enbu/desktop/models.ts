@@ -653,6 +653,47 @@ export class SecretsResponse {
     }
 }
 
+/**
+ * StorageSettings is where Initialize founds a workspace: the storage URL
+ * and the options `enbu init` takes as flags.
+ */
+export class StorageSettings {
+    "url": string;
+    "region": string;
+    "endpoint": string;
+    "path_style": boolean;
+    "plain_http": boolean;
+
+    /** Creates a new StorageSettings instance. */
+    constructor($$source: Partial<StorageSettings> = {}) {
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("region" in $$source)) {
+            this["region"] = "";
+        }
+        if (!("endpoint" in $$source)) {
+            this["endpoint"] = "";
+        }
+        if (!("path_style" in $$source)) {
+            this["path_style"] = false;
+        }
+        if (!("plain_http" in $$source)) {
+            this["plain_http"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new StorageSettings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): StorageSettings {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new StorageSettings($$parsedSource as Partial<StorageSettings>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = RepoInfo.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
