@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { KeyRound, SlidersHorizontal, Users } from "lucide-react";
+import { History, KeyRound, Layers3, SlidersHorizontal, Users } from "lucide-react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Box, Flex, styled } from "styled-system/jsx";
 import { Heading, Tabs } from "../../components/ui";
@@ -8,6 +8,8 @@ import { useI18n, type MessageKey } from "../../lib/i18n";
 import { openURL } from "../../lib/platform";
 import { folderName } from "../../lib/paths";
 import type { RepoInfo } from "../../lib/types";
+import { EnvironmentsTab } from "../environments/environments-tab";
+import { HistoryTab } from "../history/history-tab";
 import { MembersTab } from "../members/members-tab";
 import { SecretsTab } from "../secrets/secrets-tab";
 import { ConfigPanel } from "../settings/config-panel";
@@ -33,6 +35,18 @@ const tabs: DashboardTabDefinition[] = [
     render: ({ workspace, transfer }) => <SecretsTab workspace={workspace} transfer={transfer} />,
   },
   {
+    value: "environments",
+    label: "dashboard.environments",
+    icon: <Layers3 size={16} />,
+    render: ({ workspace }) => <EnvironmentsTab workspace={workspace} />,
+  },
+  {
+    value: "history",
+    label: "history.title",
+    icon: <History size={16} />,
+    render: ({ workspace }) => <HistoryTab workspace={workspace} />,
+  },
+  {
     value: "members",
     label: "members.title",
     icon: <Users size={16} />,
@@ -52,7 +66,7 @@ const tabs: DashboardTabDefinition[] = [
   },
 ];
 
-/** The secrets, members and settings of a repository enbu manages. */
+/** The secrets, environments, history, members and settings of a repository enbu manages. */
 export function Dashboard({ repo }: { repo: RepoInfo }) {
   const { t } = useI18n();
   const workspace = useWorkspace(repo.path ?? "");

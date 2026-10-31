@@ -65,6 +65,39 @@ export interface Messages {
     switchEnvironment: string;
     environmentSecrets: string;
   };
+  environments: {
+    current: string;
+    rename: string;
+    renameTitle: string;
+    delete: string;
+    deleteTitle: string;
+    deleteDescription: string;
+    currentCannotBeDeleted: string;
+    purge: string;
+    kept: string;
+    purgeKept: string;
+    purged: string;
+    purgeEarlierTitle: string;
+    purgeEarlierDescription: string;
+    incarnation: string;
+    purgeEarlier: string;
+  };
+  history: {
+    title: string;
+    environment: string;
+    empty: string;
+    latest: string;
+    restore: string;
+    restored: string;
+    compare: string;
+    from: string;
+    to: string;
+    revision: string;
+    noDifferences: string;
+    added: string;
+    removed: string;
+    modified: string;
+  };
   conflicts: {
     title: string;
     description: string;

@@ -53,6 +53,7 @@ var Methods = []string{
 	"SwitchEnvironment",
 	"RenameEnvironment",
 	"DeleteEnvironment",
+	"PurgeIncarnation",
 	"ListSecrets",
 	"AddSecret",
 	"EditSecret",

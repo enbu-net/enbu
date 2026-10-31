@@ -204,6 +204,13 @@ type ConflictChoice struct {
 	Delete bool   `json:"delete"`
 }
 
+// EnvironmentDeletion is what deleting an environment did to its stored
+// revisions: how many it purged, or the incarnation that still names them.
+type EnvironmentDeletion struct {
+	Purged      int    `json:"purged"`
+	Incarnation string `json:"incarnation,omitempty"`
+}
+
 type HistoryEntry struct {
 	Index     int       `json:"index"`
 	Timestamp time.Time `json:"timestamp"`
@@ -653,8 +660,36 @@ func (s *Service) RenameEnvironment(name, newName string) error {
 	return s.withRepo(func() error { return s.app.RenameEnvironment(name, newName) })
 }
 
-func (s *Service) DeleteEnvironment(name string) error {
-	return s.withRepo(func() error { return s.app.DeleteEnvironment(name) })
+// DeleteEnvironment removes an environment from enbu.toml. With purge its
+// stored revisions are deleted too (admin only); without, they stay and the
+// result names the incarnation PurgeIncarnation deletes them by later.
+func (s *Service) DeleteEnvironment(name string, purge bool) (EnvironmentDeletion, error) {
+	return withRepoResult(s, func() (EnvironmentDeletion, error) {
+		if purge {
+			purged, err := s.app.DeleteEnvironmentPurging(s.context(), name)
+			return EnvironmentDeletion{Purged: purged}, err
+		}
+		incarnation := ""
+		if envs, err := s.app.ListEnvironments(); err == nil {
+			for _, env := range envs {
+				if env.Name == name {
+					incarnation = env.Incarnation
+				}
+			}
+		}
+		if err := s.app.DeleteEnvironment(name); err != nil {
+			return EnvironmentDeletion{}, err
+		}
+		return EnvironmentDeletion{Incarnation: incarnation}, nil
+	})
+}
+
+// PurgeIncarnation deletes the stored revisions of an environment deleted
+// without purging them (admin only), and returns how many it deleted.
+func (s *Service) PurgeIncarnation(incarnation string) (int, error) {
+	return withRepoResult(s, func() (int, error) {
+		return s.app.PurgeIncarnation(s.context(), incarnation)
+	})
 }
 
 func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
