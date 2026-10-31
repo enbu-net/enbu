@@ -55,7 +55,12 @@ export function ImportButton({
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) void file.text().then((dotenv) => run(dotenv, false));
+          if (file) {
+            file.text().then(
+              (dotenv) => run(dotenv, false),
+              (err: unknown) => onError(toDisplayError(err)),
+            );
+          }
         }}
       />
       <Button

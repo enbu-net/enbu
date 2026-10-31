@@ -103,6 +103,7 @@ func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
 		}
 	}
 }
+
 func TestStartOAuthLogin(t *testing.T) {
 	a := app.New()
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
@@ -413,6 +414,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 		}
 	}
 }
+
 func TestRemoveRepository(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)

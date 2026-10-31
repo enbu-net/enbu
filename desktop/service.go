@@ -42,6 +42,7 @@ type ConflictRetry struct {
 	Attempt     int `json:"attempt"`
 	MaxAttempts int `json:"max_attempts"`
 }
+
 type Service struct {
 	app        *app.App
 	ctx        context.Context
@@ -463,7 +464,6 @@ func (s *Service) RemoveRepository(path string) error {
 	return config.SaveGUI(cfg)
 }
 
-// GitCreateRemote creates a GitHub repository and sets it as origin, then re-selects.
 func (s *Service) ListMembers() ([]Member, error) {
 	return withRepoResult(s, func() ([]Member, error) {
 		infos, err := s.app.ListMembers(s.context())
@@ -631,12 +631,16 @@ func (s *Service) DeleteEnvironment(name string, purge bool) (EnvironmentDeletio
 			purged, err := s.app.DeleteEnvironmentPurging(s.context(), name)
 			return EnvironmentDeletion{Purged: purged}, err
 		}
+		// The incarnation is read before deleting: afterwards enbu.toml no
+		// longer names it, and the caller needs it to purge later.
+		envs, err := s.app.ListEnvironments()
+		if err != nil {
+			return EnvironmentDeletion{}, err
+		}
 		incarnation := ""
-		if envs, err := s.app.ListEnvironments(); err == nil {
-			for _, env := range envs {
-				if env.Name == name {
-					incarnation = env.Incarnation
-				}
+		for _, env := range envs {
+			if env.Name == name {
+				incarnation = env.Incarnation
 			}
 		}
 		if err := s.app.DeleteEnvironment(name); err != nil {

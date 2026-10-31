@@ -2,3 +2,6 @@ dist/
 media/
 node_modules/
 *.vsix
+bin/
+# Copied from the repository root when packaging.
+LICENSE

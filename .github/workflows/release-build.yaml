@@ -220,6 +220,90 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  vscode:
+    name: Build VS Code extension
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    needs: [cli]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.version }}
+          persist-credentials: false
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.local/share/aquaproj-aqua
+          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
+          restore-keys: |
+            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+
+      - uses: aquaproj/aqua-installer@v4.1.1
+        with:
+          aqua_version: v2.65.2
+
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          run-install: false
+          package-manager: false
+          node-manager: false
+
+      - name: Download CLI artifacts
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-cli
+          path: cli-archives
+
+      - name: Build extension
+        run: task vscode/build
+
+      # One VSIX per VS Code target, each carrying the CLI binary built above
+      # for that platform. The Marketplace and `code --install-extension` pick
+      # the VSIX for the user's platform, so enbu installs with the extension.
+      - name: Package extension
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for pair in \
+            linux_amd64:linux-x64 \
+            linux_arm64:linux-arm64 \
+            darwin_arm64:darwin-arm64 \
+            windows_amd64:win32-x64 \
+            windows_arm64:win32-arm64; do
+            suffix="${pair%%:*}"
+            target="${pair##*:}"
+            bin_dir="$RUNNER_TEMP/enbu-$suffix"
+            mkdir -p "$bin_dir"
+            case "$suffix" in
+              windows_*)
+                unzip -o -j "cli-archives/enbu_${VERSION}_${suffix}.zip" enbu.exe -d "$bin_dir"
+                binary="$bin_dir/enbu.exe"
+                ;;
+              *)
+                tar -xzf "cli-archives/enbu_${VERSION}_${suffix}.tar.gz" -C "$bin_dir" enbu
+                binary="$bin_dir/enbu"
+                ;;
+            esac
+            node vscode/scripts/package.mjs \
+              --enbu "$binary" \
+              --target "$target" \
+              --version "$VERSION" \
+              --out "release/enbu-vscode_${VERSION}_${suffix}.vsix"
+          done
+
+      - name: Upload VS Code extension artifacts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-vscode
+          path: release/*.vsix
+          if-no-files-found: error
+          retention-days: 1
+
   assets:
     name: Sign and attest assets
     runs-on: ubuntu-26.04
@@ -227,6 +311,7 @@ jobs:
     needs:
       - cli
       - desktop
+      - vscode
     permissions:
       contents: read
       id-token: write
@@ -301,6 +386,7 @@ jobs:
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_windows_*.zip' | wc -l)" -eq 2
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_darwin_*.dmg' | wc -l)" -eq 1
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_darwin_*.tar.gz' | wc -l)" -eq 0
+          test "$(find release-assets -maxdepth 1 -type f -name 'enbu-vscode_*.vsix' | wc -l)" -eq 5
           test "$(find release-assets -maxdepth 1 -type f -name '*.sbom.spdx.json' | wc -l)" -gt 0
           test "$(find release-assets -maxdepth 1 -type f -name '*.sigstore.json' | wc -l)" -gt 0
           (cd release-assets && sha256sum -c checksums.txt)

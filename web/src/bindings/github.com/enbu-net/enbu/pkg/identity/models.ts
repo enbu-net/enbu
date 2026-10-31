@@ -5,38 +5,6 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
-export class Diagnosis {
-    "backend": string;
-    "device"?: string;
-    "available": boolean;
-    "reason"?: string;
-    "fallback_available": boolean;
-    "fallback_reason"?: string;
-
-    /** Creates a new Diagnosis instance. */
-    constructor($$source: Partial<Diagnosis> = {}) {
-        if (!("backend" in $$source)) {
-            this["backend"] = "";
-        }
-        if (!("available" in $$source)) {
-            this["available"] = false;
-        }
-        if (!("fallback_available" in $$source)) {
-            this["fallback_available"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Diagnosis instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Diagnosis {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Diagnosis($$parsedSource as Partial<Diagnosis>);
-    }
-}
-
 export class PublicInfo {
     "backend": string;
     "algorithm": string;

@@ -26,12 +26,10 @@ export type {
   KeyUpdateResult,
   ProgressStep,
 } from "../bindings/github.com/enbu-net/enbu/app/models";
-export type {
-  Diagnosis,
-  PublicInfo,
-} from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
+export type { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 
 import type { RepoInfo } from "../bindings/github.com/enbu-net/enbu/desktop/models";
+export type { IdentityDiagnosis as Diagnosis } from "../bindings/github.com/enbu-net/enbu/desktop/models";
 import type { DisplayError } from "./app-error";
 
 /** The repository the app works on; repo is unset until one is selected. */

@@ -1,3 +1,6 @@
+allowBuilds:
+  # Only signs packages for the Marketplace; packaging does not need its binary.
+  "@vscode/vsce-sign": false
 minimumReleaseAgeExclude:
   - "@typescript/typescript-aix-ppc64@7.0.2"
   - "@typescript/typescript-darwin-arm64@7.0.2"

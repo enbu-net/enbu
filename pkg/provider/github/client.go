@@ -35,6 +35,7 @@ func newClient(token string, httpClient *http.Client, baseURL string) *Client {
 	sdk, err := githubsdk.NewClient(options...)
 	return &Client{sdk: sdk, initErr: err}
 }
+
 func (c *Client) GetUser(ctx context.Context) (*provider.User, error) {
 	if c.initErr != nil {
 		return nil, c.initErr

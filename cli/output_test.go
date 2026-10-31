@@ -133,6 +133,7 @@ func TestJSONUserInputErrorsAreInvalidArguments(t *testing.T) {
 		{"switch", "--delete", "--json"},
 		{"switch", "--move", "old", "--json"},
 		{"pull", "--stdout", "--json"},
+		{"import", "--json"},
 		{"auth", "login", "--device", "--json"},
 	}
 
