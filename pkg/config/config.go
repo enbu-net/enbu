@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,7 +23,6 @@ type StorageConfig struct {
 	Region    string `toml:"region,omitempty"`
 	Endpoint  string `toml:"endpoint,omitempty"`
 	PathStyle bool   `toml:"path_style,omitempty"`
-	OCIAuth   string `toml:"oci_auth,omitempty"`
 	PlainHTTP bool   `toml:"plain_http,omitempty"`
 }
 
@@ -397,30 +397,28 @@ func baseDir(dir string) string {
 	}
 	return wd
 }
-func ParseGitRemote(url string) (string, string, error) {
-	url = strings.TrimSuffix(url, "/")
-	if strings.HasPrefix(url, "git@") {
-		parts := strings.SplitN(url, ":", 2)
-		if len(parts) != 2 {
-			return "", "", fmt.Errorf("invalid SSH remote: %s", url)
+
+// ParseGitHubRemote returns the owner and repository of a github.com remote
+// (git@github.com:owner/repo, https://github.com/owner/repo or
+// ssh://git@github.com/owner/repo, each with or without .git). Other hosts are
+// an error.
+func ParseGitHubRemote(remote string) (string, string, error) {
+	var path string
+	if rest, ok := strings.CutPrefix(remote, "git@github.com:"); ok {
+		path = rest
+	} else {
+		u, err := url.Parse(remote)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Hostname() != "github.com" {
+			return "", "", fmt.Errorf("not a GitHub remote: %s", remote)
 		}
-		return splitOwnerRepo(strings.TrimSuffix(parts[1], ".git"))
+		path = u.Path
 	}
-
-	url = strings.TrimSuffix(url, ".git")
-	parts := strings.Split(url, "/")
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid remote URL: %s", url)
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	owner, repo, ok := strings.Cut(path, "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", fmt.Errorf("not a GitHub remote: %s", remote)
 	}
-	return parts[len(parts)-2], parts[len(parts)-1], nil
-}
-
-func splitOwnerRepo(path string) (string, string, error) {
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid owner/repo: %s", path)
-	}
-	return parts[0], parts[1], nil
+	return owner, repo, nil
 }
 
 func DataDir() string {

@@ -53,7 +53,7 @@ func validateRepoPath(
 
 	var owner, repo string
 	if repository.HasRemote {
-		owner, repo, _ = config.ParseGitRemote(repository.OriginURL)
+		owner, repo, _ = config.ParseGitHubRemote(repository.OriginURL)
 	}
 
 	return &SelectedRepo{
