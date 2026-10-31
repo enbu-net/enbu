@@ -38,14 +38,20 @@ Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
 
 ### 1. Choose storage
 
-For GHCR, authenticate and specify the registry repository explicitly:
+In a repository whose `origin` is on GitHub, sign in and run `init`. The workspace is
+stored on GHCR beside the repository, at `oci://ghcr.io/OWNER/REPO-enbu`:
 
 ```bash
 enbu auth login
-enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
+enbu init
 ```
 
-Any other OCI registry uses Docker credential configuration by default:
+GHCR creates the package private to you. So that teammates can join, open the package's
+settings on GitHub, connect the repository and turn on "Inherit access from repository";
+`init` prints this reminder.
+
+Anywhere else, name the storage with `--storage`. `ghcr.io` always uses enbu's GitHub
+login; any other OCI registry uses the Docker credential configuration:
 
 ```bash
 enbu init --storage oci://registry.example.com/team/secrets
@@ -184,7 +190,6 @@ default_env = "dev"
 
 [storage]
 url = "oci://ghcr.io/your-org/your-repo-enbu"
-oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
