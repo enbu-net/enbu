@@ -86,7 +86,8 @@ export function MembersPanel({
               onErrorDismiss();
             }}
           />
-          {shownError.code === "control_forked" && (
+          {/* A failed resolution replaces the fork error, but the fork remains. */}
+          {(error?.code === "control_forked" || shownError.code === "control_forked") && (
             <Button
               size="sm"
               mt="2"
