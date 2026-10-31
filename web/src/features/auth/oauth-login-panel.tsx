@@ -2,8 +2,8 @@ import { HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { displayError } from "../../lib/app-error";
-import { useI18n } from "../../lib/i18n";
 import type { OAuthStatus } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 export function OAuthLoginPanel({
   status,
@@ -16,27 +16,26 @@ export function OAuthLoginPanel({
   onCancel: () => Promise<void>;
   onRetry: () => void;
 }) {
-  const { t } = useI18n();
   const terminal = status?.state && status.state !== "pending";
 
   return (
     <VStack gap={5} w="full" maxW="480px" alignItems="stretch">
       <Heading as="h1" size="2xl" fontWeight="extrabold" textAlign="center">
-        {t("auth.authorizeTitle")}
+        {m.auth_authorizeTitle()}
       </Heading>
 
       <VStack gap={2} alignItems="center">
         <Text fontSize="sm" color="fg.muted">
-          {t("auth.browserInstruction")}
+          {m.auth_browserInstruction()}
         </Text>
       </VStack>
 
       {!terminal && status?.state === "pending" && (
         <HStack justifyContent="center">
           <Spinner size="sm" color="accent.default" />
-          <Text fontSize="sm">{t("auth.waiting")}</Text>
+          <Text fontSize="sm">{m.auth_waiting()}</Text>
           <Text fontSize="xs" color="fg.muted">
-            {t("auth.expiresIn", { seconds: expiresIn })}
+            {m.auth_expiresIn({ seconds: expiresIn })}
           </Text>
         </HStack>
       )}
@@ -54,11 +53,11 @@ export function OAuthLoginPanel({
             h="38px"
             onClick={onRetry}
           >
-            {t("auth.tryAgain")}
+            {m.auth_tryAgain()}
           </Button>
         ) : (
           <Button variant="ghost" h="38px" color="fg.muted" onClick={onCancel}>
-            {t("auth.cancel")}
+            {m.auth_cancel()}
           </Button>
         )}
       </HStack>

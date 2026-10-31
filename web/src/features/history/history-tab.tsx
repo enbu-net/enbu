@@ -7,16 +7,16 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { Diff, HistoryEntry } from "../../lib/types";
 import type { Workspace } from "../dashboard/use-workspace";
+import { m } from "../../paraglide/messages";
+import { getLocale } from "../../paraglide/runtime";
 
 /**
  * The revisions that changed an environment's secrets, with the comparison
  * and restore of `enbu history diff` and `enbu history restore`.
  */
 export function HistoryTab({ workspace }: { workspace: Workspace }) {
-  const { t, locale } = useI18n();
   const envId = useId();
   const fromId = useId();
   const toId = useId();
@@ -67,15 +67,14 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   }
 
   const newestFirst = [...(entries ?? [])].reverse();
-  const formatTime = (timestamp: string) =>
-    new Date(timestamp).toLocaleString(locale === "ja" ? "ja-JP" : "en-US");
+  const formatTime = (timestamp: string) => new Date(timestamp).toLocaleString(getLocale());
 
   return (
     <>
-      <SectionHeader title={t("history.title")}>
+      <SectionHeader title={m.history_title()}>
         <HStack gap="2">
           <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
-            {t("history.environment")}
+            {m.history_environment()}
           </styled.label>
           <styled.select
             id={envId}
@@ -101,19 +100,19 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
       )}
       {restored !== null && (
         <Notice onDismiss={() => setRestored(null)}>
-          {t("history.restored", { index: String(restored) })}
+          {m.history_restored({ index: String(restored) })}
         </Notice>
       )}
       {entries === null ? (
         !error && (
           <HStack role="status" py="8" justify="center">
             <Spinner size="sm" aria-hidden="true" />
-            <Text color="fg.muted">{t("common.loading")}</Text>
+            <Text color="fg.muted">{m.common_loading()}</Text>
           </HStack>
         )
       ) : entries.length === 0 ? (
         <Text color="fg.muted" textAlign="center" py="8">
-          {t("history.empty")}
+          {m.history_empty()}
         </Text>
       ) : (
         <VStack alignItems="stretch" gap="5">
@@ -134,19 +133,19 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                   <HStack gap="2" minW="0">
                     <History size={15} aria-hidden="true" />
                     <Text fontWeight="semibold">
-                      {t("history.revision", { index: String(entry.index) })}
+                      {m.history_revision({ index: String(entry.index) })}
                     </Text>
                     <Text fontSize="sm" color="fg.muted">
                       {formatTime(entry.timestamp)}
                     </Text>
-                    {latest && <Badge size="sm">{t("history.latest")}</Badge>}
+                    {latest && <Badge size="sm">{m.history_latest()}</Badge>}
                   </HStack>
                   {!latest && (
                     <Button
                       size="sm"
                       variant="ghost"
                       disabled={busy}
-                      aria-label={`${t("history.restore")}: ${t("history.revision", { index: String(entry.index) })}`}
+                      aria-label={`${m.history_restore()}: ${m.history_revision({ index: String(entry.index) })}`}
                       onClick={() =>
                         void run(async () => {
                           await backend.restoreHistory(env, entry.index);
@@ -156,7 +155,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                       }
                     >
                       <RotateCcw size={14} aria-hidden="true" />
-                      {t("history.restore")}
+                      {m.history_restore()}
                     </Button>
                   )}
                 </HStack>
@@ -167,11 +166,11 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
             <VStack alignItems="stretch" gap="3">
               <HStack gap="2" flexWrap="wrap">
                 <styled.label htmlFor={fromId} fontSize="sm" color="fg.muted">
-                  {t("history.from")}
+                  {m.history_from()}
                 </styled.label>
                 <RevisionSelect id={fromId} entries={newestFirst} value={from} onChange={setFrom} />
                 <styled.label htmlFor={toId} fontSize="sm" color="fg.muted">
-                  {t("history.to")}
+                  {m.history_to()}
                 </styled.label>
                 <RevisionSelect id={toId} entries={newestFirst} value={to} onChange={setTo} />
                 <Button
@@ -182,7 +181,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                     void run(async () => setDiff(await backend.diffHistory(env, from, to)))
                   }
                 >
-                  {t("history.compare")}
+                  {m.history_compare()}
                 </Button>
               </HStack>
               {diff && <DiffView diff={diff} />}
@@ -205,7 +204,6 @@ function RevisionSelect({
   value: number;
   onChange: (index: number) => void;
 }) {
-  const { t } = useI18n();
   return (
     <styled.select
       id={id}
@@ -215,7 +213,7 @@ function RevisionSelect({
     >
       {entries.map((entry) => (
         <option key={entry.tag} value={entry.index}>
-          {t("history.revision", { index: String(entry.index) })}
+          {m.history_revision({ index: String(entry.index) })}
         </option>
       ))}
     </styled.select>
@@ -223,14 +221,13 @@ function RevisionSelect({
 }
 
 function DiffView({ diff }: { diff: Diff }) {
-  const { t } = useI18n();
   const groups = [
-    { sign: "+", label: t("history.added"), keys: diff.added, color: "status.success" },
-    { sign: "-", label: t("history.removed"), keys: diff.removed, color: "status.danger" },
-    { sign: "~", label: t("history.modified"), keys: diff.modified, color: "fg.default" },
+    { sign: "+", label: m.history_added(), keys: diff.added, color: "status.success" },
+    { sign: "-", label: m.history_removed(), keys: diff.removed, color: "status.danger" },
+    { sign: "~", label: m.history_modified(), keys: diff.modified, color: "fg.default" },
   ].filter((group) => group.keys.length > 0);
   if (groups.length === 0) {
-    return <Text color="fg.muted">{t("history.noDifferences")}</Text>;
+    return <Text color="fg.muted">{m.history_noDifferences()}</Text>;
   }
   return (
     <VStack

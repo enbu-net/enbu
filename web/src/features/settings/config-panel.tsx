@@ -7,12 +7,11 @@ import { SectionHeader } from "../../components/layout";
 import { TomlCodeEditor } from "../../components/toml-code-editor";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { Environment } from "../../lib/types";
 import { parseConfigDraft, serializeConfigDraft, type EnbuConfigDraft } from "./config-draft";
+import { m } from "../../paraglide/messages";
 
 export function ConfigPanel({ environments }: { environments: Environment[] }) {
-  const { t } = useI18n();
   const defaultEnvId = useId();
   const [content, setContent] = useState("");
   const [draft, setDraft] = useState("");
@@ -62,7 +61,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
 
   return (
     <>
-      <SectionHeader title={t("config.settings")}>
+      <SectionHeader title={m.config_settings()}>
         <HStack gap="2">
           <Button
             size="sm"
@@ -82,7 +81,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
             }}
           >
             {view === "code" ? <ListTree size={15} /> : <Code2 size={15} />}
-            {view === "code" ? t("config.guiView") : t("config.codeView")}
+            {view === "code" ? m.config_guiView() : m.config_codeView()}
           </Button>
           {view === "gui" && (
             <Button
@@ -92,7 +91,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
               disabled={draft === content}
               onClick={() => void save()}
             >
-              {t("config.save")}
+              {m.config_save()}
             </Button>
           )}
         </HStack>
@@ -110,7 +109,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
       {loading ? (
         <HStack role="status" py="8" justify="center">
           <Spinner size="sm" aria-hidden="true" />
-          <Text color="fg.muted">{t("common.loading")}</Text>
+          <Text color="fg.muted">{m.common_loading()}</Text>
         </HStack>
       ) : view === "code" ? (
         <TomlCodeEditor
@@ -121,8 +120,8 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
         />
       ) : gui ? (
         <VStack alignItems="stretch" gap="4">
-          <SettingsGroup title={t("config.general")}>
-            <SettingRow label={t("config.defaultEnvironment")} htmlFor={defaultEnvId}>
+          <SettingsGroup title={m.config_general()}>
+            <SettingRow label={m.config_defaultEnvironment()} htmlFor={defaultEnvId}>
               <styled.select
                 id={defaultEnvId}
                 value={gui.default_env}
@@ -137,7 +136,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
               </styled.select>
             </SettingRow>
           </SettingsGroup>
-          <SettingsGroup title={t("config.outputFileNames")}>
+          <SettingsGroup title={m.config_outputFileNames()}>
             {Object.entries(gui.env).map(([name, config]) => {
               const inputId = `config-output-${name}`;
               return (

@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import type { Session } from "../../lib/session";
 import { container, queryButton, root, setupDom, withSession } from "../../test/dom";
 import { SignIn } from "./sign-in";
+import { setLocale } from "../../paraglide/runtime";
 
 vi.mock("../../lib/backend", async () => ({
   backend: (await import("../../test/backend-mock")).createBackendMock(),
@@ -17,12 +17,12 @@ const mocked = vi.mocked(backend);
 function renderSignIn(session: Partial<Session> = {}) {
   act(() => {
     root.render(
-      <I18nProvider>
+      <>
         {withSession(<SignIn />, {
           status: { authenticated: false, workspace_configured: false },
           ...session,
         })}
-      </I18nProvider>,
+      </>,
     );
   });
 }
@@ -54,17 +54,12 @@ describe("SignIn", () => {
     expect(container.querySelector("select")?.value).toBe("en");
   });
 
-  it("shows the Japanese authentication label after selecting Japanese", () => {
+  it("shows the Japanese authentication label in Japanese", async () => {
+    await setLocale("ja", { reload: false });
     renderSignIn();
 
-    const language = container.querySelector("select");
-    act(() => {
-      if (!language) return;
-      language.value = "ja";
-      language.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
     expect(queryButton("GitHub認証")).toBeTruthy();
+    await setLocale("en", { reload: false });
   });
 
   it("reloads the session once the browser finishes signing in", async () => {

@@ -4,7 +4,6 @@ import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Box, Flex, styled } from "styled-system/jsx";
 import { Heading, Tabs } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
-import { useI18n, type MessageKey } from "../../lib/i18n";
 import { openURL } from "../../lib/platform";
 import { folderName } from "../../lib/paths";
 import type { RepoInfo } from "../../lib/types";
@@ -14,6 +13,7 @@ import { MembersTab } from "../members/members-tab";
 import { SecretsTab } from "../secrets/secrets-tab";
 import { ConfigPanel } from "../settings/config-panel";
 import { DashboardTab, DashboardTabContent } from "./dashboard-tabs";
+import { m } from "../../paraglide/messages";
 import { useTransfer, type RunTransfer } from "./use-transfer";
 import { useWorkspace, type Workspace } from "./use-workspace";
 
@@ -22,7 +22,7 @@ type TabContext = { repo: RepoInfo; workspace: Workspace; transfer: RunTransfer 
 /** A dashboard tab. A new tab is one more entry in tabs. */
 type DashboardTabDefinition = {
   value: string;
-  label: MessageKey;
+  label: () => string;
   icon: ReactNode;
   render: (context: TabContext) => ReactNode;
 };
@@ -30,25 +30,25 @@ type DashboardTabDefinition = {
 const tabs: DashboardTabDefinition[] = [
   {
     value: "secrets",
-    label: "dashboard.secrets",
+    label: m.dashboard_secrets,
     icon: <KeyRound size={16} />,
     render: ({ workspace, transfer }) => <SecretsTab workspace={workspace} transfer={transfer} />,
   },
   {
     value: "environments",
-    label: "dashboard.environments",
+    label: m.dashboard_environments,
     icon: <Layers3 size={16} />,
     render: ({ workspace }) => <EnvironmentsTab workspace={workspace} />,
   },
   {
     value: "history",
-    label: "history.title",
+    label: m.history_title,
     icon: <History size={16} />,
     render: ({ workspace }) => <HistoryTab workspace={workspace} />,
   },
   {
     value: "members",
-    label: "members.title",
+    label: m.members_title,
     icon: <Users size={16} />,
     render: ({ repo, workspace, transfer }) => (
       <MembersTab
@@ -60,7 +60,7 @@ const tabs: DashboardTabDefinition[] = [
   },
   {
     value: "settings",
-    label: "config.settings",
+    label: m.config_settings,
     icon: <SlidersHorizontal size={16} />,
     render: ({ workspace }) => <ConfigPanel environments={workspace.environments} />,
   },
@@ -68,7 +68,6 @@ const tabs: DashboardTabDefinition[] = [
 
 /** The secrets, environments, history, members and settings of a repository enbu manages. */
 export function Dashboard({ repo }: { repo: RepoInfo }) {
-  const { t } = useI18n();
   const workspace = useWorkspace(repo.path ?? "");
   const transfer = useTransfer();
   const context: TabContext = { repo, workspace, transfer: transfer.run };
@@ -94,12 +93,7 @@ export function Dashboard({ repo }: { repo: RepoInfo }) {
         <Tabs.Root defaultValue={tabs[0].value} lazyMount unmountOnExit variant="line">
           <Tabs.List w="full" h="auto" display="flex" gap="0" overflow="hidden">
             {tabs.map((tab) => (
-              <DashboardTab
-                key={tab.value}
-                value={tab.value}
-                icon={tab.icon}
-                label={t(tab.label)}
-              />
+              <DashboardTab key={tab.value} value={tab.value} icon={tab.icon} label={tab.label()} />
             ))}
           </Tabs.List>
           {tabs.map((tab) => (

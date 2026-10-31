@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { parse as parseToml } from "smol-toml";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import { container, queryButton, root, settle, setupDom, typeInto } from "../../test/dom";
 import { ConfigPanel } from "./config-panel";
 
@@ -25,9 +24,9 @@ incarnation = "22222222-2222-4222-8222-222222222222"
 async function renderPanel() {
   await act(async () => {
     root.render(
-      <I18nProvider>
+      <>
         <ConfigPanel environments={[{ name: "dev", current: true }]} />
-      </I18nProvider>,
+      </>,
     );
   });
   await settle();

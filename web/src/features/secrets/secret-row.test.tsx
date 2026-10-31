@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { I18nProvider } from "../../lib/i18n";
 import { clipboardWrite, container, queryButton, queryInput, root, setupDom } from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
@@ -15,7 +14,7 @@ function renderSecretRow(props: {
 }) {
   act(() => {
     root.render(
-      <I18nProvider>
+      <>
         <SecretRow
           secretKey={props.secretKey}
           secretValue={props.secretValue}
@@ -23,7 +22,7 @@ function renderSecretRow(props: {
           onDelete={props.onDelete ?? (async () => {})}
           deleteLabel={props.deleteLabel ?? "Delete"}
         />
-      </I18nProvider>,
+      </>,
     );
   });
 }

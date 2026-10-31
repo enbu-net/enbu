@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { AppError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import { openURL } from "../../lib/platform";
 import type { RepoInfo } from "../../lib/types";
 import { container, queryButton, root, settle, setupDom, typeInto } from "../../test/dom";
@@ -34,9 +33,9 @@ const repo = (overrides: Partial<RepoInfo> = {}): RepoInfo => ({
 async function renderDashboard(info = repo()) {
   await act(async () => {
     root.render(
-      <I18nProvider>
+      <>
         <Dashboard repo={info} />
-      </I18nProvider>,
+      </>,
     );
   });
   await settle();

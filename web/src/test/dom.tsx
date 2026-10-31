@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, vi } from "vite-plus/test";
-import { I18nProvider } from "../lib/i18n";
 import { SessionContext, type Session } from "../lib/session";
 
 /** The element each test renders into; setupDom replaces it before every test. */
@@ -41,12 +40,12 @@ export function setupDom() {
 }
 
 export function render(ui: ReactNode) {
-  act(() => root.render(<I18nProvider>{ui}</I18nProvider>));
+  act(() => root.render(ui));
 }
 
 /** Renders and lets the effects' first backend calls settle. */
 export async function renderAndSettle(ui: ReactNode) {
-  await act(async () => root.render(<I18nProvider>{ui}</I18nProvider>));
+  await act(async () => root.render(ui));
   await settle();
 }
 

@@ -9,8 +9,8 @@ import {
   RepositorySetup,
   setupStep,
 } from "../features/repository/repository-setup";
-import { useI18n } from "../lib/i18n";
 import { useSession } from "../lib/session";
+import { m } from "../paraglide/messages";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -21,7 +21,6 @@ export const Route = createFileRoute("/")({
  * repository, set it up, then work in the dashboard.
  */
 export function HomePage() {
-  const { t } = useI18n();
   const { status, loading, repo } = useSession();
 
   if (loading || !repo) {
@@ -29,7 +28,7 @@ export function HomePage() {
       <PageCenter>
         <VStack gap={3} role="status">
           <Spinner size="xl" color="accent.default" />
-          <Text color="fg.muted">{t("common.loading")}</Text>
+          <Text color="fg.muted">{m.common_loading()}</Text>
         </VStack>
       </PageCenter>
     );

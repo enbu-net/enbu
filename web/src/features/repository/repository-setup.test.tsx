@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import type { RepoInfo } from "../../lib/types";
 import {
   container,
@@ -53,7 +52,7 @@ describe("RepositoryOwnerSelect", () => {
     const onChange = vi.fn();
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <RepositoryOwnerSelect
             owners={[
               { login: "octo", organization: false },
@@ -63,7 +62,7 @@ describe("RepositoryOwnerSelect", () => {
             loading={false}
             onChange={onChange}
           />
-        </I18nProvider>,
+        </>,
       );
     });
 
@@ -89,7 +88,7 @@ describe("RepositoryOwnerSelect", () => {
 describe("RepositorySelect", () => {
   function renderSelect(setRepo = vi.fn()) {
     act(() => {
-      root.render(<I18nProvider>{withSession(<RepositorySelect />, { setRepo })}</I18nProvider>);
+      root.render(<>{withSession(<RepositorySelect />, { setRepo })}</>);
     });
     return setRepo;
   }
@@ -150,12 +149,12 @@ describe("RepositorySetup", () => {
     const setRepo = vi.fn();
     await act(async () => {
       root.render(
-        <I18nProvider>
+        <>
           {withSession(<RepositorySetup repo={repoInfo({ has_git: true })} step="remote" />, {
             status: { authenticated: true, workspace_configured: false, username: "octo" },
             setRepo,
           })}
-        </I18nProvider>,
+        </>,
       );
     });
     await settle();
@@ -182,12 +181,12 @@ describe("RepositorySetup", () => {
     const reloadRepo = vi.fn(async () => {});
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           {withSession(
             <RepositorySetup repo={repoInfo({ has_git: true, has_remote: true })} step="enbu" />,
             { reloadRepo },
           )}
-        </I18nProvider>,
+        </>,
       );
     });
     await act(async () => queryButton("Set up")?.click());

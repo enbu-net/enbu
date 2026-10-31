@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { I18nProvider } from "../lib/i18n";
 import type { ConflictSet } from "../lib/types";
 import { ConflictPanel } from "./conflict-panel";
 
@@ -38,9 +37,9 @@ describe("ConflictPanel", () => {
     root = createRoot(container);
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <ConflictPanel set={set} loading={false} onResolve={onResolve} />
-        </I18nProvider>,
+        </>,
       );
     });
   });

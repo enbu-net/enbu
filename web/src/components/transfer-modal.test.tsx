@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { I18nProvider } from "../lib/i18n";
 import { displayError, type DisplayError } from "../lib/app-error";
 import type { ProgressStep } from "../lib/types";
 import { TransferModal } from "./transfer-modal";
@@ -43,14 +42,14 @@ describe("TransferModal", () => {
   function renderModal(error?: DisplayError) {
     act(() => {
       root.render(
-        <I18nProvider>
+        <>
           <TransferModal
             open
             operation="add"
             error={error}
             onClose={onClose}
           />
-        </I18nProvider>,
+        </>,
       );
     });
   }

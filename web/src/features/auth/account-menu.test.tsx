@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import { I18nProvider } from "../../lib/i18n";
 import type { Session } from "../../lib/session";
 import { queryButton, root, settle, setupDom, withSession } from "../../test/dom";
 import { AccountMenu } from "./account-menu";
@@ -14,7 +13,7 @@ setupDom();
 
 async function openMenu(session: Partial<Session>) {
   await act(async () => {
-    root.render(<I18nProvider>{withSession(<AccountMenu />, session)}</I18nProvider>);
+    root.render(<>{withSession(<AccountMenu />, session)}</>);
   });
   await act(async () => queryButton("Account menu")?.click());
 }

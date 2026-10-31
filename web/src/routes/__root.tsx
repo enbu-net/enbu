@@ -4,7 +4,6 @@ import { Text } from "../components/ui";
 import { UserErrorGate } from "../components/user-error-gate";
 import { AccountMenu } from "../features/auth/account-menu";
 import { Sidebar } from "../features/repository/sidebar";
-import { I18nProvider } from "../lib/i18n";
 import { SessionProvider, useSession } from "../lib/session";
 
 export const Route = createRootRoute({
@@ -13,13 +12,13 @@ export const Route = createRootRoute({
 
 function RootWithProviders() {
   return (
-    <I18nProvider>
+    <>
       <UserErrorGate>
         <SessionProvider>
           <RootLayout />
         </SessionProvider>
       </UserErrorGate>
-    </I18nProvider>
+    </>
   );
 }
 

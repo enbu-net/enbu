@@ -1,8 +1,8 @@
 import { Building2, Check, ChevronDown, UserRound } from "lucide-react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
 import { Button, Popover, Spinner, Text } from "../../components/ui";
-import { useI18n } from "../../lib/i18n";
 import type { RepositoryOwner } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 export function RepositoryOwnerSelect({
   owners,
@@ -15,13 +15,12 @@ export function RepositoryOwnerSelect({
   loading: boolean;
   onChange: (owner: string) => void;
 }) {
-  const { t } = useI18n();
   const selected = owners.find((owner) => owner.login === value);
   const SelectedIcon = selected?.organization ? Building2 : UserRound;
   return (
     <Box>
       <styled.label htmlFor="repository-owner" display="block" fontSize="sm" mb={1.5}>
-        {t("init.repositoryOwner")}
+        {m.init_repositoryOwner()}
       </styled.label>
       <Popover.Root positioning={{ placement: "bottom-start", sameWidth: true, gutter: 6 }}>
         <Popover.Trigger asChild>
@@ -55,11 +54,11 @@ export function RepositoryOwnerSelect({
               </Box>
               <VStack gap="0" alignItems="start" minW="0">
                 <Text fontWeight="semibold" fontSize="sm" truncate>
-                  {selected?.login ?? t("common.loading")}
+                  {selected?.login ?? m.common_loading()}
                 </Text>
                 {selected && (
                   <Text color="fg.muted" fontSize="xs">
-                    {t(selected.organization ? "init.organization" : "init.personalAccount")}
+                    {selected.organization ? m.init_organization() : m.init_personalAccount()}
                   </Text>
                 )}
               </VStack>
@@ -109,7 +108,7 @@ export function RepositoryOwnerSelect({
                             {owner.login}
                           </Text>
                           <Text fontSize="xs" color="fg.muted">
-                            {t(owner.organization ? "init.organization" : "init.personalAccount")}
+                            {owner.organization ? m.init_organization() : m.init_personalAccount()}
                           </Text>
                         </Box>
                       </HStack>

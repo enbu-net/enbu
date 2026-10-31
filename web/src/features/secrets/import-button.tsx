@@ -4,8 +4,8 @@ import { Button } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import type { ImportResult } from "../../lib/types";
+import { m } from "../../paraglide/messages";
 
 /**
  * Imports a .env file the person chooses, as `enbu import FILE` does. Secrets
@@ -21,7 +21,6 @@ export function ImportButton({
   onImported: (result: ImportResult) => void | Promise<void>;
   onError: (error: DisplayError) => void;
 }) {
-  const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   // The chosen file's content, its environment and the keys it would change,
@@ -76,18 +75,18 @@ export function ImportButton({
         size="sm"
         variant="outline"
         loading={loading && pending === null}
-        title={t("import.description")}
+        title={m.import_description()}
         onClick={() => input.current?.click()}
       >
         <Upload size={14} />
-        {t("import.action")}
+        {m.import_action()}
       </Button>
       <ConfirmDeleteDialog
         open={pending !== null}
-        title={t("import.overwriteTitle")}
-        description={t("import.overwriteDescription", { keys: pending?.keys ?? "" })}
-        cancelLabel={t("config.cancel")}
-        confirmLabel={t("import.overwrite")}
+        title={m.import_overwriteTitle()}
+        description={m.import_overwriteDescription({ keys: pending?.keys ?? "" })}
+        cancelLabel={m.config_cancel()}
+        confirmLabel={m.import_overwrite()}
         loading={loading}
         onClose={() => setPending(null)}
         onConfirm={() => (pending ? run(pending.dotenv, true, pending.env) : undefined)}

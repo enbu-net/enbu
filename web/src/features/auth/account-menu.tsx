@@ -3,11 +3,10 @@ import { Box, styled } from "styled-system/jsx";
 import { Button, Popover, Separator, Text } from "../../components/ui";
 import { LanguageSelector } from "../../components/language-selector";
 import { backend } from "../../lib/backend";
-import { useI18n } from "../../lib/i18n";
 import { useSession } from "../../lib/session";
+import { m } from "../../paraglide/messages";
 
 export function AccountMenu() {
-  const { t } = useI18n();
   const { status, loading, refresh } = useSession();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [appVersion, setAppVersion] = useState("");
@@ -32,7 +31,7 @@ export function AccountMenu() {
           h="38px"
           p="0"
           borderRadius="full"
-          aria-label={t("auth.accountMenu")}
+          aria-label={m.auth_accountMenu()}
           _hover={{ bg: "bg.muted", borderWidth: "1px", borderColor: "border.default" }}
         >
           <Box position="relative" w="32px" h="32px" flexShrink="0">
@@ -96,7 +95,7 @@ export function AccountMenu() {
               </styled.a>
             ) : (
               <Text fontWeight="bold" fontSize="sm">
-                {t("auth.account")}
+                {m.auth_account()}
               </Text>
             )}
           </Box>
@@ -122,7 +121,7 @@ export function AccountMenu() {
                   await refresh({ force: true });
                 }}
               >
-                {t("auth.logout")}
+                {m.auth_logout()}
               </Button>
             </>
           )}
