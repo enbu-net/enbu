@@ -20,9 +20,6 @@ import * as desktop$0 from "../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as identity$0 from "../../pkg/identity/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as github$0 from "../../pkg/provider/github/models.js";
 
 export function AddSecret(env: string, key: string, value: string): $CancellablePromise<void> {
     return $Call.ByID(245465048, env, key, value);
@@ -100,18 +97,6 @@ export function GetRepoStatus(): $CancellablePromise<desktop$0.RepoInfo> {
     });
 }
 
-export function GitCreateRemote(path: string, owner: string, repoName: string, $private: boolean): $CancellablePromise<desktop$0.RepoInfo> {
-    return $Call.ByID(2245560065, path, owner, repoName, $private).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
-export function GitInit(path: string): $CancellablePromise<desktop$0.RepoInfo> {
-    return $Call.ByID(3523864917, path).then(($result: any) => {
-        return $$createType0($result);
-    });
-}
-
 export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
     return $Call.ByID(4056678225, env, dotenv, overwrite).then(($result: any) => {
         return $$createType8($result);
@@ -160,15 +145,9 @@ export function ListRepositories(): $CancellablePromise<desktop$0.RepoInfo[]> {
     });
 }
 
-export function ListRepositoryOwners(): $CancellablePromise<github$0.RepositoryOwner[]> {
-    return $Call.ByID(2998538849).then(($result: any) => {
-        return $$createType21($result);
-    });
-}
-
 export function ListSecrets(env: string): $CancellablePromise<desktop$0.SecretsResponse> {
     return $Call.ByID(3474277570, env).then(($result: any) => {
-        return $$createType22($result);
+        return $$createType20($result);
     });
 }
 
@@ -178,7 +157,7 @@ export function Logout(): $CancellablePromise<void> {
 
 export function PullSecrets(env: string, replace: boolean): $CancellablePromise<desktop$0.PullResult> {
     return $Call.ByID(1175776543, env, replace).then(($result: any) => {
-        return $$createType23($result);
+        return $$createType21($result);
     });
 }
 
@@ -226,7 +205,7 @@ export function SetAdmin(deviceID: string, admin: boolean): $CancellablePromise<
 
 export function StartOAuthLogin(): $CancellablePromise<desktop$0.OAuthStart> {
     return $Call.ByID(1467619051).then(($result: any) => {
-        return $$createType24($result);
+        return $$createType22($result);
     });
 }
 
@@ -240,7 +219,7 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
 
 export function UpgradeIdentity(): $CancellablePromise<app$0.KeyUpdateResult> {
     return $Call.ByID(249321161).then(($result: any) => {
-        return $$createType25($result);
+        return $$createType23($result);
     });
 }
 
@@ -269,9 +248,7 @@ const $$createType16 = $Create.Array($$createType15);
 const $$createType17 = desktop$0.Member.createFrom;
 const $$createType18 = $Create.Array($$createType17);
 const $$createType19 = $Create.Array($$createType0);
-const $$createType20 = github$0.RepositoryOwner.createFrom;
-const $$createType21 = $Create.Array($$createType20);
-const $$createType22 = desktop$0.SecretsResponse.createFrom;
-const $$createType23 = desktop$0.PullResult.createFrom;
-const $$createType24 = desktop$0.OAuthStart.createFrom;
-const $$createType25 = app$0.KeyUpdateResult.createFrom;
+const $$createType20 = desktop$0.SecretsResponse.createFrom;
+const $$createType21 = desktop$0.PullResult.createFrom;
+const $$createType22 = desktop$0.OAuthStart.createFrom;
+const $$createType23 = app$0.KeyUpdateResult.createFrom;

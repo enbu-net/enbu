@@ -93,19 +93,19 @@ describe("VS Code backend", () => {
   it("calls the desktop service methods with the same arguments as the desktop app", async () => {
     const { backend, posted } = backendWith({
       PullSecrets: {},
-      GitCreateRemote: { path: "/repo" },
+      ImportSecrets: { environment: "default" },
     });
     await backend.addSecret("TOKEN", "secret", "default");
     await backend.pullSecrets("default", true);
-    await backend.gitCreateRemote("/repo", "octo-org", "example", true);
+    await backend.importSecrets("A=1\n", true, "default");
     expect(posted).toEqual([
       { type: "call", id: 1, method: "AddSecret", params: ["default", "TOKEN", "secret"] },
       { type: "call", id: 2, method: "PullSecrets", params: ["default", true] },
       {
         type: "call",
         id: 3,
-        method: "GitCreateRemote",
-        params: ["/repo", "octo-org", "example", true],
+        method: "ImportSecrets",
+        params: ["default", "A=1\n", true],
       },
     ]);
   });

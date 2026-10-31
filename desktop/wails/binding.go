@@ -9,7 +9,6 @@ import (
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
-	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
 // DesktopService is everything the frontend can call. The binding generator
@@ -224,16 +223,4 @@ func (s *DesktopService) WriteConfig(content string) error {
 
 func (s *DesktopService) GetAppVersion() string {
 	return s.core.GetAppVersion()
-}
-
-func (s *DesktopService) GitInit(path string) (desktop.RepoInfo, error) {
-	return result(s.core.GitInit(path))
-}
-
-func (s *DesktopService) ListRepositoryOwners() ([]gh.RepositoryOwner, error) {
-	return result(s.core.ListRepositoryOwners())
-}
-
-func (s *DesktopService) GitCreateRemote(path, owner, repoName string, private bool) (desktop.RepoInfo, error) {
-	return result(s.core.GitCreateRemote(path, owner, repoName, private))
 }

@@ -37,6 +37,6 @@ export function HomePage() {
   if (!status?.authenticated && !status?.workspace_configured) return <SignIn />;
   if (!repo.selected || !repo.repo) return <RepositorySelect />;
   const step = setupStep(repo.repo);
-  if (step) return <RepositorySetup key={step} repo={repo.repo} step={step} />;
+  if (step) return <RepositorySetup key={step} step={step} />;
   return <Dashboard key={repo.repo.path} repo={repo.repo} />;
 }

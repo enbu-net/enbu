@@ -196,26 +196,6 @@ export const mockBackend: Backend = {
     };
   },
 
-  async gitInit(_path: string): Promise<GUIRepoStatus> {
-    return mockBackend.repoStatus();
-  },
-
-  async gitCreateRemote(
-    _path: string,
-    _owner: string,
-    _repoName: string,
-    _privateRepository: boolean,
-  ): Promise<GUIRepoStatus> {
-    return mockBackend.repoStatus();
-  },
-
-  async listRepositoryOwners() {
-    return [
-      { login: previewUsername, organization: false },
-      { login: "enbu-net", organization: true },
-    ];
-  },
-
   async listEnvironments(): Promise<Environment[]> {
     return [...mockEnvs];
   },

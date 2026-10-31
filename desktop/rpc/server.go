@@ -80,9 +80,6 @@ var Methods = []string{
 	"ReadConfig",
 	"WriteConfig",
 	"GetAppVersion",
-	"GitInit",
-	"ListRepositoryOwners",
-	"GitCreateRemote",
 }
 
 // Methods handled by the server itself rather than desktop.Service.

@@ -4,7 +4,7 @@ This file provides guidance to Agent tool when working with code in this reposit
 
 ## What is enbu
 
-Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Authorization Code Flow with PKCE) is used only to reach GHCR and to create repositories from the desktop app.
+Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Authorization Code Flow with PKCE) is used only to reach GHCR.
 
 ## Notes
 
@@ -62,7 +62,7 @@ pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serializ
 pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
-pkg/provider/github/     → GitHub API client (repository creation from the desktop app)
+pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
 pkg/apperr/              → application error type, codes, and normalization helpers
 test/                    → scenario tests (build tag: scenario)
@@ -83,7 +83,7 @@ test/                    → scenario tests (build tag: scenario)
 - The trust root is the `control_genesis` digest in `enbu.toml`. `WriteConfig` (the desktop settings editor) refuses to change `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, X25519 in the OS keyring. There is no plaintext Identity backend and no SSH key support
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
-- Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations except founding a workspace, which is planned. `run`, `completion` and `rpc` stay CLI only
+- Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations except founding a workspace, which is planned. `run`, `completion` and `rpc` stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling

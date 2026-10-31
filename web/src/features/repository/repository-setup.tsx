@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
 import { Button, Heading, Input, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
@@ -6,9 +6,7 @@ import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
-import { folderName } from "../../lib/paths";
-import type { RepoInfo, RepositoryOwner } from "../../lib/types";
-import { RepositoryOwnerSelect } from "./repository-owner-select";
+import type { RepoInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /** The step a selected folder still needs before enbu can manage it, if any. */
@@ -135,33 +133,38 @@ export function RepositorySelect() {
   );
 }
 
-/** Takes a selected folder through Git, a GitHub remote, and enbu setup. */
-export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupStep }) {
-  const { setRepo, reloadRepo } = useSession();
+/**
+ * Sets up enbu in a selected folder. A folder without Git or a GitHub remote
+ * gets the commands to run, as enbu leaves Git and GitHub to their own tools.
+ */
+export function RepositorySetup({ step }: { step: SetupStep }) {
+  const { reloadRepo } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
 
-  if (step === "git") {
+  if (step === "git" || step === "remote") {
     return (
       <SetupScreen
-        title={m.init_gitTitle()}
-        description={m.init_gitDescription()}
+        title={step === "git" ? m.init_gitTitle() : m.init_remoteTitle()}
+        description={step === "git" ? m.init_gitDescription() : m.init_remoteDescription()}
         error={action.error}
         onDismissError={dismiss}
       >
-        <Button
-          {...primaryButton}
-          loading={action.loading}
-          onClick={() => action.run(async () => setRepo(await backend.gitInit(repo.path ?? "")))}
+        <styled.pre
+          p="3"
+          bg="bg.muted"
+          borderRadius="md"
+          fontFamily="mono"
+          fontSize="sm"
+          overflowX="auto"
         >
-          {m.init_gitAction()}
+          {step === "git" ? "git init" : "git remote add origin https://github.com/OWNER/REPO.git"}
+        </styled.pre>
+        <Button {...primaryButton} loading={action.loading} onClick={() => action.run(reloadRepo)}>
+          {m.init_checkAgain()}
         </Button>
       </SetupScreen>
     );
-  }
-
-  if (step === "remote") {
-    return <CreateRemote repo={repo} />;
   }
 
   return (
@@ -182,93 +185,6 @@ export function RepositorySetup({ repo, step }: { repo: RepoInfo; step: SetupSte
         }
       >
         {m.init_action()}
-      </Button>
-    </SetupScreen>
-  );
-}
-
-function CreateRemote({ repo }: { repo: RepoInfo }) {
-  const { status, setRepo } = useSession();
-  const action = useAction();
-  const [name, setName] = useState(() => folderName(repo.path));
-  const [owners, setOwners] = useState<RepositoryOwner[]>([]);
-  const [owner, setOwner] = useState("");
-  const [ownersLoading, setOwnersLoading] = useState(true);
-  const [privateRepository, setPrivateRepository] = useState(true);
-  const { setError } = action;
-
-  useEffect(() => {
-    let cancelled = false;
-    setOwnersLoading(true);
-    backend
-      .listRepositoryOwners()
-      .then((list) => {
-        if (cancelled) return;
-        setOwners(list);
-        setOwner(
-          (current) =>
-            list.find((item) => item.login === current)?.login ??
-            list.find((item) => item.login === status?.username)?.login ??
-            list[0]?.login ??
-            "",
-        );
-      })
-      .catch((err) => {
-        if (!cancelled) setError(toDisplayError(err));
-      })
-      .finally(() => {
-        if (!cancelled) setOwnersLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [status?.username, setError]);
-
-  return (
-    <SetupScreen
-      title={m.init_remoteTitle()}
-      error={action.error}
-      onDismissError={() => setError(null)}
-    >
-      <RepositoryOwnerSelect
-        owners={owners}
-        value={owner}
-        loading={ownersLoading}
-        onChange={setOwner}
-      />
-      <Input
-        aria-label={m.init_repositoryName()}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        placeholder={m.init_repositoryName()}
-        h="38px"
-        borderColor="border.default"
-        borderRadius="md"
-      />
-      <HStack>
-        <input
-          id="private-repository"
-          type="checkbox"
-          checked={privateRepository}
-          onChange={(event) => setPrivateRepository(event.target.checked)}
-        />
-        <styled.label htmlFor="private-repository" fontSize="sm">
-          {m.init_privateRepository()}
-        </styled.label>
-      </HStack>
-      <Button
-        {...primaryButton}
-        loading={action.loading}
-        disabled={!name.trim() || !owner}
-        onClick={() =>
-          action.run(async () =>
-            setRepo(
-              await backend.gitCreateRemote(repo.path ?? "", owner, name.trim(), privateRepository),
-            ),
-          )
-        }
-      >
-        {m.init_createRemote()}
       </Button>
     </SetupScreen>
   );
