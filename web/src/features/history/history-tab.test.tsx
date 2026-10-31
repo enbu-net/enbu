@@ -77,4 +77,18 @@ describe("HistoryTab", () => {
     expect(mocked.listHistory).toHaveBeenLastCalledWith("staging");
     expect(container.textContent).toContain("No revisions changed this environment yet.");
   });
+
+  it("drops the previous environment's revisions while the next one loads", async () => {
+    mocked.listHistory.mockResolvedValueOnce(entries);
+    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    mocked.listHistory.mockReturnValueOnce(new Promise(() => {}));
+    const select = container.querySelector("select")!;
+
+    await act(async () => {
+      select.value = "staging";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(queryButton("Restore: Revision 1")).toBeNull();
+  });
 });

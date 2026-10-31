@@ -34,6 +34,7 @@ task gui/bindings       # Regenerate web/src/bindings after changing DesktopServ
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code, and fail on stale bindings
 task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
+task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
 task vscode/check       # Format and lint VS Code extension code
 ```

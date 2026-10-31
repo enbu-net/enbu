@@ -686,12 +686,16 @@ func (s *Service) DeleteEnvironment(name string, purge bool) (EnvironmentDeletio
 			purged, err := s.app.DeleteEnvironmentPurging(s.context(), name)
 			return EnvironmentDeletion{Purged: purged}, err
 		}
+		// The incarnation is read before deleting: afterwards enbu.toml no
+		// longer names it, and the caller needs it to purge later.
+		envs, err := s.app.ListEnvironments()
+		if err != nil {
+			return EnvironmentDeletion{}, err
+		}
 		incarnation := ""
-		if envs, err := s.app.ListEnvironments(); err == nil {
-			for _, env := range envs {
-				if env.Name == name {
-					incarnation = env.Incarnation
-				}
+		for _, env := range envs {
+			if env.Name == name {
+				incarnation = env.Incarnation
 			}
 		}
 		if err := s.app.DeleteEnvironment(name); err != nil {

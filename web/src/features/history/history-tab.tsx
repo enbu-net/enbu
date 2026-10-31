@@ -37,6 +37,8 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
     const id = ++request.current;
     setError(null);
     setDiff(null);
+    // Drop the previous list, so its indexes cannot be restored in another environment.
+    setEntries(null);
     try {
       const list = await backend.listHistory(name);
       if (id !== request.current) return;

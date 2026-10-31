@@ -55,7 +55,6 @@ describe("DevicePanel", () => {
     mocked.diagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
-      reason: "no TPM found",
       fallback_available: true,
     });
     await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
@@ -63,7 +62,7 @@ describe("DevicePanel", () => {
     await act(async () => queryButton("Check hardware")?.click());
     await settle();
 
-    expect(container.textContent).toContain("is not available: no TPM found");
+    expect(container.textContent).toContain("Hardware key storage (tpm) is not available.");
     expect(container.textContent).toContain("The OS keyring can hold keys.");
   });
 });

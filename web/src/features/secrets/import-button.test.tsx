@@ -57,4 +57,18 @@ describe("ImportButton", () => {
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "invalid_argument" }));
   });
+
+  it("reports a file it cannot read", async () => {
+    const onError = vi.fn();
+    await renderAndSettle(<ImportButton env="default" onImported={vi.fn()} onError={onError} />);
+    const input = container.querySelector<HTMLInputElement>('[data-testid="import-file"]')!;
+    const file = new File([""], ".env");
+    file.text = () => Promise.reject(new Error("gone"));
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+
+    expect(mocked.importSecrets).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "internal" }));
+  });
 });

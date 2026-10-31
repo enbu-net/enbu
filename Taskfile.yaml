@@ -323,6 +323,15 @@ tasks:
     cmds:
       - vp run build
 
+  vscode/package:
+    desc: Package the VS Code extension with this machine's enbu as vscode/enbu-vscode.vsix
+    deps:
+      - vscode/build
+      - cli/build
+    dir: vscode
+    cmds:
+      - node scripts/package.mjs --enbu ../enbu --out enbu-vscode.vsix
+
   vscode/install:
     internal: true
     run: once
@@ -336,7 +345,9 @@ tasks:
     run: once
     dir: web
     cmds:
-      - task: gui/install
+      # Both builds regenerate web/styled-system with --clean, so they must not
+      # run at once (vscode/package builds the CLI, which needs gui/build/frontend).
+      - task: gui/build/frontend
       - vp run build:vscode
 
   scripts/check:

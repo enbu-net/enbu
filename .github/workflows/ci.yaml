@@ -233,6 +233,7 @@ jobs:
           task cli/test/unit
           task gui/test
           task vscode/test
+          task vscode/package
           task scripts/test
 
 

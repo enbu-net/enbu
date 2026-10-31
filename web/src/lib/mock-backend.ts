@@ -423,7 +423,6 @@ export const mockBackend: Backend = {
     return {
       backend: "tpm",
       available: false,
-      reason: "no TPM in the browser preview",
       fallback_available: true,
     };
   },
