@@ -64,3 +64,43 @@ func TestInitializeExplicitStorageSkipsTheDefault(t *testing.T) {
 		t.Fatalf("storage %q %v, want %q", result.Storage, err, a.StorageURL)
 	}
 }
+
+// GitHub allows repository names that OCI does not; those need --storage.
+func TestInitializeRejectsAGitHubNameGHCRCannotHold(t *testing.T) {
+	a := newFreshApp(t, &staticRepoDetector{owner: "enbu-net", repo: ".github"})
+	if _, err := a.InitializeRepository(context.Background()); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("init with an OCI-invalid repository name: %v", err)
+	}
+	if _, err := config.LoadProjectFrom(a.RepositoryDir); !apperr.Is(err, apperr.CodeConfigNotFound) {
+		t.Fatalf("a failed init wrote enbu.toml: %v", err)
+	}
+}
+
+type failingTokenProvider struct{}
+
+func (failingTokenProvider) LoadToken() (string, string, error) {
+	return "", "", errors.New("no token stored")
+}
+
+// ghcr.io always uses enbu's GitHub login; other registries use the Docker
+// credential configuration (a nil credential).
+func TestOCICredentialFollowsTheHost(t *testing.T) {
+	ctx := context.Background()
+	a := &App{TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}}
+	if cred := a.ociCredential("registry.example.com"); cred != nil {
+		t.Fatal("a non-GHCR registry got enbu's GitHub login")
+	}
+	cred := a.ociCredential("ghcr.io")
+	got, err := cred(ctx, "ghcr.io")
+	if err != nil || got.Username != "alice" || got.Password != "tok" {
+		t.Fatalf("ghcr.io credential %+v %v", got, err)
+	}
+	if got, err := cred(ctx, "registry.example.com"); err != nil || got.Password != "" {
+		t.Fatalf("the GitHub token was offered to another host: %+v %v", got, err)
+	}
+
+	a.TokenProvider = failingTokenProvider{}
+	if _, err := a.ociCredential("ghcr.io")(ctx, "ghcr.io"); !apperr.Is(err, apperr.CodeNotAuthenticated) {
+		t.Fatalf("ghcr.io without a login: %v", err)
+	}
+}

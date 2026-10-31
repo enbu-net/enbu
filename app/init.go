@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"regexp"
 	"strings"
 	"time"
 	"uuid"
@@ -150,8 +151,16 @@ func (a *App) DefaultStorageURL() (_ string, err error) {
 	if err != nil {
 		return "", apperr.Wrap(apperr.CodeInvalidArgument, "no storage given and the origin remote is not a GitHub repository; pass --storage", err, nil)
 	}
-	return "oci://ghcr.io/" + strings.ToLower(owner) + "/" + strings.ToLower(repo) + "-enbu", nil
+	path := strings.ToLower(owner) + "/" + strings.ToLower(repo) + "-enbu"
+	if !ociRepositoryName.MatchString(path) {
+		// GitHub allows names OCI does not, such as ".github".
+		return "", apperr.New(apperr.CodeInvalidArgument, "the GitHub repository name is not a valid GHCR repository name; pass --storage", nil)
+	}
+	return "oci://ghcr.io/" + path, nil
 }
+
+// ociRepositoryName is the OCI distribution spec's repository name grammar.
+var ociRepositoryName = regexp.MustCompile(`^[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*$`)
 
 // ensureControl verifies the workspace's Control, creating the genesis Control
 // when the storage has none and this repository has no trusted genesis yet. On
