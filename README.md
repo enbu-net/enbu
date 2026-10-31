@@ -92,8 +92,8 @@ such as certificates work this way.
 To bring an existing `.env` into enbu at once:
 
 ```bash
-enbu import            # reads ./.env into the current environment
-enbu import app.env    # or any dotenv file, "-" for stdin
+enbu import .env       # reads ./.env into the current environment
+enbu import app.env    # any dotenv file, "-" for stdin
 ```
 
 Variables that already exist with the same value are left alone; one with a
