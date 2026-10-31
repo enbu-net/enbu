@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useId, useRef } from "react";
+import { type ReactNode, type RefObject, useEffect, useId, useRef } from "react";
 import { Box, HStack } from "styled-system/jsx";
 import { Button, Heading, Text } from "./ui";
 import { Trash2 } from "lucide-react";
@@ -12,6 +12,7 @@ export function ConfirmDeleteDialog({
   confirmLabel,
   loading,
   triggerRef,
+  children,
   onClose,
   onConfirm,
 }: {
@@ -23,6 +24,8 @@ export function ConfirmDeleteDialog({
   confirmLabel: string;
   loading: boolean;
   triggerRef?: RefObject<HTMLElement | null>;
+  /** Options shown above the buttons, such as what else to delete. */
+  children?: ReactNode;
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
@@ -77,6 +80,7 @@ export function ConfirmDeleteDialog({
             {description}
           </Text>
         )}
+        {children}
         <HStack justify="end" gap="2" mt="6">
           <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
             {cancelLabel}

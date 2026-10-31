@@ -101,8 +101,11 @@ export function EnvironmentSelector({
   );
 }
 
-export function CreateEnvironmentModal({
+/** Asks for the name of a new environment, or with title and confirmLabel, a new name for one. */
+export function EnvironmentNameModal({
   open,
+  title,
+  confirmLabel,
   value,
   loading,
   triggerRef,
@@ -111,6 +114,8 @@ export function CreateEnvironmentModal({
   onCreate,
 }: {
   open: boolean;
+  title?: string;
+  confirmLabel?: string;
   value: string;
   loading: boolean;
   triggerRef?: RefObject<HTMLElement | null>;
@@ -120,6 +125,7 @@ export function CreateEnvironmentModal({
 }) {
   const { t } = useI18n();
   const titleId = useId();
+  const inputId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(open, dialogRef, triggerRef);
 
@@ -162,7 +168,7 @@ export function CreateEnvironmentModal({
       >
         <Flex justify="space-between" align="start" gap="4" mb="5">
           <Heading id={titleId} size="lg" fontWeight="extrabold">
-            {t("dashboard.createEnvironmentTitle")}
+            {title ?? t("dashboard.createEnvironmentTitle")}
           </Heading>
           <Button
             type="button"
@@ -177,17 +183,11 @@ export function CreateEnvironmentModal({
             <X size={16} aria-hidden="true" />
           </Button>
         </Flex>
-        <styled.label
-          htmlFor="new-environment-name"
-          display="block"
-          mb="2"
-          fontSize="sm"
-          fontWeight="semibold"
-        >
+        <styled.label htmlFor={inputId} display="block" mb="2" fontSize="sm" fontWeight="semibold">
           {t("dashboard.environmentName")}
         </styled.label>
         <Input
-          id="new-environment-name"
+          id={inputId}
           autoFocus
           value={value}
           placeholder={t("dashboard.newEnvironment")}
@@ -208,7 +208,7 @@ export function CreateEnvironmentModal({
             disabled={!value.trim()}
             onClick={() => void onCreate()}
           >
-            {t("dashboard.createEnvironment")}
+            {confirmLabel ?? t("dashboard.createEnvironment")}
           </Button>
         </HStack>
       </Box>

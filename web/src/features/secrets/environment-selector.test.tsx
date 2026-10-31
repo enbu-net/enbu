@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { I18nProvider } from "../../lib/i18n";
 import { container, queryButton, root, setupDom } from "../../test/dom";
-import { CreateEnvironmentModal, EnvironmentSelector } from "./environment-selector";
+import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
 
 setupDom();
 
@@ -62,7 +62,7 @@ describe("environment selector", () => {
     act(() => {
       root.render(
         <I18nProvider>
-          <CreateEnvironmentModal
+          <EnvironmentNameModal
             open
             value="staging"
             loading={false}
@@ -81,12 +81,12 @@ describe("environment selector", () => {
   });
 });
 
-describe("accessibility: CreateEnvironmentModal focus", () => {
+describe("accessibility: EnvironmentNameModal focus", () => {
   it("dialog has aria-modal and aria-labelledby", () => {
     act(() => {
       root.render(
         <I18nProvider>
-          <CreateEnvironmentModal
+          <EnvironmentNameModal
             open={true}
             value=""
             loading={false}

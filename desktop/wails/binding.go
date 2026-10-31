@@ -113,8 +113,12 @@ func (s *DesktopService) RenameEnvironment(name, newName string) error {
 	return publicError(s.core.RenameEnvironment(name, newName))
 }
 
-func (s *DesktopService) DeleteEnvironment(name string) error {
-	return publicError(s.core.DeleteEnvironment(name))
+func (s *DesktopService) DeleteEnvironment(name string, purge bool) (desktop.EnvironmentDeletion, error) {
+	return result(s.core.DeleteEnvironment(name, purge))
+}
+
+func (s *DesktopService) PurgeIncarnation(incarnation string) (int, error) {
+	return result(s.core.PurgeIncarnation(incarnation))
 }
 
 func (s *DesktopService) ListSecrets(env string) (desktop.SecretsResponse, error) {

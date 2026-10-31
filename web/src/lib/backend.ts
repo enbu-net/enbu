@@ -7,8 +7,11 @@ import type {
   AuthStatus,
   ConflictChoice,
   ConflictSet,
+  Diff,
   Environment,
+  EnvironmentDeletion,
   GUIRepoStatus,
+  HistoryEntry,
   InitResult,
   JoinRequest,
   Member,
@@ -53,7 +56,10 @@ export interface Backend {
   createEnvironment(name: string): Promise<void>;
   switchEnvironment(name: string): Promise<void>;
   renameEnvironment(name: string, newName: string): Promise<void>;
-  deleteEnvironment(name: string): Promise<void>;
+  /** With purge the stored revisions go too (admin only); without, the result names their incarnation. */
+  deleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion>;
+  /** Deletes the stored revisions of an environment deleted without purge (admin only). */
+  purgeIncarnation(incarnation: string): Promise<number>;
 
   listSecrets(env?: string): Promise<SecretsResponse>;
   addSecret(key: string, value: string, env?: string): Promise<void>;
@@ -64,6 +70,12 @@ export interface Backend {
   syncSecrets(env?: string): Promise<void>;
   listConflicts(env?: string): Promise<ConflictSet>;
   resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void>;
+
+  /** The revisions that changed env's secrets, oldest first, numbered from 1. */
+  listHistory(env: string): Promise<HistoryEntry[]>;
+  diffHistory(env: string, from: number, to: number): Promise<Diff>;
+  /** Publishes the content of revision index as a new revision. */
+  restoreHistory(env: string, index: number): Promise<void>;
 
   listMembers(): Promise<Member[]>;
   listJoinRequests(): Promise<JoinRequest[]>;
@@ -146,7 +158,8 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     createEnvironment: (name) => call(svc.CreateEnvironment(name)),
     switchEnvironment: (name) => call(svc.SwitchEnvironment(name)),
     renameEnvironment: (name, newName) => call(svc.RenameEnvironment(name, newName)),
-    deleteEnvironment: (name) => call(svc.DeleteEnvironment(name)),
+    deleteEnvironment: (name, purge) => call(svc.DeleteEnvironment(name, purge)),
+    purgeIncarnation: (incarnation) => call(svc.PurgeIncarnation(incarnation)),
 
     listSecrets: (env = "") => call(svc.ListSecrets(env)),
     addSecret: (key, value, env = "") => call(svc.AddSecret(env, key, value)),
@@ -156,6 +169,13 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     syncSecrets: (env = "") => call(svc.SyncSecrets(env)),
     listConflicts: (env = "") => call(svc.ListConflicts(env)),
     resolveConflicts: (env, heads, choices) => call(svc.ResolveConflicts(env, heads, choices)),
+
+    listHistory: (env) => call(svc.ListHistory(env)),
+    async diffHistory(env, from, to) {
+      const diff = await call(svc.DiffHistory(env, from, to));
+      return diff ?? { added: [], removed: [], modified: [] };
+    },
+    restoreHistory: (env, index) => call(svc.RestoreHistory(env, index)),
 
     listMembers: () => call(svc.ListMembers()),
     listJoinRequests: () => call(svc.ListJoinRequests()),

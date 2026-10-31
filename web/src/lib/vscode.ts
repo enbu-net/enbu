@@ -167,6 +167,7 @@ const results: { [K in ServiceMethod]?: (source: unknown) => Result<K> } = {
   ListRepositoryOwners: Create.Array((source) => RepositoryOwner.createFrom(source)),
   Initialize: (source) => Desktop.InitResult.createFrom(source),
   ListEnvironments: Create.Array((source) => Desktop.Environment.createFrom(source)),
+  DeleteEnvironment: (source) => Desktop.EnvironmentDeletion.createFrom(source),
   ListSecrets: (source) => Desktop.SecretsResponse.createFrom(source),
   PullSecrets: (source) => Desktop.PullResult.createFrom(source),
   ListConflicts: (source) => Desktop.ConflictSet.createFrom(source),

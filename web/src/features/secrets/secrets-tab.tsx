@@ -11,7 +11,7 @@ import { useI18n } from "../../lib/i18n";
 import type { PullResult } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
-import { CreateEnvironmentModal, EnvironmentSelector } from "./environment-selector";
+import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
 import { SecretRow } from "./secret-row";
 
 export function SecretsTab({
@@ -199,7 +199,7 @@ export function SecretsTab({
           }
         }}
       />
-      <CreateEnvironmentModal
+      <EnvironmentNameModal
         open={environmentModalOpen}
         value={newEnv}
         loading={environmentCreateLoading}

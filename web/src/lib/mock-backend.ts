@@ -2,8 +2,11 @@ import type {
   AuthStatus,
   ConflictChoice,
   ConflictSet,
+  Diff,
   Environment,
+  EnvironmentDeletion,
   GUIRepoStatus,
+  HistoryEntry,
   InitResult,
   JoinRequest,
   Member,
@@ -57,6 +60,33 @@ let mockConflictsByEnv: Record<string, ConflictSet> = {
     ],
   },
 };
+
+// Each environment's past contents, oldest first; the last is the current one.
+const mockHistoryByEnv: Record<string, { timestamp: string; secrets: Record<string, string> }[]> = {
+  development: [
+    {
+      timestamp: "2026-10-01T09:00:00Z",
+      secrets: { API_KEY: "sk-demo-old", DATABASE_URL: "postgres://localhost:5432/enbu" },
+    },
+    {
+      timestamp: "2026-10-05T14:20:00Z",
+      secrets: {
+        API_KEY: "sk-demo-abc123",
+        DATABASE_URL: "postgres://localhost:5432/enbu",
+        SECRET_TOKEN: "tok-enbu-xyz789",
+      },
+    },
+  ],
+};
+
+function diffSecrets(from: Record<string, string>, to: Record<string, string>): Diff {
+  const keys = (record: Record<string, string>) => Object.keys(record).sort();
+  return {
+    added: keys(to).filter((key) => !(key in from)),
+    removed: keys(from).filter((key) => !(key in to)),
+    modified: keys(to).filter((key) => key in from && from[key] !== to[key]),
+  };
+}
 
 let mockMembers: Member[] = [
   {
@@ -202,9 +232,17 @@ export const mockBackend: Backend = {
     }
   },
 
-  async deleteEnvironment(name: string): Promise<void> {
+  async deleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion> {
+    if (currentEnvName() === name) throw createAppError("invalid_argument", { name });
     mockEnvs = mockEnvs.filter((e) => e.name !== name);
     delete mockSecretsByEnv[name];
+    return purge
+      ? { purged: mockHistoryByEnv[name]?.length ?? 0 }
+      : { purged: 0, incarnation: "0b6f2c1e-6a4d-4c47-9d1e-3f2a7c5b8e90" };
+  },
+
+  async purgeIncarnation(_incarnation: string): Promise<number> {
+    return 1;
   },
 
   async listSecrets(env = ""): Promise<SecretsResponse> {
@@ -262,6 +300,32 @@ export const mockBackend: Backend = {
     mockSecretsByEnv[name] = secrets.sort((a, b) => a.key.localeCompare(b.key));
     const { [name]: _resolved, ...rest } = mockConflictsByEnv;
     mockConflictsByEnv = rest;
+  },
+  async listHistory(env: string): Promise<HistoryEntry[]> {
+    return (mockHistoryByEnv[env || currentEnvName()] ?? []).map((entry, i) => ({
+      index: i + 1,
+      timestamp: entry.timestamp,
+      tag: `mock-revision-${i + 1}`,
+    }));
+  },
+  async diffHistory(env: string, from: number, to: number): Promise<Diff> {
+    const history = mockHistoryByEnv[env || currentEnvName()] ?? [];
+    const at = (index: number) => {
+      const entry = history[index - 1];
+      if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+      return entry.secrets;
+    };
+    return diffSecrets(at(from), at(to));
+  },
+  async restoreHistory(env: string, index: number): Promise<void> {
+    const name = env || currentEnvName();
+    const history = (mockHistoryByEnv[name] ??= []);
+    const entry = history[index - 1];
+    if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+    history.push({ timestamp: new Date().toISOString(), secrets: { ...entry.secrets } });
+    mockSecretsByEnv[name] = Object.entries(entry.secrets)
+      .map(([key, value]) => ({ key, value }))
+      .sort((a, b) => a.key.localeCompare(b.key));
   },
   async listRepositories(): Promise<RepoInfo[]> {
     return [...mockRepoHistory];

@@ -8,6 +8,7 @@ export {
     ConflictRetry,
     ConflictSet,
     Environment,
+    EnvironmentDeletion,
     HistoryEntry,
     InitResult,
     JoinRequest,

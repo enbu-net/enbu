@@ -192,6 +192,32 @@ export class Environment {
     }
 }
 
+/**
+ * EnvironmentDeletion is what deleting an environment did to its stored
+ * revisions: how many it purged, or the incarnation that still names them.
+ */
+export class EnvironmentDeletion {
+    "purged": number;
+    "incarnation"?: string;
+
+    /** Creates a new EnvironmentDeletion instance. */
+    constructor($$source: Partial<EnvironmentDeletion> = {}) {
+        if (!("purged" in $$source)) {
+            this["purged"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EnvironmentDeletion instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EnvironmentDeletion {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new EnvironmentDeletion($$parsedSource as Partial<EnvironmentDeletion>);
+    }
+}
+
 export class HistoryEntry {
     "index": number;
     "timestamp": string;

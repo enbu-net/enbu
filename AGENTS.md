@@ -83,7 +83,7 @@ test/                    → scenario tests (build tag: scenario)
 - The trust root is the `control_genesis` digest in `enbu.toml`. `WriteConfig` (the desktop settings editor) refuses to change `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, X25519 in the OS keyring. There is no plaintext Identity backend and no SSH key support
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
-- Frontends: the CLI has every operation. The desktop app covers everyday work, member approval/removal, and choosing between conflicting secrets. Fork resolution, admin rights and purging are CLI only
+- Frontends: the CLI has every operation. The desktop app covers everyday work, environments (rename, delete, purge), history, member approval/removal, and choosing between conflicting secrets. Fork resolution and admin rights are CLI only for now
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling
