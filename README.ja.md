@@ -95,7 +95,7 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 既存の `.env` をまとめて取り込むには:
 
 ```bash
-enbu import            # ./.env を現在の環境に取り込む
+enbu import .env       # ./.env を現在の環境に取り込む
 enbu import app.env    # 任意の dotenv ファイル。"-" で stdin
 ```
 
