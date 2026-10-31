@@ -3,7 +3,7 @@ module github.com/enbu-net/enbu
 go 1.27.3
 
 require (
-	charm.land/bubbletea/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.1.1
 	filippo.io/age v1.3.2
 	filippo.io/hpke v0.4.0
 	github.com/BurntSushi/toml v1.6.0
