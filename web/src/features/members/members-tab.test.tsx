@@ -20,6 +20,7 @@ const member = (fingerprint: string): Member => ({
   algorithm: "p256",
   admin: false,
   self: false,
+  post_quantum: false,
 });
 
 const runTransfer = async (_op: string, task: () => Promise<void>) => task();

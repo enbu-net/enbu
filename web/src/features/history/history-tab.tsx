@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { History, RotateCcw, X } from "lucide-react";
+import { History, RotateCcw } from "lucide-react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
-import { Alert, Badge, Button, Spinner, Text } from "../../components/ui";
+import { Badge, Button, Spinner, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
+import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
@@ -99,22 +100,9 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
         </Box>
       )}
       {restored !== null && (
-        <Alert.Root role="status" borderRadius="md" borderWidth="1px" py={3} px={4} mb="4">
-          <Alert.Content>
-            <Text fontSize="sm">{t("history.restored", { index: String(restored) })}</Text>
-          </Alert.Content>
-          <Button
-            variant="ghost"
-            w="24px"
-            h="24px"
-            p="0"
-            flexShrink="0"
-            aria-label={t("common.close")}
-            onClick={() => setRestored(null)}
-          >
-            <X size={14} />
-          </Button>
-        </Alert.Root>
+        <Notice onDismiss={() => setRestored(null)}>
+          {t("history.restored", { index: String(restored) })}
+        </Notice>
       )}
       {entries === null ? (
         !error && (

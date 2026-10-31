@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Shield, ShieldOff, Trash2 } from "lucide-react";
 import { Box, HStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
@@ -18,6 +18,8 @@ export function MembersPanel({
   onSync,
   onApprove,
   onRemove,
+  onSetAdmin,
+  onResolveFork,
   onErrorDismiss,
 }: {
   members: Member[];
@@ -27,15 +29,22 @@ export function MembersPanel({
   onSync: () => void | Promise<void>;
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
+  onSetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
+  /** Joins member changes two admins made at the same time. */
+  onResolveFork: () => Promise<void>;
   onErrorDismiss: () => void;
 }) {
   const { t } = useI18n();
   const [approving, setApproving] = useState<JoinRequest | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
+  const [granting, setGranting] = useState<Member | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const approveTriggerRef = useRef<HTMLElement | null>(null);
   const removeTriggerRef = useRef<HTMLElement | null>(null);
+  const grantTriggerRef = useRef<HTMLElement | null>(null);
+  // Only an admin can change who is an admin.
+  const selfAdmin = members.some((member) => member.self && member.admin);
 
   // The dialog closes whether or not the action worked; a failure is shown in
   // the panel, so the admin starts again from a fresh list instead of retrying
@@ -77,6 +86,17 @@ export function MembersPanel({
               onErrorDismiss();
             }}
           />
+          {/* A failed resolution replaces the fork error, but the fork remains. */}
+          {(error?.code === "control_forked" || shownError.code === "control_forked") && (
+            <Button
+              size="sm"
+              mt="2"
+              loading={busy}
+              onClick={() => void run(onResolveFork, () => {})}
+            >
+              {t("members.resolveFork")}
+            </Button>
+          )}
         </Box>
       )}
       {loading ? (
@@ -129,6 +149,22 @@ export function MembersPanel({
                     removeTriggerRef.current = trigger;
                     setRemoving(member);
                   }}
+                  onToggleAdmin={
+                    selfAdmin
+                      ? (trigger) => {
+                          if (member.admin) {
+                            void run(
+                              () => onSetAdmin(member.device_id, false),
+                              () => {},
+                            );
+                            return;
+                          }
+                          // Granting admin is as sensitive as approving a device.
+                          grantTriggerRef.current = trigger;
+                          setGranting(member);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </Box>
@@ -152,6 +188,26 @@ export function MembersPanel({
           return run(
             () => onApprove(target.device_id),
             () => setApproving(null),
+          );
+        }}
+      />
+      <FingerprintConfirmDialog
+        open={granting !== null}
+        title={t("members.grantAdminTitle")}
+        fingerprint={granting?.fingerprint ?? ""}
+        warning={t("members.grantAdminWarning")}
+        acknowledgeLabel={t("members.fingerprintConfirmed")}
+        cancelLabel={t("members.cancel")}
+        confirmLabel={t("members.makeAdmin")}
+        loading={busy}
+        triggerRef={grantTriggerRef}
+        onClose={() => setGranting(null)}
+        onConfirm={() => {
+          const target = granting;
+          if (!target) return;
+          return run(
+            () => onSetAdmin(target.device_id, true),
+            () => setGranting(null),
           );
         }}
       />
@@ -237,6 +293,7 @@ export function PendingRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {request.algorithm.toUpperCase()}
+          {request.key_update ? ` · ${t("members.keyUpdate")}` : ""}
           {time ? ` · ${t("members.requestedAt", { time })}` : ""}
         </Text>
       </Box>
@@ -251,10 +308,13 @@ export function MemberRow({
   member,
   last = false,
   onRemove,
+  onToggleAdmin,
 }: {
   member: Member;
   last?: boolean;
   onRemove?: (trigger: HTMLElement) => void;
+  /** Grants or revokes admin; left out when this device cannot. */
+  onToggleAdmin?: (trigger: HTMLElement) => void;
 }) {
   const { t } = useI18n();
   return (
@@ -266,6 +326,7 @@ export function MemberRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {member.algorithm.toUpperCase()}
+          {member.post_quantum ? ` · ${t("device.postQuantum")}` : ""}
           {member.self ? ` · ${t("members.you")}` : ""}
         </Text>
       </Box>
@@ -282,6 +343,20 @@ export function MemberRow({
         >
           {member.admin ? t("members.admin") : t("members.member")}
         </Box>
+        {onToggleAdmin && (
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={`${member.admin ? t("members.revokeAdmin") : t("members.makeAdmin")}: ${member.fingerprint}`}
+            onClick={(event) => onToggleAdmin(event.currentTarget)}
+          >
+            {member.admin ? (
+              <ShieldOff size={14} aria-hidden="true" />
+            ) : (
+              <Shield size={14} aria-hidden="true" />
+            )}
+          </Button>
+        )}
         {onRemove && !member.self && (
           <Button
             size="sm"

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { displayError } from "../../lib/app-error";
+import { createAppError, displayError } from "../../lib/app-error";
 import { I18nProvider } from "../../lib/i18n";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
@@ -13,6 +13,7 @@ const sampleMember = {
   algorithm: "p256",
   admin: false,
   self: false,
+  post_quantum: false,
 };
 
 describe("MemberAvatar", () => {
@@ -80,6 +81,8 @@ describe("accessibility: live regions", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </I18nProvider>,
@@ -105,6 +108,8 @@ describe("MembersPanel actions", () => {
             onSync={onSync}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onResolveFork={async () => {}}
             onErrorDismiss={onErrorDismiss}
           />
         </I18nProvider>,
@@ -123,6 +128,7 @@ describe("MembersPanel approval", () => {
     fingerprint: "1111-2222-3333-4444-5555",
     algorithm: "ed25519",
     requested_at: "2026-10-06T09:30:00Z",
+    key_update: false,
   };
 
   function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
@@ -137,6 +143,8 @@ describe("MembersPanel approval", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -245,6 +253,7 @@ describe("PendingRow", () => {
               fingerprint: "aaaa-bbbb",
               algorithm: "p256",
               requested_at: "not a date",
+              key_update: false,
             }}
             onApprove={() => {}}
           />
@@ -269,6 +278,8 @@ describe("MembersPanel removal", () => {
             onSync={() => {}}
             onApprove={async () => {}}
             onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </I18nProvider>,
@@ -285,5 +296,97 @@ describe("MembersPanel removal", () => {
     expect(dialog?.textContent).toContain("Rotate secrets it has already read.");
     const describedBy = dialog?.getAttribute("aria-describedby");
     expect(container.querySelector(`[id="${describedBy ?? ""}"]`)?.textContent).toContain("Rotate");
+  });
+});
+
+describe("MembersPanel admin rights", () => {
+  const self = { ...sampleMember, device_id: "s".repeat(64), self: true, admin: true };
+  const other = { ...sampleMember, fingerprint: "9999-8888-7777-6666-5555" };
+
+  function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
+    act(() => {
+      root.render(
+        <I18nProvider>
+          <MembersPanel
+            members={[self, other]}
+            requests={[]}
+            loading={false}
+            error={null}
+            onSync={() => {}}
+            onApprove={async () => {}}
+            onRemove={async () => {}}
+            onSetAdmin={async () => {}}
+            onResolveFork={async () => {}}
+            onErrorDismiss={() => {}}
+            {...props}
+          />
+        </I18nProvider>,
+      );
+    });
+  }
+
+  it("grants admin only after the fingerprint is confirmed", async () => {
+    const onSetAdmin = vi.fn(async () => {});
+    renderPanel({ onSetAdmin });
+    act(() => queryButton(`Make admin: ${other.fingerprint}`)?.click());
+
+    const dialog = container.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[data-testid="fingerprint"]')?.textContent).toBe(
+      other.fingerprint,
+    );
+    await act(async () =>
+      dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click(),
+    );
+    await act(async () => {
+      Array.from(dialog.querySelectorAll("button"))
+        .find((b) => b.textContent?.trim() === "Make admin")
+        ?.click();
+      await Promise.resolve();
+    });
+    expect(onSetAdmin).toHaveBeenCalledWith(other.device_id, true);
+  });
+
+  it("revokes admin directly", async () => {
+    const onSetAdmin = vi.fn(async () => {});
+    renderPanel({ members: [self, { ...other, admin: true }], onSetAdmin });
+    await act(async () => queryButton(`Revoke admin: ${other.fingerprint}`)?.click());
+    expect(onSetAdmin).toHaveBeenCalledWith(other.device_id, false);
+  });
+
+  it("offers no admin changes to a member that is not an admin", () => {
+    renderPanel({ members: [{ ...self, admin: false }, other] });
+    expect(queryButton(`Make admin: ${other.fingerprint}`)).toBeNull();
+  });
+
+  it("offers to join member changes when the members forked", async () => {
+    const onResolveFork = vi.fn(async () => {});
+    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
+    await act(async () => queryButton("Join member changes")?.click());
+    expect(onResolveFork).toHaveBeenCalled();
+  });
+
+  it("keeps offering to join member changes after a failed attempt", async () => {
+    const onResolveFork = vi.fn(async () => {
+      throw createAppError("internal");
+    });
+    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
+    await act(async () => queryButton("Join member changes")?.click());
+    await act(async () => Promise.resolve());
+    expect(queryButton("Join member changes")).not.toBeNull();
+  });
+
+  it("marks a key update among the requests", () => {
+    renderPanel({
+      requests: [
+        {
+          device_id: other.device_id,
+          fingerprint: other.fingerprint,
+          algorithm: "p256",
+          requested_at: "2026-10-06T09:30:00Z",
+          key_update: true,
+        },
+      ],
+    });
+    expect(container.textContent).toContain("Key update");
   });
 });

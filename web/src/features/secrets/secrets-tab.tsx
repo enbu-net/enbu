@@ -1,17 +1,19 @@
 import { useRef, useState } from "react";
-import { Download, Plus, X } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
-import { Alert, Button, Input, Spinner, Text } from "../../components/ui";
+import { Button, Input, Spinner, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { ConflictPanel } from "../../components/conflict-panel";
+import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useI18n } from "../../lib/i18n";
-import type { PullResult } from "../../lib/types";
+import type { ImportResult, PullResult } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
+import { ImportButton } from "./import-button";
 import { SecretRow } from "./secret-row";
 
 export function SecretsTab({
@@ -23,8 +25,12 @@ export function SecretsTab({
 }) {
   const { t } = useI18n();
   const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
+  // An import can finish after another environment was picked; reload that one.
+  const latestEnv = useRef(env);
+  latestEnv.current = env;
   const [pullLoading, setPullLoading] = useState(false);
   const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
+  const [imported, setImported] = useState<ImportResult | null>(null);
   const [replaceFile, setReplaceFile] = useState<string | null>(null);
   const [resolveLoading, setResolveLoading] = useState(false);
   const addEnvironmentTriggerRef = useRef<HTMLButtonElement>(null);
@@ -98,6 +104,14 @@ export function SecretsTab({
         }
       >
         <HStack gap="2">
+          <ImportButton
+            env={env}
+            onError={setError}
+            onImported={async (result) => {
+              setImported(result);
+              await refresh(latestEnv.current);
+            }}
+          />
           <Button
             size="sm"
             variant="outline"
@@ -111,6 +125,16 @@ export function SecretsTab({
         </HStack>
       </SectionHeader>
       {pullNotice && <PullNotice result={pullNotice} onDismiss={() => setPullNotice(null)} />}
+      {imported && (
+        <Notice onDismiss={() => setImported(null)}>
+          {t("import.done", {
+            environment: imported.environment,
+            added: imported.added.length,
+            updated: imported.updated.length,
+            unchanged: imported.unchanged.length,
+          })}
+        </Notice>
+      )}
       <ConfirmDeleteDialog
         open={replaceFile !== null}
         title={t("dashboard.pullReplaceTitle", { file: replaceFile ?? "" })}
@@ -219,29 +243,14 @@ export function SecretsTab({
 function PullNotice({ result, onDismiss }: { result: PullResult; onDismiss: () => void }) {
   const { t } = useI18n();
   return (
-    <Alert.Root role="status" borderRadius="md" borderWidth="1px" py={3} px={4} mb="4">
-      <Alert.Content>
-        {result.removed.length > 0 && (
-          <Text fontSize="sm">
-            {t("dashboard.pullRemoved", { keys: result.removed.join(", ") })}
-          </Text>
-        )}
-        {result.kept.length > 0 && (
-          <Text fontSize="sm">{t("dashboard.pullKept", { keys: result.kept.join(", ") })}</Text>
-        )}
-      </Alert.Content>
-      <Button
-        variant="ghost"
-        w="24px"
-        h="24px"
-        p="0"
-        flexShrink="0"
-        aria-label={t("common.close")}
-        onClick={onDismiss}
-      >
-        <X size={14} />
-      </Button>
-    </Alert.Root>
+    <Notice onDismiss={onDismiss}>
+      {result.removed.length > 0 && (
+        <Text fontSize="sm">{t("dashboard.pullRemoved", { keys: result.removed.join(", ") })}</Text>
+      )}
+      {result.kept.length > 0 && (
+        <Text fontSize="sm">{t("dashboard.pullKept", { keys: result.kept.join(", ") })}</Text>
+      )}
+    </Notice>
   );
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/identity"
 	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
@@ -153,6 +154,10 @@ func (s *DesktopService) ResolveConflicts(env string, heads []string, choices []
 	return publicError(s.core.ResolveConflicts(env, heads, choices))
 }
 
+func (s *DesktopService) ImportSecrets(env, dotenv string, overwrite bool) (app.ImportResult, error) {
+	return result(s.core.ImportSecrets(env, dotenv, overwrite))
+}
+
 func (s *DesktopService) ListHistory(env string) ([]desktop.HistoryEntry, error) {
 	return result(s.core.ListHistory(env))
 }
@@ -187,6 +192,26 @@ func (s *DesktopService) ApproveMember(deviceID string) error {
 
 func (s *DesktopService) RemoveMember(deviceID string) error {
 	return publicError(s.core.RemoveMember(deviceID))
+}
+
+func (s *DesktopService) SetAdmin(deviceID string, admin bool) error {
+	return publicError(s.core.SetAdmin(deviceID, admin))
+}
+
+func (s *DesktopService) ResolveMemberFork() error {
+	return publicError(s.core.ResolveMemberFork())
+}
+
+func (s *DesktopService) GetIdentity() (identity.PublicInfo, error) {
+	return result(s.core.GetIdentity())
+}
+
+func (s *DesktopService) DiagnoseIdentity() desktop.IdentityDiagnosis {
+	return s.core.DiagnoseIdentity()
+}
+
+func (s *DesktopService) UpgradeIdentity() (app.KeyUpdateResult, error) {
+	return result(s.core.UpgradeIdentity())
 }
 
 func (s *DesktopService) ReadConfig() (string, error) {

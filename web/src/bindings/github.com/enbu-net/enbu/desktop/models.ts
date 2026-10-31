@@ -248,6 +248,40 @@ export class HistoryEntry {
 }
 
 /**
+ * IdentityDiagnosis is what DiagnoseIdentity shows. The probes' reasons are OS
+ * error text, so they go to the log and never to the screen.
+ */
+export class IdentityDiagnosis {
+    "backend": string;
+    "device"?: string;
+    "available": boolean;
+    "fallback_available": boolean;
+
+    /** Creates a new IdentityDiagnosis instance. */
+    constructor($$source: Partial<IdentityDiagnosis> = {}) {
+        if (!("backend" in $$source)) {
+            this["backend"] = "";
+        }
+        if (!("available" in $$source)) {
+            this["available"] = false;
+        }
+        if (!("fallback_available" in $$source)) {
+            this["fallback_available"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new IdentityDiagnosis instance from a string or object.
+     */
+    static createFrom($$source: any = {}): IdentityDiagnosis {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new IdentityDiagnosis($$parsedSource as Partial<IdentityDiagnosis>);
+    }
+}
+
+/**
  * InitResult describes this device after initializing a workspace. Pending
  * is set while an admin still has to approve the device.
  */
@@ -301,6 +335,12 @@ export class JoinRequest {
     "algorithm": string;
     "requested_at": string;
 
+    /**
+     * KeyUpdate is set for a member replacing its key, as `enbu identity
+     * upgrade` asks, rather than a new device asking to join.
+     */
+    "key_update": boolean;
+
     /** Creates a new JoinRequest instance. */
     constructor($$source: Partial<JoinRequest> = {}) {
         if (!("device_id" in $$source)) {
@@ -314,6 +354,9 @@ export class JoinRequest {
         }
         if (!("requested_at" in $$source)) {
             this["requested_at"] = "0001-01-01T00:00:00.000Z";
+        }
+        if (!("key_update" in $$source)) {
+            this["key_update"] = false;
         }
 
         Object.assign(this, $$source);
@@ -338,6 +381,11 @@ export class Member {
     "admin": boolean;
     "self": boolean;
 
+    /**
+     * PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
+     */
+    "post_quantum": boolean;
+
     /** Creates a new Member instance. */
     constructor($$source: Partial<Member> = {}) {
         if (!("device_id" in $$source)) {
@@ -354,6 +402,9 @@ export class Member {
         }
         if (!("self" in $$source)) {
             this["self"] = false;
+        }
+        if (!("post_quantum" in $$source)) {
+            this["post_quantum"] = false;
         }
 
         Object.assign(this, $$source);

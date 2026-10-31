@@ -10,6 +10,7 @@ export {
     Environment,
     EnvironmentDeletion,
     HistoryEntry,
+    IdentityDiagnosis,
     InitResult,
     JoinRequest,
     Member,

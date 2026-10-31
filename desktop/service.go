@@ -224,6 +224,8 @@ type Member struct {
 	Algorithm   string `json:"algorithm"`
 	Admin       bool   `json:"admin"`
 	Self        bool   `json:"self"`
+	// PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
+	PostQuantum bool `json:"post_quantum"`
 }
 
 // JoinRequest is a device waiting for an admin to approve it.
@@ -232,6 +234,9 @@ type JoinRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
+	// KeyUpdate is set for a member replacing its key, as `enbu identity
+	// upgrade` asks, rather than a new device asking to join.
+	KeyUpdate bool `json:"key_update"`
 }
 
 // InitResult describes this device after initializing a workspace. Pending
@@ -522,7 +527,7 @@ func (s *Service) ListMembers() ([]Member, error) {
 		}
 		out := make([]Member, len(infos))
 		for i, m := range infos {
-			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self}
+			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self, PostQuantum: m.PostQuantum}
 		}
 		return out, nil
 	})
@@ -536,7 +541,7 @@ func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
 		}
 		out := make([]JoinRequest, len(infos))
 		for i, r := range infos {
-			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt}
+			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt, KeyUpdate: r.KeyUpdate}
 		}
 		return out, nil
 	})
@@ -550,6 +555,18 @@ func (s *Service) ApproveMember(deviceID string) error {
 
 func (s *Service) RemoveMember(deviceID string) error {
 	return s.withRepo(func() error { return s.app.RemoveMember(s.context(), deviceID) })
+}
+
+// SetAdmin grants or revokes the right to manage members. Granting it is as
+// sensitive as approving a device, so the frontend confirms the fingerprint.
+func (s *Service) SetAdmin(deviceID string, admin bool) error {
+	return s.withRepo(func() error { return s.app.SetAdmin(s.context(), deviceID, admin) })
+}
+
+// ResolveMemberFork joins member changes two admins made at the same time,
+// keeping only the members and admin rights both agree on.
+func (s *Service) ResolveMemberFork() error {
+	return s.withRepo(func() error { return s.app.ResolveControlFork(s.context()) })
 }
 
 func (s *Service) ReadConfig() (string, error) {

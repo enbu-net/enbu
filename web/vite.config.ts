@@ -113,6 +113,7 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: "jsdom",
+    setupFiles: ["src/test/teardown.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "../.tmp/coverage/frontend",

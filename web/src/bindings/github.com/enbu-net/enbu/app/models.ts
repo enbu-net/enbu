@@ -46,6 +46,100 @@ export class Diff {
     }
 }
 
+/**
+ * ImportResult names what one import did to an environment.
+ */
+export class ImportResult {
+    "environment": string;
+    "added": string[];
+    "updated": string[];
+    "unchanged": string[];
+
+    /** Creates a new ImportResult instance. */
+    constructor($$source: Partial<ImportResult> = {}) {
+        if (!("environment" in $$source)) {
+            this["environment"] = "";
+        }
+        if (!("added" in $$source)) {
+            this["added"] = [];
+        }
+        if (!("updated" in $$source)) {
+            this["updated"] = [];
+        }
+        if (!("unchanged" in $$source)) {
+            this["unchanged"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ImportResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ImportResult {
+        const $$createField1_0 = $$createType0;
+        const $$createField2_0 = $$createType0;
+        const $$createField3_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("added" in $$parsedSource) {
+            $$parsedSource["added"] = $$createField1_0($$parsedSource["added"]);
+        }
+        if ("updated" in $$parsedSource) {
+            $$parsedSource["updated"] = $$createField2_0($$parsedSource["updated"]);
+        }
+        if ("unchanged" in $$parsedSource) {
+            $$parsedSource["unchanged"] = $$createField3_0($$parsedSource["unchanged"]);
+        }
+        return new ImportResult($$parsedSource as Partial<ImportResult>);
+    }
+}
+
+export class KeyUpdateResult {
+    "backend": string;
+    "algorithm": string;
+    "recipient": string;
+    "device_id": string;
+    "fingerprint": string;
+
+    /**
+     * Pending is set while an admin still has to approve the new key. Until
+     * then this device decrypts with either key.
+     */
+    "pending": boolean;
+
+    /** Creates a new KeyUpdateResult instance. */
+    constructor($$source: Partial<KeyUpdateResult> = {}) {
+        if (!("backend" in $$source)) {
+            this["backend"] = "";
+        }
+        if (!("algorithm" in $$source)) {
+            this["algorithm"] = "";
+        }
+        if (!("recipient" in $$source)) {
+            this["recipient"] = "";
+        }
+        if (!("device_id" in $$source)) {
+            this["device_id"] = "";
+        }
+        if (!("fingerprint" in $$source)) {
+            this["fingerprint"] = "";
+        }
+        if (!("pending" in $$source)) {
+            this["pending"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KeyUpdateResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): KeyUpdateResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new KeyUpdateResult($$parsedSource as Partial<KeyUpdateResult>);
+    }
+}
+
 export class ProgressStep {
     /**
      * "add" | "pull" | "sync" | "delete"

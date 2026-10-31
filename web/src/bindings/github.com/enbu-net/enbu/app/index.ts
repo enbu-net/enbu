@@ -3,5 +3,7 @@
 
 export {
     Diff,
+    ImportResult,
+    KeyUpdateResult,
     ProgressStep
 } from "./models.js";

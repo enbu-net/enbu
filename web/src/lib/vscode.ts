@@ -1,5 +1,10 @@
 import { Create } from "@wailsio/runtime";
-import { Diff } from "../bindings/github.com/enbu-net/enbu/app/models";
+import {
+  Diff,
+  ImportResult,
+  KeyUpdateResult,
+} from "../bindings/github.com/enbu-net/enbu/app/models";
+import { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 import * as Desktop from "../bindings/github.com/enbu-net/enbu/desktop/models";
 import { RepositoryOwner } from "../bindings/github.com/enbu-net/enbu/pkg/provider/github/models";
 import type { ServiceClient, ServiceMethod } from "./backend";
@@ -171,10 +176,14 @@ const results: { [K in ServiceMethod]?: (source: unknown) => Result<K> } = {
   ListSecrets: (source) => Desktop.SecretsResponse.createFrom(source),
   PullSecrets: (source) => Desktop.PullResult.createFrom(source),
   ListConflicts: (source) => Desktop.ConflictSet.createFrom(source),
+  ImportSecrets: (source) => ImportResult.createFrom(source),
   ListHistory: Create.Array((source) => Desktop.HistoryEntry.createFrom(source)),
   DiffHistory: Create.Nullable((source) => Diff.createFrom(source)),
   ListMembers: Create.Array((source) => Desktop.Member.createFrom(source)),
   ListJoinRequests: Create.Array((source) => Desktop.JoinRequest.createFrom(source)),
+  GetIdentity: (source) => PublicInfo.createFrom(source),
+  DiagnoseIdentity: (source) => Desktop.IdentityDiagnosis.createFrom(source),
+  UpgradeIdentity: (source) => KeyUpdateResult.createFrom(source),
 };
 
 /** The desktop service, called through the extension host instead of Wails. */

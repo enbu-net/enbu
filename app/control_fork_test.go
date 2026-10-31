@@ -56,8 +56,8 @@ func TestControlForkStopsEverythingUntilAnAdminResolvesIt(t *testing.T) {
 			t.Fatalf("%s during a fork: %v", name, err)
 		}
 	}
-	if err := carol.ResolveControlFork(bg); err == nil {
-		t.Fatal("a device that is not a member resolved the fork")
+	if err := carol.ResolveControlFork(bg); !apperr.Is(err, apperr.CodeAccessDenied) {
+		t.Fatalf("a device that is not a member resolved the fork: %v", err)
 	}
 
 	if err := alice.ResolveControlFork(bg); err != nil {
