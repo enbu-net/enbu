@@ -12,10 +12,10 @@ export default defineConfig({
     sourcemap: true,
   },
   fmt: {
-    ignorePatterns: ["dist/**", "media/**", "tsconfig.json"],
+    ignorePatterns: ["bin/**", "dist/**", "media/**", "tsconfig.json"],
   },
   lint: {
-    ignorePatterns: ["dist/**", "media/**"],
+    ignorePatterns: ["bin/**", "dist/**", "media/**"],
     options: {
       typeAware: true,
       typeCheck: true,
