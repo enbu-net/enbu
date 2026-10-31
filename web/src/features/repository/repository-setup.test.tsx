@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import type { RepoInfo } from "../../lib/types";
+import { createAppError } from "../../lib/app-error";
+import type { InitResult, RepoInfo, StorageSettings } from "../../lib/types";
 import {
   container,
   queryButton,
@@ -33,15 +34,15 @@ function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
 }
 
 describe("setupStep", () => {
-  it("asks for Git, then a remote, then enbu", () => {
+  it("asks for Git, then founds a workspace", () => {
     expect(setupStep(repoInfo())).toBe("git");
-    expect(setupStep(repoInfo({ has_git: true }))).toBe("remote");
-    expect(setupStep(repoInfo({ has_git: true, has_remote: true }))).toBe("enbu");
-    expect(setupStep(repoInfo({ has_git: true, has_remote: true, initialized: true }))).toBeNull();
+    expect(setupStep(repoInfo({ has_git: true }))).toBe("found");
+    expect(setupStep(repoInfo({ has_git: true, has_remote: true }))).toBe("found");
+    expect(setupStep(repoInfo({ has_git: true, initialized: true }))).toBeNull();
   });
 
-  it("skips Git and the remote when enbu.toml already names the storage", () => {
-    expect(setupStep(repoInfo({ storage_configured: true }))).toBe("enbu");
+  it("joins the workspace enbu.toml already names", () => {
+    expect(setupStep(repoInfo({ storage_configured: true }))).toBe("join");
     expect(setupStep(repoInfo({ storage_configured: true, initialized: true }))).toBeNull();
   });
 });
@@ -110,29 +111,140 @@ describe("RepositorySetup", () => {
     expect(reloadRepo).toHaveBeenCalledTimes(1);
   });
 
-  it("asks for a GitHub remote instead of creating a repository", () => {
-    act(() => root.render(withSession(<RepositorySetup step="remote" />)));
-    expect(container.textContent).toContain("Add a GitHub remote");
-    expect(container.querySelector("pre")?.textContent).toContain("git remote add origin");
-    expect(queryButton("Create repository")).toBeNull();
-  });
-
-  it("initializes enbu and reloads the repository", async () => {
-    mocked.initialize.mockResolvedValueOnce({
-      public_key: "age1test",
-      username: "octo",
-      environment: "default",
-      device_id: "d".repeat(64),
-      fingerprint: "aaaa-bbbb",
-      pending: false,
-    });
+  it("founds a workspace in the suggested storage and tells how to share it", async () => {
+    mocked.suggestStorage.mockResolvedValueOnce("oci://ghcr.io/octo/app-enbu");
+    mocked.initialize.mockResolvedValueOnce(
+      initResult({ founded: true, storage: "oci://ghcr.io/octo/app-enbu" }),
+    );
     const reloadRepo = vi.fn(async () => {});
-    act(() => {
-      root.render(<>{withSession(<RepositorySetup step="enbu" />, { reloadRepo })}</>);
-    });
-    await act(async () => queryButton("Set up")?.click());
+    act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
     await settle();
-    expect(mocked.initialize).toHaveBeenCalledTimes(1);
+    expect(container.querySelector<HTMLInputElement>("#init-storage")?.value).toBe(
+      "oci://ghcr.io/octo/app-enbu",
+    );
+
+    await act(async () => queryButton("Found workspace")?.click());
+    await settle();
+    expect(mocked.initialize).toHaveBeenCalledWith(storage("oci://ghcr.io/octo/app-enbu"), false);
+    expect(container.textContent).toContain("Inherit access from repository");
+    expect(container.textContent).toContain("app-enbu");
+    expect(reloadRepo).not.toHaveBeenCalled();
+
+    await act(async () => queryButton("Continue")?.click());
+    await settle();
     expect(reloadRepo).toHaveBeenCalledTimes(1);
   });
+
+  it("asks for a storage or a GitHub remote when there is no suggestion", async () => {
+    mocked.initialize.mockResolvedValueOnce(initResult());
+    const reloadRepo = vi.fn(async () => {});
+    act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
+    await settle();
+    expect(container.querySelector("pre")?.textContent).toContain("git remote add origin");
+    expect(queryButton("Found workspace")?.disabled).toBe(true);
+
+    const input = container.querySelector<HTMLInputElement>("#init-storage")!;
+    await act(async () => typeInto(input, "s3://bucket/team"));
+    await act(async () => typeInto(queryLabelled("S3 region"), "eu-west-1"));
+    await act(async () => queryCheckbox("Use path-style S3 addressing").click());
+    await act(async () => queryButton("Found workspace")?.click());
+    await settle();
+    expect(mocked.initialize).toHaveBeenCalledWith(
+      { ...storage("s3://bucket/team"), region: "eu-west-1", path_style: true },
+      false,
+    );
+    expect(reloadRepo).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes plain HTTP for an OCI registry", async () => {
+    mocked.initialize.mockResolvedValueOnce(initResult());
+    act(() => root.render(withSession(<RepositorySetup step="found" />)));
+    await settle();
+    const input = container.querySelector<HTMLInputElement>("#init-storage")!;
+    await act(async () => typeInto(input, "oci://localhost:5000/team"));
+    expect(queryLabelled("S3 region", false)).toBeNull();
+    await act(async () => queryCheckbox("Use HTTP for a local OCI registry").click());
+    await act(async () => queryButton("Found workspace")?.click());
+    await settle();
+    expect(mocked.initialize).toHaveBeenCalledWith(
+      { ...storage("oci://localhost:5000/team"), plain_http: true },
+      false,
+    );
+  });
+
+  it("does not ask for a GitHub remote the repository already has", async () => {
+    const repo = { selected: true, repo: repoInfo({ has_git: true, has_remote: true }) };
+    act(() => root.render(withSession(<RepositorySetup step="found" />, { repo })));
+    await settle();
+    expect(container.querySelector("pre")).toBeNull();
+    expect(container.textContent).toContain("not one GHCR accepts");
+  });
+
+  it("joins the workspace in enbu.toml and reloads", async () => {
+    mocked.initialize.mockResolvedValueOnce(initResult());
+    const reloadRepo = vi.fn(async () => {});
+    act(() => root.render(withSession(<RepositorySetup step="join" />, { reloadRepo })));
+    await act(async () => queryButton("Set up")?.click());
+    await settle();
+    expect(mocked.initialize).toHaveBeenCalledWith(storage(""), false);
+    expect(reloadRepo).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the fingerprint to compare while waiting for approval", async () => {
+    mocked.initialize.mockResolvedValueOnce(initResult({ pending: true }));
+    act(() => root.render(withSession(<RepositorySetup step="join" />)));
+    await act(async () => queryButton("Set up")?.click());
+    await settle();
+    expect(container.textContent).toContain("Waiting for approval");
+    expect(container.textContent).toContain("aaaa-bbbb");
+  });
+
+  it("offers to trust a changed root only after trust_root_changed", async () => {
+    mocked.initialize
+      .mockRejectedValueOnce(createAppError("trust_root_changed", { configured: "c-new" }))
+      .mockResolvedValueOnce(initResult({ replaced_genesis: "c-old" }));
+    act(() => root.render(withSession(<RepositorySetup step="join" />)));
+    expect(queryButton("Trust the new root")).toBeNull();
+    await act(async () => queryButton("Set up")?.click());
+    await settle();
+    expect(container.textContent).toContain("c-new");
+
+    await act(async () => queryButton("Trust the new root")?.click());
+    await settle();
+    expect(mocked.initialize).toHaveBeenLastCalledWith(storage(""), true);
+    expect(container.textContent).toContain("c-old");
+    // This device was already a member, so it did not found the workspace.
+    expect(container.textContent).not.toContain("Workspace founded");
+  });
 });
+
+function storage(url: string): StorageSettings {
+  return { url, region: "", endpoint: "", path_style: false, plain_http: false };
+}
+
+function queryLabelled(label: string, required = true) {
+  const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`);
+  if (required && !input) throw new Error(`no input ${label}`);
+  return input!;
+}
+
+function queryCheckbox(label: string) {
+  const option = Array.from(container.querySelectorAll("label")).find((el) =>
+    el.textContent?.includes(label),
+  );
+  return option!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+}
+
+function initResult(overrides: Partial<InitResult> = {}): InitResult {
+  return {
+    public_key: "age1test",
+    username: "octo",
+    environment: "default",
+    device_id: "d".repeat(64),
+    fingerprint: "aaaa-bbbb",
+    pending: false,
+    storage: "oci://registry.example/team",
+    founded: false,
+    ...overrides,
+  };
+}

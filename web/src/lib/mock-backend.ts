@@ -10,6 +10,7 @@ import type {
   HistoryEntry,
   ImportResult,
   InitResult,
+  StorageSettings,
   KeyUpdateResult,
   PublicInfo,
   JoinRequest,
@@ -185,7 +186,7 @@ export const mockBackend: Backend = {
     return mockBackend.repoStatus();
   },
 
-  async initialize(): Promise<InitResult> {
+  async initialize(storage: StorageSettings): Promise<InitResult> {
     return {
       public_key: "age1demo...",
       username: previewUsername,
@@ -193,7 +194,13 @@ export const mockBackend: Backend = {
       device_id: mockMembers[0].device_id,
       fingerprint: mockMembers[0].fingerprint,
       pending: false,
+      storage: storage.url || "oci://ghcr.io/enbu-net/enbu-enbu",
+      founded: true,
     };
+  },
+
+  async suggestStorage(): Promise<string> {
+    return "oci://ghcr.io/enbu-net/enbu-enbu";
   },
 
   async listEnvironments(): Promise<Environment[]> {

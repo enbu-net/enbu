@@ -22,6 +22,7 @@ export function createBackendMock() {
     listRepositories: vi.fn(async () => []),
     removeRepository: vi.fn(async () => {}),
     initialize: vi.fn(),
+    suggestStorage: vi.fn(async () => ""),
     listEnvironments: vi.fn(async () => []),
     createEnvironment: vi.fn(async () => {}),
     switchEnvironment: vi.fn(async () => {}),

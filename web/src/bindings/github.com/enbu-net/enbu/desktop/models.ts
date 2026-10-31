@@ -293,6 +293,18 @@ export class InitResult {
     "fingerprint": string;
     "pending": boolean;
 
+    /**
+     * Storage is where the workspace lives, and Founded is set when this init
+     * created it: a GHCR package then starts private to its creator.
+     */
+    "storage": string;
+    "founded": boolean;
+
+    /**
+     * ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
+     */
+    "replaced_genesis"?: string;
+
     /** Creates a new InitResult instance. */
     constructor($$source: Partial<InitResult> = {}) {
         if (!("public_key" in $$source)) {
@@ -312,6 +324,12 @@ export class InitResult {
         }
         if (!("pending" in $$source)) {
             this["pending"] = false;
+        }
+        if (!("storage" in $$source)) {
+            this["storage"] = "";
+        }
+        if (!("founded" in $$source)) {
+            this["founded"] = false;
         }
 
         Object.assign(this, $$source);
@@ -632,6 +650,47 @@ export class SecretsResponse {
             $$parsedSource["secrets"] = $$createField1_0($$parsedSource["secrets"]);
         }
         return new SecretsResponse($$parsedSource as Partial<SecretsResponse>);
+    }
+}
+
+/**
+ * StorageSettings is where Initialize founds a workspace: the storage URL
+ * and the options `enbu init` takes as flags.
+ */
+export class StorageSettings {
+    "url": string;
+    "region": string;
+    "endpoint": string;
+    "path_style": boolean;
+    "plain_http": boolean;
+
+    /** Creates a new StorageSettings instance. */
+    constructor($$source: Partial<StorageSettings> = {}) {
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("region" in $$source)) {
+            this["region"] = "";
+        }
+        if (!("endpoint" in $$source)) {
+            this["endpoint"] = "";
+        }
+        if (!("path_style" in $$source)) {
+            this["path_style"] = false;
+        }
+        if (!("plain_http" in $$source)) {
+            this["plain_http"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new StorageSettings instance from a string or object.
+     */
+    static createFrom($$source: any = {}): StorageSettings {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new StorageSettings($$parsedSource as Partial<StorageSettings>);
     }
 }
 

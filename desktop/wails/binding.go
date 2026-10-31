@@ -93,8 +93,12 @@ func (s *DesktopService) GetRepoStatus() (desktop.RepoInfo, error) {
 	return result(s.core.GetRepoStatus())
 }
 
-func (s *DesktopService) Initialize() (desktop.InitResult, error) {
-	return result(s.core.Initialize())
+func (s *DesktopService) SuggestStorage() (string, error) {
+	return result(s.core.SuggestStorage())
+}
+
+func (s *DesktopService) Initialize(storage desktop.StorageSettings, acceptNewGenesis bool) (desktop.InitResult, error) {
+	return result(s.core.Initialize(storage, acceptNewGenesis))
 }
 
 func (s *DesktopService) ListEnvironments() ([]desktop.Environment, error) {

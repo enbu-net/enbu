@@ -238,6 +238,12 @@ type InitResult struct {
 	DeviceID    string `json:"device_id"`
 	Fingerprint string `json:"fingerprint"`
 	Pending     bool   `json:"pending"`
+	// Storage is where the workspace lives, and Founded is set when this init
+	// created it: a GHCR package then starts private to its creator.
+	Storage string `json:"storage"`
+	Founded bool   `json:"founded"`
+	// ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
+	ReplacedGenesis string `json:"replaced_genesis,omitempty"`
 }
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
@@ -576,8 +582,43 @@ func (s *Service) GetRepoStatus() (RepoInfo, error) {
 	return s.repoInfo(repo)
 }
 
-func (s *Service) Initialize() (InitResult, error) {
+// SuggestStorage is the storage Initialize founds a workspace in when given
+// none: a GHCR repository beside the GitHub origin, as `enbu init` picks.
+func (s *Service) SuggestStorage() (string, error) {
+	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
+}
+
+// StorageSettings is where Initialize founds a workspace: the storage URL
+// and the options `enbu init` takes as flags.
+type StorageSettings struct {
+	URL       string `json:"url"`
+	Region    string `json:"region"`
+	Endpoint  string `json:"endpoint"`
+	PathStyle bool   `json:"path_style"`
+	PlainHTTP bool   `json:"plain_http"`
+}
+
+// Initialize sets this device up in the selected repository, as `enbu init`
+// does. It founds a workspace in storage, or in SuggestStorage's when
+// storage.URL is empty; with an enbu.toml that names a storage it joins that
+// workspace, and storage.URL must be empty. acceptNewGenesis is
+// `--accept-new-genesis`.
+func (s *Service) Initialize(storage StorageSettings, acceptNewGenesis bool) (InitResult, error) {
 	return withRepoResult(s, func() (InitResult, error) {
+		if storage.URL != "" {
+			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
+				return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+			}
+			s.app.InitStorage = &config.StorageConfig{
+				URL:       storage.URL,
+				Region:    storage.Region,
+				Endpoint:  storage.Endpoint,
+				PathStyle: storage.PathStyle,
+				PlainHTTP: storage.PlainHTTP,
+			}
+		}
+		s.app.AcceptNewGenesis = acceptNewGenesis
+		defer func() { s.app.InitStorage, s.app.AcceptNewGenesis = nil, false }()
 		result, err := s.app.InitializeRepository(s.context())
 		if err != nil {
 			return InitResult{}, err
@@ -586,12 +627,15 @@ func (s *Service) Initialize() (InitResult, error) {
 			slog.Warn("failed to update .gitignore", "err", err)
 		}
 		return InitResult{
-			PublicKey:   result.PublicKey,
-			Username:    result.Username,
-			Environment: result.Environment,
-			DeviceID:    result.DeviceID,
-			Fingerprint: result.Fingerprint,
-			Pending:     result.Pending,
+			PublicKey:       result.PublicKey,
+			Username:        result.Username,
+			Environment:     result.Environment,
+			DeviceID:        result.DeviceID,
+			Fingerprint:     result.Fingerprint,
+			Pending:         result.Pending,
+			Storage:         result.Storage,
+			Founded:         result.Founded,
+			ReplacedGenesis: result.ReplacedGenesis,
 		}, nil
 	})
 }
