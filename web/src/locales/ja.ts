@@ -188,9 +188,9 @@ export const ja = {
     upgraded: "耐量子の鍵に切り替え、すべての環境を再暗号化しました。",
     diagnose: "ハードウェアを確認",
     hardwareAvailable: "ハードウェアの鍵保管（{backend}）を使えます。",
-    hardwareUnavailable: "ハードウェアの鍵保管（{backend}）を使えません: {reason}",
+    hardwareUnavailable: "ハードウェアの鍵保管（{backend}）を使えません。",
     keyringAvailable: "OS のキーリングに鍵を保管できます。",
-    keyringUnavailable: "OS のキーリングを使えません: {reason}",
+    keyringUnavailable: "OS のキーリングを使えません。",
   },
   import: {
     action: "インポート",

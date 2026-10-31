@@ -248,6 +248,40 @@ export class HistoryEntry {
 }
 
 /**
+ * IdentityDiagnosis is what DiagnoseIdentity shows. The probes' reasons are OS
+ * error text, so they go to the log and never to the screen.
+ */
+export class IdentityDiagnosis {
+    "backend": string;
+    "device"?: string;
+    "available": boolean;
+    "fallback_available": boolean;
+
+    /** Creates a new IdentityDiagnosis instance. */
+    constructor($$source: Partial<IdentityDiagnosis> = {}) {
+        if (!("backend" in $$source)) {
+            this["backend"] = "";
+        }
+        if (!("available" in $$source)) {
+            this["available"] = false;
+        }
+        if (!("fallback_available" in $$source)) {
+            this["fallback_available"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new IdentityDiagnosis instance from a string or object.
+     */
+    static createFrom($$source: any = {}): IdentityDiagnosis {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new IdentityDiagnosis($$parsedSource as Partial<IdentityDiagnosis>);
+    }
+}
+
+/**
  * InitResult describes this device after initializing a workspace. Pending
  * is set while an admin still has to approve the device.
  */

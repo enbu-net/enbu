@@ -4,7 +4,7 @@ import {
   ImportResult,
   KeyUpdateResult,
 } from "../bindings/github.com/enbu-net/enbu/app/models";
-import { Diagnosis, PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
+import { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 import * as Desktop from "../bindings/github.com/enbu-net/enbu/desktop/models";
 import { RepositoryOwner } from "../bindings/github.com/enbu-net/enbu/pkg/provider/github/models";
 import type { ServiceClient, ServiceMethod } from "./backend";
@@ -182,7 +182,7 @@ const results: { [K in ServiceMethod]?: (source: unknown) => Result<K> } = {
   ListMembers: Create.Array((source) => Desktop.Member.createFrom(source)),
   ListJoinRequests: Create.Array((source) => Desktop.JoinRequest.createFrom(source)),
   GetIdentity: (source) => PublicInfo.createFrom(source),
-  DiagnoseIdentity: (source) => Diagnosis.createFrom(source),
+  DiagnoseIdentity: (source) => Desktop.IdentityDiagnosis.createFrom(source),
   UpgradeIdentity: (source) => KeyUpdateResult.createFrom(source),
 };
 

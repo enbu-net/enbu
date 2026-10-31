@@ -56,7 +56,7 @@ export function DeleteSecret(env: string, key: string): $CancellablePromise<void
     return $Call.ByID(955503130, env, key);
 }
 
-export function DiagnoseIdentity(): $CancellablePromise<identity$0.Diagnosis> {
+export function DiagnoseIdentity(): $CancellablePromise<desktop$0.IdentityDiagnosis> {
     return $Call.ByID(1960345299).then(($result: any) => {
         return $$createType2($result);
     });
@@ -251,7 +251,7 @@ export function WriteConfig(content: string): $CancellablePromise<void> {
 // Private type creation functions
 const $$createType0 = desktop$0.RepoInfo.createFrom;
 const $$createType1 = desktop$0.EnvironmentDeletion.createFrom;
-const $$createType2 = identity$0.Diagnosis.createFrom;
+const $$createType2 = desktop$0.IdentityDiagnosis.createFrom;
 const $$createType3 = app$0.Diff.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
 const $$createType5 = desktop$0.AuthStatus.createFrom;

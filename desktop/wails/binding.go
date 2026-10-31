@@ -206,7 +206,7 @@ func (s *DesktopService) GetIdentity() (identity.PublicInfo, error) {
 	return result(s.core.GetIdentity())
 }
 
-func (s *DesktopService) DiagnoseIdentity() identity.Diagnosis {
+func (s *DesktopService) DiagnoseIdentity() desktop.IdentityDiagnosis {
 	return s.core.DiagnoseIdentity()
 }
 

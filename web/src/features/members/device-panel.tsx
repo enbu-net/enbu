@@ -87,15 +87,12 @@ export function DevicePanel({
           <Text>
             {diagnosis.available
               ? t("device.hardwareAvailable", { backend: diagnosis.backend })
-              : t("device.hardwareUnavailable", {
-                  backend: diagnosis.backend,
-                  reason: diagnosis.reason ?? "",
-                })}
+              : t("device.hardwareUnavailable", { backend: diagnosis.backend })}
           </Text>
           <Text>
             {diagnosis.fallback_available
               ? t("device.keyringAvailable")
-              : t("device.keyringUnavailable", { reason: diagnosis.fallback_reason ?? "" })}
+              : t("device.keyringUnavailable")}
           </Text>
         </VStack>
       )}

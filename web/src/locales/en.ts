@@ -188,9 +188,9 @@ export const en = {
     upgraded: "Switched to the post-quantum key and re-encrypted every environment.",
     diagnose: "Check hardware",
     hardwareAvailable: "Hardware key storage ({backend}) is available.",
-    hardwareUnavailable: "Hardware key storage ({backend}) is not available: {reason}",
+    hardwareUnavailable: "Hardware key storage ({backend}) is not available.",
     keyringAvailable: "The OS keyring can hold keys.",
-    keyringUnavailable: "The OS keyring is not available: {reason}",
+    keyringUnavailable: "The OS keyring is not available.",
   },
   import: {
     action: "Import",
