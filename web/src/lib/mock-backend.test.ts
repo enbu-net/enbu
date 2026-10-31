@@ -5,7 +5,7 @@ describe("mockBackend preview user", () => {
   it("uses yashikota consistently", async () => {
     const [status, initialized, members] = await Promise.all([
       mockBackend.authStatus(),
-      mockBackend.initialize(),
+      mockBackend.initialize("", false),
       mockBackend.listMembers(),
     ]);
 

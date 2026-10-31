@@ -48,6 +48,7 @@ var Methods = []string{
 	"SelectRepository",
 	"GetRepoStatus",
 	"Initialize",
+	"SuggestStorage",
 	"ListEnvironments",
 	"CreateEnvironment",
 	"SwitchEnvironment",

@@ -103,8 +103,8 @@ export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): 
     });
 }
 
-export function Initialize(): $CancellablePromise<desktop$0.InitResult> {
-    return $Call.ByID(1776693451).then(($result: any) => {
+export function Initialize(storageURL: string, acceptNewGenesis: boolean): $CancellablePromise<desktop$0.InitResult> {
+    return $Call.ByID(1776693451, storageURL, acceptNewGenesis).then(($result: any) => {
         return $$createType9($result);
     });
 }
@@ -207,6 +207,10 @@ export function StartOAuthLogin(): $CancellablePromise<desktop$0.OAuthStart> {
     return $Call.ByID(1467619051).then(($result: any) => {
         return $$createType22($result);
     });
+}
+
+export function SuggestStorage(): $CancellablePromise<string> {
+    return $Call.ByID(1228668934);
 }
 
 export function SwitchEnvironment(name: string): $CancellablePromise<void> {

@@ -293,6 +293,18 @@ export class InitResult {
     "fingerprint": string;
     "pending": boolean;
 
+    /**
+     * Storage is where the workspace lives, and Founded is set when this init
+     * created it: a GHCR package then starts private to its creator.
+     */
+    "storage": string;
+    "founded": boolean;
+
+    /**
+     * ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
+     */
+    "replaced_genesis"?: string;
+
     /** Creates a new InitResult instance. */
     constructor($$source: Partial<InitResult> = {}) {
         if (!("public_key" in $$source)) {
@@ -312,6 +324,12 @@ export class InitResult {
         }
         if (!("pending" in $$source)) {
             this["pending"] = false;
+        }
+        if (!("storage" in $$source)) {
+            this["storage"] = "";
+        }
+        if (!("founded" in $$source)) {
+            this["founded"] = false;
         }
 
         Object.assign(this, $$source);

@@ -45,7 +45,10 @@ export interface Backend {
   selectRepository(path: string): Promise<GUIRepoStatus>;
   listRepositories(): Promise<RepoInfo[]>;
   removeRepository(path: string): Promise<void>;
-  initialize(): Promise<InitResult>;
+  /** Founds a workspace in storage ("" for the suggested one), or joins enbu.toml's. */
+  initialize(storage: string, acceptNewGenesis: boolean): Promise<InitResult>;
+  /** The GHCR repository beside the GitHub origin that founding suggests. */
+  suggestStorage(): Promise<string>;
 
   listEnvironments(): Promise<Environment[]>;
   createEnvironment(name: string): Promise<void>;
@@ -154,7 +157,8 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     selectRepository: async (path) => repoStatusOf(await call(svc.SelectRepository(path))),
     listRepositories: () => call(svc.ListRepositories()),
     removeRepository: (path) => call(svc.RemoveRepository(path)),
-    initialize: () => call(svc.Initialize()),
+    initialize: (storage, acceptNewGenesis) => call(svc.Initialize(storage, acceptNewGenesis)),
+    suggestStorage: () => call(svc.SuggestStorage()),
 
     listEnvironments: () => call(svc.ListEnvironments()),
     createEnvironment: (name) => call(svc.CreateEnvironment(name)),

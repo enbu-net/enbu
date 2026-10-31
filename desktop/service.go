@@ -238,6 +238,12 @@ type InitResult struct {
 	DeviceID    string `json:"device_id"`
 	Fingerprint string `json:"fingerprint"`
 	Pending     bool   `json:"pending"`
+	// Storage is where the workspace lives, and Founded is set when this init
+	// created it: a GHCR package then starts private to its creator.
+	Storage string `json:"storage"`
+	Founded bool   `json:"founded"`
+	// ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
+	ReplacedGenesis string `json:"replaced_genesis,omitempty"`
 }
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
@@ -576,8 +582,24 @@ func (s *Service) GetRepoStatus() (RepoInfo, error) {
 	return s.repoInfo(repo)
 }
 
-func (s *Service) Initialize() (InitResult, error) {
+// SuggestStorage is the storage Initialize founds a workspace in when given
+// none: a GHCR repository beside the GitHub origin, as `enbu init` picks.
+func (s *Service) SuggestStorage() (string, error) {
+	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
+}
+
+// Initialize sets this device up in the selected repository, as `enbu init`
+// does. Without an enbu.toml it founds a workspace in storageURL, or in
+// SuggestStorage's when storageURL is empty; with one it joins the workspace
+// that enbu.toml names, and storageURL must be empty. acceptNewGenesis is
+// `--accept-new-genesis`.
+func (s *Service) Initialize(storageURL string, acceptNewGenesis bool) (InitResult, error) {
 	return withRepoResult(s, func() (InitResult, error) {
+		if _, err := config.LoadProjectFrom(s.app.RepositoryDir); storageURL != "" && err == nil {
+			return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+		}
+		s.app.StorageURL, s.app.AcceptNewGenesis = storageURL, acceptNewGenesis
+		defer func() { s.app.StorageURL, s.app.AcceptNewGenesis = "", false }()
 		result, err := s.app.InitializeRepository(s.context())
 		if err != nil {
 			return InitResult{}, err
@@ -586,12 +608,15 @@ func (s *Service) Initialize() (InitResult, error) {
 			slog.Warn("failed to update .gitignore", "err", err)
 		}
 		return InitResult{
-			PublicKey:   result.PublicKey,
-			Username:    result.Username,
-			Environment: result.Environment,
-			DeviceID:    result.DeviceID,
-			Fingerprint: result.Fingerprint,
-			Pending:     result.Pending,
+			PublicKey:       result.PublicKey,
+			Username:        result.Username,
+			Environment:     result.Environment,
+			DeviceID:        result.DeviceID,
+			Fingerprint:     result.Fingerprint,
+			Pending:         result.Pending,
+			Storage:         result.Storage,
+			Founded:         result.Founded,
+			ReplacedGenesis: result.ReplacedGenesis,
 		}, nil
 	})
 }
