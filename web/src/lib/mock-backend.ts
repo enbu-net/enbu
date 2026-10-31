@@ -6,8 +6,12 @@ import type {
   Environment,
   EnvironmentDeletion,
   GUIRepoStatus,
+  Diagnosis,
   HistoryEntry,
+  ImportResult,
   InitResult,
+  KeyUpdateResult,
+  PublicInfo,
   JoinRequest,
   Member,
   OAuthStart,
@@ -95,6 +99,7 @@ let mockMembers: Member[] = [
     algorithm: "p256",
     admin: true,
     self: true,
+    post_quantum: false,
   },
   {
     device_id: "11223344".repeat(8),
@@ -102,6 +107,7 @@ let mockMembers: Member[] = [
     algorithm: "ed25519",
     admin: false,
     self: false,
+    post_quantum: true,
   },
 ];
 
@@ -111,6 +117,7 @@ let mockJoinRequests: JoinRequest[] = [
     fingerprint: "5566-7788-5566-7788-5566",
     algorithm: "p256",
     requested_at: "2026-10-06T09:30:00Z",
+    key_update: false,
   },
 ];
 
@@ -327,6 +334,36 @@ export const mockBackend: Backend = {
       .map(([key, value]) => ({ key, value }))
       .sort((a, b) => a.key.localeCompare(b.key));
   },
+  async importSecrets(dotenv: string, overwrite: boolean, env = ""): Promise<ImportResult> {
+    const name = env || currentEnvName();
+    const secrets = secretsForEnv(name);
+    const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
+    const incoming = dotenv
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && line.includes("="))
+      .map((line) => {
+        const at = line.indexOf("=");
+        return { key: line.slice(0, at).trim(), value: line.slice(at + 1).replace(/^"|"$/g, "") };
+      });
+    if (incoming.length === 0) throw createAppError("invalid_argument");
+    const changed = incoming.filter((item) =>
+      secrets.some((s) => s.key === item.key && s.value !== item.value),
+    );
+    if (changed.length > 0 && !overwrite) {
+      throw createAppError("secret_already_exists", {
+        keys: changed.map((item) => item.key).join(","),
+      });
+    }
+    for (const item of incoming) {
+      const existing = secrets.find((s) => s.key === item.key);
+      if (!existing) result.added.push(item.key);
+      else if (existing.value === item.value) result.unchanged.push(item.key);
+      else result.updated.push(item.key);
+      await mockBackend.addSecret(item.key, item.value, name);
+    }
+    return result;
+  },
   async listRepositories(): Promise<RepoInfo[]> {
     return [...mockRepoHistory];
   },
@@ -353,6 +390,7 @@ export const mockBackend: Backend = {
         algorithm: request.algorithm,
         admin: false,
         self: false,
+        post_quantum: true,
       },
     ];
   },
@@ -360,6 +398,48 @@ export const mockBackend: Backend = {
     if (!mockMembers.some((m) => m.device_id === deviceID))
       throw createAppError("invalid_argument");
     mockMembers = mockMembers.filter((m) => m.device_id !== deviceID);
+  },
+  async setAdmin(deviceID: string, admin: boolean): Promise<void> {
+    if (!mockMembers.some((m) => m.device_id === deviceID))
+      throw createAppError("invalid_argument");
+    mockMembers = mockMembers.map((m) =>
+      m.device_id === deviceID ? Object.assign({}, m, { admin }) : m,
+    );
+  },
+  async resolveMemberFork(): Promise<void> {
+    throw createAppError("invalid_argument");
+  },
+  async identity(): Promise<PublicInfo> {
+    const self = mockMembers[0];
+    return {
+      backend: "keyring",
+      algorithm: self.post_quantum ? "ML-KEM-768+X25519" : "X25519",
+      recipient: self.post_quantum ? "age1pq1demo..." : "age1demo...",
+      device_id: self.device_id,
+      fingerprint: self.fingerprint,
+    };
+  },
+  async diagnoseIdentity(): Promise<Diagnosis> {
+    return {
+      backend: "tpm",
+      available: false,
+      reason: "no TPM in the browser preview",
+      fallback_available: true,
+    };
+  },
+  async upgradeIdentity(): Promise<KeyUpdateResult> {
+    mockMembers = mockMembers.map((m) =>
+      m.self ? Object.assign({}, m, { post_quantum: true }) : m,
+    );
+    const self = mockMembers[0];
+    return {
+      backend: "keyring",
+      algorithm: "ML-KEM-768+X25519",
+      recipient: "age1pq1demo...",
+      device_id: self.device_id,
+      fingerprint: self.fingerprint,
+      pending: false,
+    };
   },
   async readConfig(): Promise<string> {
     return mockConfig;

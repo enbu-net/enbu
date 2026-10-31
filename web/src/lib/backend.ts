@@ -7,16 +7,20 @@ import type {
   AuthStatus,
   ConflictChoice,
   ConflictSet,
+  Diagnosis,
   Diff,
   Environment,
   EnvironmentDeletion,
   GUIRepoStatus,
   HistoryEntry,
+  ImportResult,
   InitResult,
   JoinRequest,
+  KeyUpdateResult,
   Member,
   OAuthStart,
   OAuthStatus,
+  PublicInfo,
   PullResult,
   RepoInfo,
   RepositoryOwner,
@@ -70,6 +74,8 @@ export interface Backend {
   syncSecrets(env?: string): Promise<void>;
   listConflicts(env?: string): Promise<ConflictSet>;
   resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void>;
+  /** Adds every variable of a dotenv file's content; overwrite replaces ones with another value. */
+  importSecrets(dotenv: string, overwrite: boolean, env?: string): Promise<ImportResult>;
 
   /** The revisions that changed env's secrets, oldest first, numbered from 1. */
   listHistory(env: string): Promise<HistoryEntry[]>;
@@ -81,6 +87,15 @@ export interface Backend {
   listJoinRequests(): Promise<JoinRequest[]>;
   approveMember(deviceID: string): Promise<void>;
   removeMember(deviceID: string): Promise<void>;
+  setAdmin(deviceID: string, admin: boolean): Promise<void>;
+  /** Joins member changes two admins made at the same time. */
+  resolveMemberFork(): Promise<void>;
+
+  /** This device's keys in the selected workspace. */
+  identity(): Promise<PublicInfo>;
+  diagnoseIdentity(): Promise<Diagnosis>;
+  /** Switches this device to a post-quantum key; a member's waits for an admin. */
+  upgradeIdentity(): Promise<KeyUpdateResult>;
 
   readConfig(): Promise<string>;
   writeConfig(content: string): Promise<void>;
@@ -169,6 +184,7 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     syncSecrets: (env = "") => call(svc.SyncSecrets(env)),
     listConflicts: (env = "") => call(svc.ListConflicts(env)),
     resolveConflicts: (env, heads, choices) => call(svc.ResolveConflicts(env, heads, choices)),
+    importSecrets: (dotenv, overwrite, env = "") => call(svc.ImportSecrets(env, dotenv, overwrite)),
 
     listHistory: (env) => call(svc.ListHistory(env)),
     async diffHistory(env, from, to) {
@@ -181,6 +197,12 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     listJoinRequests: () => call(svc.ListJoinRequests()),
     approveMember: (deviceID) => call(svc.ApproveMember(deviceID)),
     removeMember: (deviceID) => call(svc.RemoveMember(deviceID)),
+    setAdmin: (deviceID, admin) => call(svc.SetAdmin(deviceID, admin)),
+    resolveMemberFork: () => call(svc.ResolveMemberFork()),
+
+    identity: () => call(svc.GetIdentity()),
+    diagnoseIdentity: () => call(svc.DiagnoseIdentity()),
+    upgradeIdentity: () => call(svc.UpgradeIdentity()),
 
     readConfig: () => call(svc.ReadConfig()),
     writeConfig: (content) => call(svc.WriteConfig(content)),

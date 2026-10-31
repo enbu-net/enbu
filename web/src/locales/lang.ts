@@ -158,6 +158,39 @@ export interface Messages {
     fingerprint: string;
     requestedAt: string;
     cancel: string;
+    keyUpdate: string;
+    makeAdmin: string;
+    revokeAdmin: string;
+    grantAdminTitle: string;
+    grantAdminWarning: string;
+    fingerprintConfirmed: string;
+    resolveFork: string;
+  };
+  device: {
+    title: string;
+    fingerprint: string;
+    algorithm: string;
+    backend: string;
+    hardware: string;
+    recipient: string;
+    postQuantum: string;
+    upgrade: string;
+    upgradeHint: string;
+    upgradePending: string;
+    upgraded: string;
+    diagnose: string;
+    hardwareAvailable: string;
+    hardwareUnavailable: string;
+    keyringAvailable: string;
+    keyringUnavailable: string;
+  };
+  import: {
+    action: string;
+    description: string;
+    done: string;
+    overwriteTitle: string;
+    overwriteDescription: string;
+    overwrite: string;
   };
   config: {
     title: string;

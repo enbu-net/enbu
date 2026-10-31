@@ -3,6 +3,7 @@ import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import type { JoinRequest, Member } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
+import { DevicePanel } from "./device-panel";
 import { MembersPanel } from "./members-panel";
 
 /** The members and pending join requests of the selected repository. */
@@ -51,31 +52,44 @@ export function MembersTab({
   transfer: RunTransfer;
 }) {
   const { members, requests, loading, error, setError, refresh } = useMembers(repoPath);
+  // Until the members load, assume the key is current rather than offer an upgrade.
+  const postQuantum = members.find((member) => member.self)?.post_quantum ?? true;
   return (
-    <MembersPanel
-      members={members}
-      requests={requests}
-      loading={loading}
-      error={error}
-      onSync={async () => {
-        try {
-          await transfer("sync", async () => {
-            await backend.syncSecrets(environment);
-            await refresh();
-          });
-        } catch (err) {
-          setError(toDisplayError(err));
-        }
-      }}
-      onApprove={async (deviceID) => {
-        await backend.approveMember(deviceID);
-        await refresh();
-      }}
-      onRemove={async (deviceID) => {
-        await backend.removeMember(deviceID);
-        await refresh();
-      }}
-      onErrorDismiss={() => setError(null)}
-    />
+    <>
+      <MembersPanel
+        members={members}
+        requests={requests}
+        loading={loading}
+        error={error}
+        onSync={async () => {
+          try {
+            await transfer("sync", async () => {
+              await backend.syncSecrets(environment);
+              await refresh();
+            });
+          } catch (err) {
+            setError(toDisplayError(err));
+          }
+        }}
+        onApprove={async (deviceID) => {
+          await backend.approveMember(deviceID);
+          await refresh();
+        }}
+        onRemove={async (deviceID) => {
+          await backend.removeMember(deviceID);
+          await refresh();
+        }}
+        onSetAdmin={async (deviceID, admin) => {
+          await backend.setAdmin(deviceID, admin);
+          await refresh();
+        }}
+        onResolveFork={async () => {
+          await backend.resolveMemberFork();
+          await refresh();
+        }}
+        onErrorDismiss={() => setError(null)}
+      />
+      <DevicePanel repoPath={repoPath} postQuantum={postQuantum} onUpgraded={refresh} />
+    </>
   );
 }

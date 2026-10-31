@@ -20,7 +20,16 @@ export type {
   SecretItem,
   SecretsResponse,
 } from "../bindings/github.com/enbu-net/enbu/desktop/models";
-export type { Diff, ProgressStep } from "../bindings/github.com/enbu-net/enbu/app/models";
+export type {
+  Diff,
+  ImportResult,
+  KeyUpdateResult,
+  ProgressStep,
+} from "../bindings/github.com/enbu-net/enbu/app/models";
+export type {
+  Diagnosis,
+  PublicInfo,
+} from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 export type { RepositoryOwner } from "../bindings/github.com/enbu-net/enbu/pkg/provider/github/models";
 
 import type { RepoInfo } from "../bindings/github.com/enbu-net/enbu/desktop/models";

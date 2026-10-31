@@ -1,9 +1,10 @@
-import { useRef, useState, type ReactNode } from "react";
-import { Layers3, Pencil, Trash2, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Layers3, Pencil, Trash2 } from "lucide-react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
-import { Alert, Badge, Button, Input, Text } from "../../components/ui";
+import { Badge, Button, Input, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { ErrorAlert } from "../../components/error-alert";
+import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
@@ -233,27 +234,5 @@ function PurgeEarlier({
         </Button>
       </styled.form>
     </VStack>
-  );
-}
-
-function Notice({ children, onDismiss }: { children: ReactNode; onDismiss: () => void }) {
-  const { t } = useI18n();
-  return (
-    <Alert.Root role="status" borderRadius="md" borderWidth="1px" py={3} px={4} mb="4">
-      <Alert.Content display="flex" flexWrap="wrap" alignItems="center" gap="3">
-        {children}
-      </Alert.Content>
-      <Button
-        variant="ghost"
-        w="24px"
-        h="24px"
-        p="0"
-        flexShrink="0"
-        aria-label={t("common.close")}
-        onClick={onDismiss}
-      >
-        <X size={14} />
-      </Button>
-    </Alert.Root>
   );
 }
