@@ -6,7 +6,6 @@ import {
 } from "../bindings/github.com/enbu-net/enbu/app/models";
 import { Diagnosis, PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 import * as Desktop from "../bindings/github.com/enbu-net/enbu/desktop/models";
-import { RepositoryOwner } from "../bindings/github.com/enbu-net/enbu/pkg/provider/github/models";
 import type { ServiceClient, ServiceMethod } from "./backend";
 import type { AppErrorPayload } from "./app-error";
 
@@ -166,10 +165,7 @@ const results: { [K in ServiceMethod]?: (source: unknown) => Result<K> } = {
   BrowseRepository: (source) => Desktop.RepoInfo.createFrom(source),
   SelectRepository: (source) => Desktop.RepoInfo.createFrom(source),
   GetRepoStatus: (source) => Desktop.RepoInfo.createFrom(source),
-  GitInit: (source) => Desktop.RepoInfo.createFrom(source),
-  GitCreateRemote: (source) => Desktop.RepoInfo.createFrom(source),
   ListRepositories: Create.Array((source) => Desktop.RepoInfo.createFrom(source)),
-  ListRepositoryOwners: Create.Array((source) => RepositoryOwner.createFrom(source)),
   Initialize: (source) => Desktop.InitResult.createFrom(source),
   ListEnvironments: Create.Array((source) => Desktop.Environment.createFrom(source)),
   DeleteEnvironment: (source) => Desktop.EnvironmentDeletion.createFrom(source),

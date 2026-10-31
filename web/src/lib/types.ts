@@ -30,7 +30,6 @@ export type {
   Diagnosis,
   PublicInfo,
 } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
-export type { RepositoryOwner } from "../bindings/github.com/enbu-net/enbu/pkg/provider/github/models";
 
 import type { RepoInfo } from "../bindings/github.com/enbu-net/enbu/desktop/models";
 import type { DisplayError } from "./app-error";

@@ -52,14 +52,14 @@ describe("HomePage", () => {
     expect(container.querySelector("h1")?.textContent).toContain("Select repository");
   });
 
-  it("walks a new folder through Git setup", async () => {
+  it("tells a folder without Git to run git init", async () => {
     await renderHome({
       repo: {
         selected: true,
         repo: repoInfo({ initialized: false, has_git: false, storage_configured: false }),
       },
     });
-    expect(queryButton("Initialize Git")).toBeTruthy();
+    expect(container.textContent).toContain("Not a Git repository");
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {
@@ -69,6 +69,6 @@ describe("HomePage", () => {
     });
     expect(backend.listSecrets).toHaveBeenCalled();
     expect(container.textContent).not.toContain("Connect with GitHub");
-    expect(container.textContent).not.toContain("Initialize Git");
+    expect(container.textContent).not.toContain("Not a Git repository");
   });
 });

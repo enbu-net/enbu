@@ -20,7 +20,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
-	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
 // The shell supplies native dialogs, the OS browser and events to the
@@ -43,19 +42,12 @@ type ConflictRetry struct {
 	Attempt     int `json:"attempt"`
 	MaxAttempts int `json:"max_attempts"`
 }
-
-type repositoryPlatform interface {
-	ListRepositoryOwners(context.Context) ([]gh.RepositoryOwner, error)
-	CreateRepository(context.Context, string, string, bool) (*gh.CreateRepoResult, error)
-}
-
 type Service struct {
 	app        *app.App
 	ctx        context.Context
 	pickDir    DirectoryPicker
 	openURL    BrowserOpener
 	git        gitprovider.Client
-	github     func(string) repositoryPlatform
 	repoMu     sync.Mutex
 	authMu     sync.Mutex
 	repoPath   string
@@ -73,12 +65,9 @@ type oauthSession struct {
 
 func NewService(a *app.App) *Service {
 	s := &Service{
-		app:     a,
-		openURL: auth.OpenBrowser,
-		git:     a.Git,
-		github: func(token string) repositoryPlatform {
-			return gh.NewClient(token)
-		},
+		app:       a,
+		openURL:   auth.OpenBrowser,
+		git:       a.Git,
 		sessions:  make(map[string]*oauthSession),
 		authLogin: auth.Login,
 	}
@@ -474,51 +463,7 @@ func (s *Service) RemoveRepository(path string) error {
 	return config.SaveGUI(cfg)
 }
 
-// GitInit runs `git init` in the given path and re-selects it.
-func (s *Service) GitInit(path string) (RepoInfo, error) {
-	if err := s.git.Init(s.context(), path); err != nil {
-		return RepoInfo{}, err
-	}
-	return s.SelectRepository(path)
-}
-
-func (s *Service) ListRepositoryOwners() ([]gh.RepositoryOwner, error) {
-	token, err := auth.LoadToken()
-	if err != nil {
-		return nil, fmt.Errorf("not authenticated: %w", err)
-	}
-	return s.github(token.AccessToken).ListRepositoryOwners(s.context())
-}
-
 // GitCreateRemote creates a GitHub repository and sets it as origin, then re-selects.
-func (s *Service) GitCreateRemote(path, owner, repoName string, private bool) (RepoInfo, error) {
-	token, err := auth.LoadToken()
-	if err != nil {
-		return RepoInfo{}, fmt.Errorf("not authenticated: %w", err)
-	}
-	owner = strings.TrimSpace(owner)
-	if owner == "" {
-		return RepoInfo{}, fmt.Errorf("repository owner is required")
-	}
-	organization := owner
-	if strings.EqualFold(owner, token.Username) {
-		organization = ""
-	}
-	client := s.github(token.AccessToken)
-	result, err := client.CreateRepository(s.context(), organization, repoName, private)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.git.AddRemote(s.context(), path, "origin", preferredRemoteURL(result)); err != nil {
-		return RepoInfo{}, fmt.Errorf("git remote add: %w", err)
-	}
-	return s.SelectRepository(path)
-}
-
-func preferredRemoteURL(result *gh.CreateRepoResult) string {
-	return result.HTTPSURL
-}
-
 func (s *Service) ListMembers() ([]Member, error) {
 	return withRepoResult(s, func() ([]Member, error) {
 		infos, err := s.app.ListMembers(s.context())

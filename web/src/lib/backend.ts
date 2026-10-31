@@ -23,7 +23,6 @@ import type {
   PublicInfo,
   PullResult,
   RepoInfo,
-  RepositoryOwner,
   SecretsResponse,
 } from "./types";
 
@@ -47,14 +46,6 @@ export interface Backend {
   listRepositories(): Promise<RepoInfo[]>;
   removeRepository(path: string): Promise<void>;
   initialize(): Promise<InitResult>;
-  gitInit(path: string): Promise<GUIRepoStatus>;
-  gitCreateRemote(
-    path: string,
-    owner: string,
-    repoName: string,
-    privateRepository: boolean,
-  ): Promise<GUIRepoStatus>;
-  listRepositoryOwners(): Promise<RepositoryOwner[]>;
 
   listEnvironments(): Promise<Environment[]>;
   createEnvironment(name: string): Promise<void>;
@@ -164,10 +155,6 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     listRepositories: () => call(svc.ListRepositories()),
     removeRepository: (path) => call(svc.RemoveRepository(path)),
     initialize: () => call(svc.Initialize()),
-    gitInit: async (path) => repoStatusOf(await call(svc.GitInit(path))),
-    gitCreateRemote: async (path, owner, repoName, privateRepository) =>
-      repoStatusOf(await call(svc.GitCreateRemote(path, owner, repoName, privateRepository))),
-    listRepositoryOwners: () => call(svc.ListRepositoryOwners()),
 
     listEnvironments: () => call(svc.ListEnvironments()),
     createEnvironment: (name) => call(svc.CreateEnvironment(name)),

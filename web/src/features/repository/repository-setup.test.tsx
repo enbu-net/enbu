@@ -11,7 +11,6 @@ import {
   typeInto,
   withSession,
 } from "../../test/dom";
-import { RepositoryOwnerSelect } from "./repository-owner-select";
 import { RepositorySelect, RepositorySetup, setupStep } from "./repository-setup";
 
 vi.mock("../../lib/backend", async () => ({
@@ -44,44 +43,6 @@ describe("setupStep", () => {
   it("skips Git and the remote when enbu.toml already names the storage", () => {
     expect(setupStep(repoInfo({ storage_configured: true }))).toBe("enbu");
     expect(setupStep(repoInfo({ storage_configured: true, initialized: true }))).toBeNull();
-  });
-});
-
-describe("RepositoryOwnerSelect", () => {
-  it("renders personal and organization owners and reports the selection", async () => {
-    const onChange = vi.fn();
-    act(() => {
-      root.render(
-        <>
-          <RepositoryOwnerSelect
-            owners={[
-              { login: "octo", organization: false },
-              { login: "octo-org", organization: true },
-            ]}
-            value="octo"
-            loading={false}
-            onChange={onChange}
-          />
-        </>,
-      );
-    });
-
-    const trigger = container.querySelector<HTMLButtonElement>("#repository-owner");
-    expect(trigger?.textContent).toContain("octo");
-    expect(trigger?.textContent).toContain("Personal account");
-    await act(async () => {
-      trigger?.click();
-      await Promise.resolve();
-    });
-    const organizationOption = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.includes("octo-org"));
-    expect(organizationOption?.textContent).toContain("Organization");
-    await act(async () => {
-      organizationOption?.click();
-      await Promise.resolve();
-    });
-    expect(onChange).toHaveBeenCalledWith("octo-org");
   });
 });
 
@@ -139,34 +100,21 @@ describe("RepositorySelect", () => {
 });
 
 describe("RepositorySetup", () => {
-  it("preselects the signed-in account as the new repository's owner", async () => {
-    mocked.listRepositoryOwners.mockResolvedValueOnce([
-      { login: "octo-org", organization: true },
-      { login: "octo", organization: false },
-    ]);
-    const created = { selected: true, repo: repoInfo({ has_git: true, has_remote: true }) };
-    mocked.gitCreateRemote.mockResolvedValueOnce(created);
-    const setRepo = vi.fn();
-    await act(async () => {
-      root.render(
-        <>
-          {withSession(<RepositorySetup repo={repoInfo({ has_git: true })} step="remote" />, {
-            status: { authenticated: true, workspace_configured: false, username: "octo" },
-            setRepo,
-          })}
-        </>,
-      );
-    });
-    await settle();
+  it("shows the command for a folder without Git and checks again", async () => {
+    const reloadRepo = vi.fn(async () => {});
+    act(() => root.render(withSession(<RepositorySetup step="git" />, { reloadRepo })));
+    expect(container.querySelector("pre")?.textContent).toBe("git init");
 
-    expect(container.querySelector("#repository-owner")?.textContent).toContain("octo");
-    expect(
-      container.querySelector<HTMLInputElement>('input[aria-label="Repository name"]')?.value,
-    ).toBe("app");
-    await act(async () => queryButton("Create repository")?.click());
+    await act(async () => queryButton("Check again")?.click());
     await settle();
-    expect(mocked.gitCreateRemote).toHaveBeenCalledWith("/home/octo/app", "octo", "app", true);
-    expect(setRepo).toHaveBeenCalledWith(created);
+    expect(reloadRepo).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for a GitHub remote instead of creating a repository", () => {
+    act(() => root.render(withSession(<RepositorySetup step="remote" />)));
+    expect(container.textContent).toContain("Add a GitHub remote");
+    expect(container.querySelector("pre")?.textContent).toContain("git remote add origin");
+    expect(queryButton("Create repository")).toBeNull();
   });
 
   it("initializes enbu and reloads the repository", async () => {
@@ -180,14 +128,7 @@ describe("RepositorySetup", () => {
     });
     const reloadRepo = vi.fn(async () => {});
     act(() => {
-      root.render(
-        <>
-          {withSession(
-            <RepositorySetup repo={repoInfo({ has_git: true, has_remote: true })} step="enbu" />,
-            { reloadRepo },
-          )}
-        </>,
-      );
+      root.render(<>{withSession(<RepositorySetup step="enbu" />, { reloadRepo })}</>);
     });
     await act(async () => queryButton("Set up")?.click());
     await settle();

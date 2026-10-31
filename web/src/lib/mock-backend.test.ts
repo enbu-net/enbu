@@ -3,16 +3,14 @@ import { mockBackend } from "./mock-backend";
 
 describe("mockBackend preview user", () => {
   it("uses yashikota consistently", async () => {
-    const [status, initialized, owners, members] = await Promise.all([
+    const [status, initialized, members] = await Promise.all([
       mockBackend.authStatus(),
       mockBackend.initialize(),
-      mockBackend.listRepositoryOwners(),
       mockBackend.listMembers(),
     ]);
 
     expect(status.username).toBe("yashikota");
     expect(initialized.username).toBe("yashikota");
-    expect(owners).toContainEqual({ login: "yashikota", organization: false });
     expect(members[0]).toMatchObject({ self: true, admin: true });
   });
 });

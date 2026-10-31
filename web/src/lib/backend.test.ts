@@ -51,7 +51,7 @@ describe("desktop backend", () => {
     await backend.syncSecrets();
     await backend.renameEnvironment("staging", "prod");
     await backend.resolveConflicts("prod", ["h1"], [{ key: "KEY", value: "", delete: true }]);
-    await backend.gitCreateRemote("C:/repo", "octo-org", "example", true);
+    await backend.importSecrets("A=1\n", true, "default");
 
     expect(desktop.AddSecret).toHaveBeenCalledWith("default", "TOKEN", "secret");
     expect(desktop.EditSecret).toHaveBeenCalledWith("default", "TOKEN", "new");
@@ -64,7 +64,7 @@ describe("desktop backend", () => {
       ["h1"],
       [{ key: "KEY", value: "", delete: true }],
     );
-    expect(desktop.GitCreateRemote).toHaveBeenCalledWith("C:/repo", "octo-org", "example", true);
+    expect(desktop.ImportSecrets).toHaveBeenCalledWith("default", "A=1\n", true);
   });
 
   it("reports a repository as selected only when it has a path", async () => {
