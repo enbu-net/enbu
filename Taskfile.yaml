@@ -345,7 +345,9 @@ tasks:
     run: once
     dir: web
     cmds:
-      - task: gui/install
+      # Both builds regenerate web/styled-system with --clean, so they must not
+      # run at once (vscode/package builds the CLI, which needs gui/build/frontend).
+      - task: gui/build/frontend
       - vp run build:vscode
 
   scripts/check:

@@ -57,3 +57,11 @@ func TestDeleteEnvironmentCanPurgeRevisions(t *testing.T) {
 		t.Fatalf("delete: %+v %v", deleted, err)
 	}
 }
+
+func TestDeleteEnvironmentRejectsUnknownName(t *testing.T) {
+	f := newMembersFixture(t)
+	deleted, err := f.alice.DeleteEnvironment("missing", false)
+	if err == nil || deleted != (EnvironmentDeletion{}) {
+		t.Fatalf("deleted an unknown environment: %+v %v", deleted, err)
+	}
+}
