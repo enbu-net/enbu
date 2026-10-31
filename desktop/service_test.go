@@ -492,7 +492,7 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	if err != nil || !status.WorkspaceConfigured {
 		t.Fatalf("%+v %v", status, err)
 	}
-	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace", OCIAuth: "github"}
+	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace"}
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}

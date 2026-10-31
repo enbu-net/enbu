@@ -39,15 +39,21 @@ go install github.com/enbu-net/enbu@latest
 
 ### 1. Storage を選ぶ
 
-GHCR を使う場合は、GitHub にログインしてからレジストリのリポジトリを明示します:
+`origin` が GitHub のリポジトリでは、ログインして `init` するだけです。ワークスペースは
+リポジトリの隣の GHCR（`oci://ghcr.io/OWNER/REPO-enbu`）に置かれます:
 
 ```bash
 enbu auth login
-enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
+enbu init
 ```
 
+GHCR のパッケージは作成者だけが見られる private で作られます。メンバーが参加できるように、
+GitHub でパッケージの設定を開き、リポジトリを接続して「Inherit access from repository」を
+有効にしてください（`init` も案内を表示します）。
+
 ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
-その他の OCI レジストリは、既定で Docker の認証設定を使います:
+それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
+その他の OCI レジストリは Docker の認証設定を使います:
 
 ```bash
 enbu init --storage oci://registry.example.com/team/secrets
@@ -182,7 +188,6 @@ default_env = "dev"
 
 [storage]
 url = "oci://ghcr.io/your-org/your-repo-enbu"
-oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"

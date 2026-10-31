@@ -111,13 +111,11 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		}
 		return storage.NewS3(client, u.Host, strings.Trim(u.Path, "/")), nil
 	case "oci":
+		// ghcr.io uses enbu's GitHub login; any other registry uses the Docker
+		// credential configuration.
 		var credential auth.CredentialFunc
-		switch settings.OCIAuth {
-		case "", "docker":
-		case "github":
-			if u.Host != "ghcr.io" {
-				return nil, apperr.New(apperr.CodeInvalidArgument, "GitHub authentication is only supported for ghcr.io", nil)
-			}
+		var opts []storage.OCIOption
+		if u.Host == "ghcr.io" {
 			credential = func(_ context.Context, host string) (auth.Credential, error) {
 				if host != "ghcr.io" {
 					return auth.EmptyCredential, nil
@@ -125,11 +123,6 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 				token, username, err := a.TokenProvider.LoadToken()
 				return auth.Credential{Username: username, Password: token}, err
 			}
-		default:
-			return nil, apperr.New(apperr.CodeInvalidArgument, "invalid OCI authentication mode", nil)
-		}
-		var opts []storage.OCIOption
-		if settings.OCIAuth == "github" {
 			// Deleting needs the GitHub Packages API, which the same token can reach.
 			if g, ok := storage.GHCRPackagesFor(u.Host+u.Path, func() (string, error) {
 				token, _, err := a.TokenProvider.LoadToken()
@@ -225,5 +218,5 @@ func (d *defaultRepoDetector) LoadRepo() (string, string, error) {
 	if !repository.HasRemote {
 		return "", "", fmt.Errorf("git remote not found")
 	}
-	return config.ParseGitRemote(repository.OriginURL)
+	return config.ParseGitHubRemote(repository.OriginURL)
 }
