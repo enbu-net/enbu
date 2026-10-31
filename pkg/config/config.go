@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -409,14 +410,14 @@ func ParseGitHubRemote(remote string) (string, string, error) {
 	} else {
 		u, err := url.Parse(remote)
 		if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Hostname() != "github.com" {
-			return "", "", fmt.Errorf("not a GitHub remote: %s", remote)
+			return "", "", errors.New("not a GitHub remote")
 		}
 		path = u.Path
 	}
 	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
 	owner, repo, ok := strings.Cut(path, "/")
 	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		return "", "", fmt.Errorf("not a GitHub remote: %s", remote)
+		return "", "", errors.New("not a GitHub remote")
 	}
 	return owner, repo, nil
 }
