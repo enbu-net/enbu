@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/pkg/fsutil"
+
 	"filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"
@@ -476,10 +478,15 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.Rename(path, prev); err != nil {
+	if err := fsutil.Rename(path, prev); err != nil {
 		return err
 	}
-	return os.Rename(next, path)
+	if err := fsutil.Rename(next, path); err != nil {
+		// Put the current identity back, so a failed promotion does not
+		// leave the workspace without one.
+		return errors.Join(err, fsutil.Rename(prev, path))
+	}
+	return nil
 }
 
 func (m *Manager) deleteKeyMaterial(md *Metadata) {
@@ -511,7 +518,7 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	return fsutil.Rename(f.Name(), path)
 }
 
 // Info validates the saved identity before reporting public information.

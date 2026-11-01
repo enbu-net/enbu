@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/fsutil"
+
 	"github.com/opencontainers/go-digest"
 )
 
@@ -125,7 +127,7 @@ func writeFileAtomic(path string, b []byte) error {
 	if err = errors.Join(err, tmp.Close()); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), path)
+	return fsutil.Rename(tmp.Name(), path)
 }
 
 // update runs fn on the current contents while holding the file lock, and

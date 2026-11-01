@@ -2,6 +2,7 @@ package auth
 
 import (
 	"os/exec"
+	"path/filepath"
 	"runtime"
 )
 
@@ -14,13 +15,15 @@ func OpenBrowser(url string) error {
 	return nil
 }
 
+// browserCommand names the opener by its full path, so a program of the same
+// name earlier in PATH cannot receive the OAuth URL.
 func browserCommand(goos, url string) *exec.Cmd {
 	var cmd *exec.Cmd
 	switch goos {
 	case "darwin":
-		cmd = exec.Command("open", url)
+		cmd = exec.Command("/usr/bin/open", url)
 	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		cmd = exec.Command(filepath.Join(systemDirectory(), "rundll32.exe"), "url.dll,FileProtocolHandler", url)
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
