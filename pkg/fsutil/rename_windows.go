@@ -16,3 +16,7 @@ func transientRenameError(err error) bool {
 		errors.Is(err, windows.ERROR_SHARING_VIOLATION) ||
 		errors.Is(err, windows.ERROR_LOCK_VIOLATION)
 }
+
+// syncDir has nothing to do: NTFS journals the rename itself, and Windows
+// cannot open a directory for FlushFileBuffers without backup privileges.
+func syncDir(string) error { return nil }

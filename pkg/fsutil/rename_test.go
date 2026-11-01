@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -77,5 +78,28 @@ func TestRenameReportsMissingSource(t *testing.T) {
 	dir := t.TempDir()
 	if err := Rename(filepath.Join(dir, "missing"), filepath.Join(dir, "to")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("err = %v, want not exist", err)
+	}
+}
+
+func TestRenameAcrossDirectories(t *testing.T) {
+	from := filepath.Join(t.TempDir(), "a")
+	to := filepath.Join(t.TempDir(), "b")
+	if err := os.WriteFile(from, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Rename(from, to); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if b, err := os.ReadFile(to); err != nil || string(b) != "x" {
+		t.Fatalf("renamed file = %q, %v", b, err)
+	}
+}
+
+func TestSyncDirOfMissingDirectoryFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not sync directories")
+	}
+	if err := syncDir(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("syncDir of a missing directory succeeded")
 	}
 }
