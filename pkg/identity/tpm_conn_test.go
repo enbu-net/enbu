@@ -198,6 +198,26 @@ func TestTPMRefusesAnotherStoragePrimary(t *testing.T) {
 	if err := b.SealSeed(&bad, seed); err == nil {
 		t.Fatal("SealSeed accepted another pinned primary")
 	}
+	for i := range seed {
+		seed[i] = byte(i)
+	}
+	sealed := *md
+	if err := b.SealSeed(&sealed, seed); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := b.UnsealSeed(&sealed); err != nil || !bytes.Equal(got, seed) {
+		t.Fatalf("UnsealSeed under the pinned primary: %v", err)
+	}
+	otherPin := sealed
+	otherPin.TPMParentName = []byte("another primary")
+	if _, err := b.UnsealSeed(&otherPin); err == nil {
+		t.Fatal("UnsealSeed accepted another pinned primary")
+	}
+	unpinnedSeed := sealed
+	unpinnedSeed.TPMParentName = nil
+	if _, err := b.UnsealSeed(&unpinnedSeed); err == nil {
+		t.Fatal("UnsealSeed accepted a sealed seed without a pinned primary")
+	}
 	if b.conn != nil {
 		t.Fatal("a refused key left the connection open")
 	}
