@@ -337,7 +337,7 @@ tasks:
     run: once
     dir: vscode
     cmds:
-      - vp env off
+      - task: vp/env
       - vp install --frozen-lockfile
 
   vscode/build/frontend:
@@ -378,12 +378,20 @@ tasks:
     cmds:
       - vp run build:preview
 
+  # vp env off rewrites one global Vite+ config file; gui/install and
+  # vscode/install run in parallel, so they share one run.
+  vp/env:
+    internal: true
+    run: once
+    cmds:
+      - vp env off
+
   gui/install:
     internal: true
     run: once
     dir: web
     cmds:
-      - vp env off
+      - task: vp/env
       - vp install --frozen-lockfile
 
   gui/build/frontend:
