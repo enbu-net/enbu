@@ -53,6 +53,12 @@ func TestDataDirIsAlwaysAbsolute(t *testing.T) {
 	}
 }
 
+func TestUnresolvedHomeIsAbsolute(t *testing.T) {
+	if !filepath.IsAbs(unresolvedHome) {
+		t.Fatalf("unresolvedHome = %q, want an absolute path", unresolvedHome)
+	}
+}
+
 func TestHomeDirWithoutHOME(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")

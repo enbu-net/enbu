@@ -451,7 +451,9 @@ func dataDir(goos string, getenv func(string) string, home func() string) string
 // unresolvedHome stands in for a home directory that cannot be found. It is
 // absolute, so nothing lands in the working directory, and it does not exist,
 // so reads find nothing and writes fail instead of going somewhere unexpected.
-const unresolvedHome = "/nonexistent"
+// On Windows it sits on the drive of the temporary directory, because a path
+// without a drive letter is not absolute there.
+var unresolvedHome = filepath.VolumeName(os.TempDir()) + string(filepath.Separator) + "nonexistent"
 
 // homeDir is the user's home directory: $HOME (or %USERPROFILE%) when it is
 // absolute, otherwise the home directory in the user database, which cron jobs,
