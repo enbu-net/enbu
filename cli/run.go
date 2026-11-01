@@ -39,6 +39,8 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 				return err
 			}
 			child := exec.Command(args[0], args[1:]...)
+			release := bindToEnbu(child)
+			defer release()
 			child.Env = mergedEnv(os.Environ(), result.Secrets, preserveEnv)
 			child.Stdin = cmd.InOrStdin()
 			child.Stdout = cmd.OutOrStdout()

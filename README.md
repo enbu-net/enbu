@@ -243,9 +243,13 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
-| Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
+| Linux | TPM 2.0 (`/dev/tpmrm0`) | Secret Service (GNOME Keyring / KWallet) |
 | Windows | TPM 2.0 through TBS | Credential Manager |
 | macOS | Secure Enclave | Keychain |
+
+On Linux, `/dev/tpmrm0` belongs to the `tss` group on most distributions, so a
+user outside it gets the keyring fallback. `sudo usermod -aG tss $USER`, then log
+in again, lets enbu use the TPM; `enbu doctor` reports which one it found.
 
 ```bash
 enbu doctor                  # No authentication or persistent key creation

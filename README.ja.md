@@ -236,9 +236,11 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
-| Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
+| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet） |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
 | macOS | Secure Enclave | Keychain |
+
+Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けないため、グループ外のユーザーはkeyringにfallbackします。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。どちらになったかは`enbu doctor`で確認できます。
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査
