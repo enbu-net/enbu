@@ -380,3 +380,76 @@ func TestManagerSealsSeedToEnclaveKey(t *testing.T) {
 		t.Fatal("loaded a hybrid identity with a corrupted sealed seed")
 	}
 }
+
+// blobEnclave keeps its keys by EnclaveKey, like the Secure Enclave backend,
+// so a Manager that loses the field on save or read cannot load the identity.
+type blobEnclave struct{ sealingEnclave }
+
+func (f *blobEnclave) Create() (Identity, *Metadata, error) {
+	id, md, err := f.fakeEnclave.Create()
+	if err != nil {
+		return nil, nil, err
+	}
+	blob := make([]byte, 16)
+	_, _ = rand.Read(blob)
+	f.keys[string(blob)] = f.keys[md.Reference]
+	delete(f.keys, md.Reference)
+	md.Reference, md.EnclaveKey = "", blob
+	return id, md, nil
+}
+
+func (f *blobEnclave) key(md *Metadata) (*ecdh.PrivateKey, error) {
+	k, ok := f.keys[string(md.EnclaveKey)]
+	if len(md.EnclaveKey) == 0 || !ok {
+		return nil, errors.New("no Secure Enclave key data")
+	}
+	return k, nil
+}
+
+func (f *blobEnclave) Load(md *Metadata) (Identity, error) {
+	k, err := f.key(md)
+	if err != nil {
+		return nil, err
+	}
+	return NewHardwareIdentity(&softwareHardwareKey{PrivateKey: k})
+}
+
+func (f *blobEnclave) UnsealSeed(md *Metadata) ([]byte, error) {
+	k, err := f.key(md)
+	if err != nil {
+		return nil, err
+	}
+	return openFromECDH(&softwareHardwareKey{PrivateKey: k}, md.EnclaveSeal)
+}
+
+func TestManagerLoadsIdentityFromEnclaveKey(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: &blobEnclave{sealingEnclave{fakeEnclave{keys: map[string]*ecdh.PrivateKey{}}}}}
+	id, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, err := age.EncryptForPublicKeys([]byte("blob"), []string{info.Recipient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	md, err := m.read("o/r")
+	if err != nil || len(md.EnclaveKey) == 0 || len(md.EnclaveSeal) == 0 {
+		t.Fatalf("saved metadata lost the Secure Enclave fields: %+v %v", md, err)
+	}
+	loaded, err := m.Load("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = loaded.Close() }()
+	if out, err := age.Decrypt(ct, loaded); err != nil || string(out) != "blob" {
+		t.Fatalf("decrypt: %q %v", out, err)
+	}
+	md.EnclaveKey = nil
+	if err := saveMetadata(m.Path("o/r"), md); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded an identity without its Secure Enclave key data")
+	}
+}
