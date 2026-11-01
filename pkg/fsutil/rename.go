@@ -24,12 +24,15 @@ const (
 //
 // On Unix the rename is then made durable: the directories that hold the old
 // and new names are synced, without which ext4, XFS and btrfs may lose the
-// rename, and with it a new identity or checkpoint, on a power failure.
+// rename, and with it a new identity or checkpoint, on a power failure. The
+// sync is best effort: the rename has happened by then, and reporting it as
+// failed would make callers retry or roll back a change that is in place.
 func Rename(oldpath, newpath string) error {
 	if err := retry(func() error { return os.Rename(oldpath, newpath) }, transientRenameError, time.Sleep); err != nil {
 		return err
 	}
-	return syncRenamed(oldpath, newpath)
+	_ = syncRenamed(oldpath, newpath)
+	return nil
 }
 
 // syncRenamed syncs the directory of newpath, and that of oldpath when it is

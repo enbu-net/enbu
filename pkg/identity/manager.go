@@ -483,7 +483,11 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	// identity because an earlier promotion stopped between the two steps
 	// below.
 	if old, err := m.readPath(prev); err == nil {
-		if saved, err := os.ReadFile(prev); err != nil || !bytes.Equal(saved, current) {
+		saved, err := os.ReadFile(prev)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(saved, current) {
 			m.deleteKeyMaterial(old)
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -492,6 +496,9 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	// Copy, then replace: each step is one atomic rename, so the current
 	// identity exists at every point, even if enbu or the machine stops in
 	// between. Moving it away first would leave the workspace without one.
+	// Until the rename, the previous slot duplicates the current identity;
+	// the comparison above keeps a rerun from deleting its key material, and
+	// if the pending identity is gone by then the duplicate is harmless.
 	if current != nil {
 		if err := writeFileAtomic(prev, current); err != nil {
 			return err

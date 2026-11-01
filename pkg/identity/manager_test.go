@@ -344,6 +344,37 @@ func TestPromotePendingMovesCurrentToPrevious(t *testing.T) {
 	}
 }
 
+// A second promotion deletes the oldest identity and its key material.
+func TestPromotePendingDeletesTheOldestIdentity(t *testing.T) {
+	vault := memoryVault{}
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
+	first, _, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = first.Close()
+	oldest, err := m.readPath(m.Path("o/r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		pending, _, _, err := m.CreatePending("o/r")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = pending.Close()
+		if err := m.PromotePending("o/r"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := vault[oldest.Reference]; ok {
+		t.Fatal("the oldest identity's key is still in the vault")
+	}
+	if _, err := m.loadPath(m.slotPath("o/r", "previous")); err != nil {
+		t.Fatalf("previous identity no longer loads: %v", err)
+	}
+}
+
 // A promotion that stopped after copying the current identity to the previous
 // slot, but before replacing it, finishes when run again, and keeps the key
 // material of the identity that stays current until then.
