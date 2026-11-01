@@ -229,7 +229,7 @@ age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号�
 
 新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
-TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではKeychainに保存）。
+TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではSecure Enclave鍵へ暗号化して保存）。
 全メンバーがハイブリッド鍵のときだけファイルは耐量子になり、古典鍵のメンバーが1人でもいれば古典として暗号化されます。
 切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。
 ハイブリッド鍵に対応する前のenbuを使っているメンバーは、先にenbuを更新する必要があります。
@@ -238,7 +238,7 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 |----|--------------|---------------------|
 | Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
-| macOS | Secure Enclave | Keychain |
+| macOS | Secure Enclave（Apple silicon、またはT2チップのIntel Mac） | Keychain |
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査
@@ -253,11 +253,11 @@ export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の�
 fallbackは鍵作成前の利用可否検査だけで決めます。
 作成開始後の失敗や保存済みIdentityのロード失敗では、別の鍵を作りません。
 `init`は登録失敗後の再実行でも、保存済みの暗号化鍵と署名鍵を使い続けます。
-TPMでは元の端末でのみロード可能な子鍵blobを、Secure EnclaveではKeychainの参照を保存します。
+TPMでは元の端末でのみロード可能な子鍵blobを、Secure Enclaveでは同じMacでのみ使えるSecure Enclaveが包んだ鍵を保存します。
 Secure Enclave鍵は端末のロック解除中に利用でき、毎回のTouch IDは要求しません。
-macOSでSecure Enclave鍵を永続保存するには、実行ファイルの署名entitlementとユーザーのログインセッションによるdata-protection Keychainへのアクセスが必要です。
-`doctor`は永続鍵を作らずにこのアクセスを検査します。
-署名のない単体ビルドではOS keyringへfallbackする場合があります。
+macOSではSecure Enclave鍵をKeychainに保存しません。data-protection Keychainには単体の実行ファイルが持てないprovisioning profileが必要なため、包んだ鍵をmetadataに保存し、署名のないビルドでも動くようにしています。
+`doctor`は何も保存せずに、鍵の作成と復元ができるかを検査します。
+以前のバージョンで作ったSecure Enclave Identity（Keychainの参照）はロードしません。作り直してください。
 
 version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。

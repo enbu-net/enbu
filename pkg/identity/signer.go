@@ -29,6 +29,7 @@ type SignerMetadata struct {
 	TPMPublic  []byte            `json:"tpm_public,omitempty"`
 	TPMPrivate []byte            `json:"tpm_private,omitempty"`
 	TPMName    []byte            `json:"tpm_name,omitempty"`
+	EnclaveKey []byte            `json:"enclave_key,omitempty"`
 }
 
 // SignerInfo is the public description of the local signing key.
