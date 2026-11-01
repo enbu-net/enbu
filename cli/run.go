@@ -3,11 +3,13 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"slices"
 	"sort"
@@ -22,13 +24,19 @@ import (
 func newRunCommand(a *app.App) *cobra.Command {
 	var envName string
 	var preserveEnv bool
+	var noMasking bool
 
 	cmd := &cobra.Command{
 		Use:   "run [flags] -- COMMAND [ARGS...]",
 		Short: "Run a command with the secrets in its environment",
 		Long: `Decrypts the environment's secrets and runs COMMAND with them as environment
 variables, without writing a .env file. Secrets replace variables of the same
-name unless --preserve-env is given. The command's exit status is returned.`,
+name unless --preserve-env is given. The command's exit status is returned.
+
+When stdout or stderr is not a terminal, as in a CI job or a log, secret values
+of 6 characters or more that the command prints there are replaced with
+"<concealed by enbu>". A terminal is passed to the command as it is.
+--no-masking turns this off.`,
 		Args: appArgs(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonEnabled(cmd) {
@@ -43,8 +51,17 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 			defer release()
 			child.Env = mergedEnv(os.Environ(), result.Secrets, preserveEnv)
 			child.Stdin = cmd.InOrStdin()
-			child.Stdout = cmd.OutOrStdout()
-			child.Stderr = cmd.ErrOrStderr()
+			values := maskedValues(result.Secrets)
+			stdout := outputFor(cmd.OutOrStdout(), values, noMasking)
+			stderr := stdout
+			if !sameWriter(cmd.ErrOrStderr(), cmd.OutOrStdout()) {
+				stderr = outputFor(cmd.ErrOrStderr(), values, noMasking)
+			}
+			child.Stdout = stdout
+			child.Stderr = stderr
+			// Wait has copied all output once it returns; what a masker
+			// still holds is output that did not turn into a value.
+			defer flushMasked(stdout, stderr)
 			// Ctrl-C reaches the whole foreground process group, so the
 			// command gets it directly and decides what it means; enbu only
 			// stays alive to report how it ended. Termination signals sent
@@ -87,7 +104,24 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
 	cmd.Flags().BoolVar(&preserveEnv, "preserve-env", false, "Keep variables already set in the environment over secrets of the same name")
+	cmd.Flags().BoolVar(&noMasking, "no-masking", false, "Do not conceal secret values in output that is not a terminal")
 	return cmd
+}
+
+// sameWriter reports whether a and b are one writer, so stdout and stderr
+// share a masker and keep their order. It never compares values whose type
+// cannot be compared, which would panic.
+func sameWriter(a, b io.Writer) bool {
+	t := reflect.TypeOf(a)
+	return t == reflect.TypeOf(b) && t != nil && t.Comparable() && a == b
+}
+
+func flushMasked(writers ...io.Writer) {
+	for _, w := range writers {
+		if m, ok := w.(*masker); ok {
+			_ = m.Flush()
+		}
+	}
 }
 
 // forwardedSignals are passed on to the command when enbu receives them.
