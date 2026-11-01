@@ -49,11 +49,24 @@ func runWith(t *testing.T, env []string, args ...string) (string, error) {
 
 func TestRunInjectsSecretsIntoTheCommand(t *testing.T) {
 	out, err := runWith(t, []string{"ENBU_TEST_HELPER=1", "ENBU_TEST_PRINT=KEY,OTHER", "KEY=from-shell"},
-		append([]string{"run", "--"}, helperCommand()...)...)
+		append([]string{"run", "--no-masking", "--"}, helperCommand()...)...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "KEY=from-enbu\n") || !strings.Contains(out, "OTHER=o\n") {
+		t.Fatalf("output:\n%s", out)
+	}
+}
+
+// Output that is not a terminal has the secret values concealed; values too
+// short to mask, and values that came from the shell, pass through.
+func TestRunMasksSecretsInOutput(t *testing.T) {
+	out, err := runWith(t, []string{"ENBU_TEST_HELPER=1", "ENBU_TEST_PRINT=KEY,OTHER"},
+		append([]string{"run", "--"}, helperCommand()...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "from-enbu") || !strings.Contains(out, "KEY=<concealed by enbu>\n") || !strings.Contains(out, "OTHER=o\n") {
 		t.Fatalf("output:\n%s", out)
 	}
 }

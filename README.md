@@ -138,6 +138,9 @@ enbu run --preserve-env -- make  # variables already set in the shell win
 ```
 
 The command's exit status is returned as is.
+When the command's output is not a terminal, as in CI or a log file, secret values of
+6 characters or more are replaced with `<concealed by enbu>`. `--no-masking` turns
+this off.
 
 ### 6. Add a team member
 
