@@ -184,11 +184,58 @@ func TestTPMRefusesAnotherStoragePrimary(t *testing.T) {
 	if _, err := b.LoadSigner(&badSigner); err == nil {
 		t.Fatal("LoadSigner accepted another pinned primary")
 	}
+	unpinned := *md
+	unpinned.TPMParentName = nil
+	if _, err := b.Load(&unpinned); err == nil || !strings.Contains(err.Error(), "does not pin") {
+		t.Fatalf("Load without a pinned primary: %v", err)
+	}
+	unpinnedSigner := *smd
+	unpinnedSigner.TPMParentName = nil
+	if _, err := b.LoadSigner(&unpinnedSigner); err == nil {
+		t.Fatal("LoadSigner accepted a key without a pinned primary")
+	}
 	seed := make([]byte, 64)
 	if err := b.SealSeed(&bad, seed); err == nil {
 		t.Fatal("SealSeed accepted another pinned primary")
 	}
 	if b.conn != nil {
 		t.Fatal("a refused key left the connection open")
+	}
+}
+
+// TestTPMPrimaryNameMustMatchItsPublicArea feeds verifyPrimary the genuine
+// Name of one TPM's primary with the public area of another, as an interposer
+// that wants the session salt would, and a public area off the template.
+func TestTPMPrimaryNameMustMatchItsPublicArea(t *testing.T) {
+	primary := func() (*tpm2.TPMTPublic, tpm2.TPM2BName) {
+		t.Helper()
+		v := newVirtualTPM(t)
+		p, err := (tpm2.CreatePrimary{PrimaryHandle: tpm2.AuthHandle{Handle: tpm2.TPMRHOwner, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
+			InPublic: tpm2.New2B(tpm2.ECCSRKTemplate)}).Execute(&virtualTransport{v})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pub, err := p.OutPublic.Contents()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return pub, p.Name
+	}
+	genuine, genuineName := primary()
+	if err := verifyPrimary(genuine, genuineName); err != nil {
+		t.Fatalf("genuine primary refused: %v", err)
+	}
+	other, _ := primary()
+	if err := verifyPrimary(other, genuineName); err == nil {
+		t.Fatal("accepted another public area under the genuine Name")
+	}
+	offTemplate := *genuine
+	offTemplate.ObjectAttributes.Restricted = false
+	name, err := tpm2.ObjectName(&offTemplate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPrimary(&offTemplate, *name); err == nil {
+		t.Fatal("accepted a primary off the storage template")
 	}
 }

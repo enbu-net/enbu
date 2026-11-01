@@ -139,6 +139,9 @@ func (b *TPMBackend) acquire() (*tpmConn, error) {
 		return nil, fmt.Errorf("creating TPM storage primary: %w", err)
 	}
 	public, err := p.OutPublic.Contents()
+	if err == nil {
+		err = verifyPrimary(public, p.Name)
+	}
 	if err != nil {
 		_ = flush(t, p.ObjectHandle)
 		_ = t.Close()
@@ -146,6 +149,27 @@ func (b *TPMBackend) acquire() (*tpmConn, error) {
 	}
 	b.conn = &tpmConn{t: t, handle: p.ObjectHandle, name: p.Name, public: *public, refs: 1, plain: b.plainSessions}
 	return b.conn, nil
+}
+
+// verifyPrimary binds the Name and the public area CreatePrimary returned.
+// Sessions are salted to the public key while the pin compares the Name, so a
+// response that pairs the genuine Name with another public key must be
+// refused: the Name has to be the hash of the public area, and the public area
+// has to be the storage template enbu asked for.
+func verifyPrimary(public *tpm2.TPMTPublic, reported tpm2.TPM2BName) error {
+	expected := tpm2.ECCSRKTemplate
+	expected.Unique = public.Unique
+	if !bytes.Equal(tpm2.Marshal(expected), tpm2.Marshal(*public)) {
+		return errors.New("TPM storage primary does not match the storage template")
+	}
+	name, err := tpm2.ObjectName(public)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(name.Buffer, reported.Buffer) {
+		return errors.New("TPM storage primary Name does not match its public area")
+	}
+	return nil
 }
 
 // release drops one reference. The last one flushes the primary and closes
@@ -169,9 +193,13 @@ func (b *TPMBackend) release(c *tpmConn) error {
 // created. The primary is derived from the TPM's storage seed, so its Name
 // only changes when the TPM is cleared; a different Name means another TPM, or
 // something between enbu and the TPM, answered, and salting a session to it
-// would hand that party the session key.
+// would hand that party the session key. A key without a pin is refused too:
+// it would be salted to whatever primary answered.
 func checkParent(c *tpmConn, pinned []byte) error {
-	if len(pinned) > 0 && !bytes.Equal(c.name.Buffer, pinned) {
+	if len(pinned) == 0 {
+		return errors.New("TPM key metadata does not pin its storage primary; create a new identity")
+	}
+	if !bytes.Equal(c.name.Buffer, pinned) {
 		return errors.New("TPM storage primary does not match the one this key was created under")
 	}
 	return nil

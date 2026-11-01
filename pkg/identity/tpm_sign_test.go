@@ -59,7 +59,7 @@ func TestTPMSignerRejectsEncryptionKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = id.Close()
-	_, err = b.LoadSigner(&SignerMetadata{Backend: "tpm", Algorithm: "P-256", TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName})
+	_, err = b.LoadSigner(&SignerMetadata{Backend: "tpm", Algorithm: "P-256", TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName, TPMParentName: md.TPMParentName})
 	if err == nil {
 		t.Fatal("ECDH identity key loaded as a signer")
 	}
@@ -135,7 +135,7 @@ func TestTPMIdentityKeyIsNotLoadedAsSigner(t *testing.T) {
 	}
 	_ = s.Close()
 	asIdentity := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256"},
-		TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName}
+		TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName, TPMParentName: md.TPMParentName}
 	if id, err := b.Load(asIdentity); err == nil {
 		_ = id.Close()
 		t.Fatal("a signing key loaded as the encryption identity")
