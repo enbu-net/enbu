@@ -274,3 +274,147 @@ func TestMetadataHasNoPrivateKey(t *testing.T) {
 		}
 	}
 }
+
+func TestPromotePendingKeepsCurrentWhenSecondRenameFails(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: memoryVault{}}
+	current, _, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = current.Close()
+	pending, _, _, err := m.CreatePending("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pending.Close()
+	before, err := os.ReadFile(m.Path("o/r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("rename failed")
+	next := m.slotPath("o/r", "next")
+	original := renameFile
+	renameFile = func(from, to string) error {
+		if from == next {
+			return failure
+		}
+		return original(from, to)
+	}
+	t.Cleanup(func() { renameFile = original })
+	if err := m.PromotePending("o/r"); !errors.Is(err, failure) {
+		t.Fatalf("PromotePending = %v, want the rename failure", err)
+	}
+	after, err := os.ReadFile(m.Path("o/r"))
+	if err != nil {
+		t.Fatalf("current identity is gone: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("current identity changed")
+	}
+	if _, err := os.Stat(next); err != nil {
+		t.Fatalf("pending identity is gone: %v", err)
+	}
+	if _, err := m.Load("o/r"); err != nil {
+		t.Fatalf("Load after the failed promotion: %v", err)
+	}
+}
+
+func TestPromotePendingMovesCurrentToPrevious(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: memoryVault{}}
+	current, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = current.Close()
+	pending, pendingInfo, _, err := m.CreatePending("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pending.Close()
+	if err := m.PromotePending("o/r"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Info("o/r")
+	if err != nil || got.Recipient != pendingInfo.Recipient {
+		t.Fatalf("current after promotion = %+v, %v; want %s", got, err, pendingInfo.Recipient)
+	}
+	prev, err := m.readPath(m.slotPath("o/r", "previous"))
+	if err != nil || prev.Recipient != info.Recipient {
+		t.Fatalf("previous = %+v, %v; want %s", prev, err, info.Recipient)
+	}
+}
+
+// A second promotion deletes the oldest identity and its key material.
+func TestPromotePendingDeletesTheOldestIdentity(t *testing.T) {
+	vault := memoryVault{}
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
+	first, _, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = first.Close()
+	oldest, err := m.readPath(m.Path("o/r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		pending, _, _, err := m.CreatePending("o/r")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = pending.Close()
+		if err := m.PromotePending("o/r"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, ok := vault[oldest.Reference]; ok {
+		t.Fatal("the oldest identity's key is still in the vault")
+	}
+	if _, err := m.loadPath(m.slotPath("o/r", "previous")); err != nil {
+		t.Fatalf("previous identity no longer loads: %v", err)
+	}
+}
+
+// A promotion that stopped after copying the current identity to the previous
+// slot, but before replacing it, finishes when run again, and keeps the key
+// material of the identity that stays current until then.
+func TestPromotePendingFinishesAnInterruptedPromotion(t *testing.T) {
+	vault := memoryVault{}
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
+	current, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = current.Close()
+	pending, pendingInfo, _, err := m.CreatePending("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pending.Close()
+	saved, err := os.ReadFile(m.Path("o/r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.slotPath("o/r", "previous"), saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys := len(vault)
+	if err := m.PromotePending("o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if len(vault) != keys {
+		t.Fatalf("vault has %d keys, want %d: the identity that was current lost its key", len(vault), keys)
+	}
+	got, err := m.Info("o/r")
+	if err != nil || got.Recipient != pendingInfo.Recipient {
+		t.Fatalf("current = %+v, %v; want %s", got, err, pendingInfo.Recipient)
+	}
+	prev, err := m.loadPath(m.slotPath("o/r", "previous"))
+	if err != nil {
+		t.Fatalf("previous identity no longer loads: %v", err)
+	}
+	if prev.Recipient().String() != info.Recipient {
+		t.Fatalf("previous = %s, want %s", prev.Recipient(), info.Recipient)
+	}
+	_ = prev.Close()
+}

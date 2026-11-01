@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -45,6 +48,9 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 			// stays alive to report how it ended. Termination signals sent
 			// to enbu alone are passed on, so the command, which holds the
 			// secrets, is not left running on its own.
+			if err := containCommand(); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the command may outlive enbu if enbu is killed: %v\n", err)
+			}
 			signals := make(chan os.Signal, 1)
 			signal.Notify(signals, append([]os.Signal{os.Interrupt}, forwardedSignals...)...)
 			defer signal.Stop(signals)
@@ -110,22 +116,53 @@ func startFailureCode(err error) int {
 // mergedEnv is base with secrets applied. Secrets win over base unless
 // preserve is set. The result is sorted so it is stable.
 func mergedEnv(base []string, secrets map[string]string, preserve bool) []string {
-	env := map[string]string{}
+	return mergeEnv(base, secrets, preserve, runtime.GOOS == "windows")
+}
+
+// mergeEnv is mergedEnv with the platform's rule for names: with foldCase,
+// names that differ only in case are one variable, as on Windows, and the
+// spelling that wins is kept.
+func mergeEnv(base []string, secrets map[string]string, preserve, foldCase bool) []string {
+	type variable struct{ name, value string }
+	key := func(name string) string {
+		if foldCase {
+			return strings.ToUpper(name)
+		}
+		return name
+	}
+	env := map[string]variable{}
 	for _, kv := range base {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			env[k] = v
+		if name, value, ok := cutEnv(kv); ok {
+			env[key(name)] = variable{name, value}
 		}
 	}
-	for k, v := range secrets {
+	// Sorted, so when two secrets fold to one name the same one always wins.
+	for _, name := range slices.Sorted(maps.Keys(secrets)) {
+		value := secrets[name]
+		k := key(name)
 		if _, set := env[k]; set && preserve {
 			continue
 		}
-		env[k] = v
+		env[k] = variable{name, value}
 	}
 	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
+	for _, v := range env {
+		out = append(out, v.name+"="+v.value)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// cutEnv splits NAME=VALUE. A leading '=' is part of the name: Windows keeps
+// the working directory of each drive in hidden variables such as
+// "=C:=C:\work", which must reach the command unchanged.
+func cutEnv(kv string) (name, value string, ok bool) {
+	if kv == "" {
+		return "", "", false
+	}
+	i := strings.IndexByte(kv[1:], '=')
+	if i < 0 {
+		return "", "", false
+	}
+	return kv[:i+1], kv[i+2:], true
 }

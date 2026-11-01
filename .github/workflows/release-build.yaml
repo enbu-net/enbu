@@ -118,6 +118,9 @@ jobs:
           - os: macos-15
             suffix: darwin_arm64
             package: dmg
+          - os: macos-15-intel
+            suffix: darwin_amd64
+            package: dmg
           - os: ubuntu-24.04
             suffix: linux_amd64
             package: tar.gz
@@ -295,6 +298,7 @@ jobs:
           for pair in \
             linux_amd64:linux-x64 \
             linux_arm64:linux-arm64 \
+            darwin_amd64:darwin-x64 \
             darwin_arm64:darwin-arm64 \
             windows_amd64:win32-x64 \
             windows_arm64:win32-arm64; do
@@ -407,9 +411,9 @@ jobs:
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*' | wc -l)" -gt 0
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_windows_*.exe' | wc -l)" -eq 0
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_windows_*.zip' | wc -l)" -eq 2
-          test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_darwin_*.dmg' | wc -l)" -eq 1
+          test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_darwin_*.dmg' | wc -l)" -eq 2
           test "$(find release-assets -maxdepth 1 -type f -name 'enbu-desktop_*_darwin_*.tar.gz' | wc -l)" -eq 0
-          test "$(find release-assets -maxdepth 1 -type f -name 'enbu-vscode_*.vsix' | wc -l)" -eq 5
+          test "$(find release-assets -maxdepth 1 -type f -name 'enbu-vscode_*.vsix' | wc -l)" -eq 6
           test "$(find release-assets -maxdepth 1 -type f -name '*.sbom.spdx.json' | wc -l)" -gt 0
           test "$(find release-assets -maxdepth 1 -type f -name '*.sigstore.json' | wc -l)" -gt 0
           (cd release-assets && sha256sum -c checksums.txt)
