@@ -33,6 +33,9 @@ type Metadata struct {
 	TPMPublic  []byte `json:"tpm_public,omitempty"`
 	TPMPrivate []byte `json:"tpm_private,omitempty"`
 	TPMName    []byte `json:"tpm_name,omitempty"`
+	// TPMParentName pins the storage primary the TPM objects were created
+	// under, so sessions are only ever salted to that primary.
+	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
 	// The ML-KEM-768 seed of a hybrid hardware identity: sealed by the TPM, or
 	// kept in the OS keyring under PQReference when the backend cannot seal.
 	PQReference    string `json:"pq_reference,omitempty"`

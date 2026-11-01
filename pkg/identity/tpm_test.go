@@ -25,7 +25,7 @@ func newVirtualTPM(t *testing.T) *vtpm.TPM {
 
 func TestTPMRoundTripAndRestart(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	if d := b.Probe(); !d.Available {
 		t.Fatalf("probe: %+v", d)
 	}

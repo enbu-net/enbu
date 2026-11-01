@@ -17,10 +17,11 @@ import (
 )
 
 // Software transport is compiled only into the explicit identitytest CLI.
-// Even that binary refuses non-loopback endpoints.
+// Even that binary refuses non-loopback endpoints. The virtual TPM behind it
+// cannot check parameter-encrypted commands, so sessions stay unencrypted.
 func platformHardware() HardwareBackend {
 	endpoint := os.Getenv("ENBU_TEST_TPM_URL")
-	return &TPMBackend{Device: "test-only vTPM", Open: func() (transport.TPMCloser, error) {
+	return &TPMBackend{Device: "test-only vTPM", plainSessions: true, Open: func() (transport.TPMCloser, error) {
 		u, err := url.Parse(endpoint)
 		if err != nil || u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
 			return nil, errors.New("test TPM requires an HTTP loopback endpoint")
