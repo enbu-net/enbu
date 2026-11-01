@@ -48,6 +48,10 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk
+            dist/*.pkg.tar.zst
           if-no-files-found: error
           retention-days: 1
 
@@ -169,6 +173,25 @@ jobs:
           tar -C desktop/wails/build/bin \
             -czf "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.tar.gz" \
             .
+
+      # The .deb and .rpm install the desktop entry and icon system-wide.
+      - name: Package desktop app as .deb and .rpm
+        if: matrix.package == 'tar.gz'
+        shell: bash
+        env:
+          DESKTOP_SUFFIX: ${{ matrix.suffix }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          task gui/package/linux
+          for package in desktop/wails/build/package/*; do
+            case "$package" in
+              *.deb) ext=deb ;;
+              *.rpm) ext=rpm ;;
+              *) continue ;;
+            esac
+            cp "$package" "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.${ext}"
+          done
 
       - name: Package desktop app
         if: matrix.package == 'dmg'

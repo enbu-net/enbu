@@ -1,5 +1,10 @@
 version: 2
 
+before:
+  hooks:
+    # Shell completions for the Linux packages.
+    - sh -c 'mkdir -p .tmp/completions && for shell in bash zsh fish; do go run . completion "$shell" > ".tmp/completions/enbu.$shell"; done'
+
 builds:
   - main: .
     binary: enbu
@@ -30,6 +35,43 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+
+# The CLI as native Linux packages. The binary is static, so one package per
+# architecture installs on any distribution of that family.
+nfpms:
+  - package_name: enbu
+    file_name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    vendor: enbu
+    homepage: https://github.com/enbu-net/enbu
+    maintainer: enbu <https://github.com/enbu-net/enbu>
+    description: Keyless .env management with per-device keys and signed storage
+    license: MIT
+    section: utils
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    # Reproducible packages, like the binaries.
+    mtime: "{{ .CommitDate }}"
+    contents:
+      - src: .tmp/completions/enbu.bash
+        dst: /usr/share/bash-completion/completions/enbu
+        file_info:
+          mode: 0644
+      - src: .tmp/completions/enbu.zsh
+        dst: /usr/share/zsh/site-functions/_enbu
+        file_info:
+          mode: 0644
+      - src: .tmp/completions/enbu.fish
+        dst: /usr/share/fish/vendor_completions.d/enbu.fish
+        file_info:
+          mode: 0644
+      - src: LICENSE
+        dst: /usr/share/licenses/enbu/LICENSE
+        file_info:
+          mode: 0644
 
 release:
   disable: true

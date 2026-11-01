@@ -278,6 +278,10 @@ jobs:
         shell: bash
         run: task gui/build
 
+      - name: Package desktop app as .deb and .rpm
+        if: runner.os == 'Linux'
+        run: task gui/package/linux
+
   scenario:
     name: Scenario tests
     runs-on: ubuntu-latest

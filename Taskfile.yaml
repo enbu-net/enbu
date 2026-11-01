@@ -217,6 +217,22 @@ tasks:
           codesign --force --deep --sign - "$app"
         platforms: [darwin]
 
+  gui/package/linux:
+    desc: Package the desktop app that gui/build built as .deb and .rpm into desktop/wails/build/package (Linux)
+    dir: desktop/wails
+    platforms: [linux]
+    vars:
+      # Package versions must start with a digit.
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | grep . || echo 0.0.0
+    env:
+      VERSION: '{{.VERSION}}'
+      ARCH: '{{ARCH}}'
+    cmds:
+      - mkdir -p build/package
+      - nfpm package --config packaging/linux/nfpm.yaml --packager deb --target build/package/
+      - nfpm package --config packaging/linux/nfpm.yaml --packager rpm --target build/package/
+
   gui/run:
     desc: Run GUI desktop app against the Vite dev server (frontend hot reload; Ctrl-C stops both)
     deps:

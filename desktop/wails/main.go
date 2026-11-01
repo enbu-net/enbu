@@ -19,6 +19,13 @@ import (
 
 var Version string
 
+// desktopID is the app's GTK application ID on Linux, and the name of its
+// desktop entry and icon. Wayland matches a window to the desktop entry of the
+// same name, which gives the window its icon. GLib also uses it as the program
+// name, so WebKit keeps its own data under it, apart from enbu's data
+// directory.
+const desktopID = "net.enbu.desktop"
+
 // Typed events let the binding generator emit their payload types for the
 // frontend.
 func init() {
@@ -36,7 +43,7 @@ func singleInstance(goos string, getenv func(string) string, onSecond func(appli
 		return nil
 	}
 	return &application.SingleInstanceOptions{
-		UniqueID:               "net.enbu.desktop",
+		UniqueID:               desktopID,
 		OnSecondInstanceLaunch: onSecond,
 	}
 }
@@ -149,7 +156,7 @@ func run() error {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		Linux: application.LinuxOptions{
-			ProgramName: "enbu",
+			ApplicationID: desktopID,
 		},
 		OnShutdown: cancel,
 	})

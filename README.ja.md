@@ -34,6 +34,15 @@ go install github.com/enbu-net/enbu@latest
 ```
 
 または [Releases](https://github.com/enbu-net/enbu/releases) からバイナリをダウンロード  
+Linux向けには、シェル補完も入るパッケージがあります。デスクトップアプリの`.deb`と`.rpm`は、アプリメニューへの追加と`enbu://`リンクの登録も行います。
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian、Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora、RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # デスクトップアプリ（GTK 4、WebKitGTK 6.0）
+```
 
 ## クイックスタート
 
