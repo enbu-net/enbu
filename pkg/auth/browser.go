@@ -15,8 +15,10 @@ func OpenBrowser(url string) error {
 	return nil
 }
 
-// browserCommand names the opener by its full path, so a program of the same
-// name earlier in PATH cannot receive the OAuth URL.
+// browserCommand names the macOS and Windows openers by their full paths, so a
+// program of the same name earlier in PATH cannot receive the OAuth URL. Other
+// platforms still find xdg-open through PATH, where it lives in different
+// directories.
 func browserCommand(goos, url string) *exec.Cmd {
 	var cmd *exec.Cmd
 	switch goos {
