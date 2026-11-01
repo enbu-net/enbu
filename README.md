@@ -32,7 +32,17 @@ See [ROADMAP.md](ROADMAP.md) for planned features.
 go install github.com/enbu-net/enbu@latest
 ```
 
-Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
+Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases). On Linux,
+Releases also has packages that install shell completions; the desktop app's `.deb` and
+`.rpm` add it to the app menu and register `enbu://` links:
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian, Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora, RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # Desktop app (GTK 4, WebKitGTK 6.0)
+```
 
 ## Quick Start
 
