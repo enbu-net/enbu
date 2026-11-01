@@ -19,25 +19,33 @@ const desktopFile = desktopID + ".desktop"
 
 // registerProtocolHandler makes enbu:// links and the app menu open this
 // executable, for installs that did not come from a package (the release
-// tar.gz, a local build). A package installs the entry system-wide, so then
-// there is nothing to do.
+// tar.gz, a local build). A package installs the entry system-wide; then a
+// per-user entry from an earlier run would shadow it, so it is removed.
 func registerProtocolHandler() error {
-	if systemEntryInstalled(os.Getenv("XDG_DATA_DIRS")) {
-		return nil
-	}
 	dataDir, err := linuxUserDataDir()
 	if err != nil {
 		return err
 	}
-	executable, err := os.Executable()
+	if systemEntryInstalled(os.Getenv("XDG_DATA_DIRS")) {
+		if err := removeUserEntry(dataDir); err != nil {
+			return err
+		}
+		return setDefaultHandler()
+	}
+	executable, err := launcher()
 	if err != nil {
 		return err
 	}
+	return registerLinuxProtocolHandler(dataDir, executable, setDefaultHandler)
+}
+
+// launcher is the file the desktop entry runs.
+func launcher() (string, error) {
 	// An AppImage runs from a new mount point each time; the image is stable.
 	if appImage := os.Getenv("APPIMAGE"); filepath.IsAbs(appImage) {
-		executable = appImage
+		return appImage, nil
 	}
-	return registerLinuxProtocolHandler(dataDir, executable, setDefaultHandler)
+	return os.Executable()
 }
 
 // systemEntryInstalled reports whether a package installed the desktop entry
@@ -86,18 +94,63 @@ func linuxUserDataDir() (string, error) {
 // registerLinuxProtocolHandler writes the per-user desktop entry and icon,
 // each only when it changed, then makes the entry the enbu:// handler.
 func registerLinuxProtocolHandler(dataDir, executable string, setDefault func() error) error {
-	applicationsDir := filepath.Join(dataDir, "applications")
-	entry := fmt.Sprintf("[Desktop Entry]\nType=Application\nName=enbu\nComment=Keyless .env management\n"+
-		"Exec=%s %%u\nIcon=%s\nTerminal=false\nCategories=Development;Security;Utility;\n"+
-		"MimeType=x-scheme-handler/enbu;\nStartupWMClass=%s\n", quoteDesktopExec(executable), desktopID, desktopID)
-	if err := writeIfChanged(filepath.Join(applicationsDir, desktopFile), []byte(entry)); err != nil {
+	if err := writeIfChanged(userEntryPath(dataDir), []byte(userEntry(executable))); err != nil {
 		return fmt.Errorf("writing desktop entry: %w", err)
 	}
-	icon := filepath.Join(dataDir, "icons", "hicolor", "512x512", "apps", desktopID+".png")
-	if err := writeIfChanged(icon, assets.Icon); err != nil {
+	if err := writeIfChanged(userIconPath(dataDir), assets.Icon); err != nil {
 		return fmt.Errorf("writing icon: %w", err)
 	}
 	return setDefault()
+}
+
+func userEntryPath(dataDir string) string {
+	return filepath.Join(dataDir, "applications", desktopFile)
+}
+
+func userIconPath(dataDir string) string {
+	return filepath.Join(dataDir, "icons", "hicolor", "512x512", "apps", desktopID+".png")
+}
+
+func userEntry(executable string) string {
+	return fmt.Sprintf("[Desktop Entry]\nType=Application\nName=enbu\nComment=Keyless .env management\n"+
+		"Exec=%s %%u\nIcon=%s\nTerminal=false\nCategories=Development;Security;Utility;\n"+
+		"MimeType=x-scheme-handler/enbu;\nStartupWMClass=%s\n", quoteDesktopExec(executable), desktopID, desktopID)
+}
+
+// removeUserEntry removes the per-user entry and icon that
+// registerLinuxProtocolHandler wrote, whatever executable the entry named.
+// Files the user changed are left alone.
+func removeUserEntry(dataDir string) error {
+	entryPath := userEntryPath(dataDir)
+	entry, err := os.ReadFile(entryPath)
+	if err == nil && withoutExec(string(entry)) == withoutExec(userEntry("")) {
+		if err := os.Remove(entryPath); err != nil {
+			return fmt.Errorf("removing desktop entry: %w", err)
+		}
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	iconPath := userIconPath(dataDir)
+	icon, err := os.ReadFile(iconPath)
+	if err == nil && bytes.Equal(icon, assets.Icon) {
+		if err := os.Remove(iconPath); err != nil {
+			return fmt.Errorf("removing icon: %w", err)
+		}
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func withoutExec(entry string) string {
+	lines := strings.Split(entry, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "Exec=") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // writeIfChanged writes data to path unless path already holds it.

@@ -93,3 +93,88 @@ func TestPackagedDesktopEntry(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoveUserEntry(t *testing.T) {
+	dataDir := t.TempDir()
+	if err := registerLinuxProtocolHandler(dataDir, "/old/place/enbu-desktop", func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeUserEntry(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{userEntryPath(dataDir), userIconPath(dataDir)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s was not removed: %v", path, err)
+		}
+	}
+	// Nothing to remove is fine.
+	if err := removeUserEntry(dataDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// An entry the user edited stays.
+	edited := userEntry("/opt/enbu") + "NoDisplay=true\n"
+	if err := os.MkdirAll(filepath.Dir(userEntryPath(dataDir)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userEntryPath(dataDir), []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeUserEntry(dataDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(userEntryPath(dataDir)); err != nil {
+		t.Fatalf("edited entry was removed: %v", err)
+	}
+}
+
+func TestLauncherPrefersAppImage(t *testing.T) {
+	t.Setenv("APPIMAGE", "/home/kota/Apps/enbu.AppImage")
+	if got, err := launcher(); err != nil || got != "/home/kota/Apps/enbu.AppImage" {
+		t.Fatalf("launcher() = %q, %v", got, err)
+	}
+	t.Setenv("APPIMAGE", "relative.AppImage")
+	want, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := launcher(); err != nil || got != want {
+		t.Fatalf("launcher() = %q, %v, want %q", got, err, want)
+	}
+}
+
+// fakeXDGMime puts an xdg-mime on PATH that answers query with current and
+// logs every call.
+func fakeXDGMime(t *testing.T, current string) (log string) {
+	t.Helper()
+	dir := t.TempDir()
+	log = filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho \"$*\" >> " + log + "\nif [ \"$1\" = query ]; then echo " + current + "; fi\n"
+	if err := os.WriteFile(filepath.Join(dir, "xdg-mime"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	return log
+}
+
+func TestSetDefaultHandler(t *testing.T) {
+	for _, tt := range []struct {
+		current string
+		want    string
+	}{
+		{desktopFile, "query default x-scheme-handler/enbu\n"},
+		{"other.desktop", "query default x-scheme-handler/enbu\ndefault " + desktopFile + " x-scheme-handler/enbu\n"},
+	} {
+		log := fakeXDGMime(t, tt.current)
+		if err := setDefaultHandler(); err != nil {
+			t.Fatal(err)
+		}
+		calls, err := os.ReadFile(log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(calls) != tt.want {
+			t.Fatalf("with %s as default, xdg-mime calls:\n%s\nwant:\n%s", tt.current, calls, tt.want)
+		}
+	}
+}
