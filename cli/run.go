@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -134,7 +136,9 @@ func mergeEnv(base []string, secrets map[string]string, preserve, foldCase bool)
 			env[key(name)] = variable{name, value}
 		}
 	}
-	for name, value := range secrets {
+	// Sorted, so when two secrets fold to one name the same one always wins.
+	for _, name := range slices.Sorted(maps.Keys(secrets)) {
+		value := secrets[name]
 		k := key(name)
 		if _, set := env[k]; set && preserve {
 			continue

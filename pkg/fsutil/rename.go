@@ -7,8 +7,9 @@ import (
 	"time"
 )
 
-// renameAttempts and renameBackoff bound how long Rename keeps retrying: about
-// one second in all, which outlasts a typical antivirus scan of a small file.
+// renameAttempts and renameBackoff bound how long Rename keeps retrying: seven
+// sleeps doubling from 5 ms, about 0.6 s in all, which outlasts a typical
+// antivirus scan of a small file.
 const (
 	renameAttempts = 8
 	renameBackoff  = 5 * time.Millisecond

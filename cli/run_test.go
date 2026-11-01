@@ -130,3 +130,16 @@ func TestCutEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestMergeEnvFoldedSecretsAreDeterministic(t *testing.T) {
+	secrets := map[string]string{"Foo": "a", "FOO": "b", "foo": "c"}
+	first := mergeEnv(nil, secrets, false, true)
+	for range 50 {
+		if got := mergeEnv(nil, secrets, false, true); !reflect.DeepEqual(got, first) {
+			t.Fatalf("mergeEnv = %q, then %q", first, got)
+		}
+	}
+	if want := []string{"foo=c"}; !reflect.DeepEqual(first, want) {
+		t.Fatalf("mergeEnv = %q, want %q (the last name in sorted order wins)", first, want)
+	}
+}

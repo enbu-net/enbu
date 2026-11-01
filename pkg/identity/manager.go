@@ -478,13 +478,13 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := fsutil.Rename(path, prev); err != nil {
+	if err := renameFile(path, prev); err != nil {
 		return err
 	}
-	if err := fsutil.Rename(next, path); err != nil {
+	if err := renameFile(next, path); err != nil {
 		// Put the current identity back, so a failed promotion does not
 		// leave the workspace without one.
-		return errors.Join(err, fsutil.Rename(prev, path))
+		return errors.Join(err, renameFile(prev, path))
 	}
 	return nil
 }
@@ -498,6 +498,10 @@ func (m *Manager) deleteKeyMaterial(md *Metadata) {
 	}
 	m.deleteHardware(md)
 }
+
+// renameFile replaces files in the identity directory; tests swap it to make a
+// rename fail.
+var renameFile = fsutil.Rename
 
 func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }
 
@@ -518,7 +522,7 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.Rename(f.Name(), path)
+	return renameFile(f.Name(), path)
 }
 
 // Info validates the saved identity before reporting public information.
