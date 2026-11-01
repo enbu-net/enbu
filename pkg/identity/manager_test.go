@@ -343,3 +343,47 @@ func TestPromotePendingMovesCurrentToPrevious(t *testing.T) {
 		t.Fatalf("previous = %+v, %v; want %s", prev, err, info.Recipient)
 	}
 }
+
+// A promotion that stopped after copying the current identity to the previous
+// slot, but before replacing it, finishes when run again, and keeps the key
+// material of the identity that stays current until then.
+func TestPromotePendingFinishesAnInterruptedPromotion(t *testing.T) {
+	vault := memoryVault{}
+	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
+	current, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = current.Close()
+	pending, pendingInfo, _, err := m.CreatePending("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pending.Close()
+	saved, err := os.ReadFile(m.Path("o/r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.slotPath("o/r", "previous"), saved, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keys := len(vault)
+	if err := m.PromotePending("o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if len(vault) != keys {
+		t.Fatalf("vault has %d keys, want %d: the identity that was current lost its key", len(vault), keys)
+	}
+	got, err := m.Info("o/r")
+	if err != nil || got.Recipient != pendingInfo.Recipient {
+		t.Fatalf("current = %+v, %v; want %s", got, err, pendingInfo.Recipient)
+	}
+	prev, err := m.loadPath(m.slotPath("o/r", "previous"))
+	if err != nil {
+		t.Fatalf("previous identity no longer loads: %v", err)
+	}
+	if prev.Recipient().String() != info.Recipient {
+		t.Fatalf("previous = %s, want %s", prev.Recipient(), info.Recipient)
+	}
+	_ = prev.Close()
+}
