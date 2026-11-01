@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,6 +12,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -471,15 +474,37 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	if _, err := m.readPath(next); err != nil {
 		return err
 	}
+	current, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	// The current identity replaces the previous one, whose key material
+	// goes with it, unless the previous slot already holds the current
+	// identity because an earlier promotion stopped between the two steps
+	// below.
 	if old, err := m.readPath(prev); err == nil {
-		m.deleteKeyMaterial(old)
+		saved, err := os.ReadFile(prev)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(saved, current) {
+			m.deleteKeyMaterial(old)
+		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.Rename(path, prev); err != nil {
-		return err
+	// Copy, then replace: each step is one atomic rename, so the current
+	// identity exists at every point, even if enbu or the machine stops in
+	// between. Moving it away first would leave the workspace without one.
+	// Until the rename, the previous slot duplicates the current identity;
+	// the comparison above keeps a rerun from deleting its key material, and
+	// if the pending identity is gone by then the duplicate is harmless.
+	if current != nil {
+		if err := writeFileAtomic(prev, current); err != nil {
+			return err
+		}
 	}
-	return os.Rename(next, path)
+	return renameFile(next, path)
 }
 
 func (m *Manager) deleteKeyMaterial(md *Metadata) {
@@ -492,6 +517,10 @@ func (m *Manager) deleteKeyMaterial(md *Metadata) {
 	m.deleteHardware(md)
 }
 
+// renameFile replaces files in the identity directory; tests swap it to make a
+// rename fail.
+var renameFile = fsutil.Rename
+
 func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }
 
 func saveJSON(path string, v any) error {
@@ -499,6 +528,11 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
+	return writeFileAtomic(path, b)
+}
+
+// writeFileAtomic replaces path with b through a synced temporary file.
+func writeFileAtomic(path string, b []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".identity-*")
 	if err != nil {
 		return err
@@ -511,7 +545,7 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	return renameFile(f.Name(), path)
 }
 
 // Info validates the saved identity before reporting public information.

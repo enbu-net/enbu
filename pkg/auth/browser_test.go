@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -11,8 +12,8 @@ func TestBrowserCommandPreservesOAuthURL(t *testing.T) {
 		goos string
 		want []string
 	}{
-		{goos: "darwin", want: []string{"open", url}},
-		{goos: "windows", want: []string{"rundll32", "url.dll,FileProtocolHandler", url}},
+		{goos: "darwin", want: []string{"/usr/bin/open", url}},
+		{goos: "windows", want: []string{filepath.Join(systemDirectory(), "rundll32.exe"), "url.dll,FileProtocolHandler", url}},
 		{goos: "linux", want: []string{"xdg-open", url}},
 	}
 	for _, tt := range tests {
