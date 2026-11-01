@@ -5,8 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 type TextBackend struct{}
@@ -43,17 +44,11 @@ func sanitizeKey(key string) string {
 	return strings.ReplaceAll(key, "/", "_")
 }
 
+// textBackendDir is ENBU_TEXT_BACKEND_DIR, or the keys directory in enbu's
+// data directory.
 func textBackendDir() string {
 	if dir := os.Getenv("ENBU_TEXT_BACKEND_DIR"); dir != "" {
 		return dir
 	}
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
-		return filepath.Join(xdg, "enbu", "keys")
-	}
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(os.Getenv("LOCALAPPDATA"), "enbu", "keys")
-	default:
-		return filepath.Join(os.Getenv("HOME"), ".local", "share", "enbu", "keys")
-	}
+	return filepath.Join(config.DataDir(), "keys")
 }
