@@ -71,8 +71,9 @@ needs both halves:
   load the identity. When a sealed object is loaded, its public area must equal
   the template. Like the ECDH results, the seed crosses the TPM interface
   without parameter encryption; the test vTPM does not support it.
-  The Secure Enclave keeps no sealed data, so on macOS the seed is kept in the
-  Keychain.
+  On macOS the Secure Enclave cannot seal data, so the seed is encrypted to the
+  Secure Enclave P-256 key instead (ephemeral P-256 ECDH, HKDF-SHA256, AES-256-GCM)
+  and opening it needs an ECDH on the same Secure Enclave.
 
 Requirement 1 is about keys: the sealed seed is data, so its `TPM2_Create`
 carries sensitive data, and requirement 5 covers its randomness.

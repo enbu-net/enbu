@@ -335,3 +335,48 @@ func TestManagerKeepsUnsealableSeedInKeyring(t *testing.T) {
 		t.Fatal("loaded a hybrid identity without its seed")
 	}
 }
+
+// sealingEnclave seals the seed to its P-256 key, like the Secure Enclave
+// backend on macOS.
+type sealingEnclave struct{ fakeEnclave }
+
+func (f *sealingEnclave) SealSeed(md *Metadata, seed []byte) error {
+	pub, err := ecdh.P256().NewPublicKey(md.PublicKey)
+	if err != nil {
+		return err
+	}
+	md.EnclaveSeal, err = sealToECDH(pub, seed)
+	return err
+}
+
+func (f *sealingEnclave) UnsealSeed(md *Metadata) ([]byte, error) {
+	return openFromECDH(&softwareHardwareKey{PrivateKey: f.keys[md.Reference]}, md.EnclaveSeal)
+}
+
+func TestManagerSealsSeedToEnclaveKey(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: &sealingEnclave{fakeEnclave{keys: map[string]*ecdh.PrivateKey{}}}}
+	id, info, _, err := m.Create("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	if info.Algorithm != "MLKEM768-P256" {
+		t.Fatalf("info: %+v", info)
+	}
+	md, _ := m.read("o/r")
+	if md.PQReference != "" || len(m.Vault.(memoryVault)) != 0 || len(md.EnclaveSeal) == 0 {
+		t.Fatalf("the ML-KEM seed is not sealed to the device key: %+v", md)
+	}
+	loaded, err := m.Load("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = loaded.Close()
+	md.EnclaveSeal[len(md.EnclaveSeal)-1] ^= 1
+	if err := saveMetadata(m.Path("o/r"), md); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded a hybrid identity with a corrupted sealed seed")
+	}
+}

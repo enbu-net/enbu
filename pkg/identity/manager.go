@@ -33,11 +33,16 @@ type Metadata struct {
 	TPMPublic  []byte `json:"tpm_public,omitempty"`
 	TPMPrivate []byte `json:"tpm_private,omitempty"`
 	TPMName    []byte `json:"tpm_name,omitempty"`
-	// The ML-KEM-768 seed of a hybrid hardware identity: sealed by the TPM, or
-	// kept in the OS keyring under PQReference when the backend cannot seal.
+	// EnclaveKey is the Secure Enclave's wrapped private key: only the Secure
+	// Enclave that created it can use it.
+	EnclaveKey []byte `json:"enclave_key,omitempty"`
+	// The ML-KEM-768 seed of a hybrid hardware identity: sealed by the TPM,
+	// sealed to the Secure Enclave key (EnclaveSeal), or kept in the OS keyring
+	// under PQReference when the backend cannot seal.
 	PQReference    string `json:"pq_reference,omitempty"`
 	TPMSealPublic  []byte `json:"tpm_seal_public,omitempty"`
 	TPMSealPrivate []byte `json:"tpm_seal_private,omitempty"`
+	EnclaveSeal    []byte `json:"enclave_seal,omitempty"`
 }
 
 type Diagnosis struct {
@@ -371,7 +376,7 @@ func (m *Manager) storeSeed(md *Metadata, seed []byte) error {
 }
 
 func (m *Manager) loadSeed(md *Metadata) ([]byte, error) {
-	if len(md.TPMSealPublic) > 0 {
+	if len(md.TPMSealPublic) > 0 || len(md.EnclaveSeal) > 0 {
 		sealer, ok := m.Hardware.(SeedSealer)
 		if !ok {
 			return nil, errors.New("hardware backend cannot unseal the ML-KEM seed")

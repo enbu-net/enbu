@@ -235,7 +235,7 @@ New identities are post-quantum hybrids, so ciphertext stored today stays safe a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
 ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
 P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
-kept in the Keychain). A file is post-quantum only when every member has a hybrid key;
+encrypted to the Secure Enclave key). A file is post-quantum only when every member has a hybrid key;
 with any classical member it is encrypted classically. Members created before this
 switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
 the new key with `enbu member approve`, and `enbu member list` shows how many members
@@ -245,7 +245,7 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 |----|----------|-----------------------------|
 | Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
 | Windows | TPM 2.0 through TBS | Credential Manager |
-| macOS | Secure Enclave | Keychain |
+| macOS | Secure Enclave (Apple silicon, or Intel with a T2 chip) | Keychain |
 
 ```bash
 enbu doctor                  # No authentication or persistent key creation
@@ -261,13 +261,15 @@ Fallback is allowed only when hardware is unavailable before creation begins.
 Creation errors and saved-key load errors never silently replace the key.
 `init` registers the saved recipient and reuses it after a registration failure.
 Hardware identities have no private-key export API. TPM metadata contains encrypted
-child blobs bound to the original TPM; Secure Enclave metadata contains a Keychain
-reference. Secure Enclave keys require the device to be unlocked and do not prompt
-for Touch ID on every use.
-On macOS, permanent Secure Enclave storage requires access to the data-protection
-Keychain through the executable's signing entitlements and a user login session.
-`doctor` checks this access without creating a permanent key. Unsigned standalone
-builds may use the OS keyring fallback instead.
+child blobs bound to the original TPM; Secure Enclave metadata contains the key wrapped
+by the Secure Enclave, which only the same Mac can use. Secure Enclave keys require the
+device to be unlocked and do not prompt for Touch ID on every use.
+On macOS the Secure Enclave keys are not stored in the Keychain: the data-protection
+Keychain needs a provisioning profile that a standalone executable cannot carry, so
+the wrapped key is kept in the metadata instead and works with unsigned builds.
+`doctor` checks that a key can be created and restored, without saving anything.
+Secure Enclave identities created by earlier versions (a Keychain reference) are not
+loaded; create the identity again.
 
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
