@@ -118,7 +118,7 @@ func TestHybridHardwareIdentityRequiresValidKeys(t *testing.T) {
 // TestHybridIdentityOnTPM pairs a real (virtual) TPM ECDH key with ML-KEM.
 func TestHybridIdentityOnTPM(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	classical, _, err := b.Create()
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestManagerClassicalModeKeepsX25519(t *testing.T) {
 func newTPMManager(t *testing.T) (*Manager, *TPMBackend) {
 	t.Helper()
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	return &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: b}, b
 }
 

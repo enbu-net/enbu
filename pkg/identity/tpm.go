@@ -16,6 +16,13 @@ import (
 type TPMBackend struct {
 	Open   func() (transport.TPMCloser, error)
 	Device string
+
+	mu   sync.Mutex
+	conn *tpmConn // shared by the loaded keys; nil when none is loaded
+
+	// plainSessions turns parameter encryption off. Only tests set it: the
+	// virtual TPM they use computes the HMAC of an encrypted command wrongly.
+	plainSessions bool
 }
 
 func ecdhTemplate() (tpm2.TPMTPublic, error) {
@@ -80,17 +87,122 @@ func (b *TPMBackend) Probe() Diagnosis {
 	return d
 }
 
-func (b *TPMBackend) primary() (transport.TPMCloser, *tpm2.CreatePrimaryResponse, error) {
+// tpmConn is one TPM connection and its storage primary, shared by every key
+// a backend has loaded. Creating the primary is the slowest command enbu sends
+// (a key generation, which takes a firmware TPM tens to hundreds of
+// milliseconds), and opening the TPM has its own cost through Windows TBS, so
+// one operation that loads the identity, its sealed ML-KEM seed, the retained
+// identities and the signing key opens the TPM and creates the primary once.
+type tpmConn struct {
+	// mu serializes commands: a policy session spans several of them.
+	mu     sync.Mutex
+	t      transport.TPMCloser
+	handle tpm2.TPMHandle
+	name   tpm2.TPM2BName
+	public tpm2.TPMTPublic
+	refs   int // guarded by TPMBackend.mu
+	plain  bool
+}
+
+// parentAuth authorizes a command with the storage primary as its parent.
+func (c *tpmConn) parentAuth() tpm2.AuthHandle {
+	return tpm2.AuthHandle{Handle: c.handle, Name: c.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}
+}
+
+// sessionOpts salts a session to the primary and adds the parameter
+// encryption encrypt asks for: the session key, and so the parameters, are
+// unknown to anyone watching the bus between enbu and the TPM.
+func (c *tpmConn) sessionOpts(encrypt tpm2.AuthOption) []tpm2.AuthOption {
+	opts := []tpm2.AuthOption{tpm2.Salted(c.handle, c.public)}
+	if !c.plain {
+		opts = append(opts, encrypt)
+	}
+	return opts
+}
+
+// acquire returns the shared connection, opening the TPM and creating the
+// primary when no key holds it. Every acquire is paired with a release.
+func (b *TPMBackend) acquire() (*tpmConn, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.conn != nil {
+		b.conn.refs++
+		return b.conn, nil
+	}
 	t, err := b.Open()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	p, err := (tpm2.CreatePrimary{PrimaryHandle: tpm2.AuthHandle{Handle: tpm2.TPMRHOwner, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}, InPublic: tpm2.New2B(tpm2.ECCSRKTemplate)}).Execute(t)
 	if err != nil {
 		_ = t.Close()
-		return nil, nil, fmt.Errorf("creating TPM storage primary: %w", err)
+		return nil, fmt.Errorf("creating TPM storage primary: %w", err)
 	}
-	return t, p, nil
+	public, err := p.OutPublic.Contents()
+	if err == nil {
+		err = verifyPrimary(public, p.Name)
+	}
+	if err != nil {
+		_ = flush(t, p.ObjectHandle)
+		_ = t.Close()
+		return nil, err
+	}
+	b.conn = &tpmConn{t: t, handle: p.ObjectHandle, name: p.Name, public: *public, refs: 1, plain: b.plainSessions}
+	return b.conn, nil
+}
+
+// verifyPrimary binds the Name and the public area CreatePrimary returned.
+// Sessions are salted to the public key while the pin compares the Name, so a
+// response that pairs the genuine Name with another public key must be
+// refused: the Name has to be the hash of the public area, and the public area
+// has to be the storage template enbu asked for.
+func verifyPrimary(public *tpm2.TPMTPublic, reported tpm2.TPM2BName) error {
+	expected := tpm2.ECCSRKTemplate
+	expected.Unique = public.Unique
+	if !bytes.Equal(tpm2.Marshal(expected), tpm2.Marshal(*public)) {
+		return errors.New("TPM storage primary does not match the storage template")
+	}
+	name, err := tpm2.ObjectName(public)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(name.Buffer, reported.Buffer) {
+		return errors.New("TPM storage primary Name does not match its public area")
+	}
+	return nil
+}
+
+// release drops one reference. The last one flushes the primary and closes
+// the TPM, so a closed backend holds no TPM resources.
+func (b *TPMBackend) release(c *tpmConn) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	c.refs--
+	if c.refs > 0 {
+		return nil
+	}
+	if b.conn == c {
+		b.conn = nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return errors.Join(flush(c.t, c.handle), c.t.Close())
+}
+
+// checkParent compares the primary with the Name pinned when the key was
+// created. The primary is derived from the TPM's storage seed, so its Name
+// only changes when the TPM is cleared; a different Name means another TPM, or
+// something between enbu and the TPM, answered, and salting a session to it
+// would hand that party the session key. A key without a pin is refused too:
+// it would be salted to whatever primary answered.
+func checkParent(c *tpmConn, pinned []byte) error {
+	if len(pinned) == 0 {
+		return errors.New("TPM key metadata does not pin its storage primary; create a new identity")
+	}
+	if !bytes.Equal(c.name.Buffer, pinned) {
+		return errors.New("TPM storage primary does not match the one this key was created under")
+	}
+	return nil
 }
 
 func flush(t transport.TPM, handle tpm2.TPMHandle) error {
@@ -99,21 +211,19 @@ func flush(t transport.TPM, handle tpm2.TPMHandle) error {
 }
 
 func (b *TPMBackend) Create() (Identity, *Metadata, error) {
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = t.Close() }()
-	defer func() {
-		if parent.ObjectHandle != 0 {
-			_ = flush(t, parent.ObjectHandle)
-		}
-	}()
+	// load takes its own reference, so this one only spans the creation.
+	defer func() { _ = b.release(c) }()
 	pub, err := ecdhTemplate()
 	if err != nil {
 		return nil, nil, err
 	}
-	created, err := (tpm2.Create{ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}, InPublic: tpm2.New2B(pub)}).Execute(t)
+	c.mu.Lock()
+	created, err := (tpm2.Create{ParentHandle: c.parentAuth(), InPublic: tpm2.New2B(pub)}).Execute(c.t)
+	c.mu.Unlock()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating TPM ECDH child: %w", err)
 	}
@@ -126,12 +236,8 @@ func (b *TPMBackend) Create() (Identity, *Metadata, error) {
 		return nil, nil, err
 	}
 	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Device: b.Device},
-		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer}
-	// Release the parent before opening the identity to avoid object-slot pressure.
-	if err := flush(t, parent.ObjectHandle); err != nil {
-		return nil, nil, err
-	}
-	parent.ObjectHandle = 0 // The deferred cleanup must not flush the released parent again.
+		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer,
+		TPMParentName: c.name.Buffer}
 	id, err := b.load(md, false)
 	if err != nil {
 		return nil, nil, err
@@ -188,24 +294,22 @@ func (b *TPMBackend) load(md *Metadata, verify bool) (Identity, error) {
 	if verify && !bytes.Equal(pk.Bytes(), md.PublicKey) {
 		return nil, errors.New("TPM public key mismatch")
 	}
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return nil, err
 	}
-	loaded, err := (tpm2.Load{ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}, InPublic: *public, InPrivate: *private}).Execute(t)
+	if err := checkParent(c, md.TPMParentName); err != nil {
+		_ = b.release(c)
+		return nil, err
+	}
+	c.mu.Lock()
+	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
+	c.mu.Unlock()
 	if err != nil {
-		_ = flush(t, parent.ObjectHandle)
-		_ = t.Close()
+		_ = b.release(c)
 		return nil, fmt.Errorf("loading TPM child blob: %w", err)
 	}
-	parentPublic, err := parent.OutPublic.Contents()
-	if err != nil {
-		_ = flush(t, loaded.ObjectHandle)
-		_ = flush(t, parent.ObjectHandle)
-		_ = t.Close()
-		return nil, err
-	}
-	key := &tpmKey{t: t, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk, parent: parent.ObjectHandle, parentPublic: *parentPublic}
+	key := &tpmKey{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk}
 	if !bytes.Equal(loaded.Name.Buffer, md.TPMName) {
 		_ = key.Close()
 		return nil, errors.New("loaded TPM object Name mismatch")
@@ -219,41 +323,43 @@ func (b *TPMBackend) load(md *Metadata, verify bool) (Identity, error) {
 }
 
 type tpmKey struct {
-	mu           sync.Mutex
-	t            transport.TPMCloser
-	handle       tpm2.TPMHandle
-	name         tpm2.TPM2BName
-	pk           *ecdh.PublicKey
-	closed       bool
-	parent       tpm2.TPMHandle
-	parentPublic tpm2.TPMTPublic
+	b      *TPMBackend
+	c      *tpmConn
+	handle tpm2.TPMHandle
+	name   tpm2.TPM2BName
+	pk     *ecdh.PublicKey
+	closed bool // guarded by c.mu
 }
 
 func (k *tpmKey) PublicKey() *ecdh.PublicKey { return k.pk }
 func (k *tpmKey) Curve() ecdh.Curve          { return ecdh.P256() }
 func (k *tpmKey) ECDH(peer *ecdh.PublicKey) ([]byte, error) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.closed {
-		return nil, errors.New("TPM key is closed")
-	}
 	if peer.Curve() != ecdh.P256() {
 		return nil, errors.New("ECDH peer must use P-256")
 	}
+	c := k.c
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if k.closed {
+		return nil, errors.New("TPM key is closed")
+	}
 	b := peer.Bytes()
-	policy, closeSession, err := tpm2.PolicySession(k.t, tpm2.TPMAlgSHA256, 16, tpm2.Salted(k.parent, k.parentPublic))
+	// The session is salted to the primary and encrypts the response, so the
+	// shared secret does not cross the bus in the clear.
+	policy, closeSession, err := tpm2.PolicySession(c.t, tpm2.TPMAlgSHA256, 16,
+		c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut))...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = closeSession() }()
-	if _, err := (tpm2.PolicyCommandCode{PolicySession: policy.Handle(), Code: tpm2.TPMCCECDHZGen}).Execute(k.t); err != nil {
+	if _, err := (tpm2.PolicyCommandCode{PolicySession: policy.Handle(), Code: tpm2.TPMCCECDHZGen}).Execute(c.t); err != nil {
 		return nil, err
 	}
-	if _, err := (tpm2.PolicyAuthValue{PolicySession: policy.Handle()}).Execute(k.t); err != nil {
+	if _, err := (tpm2.PolicyAuthValue{PolicySession: policy.Handle()}).Execute(c.t); err != nil {
 		return nil, err
 	}
 	rsp, err := (tpm2.ECDHZGen{KeyHandle: tpm2.AuthHandle{Handle: k.handle, Name: k.name, Auth: policy},
-		InPoint: tpm2.New2B(tpm2.TPMSECCPoint{X: tpm2.TPM2BECCParameter{Buffer: b[1:33]}, Y: tpm2.TPM2BECCParameter{Buffer: b[33:]}})}).Execute(k.t)
+		InPoint: tpm2.New2B(tpm2.TPMSECCPoint{X: tpm2.TPM2BECCParameter{Buffer: b[1:33]}, Y: tpm2.TPM2BECCParameter{Buffer: b[33:]}})}).Execute(c.t)
 	if err != nil {
 		return nil, err
 	}
@@ -266,12 +372,15 @@ func (k *tpmKey) ECDH(peer *ecdh.PublicKey) ([]byte, error) {
 	}
 	return new(big.Int).SetBytes(p.X.Buffer).FillBytes(make([]byte, 32)), nil
 }
+
 func (k *tpmKey) Close() error {
-	k.mu.Lock()
-	defer k.mu.Unlock()
+	k.c.mu.Lock()
 	if k.closed {
+		k.c.mu.Unlock()
 		return nil
 	}
 	k.closed = true
-	return errors.Join(flush(k.t, k.handle), flush(k.t, k.parent), k.t.Close())
+	err := flush(k.c.t, k.handle)
+	k.c.mu.Unlock()
+	return errors.Join(err, k.b.release(k.c))
 }

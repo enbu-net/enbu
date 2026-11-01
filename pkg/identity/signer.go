@@ -29,6 +29,8 @@ type SignerMetadata struct {
 	TPMPublic  []byte            `json:"tpm_public,omitempty"`
 	TPMPrivate []byte            `json:"tpm_private,omitempty"`
 	TPMName    []byte            `json:"tpm_name,omitempty"`
+	// TPMParentName pins the storage primary the key was created under.
+	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
 }
 
 // SignerInfo is the public description of the local signing key.
