@@ -47,6 +47,8 @@ of 6 characters or more that the command prints there are replaced with
 				return err
 			}
 			child := exec.Command(args[0], args[1:]...)
+			release := bindToEnbu(child)
+			defer release()
 			child.Env = mergedEnv(os.Environ(), result.Secrets, preserveEnv)
 			child.Stdin = cmd.InOrStdin()
 			values := maskedValues(result.Secrets)

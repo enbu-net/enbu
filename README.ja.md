@@ -34,6 +34,15 @@ go install github.com/enbu-net/enbu@latest
 ```
 
 または [Releases](https://github.com/enbu-net/enbu/releases) からバイナリをダウンロード  
+Linux向けには、シェル補完も入るパッケージがあります。デスクトップアプリの`.deb`と`.rpm`は、アプリメニューへの追加と`enbu://`リンクの登録も行います。
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian、Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora、RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # デスクトップアプリ（GTK 4、WebKitGTK 6.0）
+```
 
 ## クイックスタート
 
@@ -237,9 +246,11 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
-| Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
+| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet） |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
 | macOS | Secure Enclave | Keychain |
+
+Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けないため、グループ外のユーザーはkeyringにfallbackします。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。どちらになったかは`enbu doctor`で確認できます。
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査

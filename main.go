@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	enbucli "github.com/enbu-net/enbu/cli"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/process"
 	"github.com/spf13/cobra"
 )
 
@@ -18,6 +19,9 @@ var (
 )
 
 func main() {
+	// Before anything decrypts: keeps same-user processes out of enbu's memory.
+	_ = process.Harden()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 

@@ -1,0 +1,37 @@
+# Packages the Linux desktop app as .deb and .rpm (`task gui/package/linux`,
+# run from desktop/wails with VERSION and ARCH set). The desktop entry and icon
+# register the app and enbu:// links system-wide, so the app then skips its
+# per-user entry.
+name: enbu-desktop
+arch: ${ARCH}
+version: ${VERSION}
+version_schema: semver
+maintainer: enbu <https://github.com/enbu-net/enbu>
+description: Desktop app for enbu, keyless .env management
+homepage: https://github.com/enbu-net/enbu
+license: MIT
+section: utils
+priority: optional
+contents:
+  - src: build/bin/enbu-desktop
+    dst: /usr/bin/enbu-desktop
+    file_info:
+      mode: 0755
+  - src: packaging/linux/net.enbu.desktop.desktop
+    dst: /usr/share/applications/net.enbu.desktop.desktop
+    file_info:
+      mode: 0644
+  - src: ../../assets/icon.png
+    dst: /usr/share/icons/hicolor/512x512/apps/net.enbu.desktop.png
+    file_info:
+      mode: 0644
+overrides:
+  # Built on Ubuntu 24.04 against GTK 4 and WebKitGTK 6.0.
+  deb:
+    depends:
+      - libgtk-4-1
+      - libwebkitgtk-6.0-4
+  rpm:
+    depends:
+      - gtk4
+      - webkitgtk6.0

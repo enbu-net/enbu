@@ -12,12 +12,20 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
+	"github.com/enbu-net/enbu/pkg/process"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 var Version string
+
+// desktopID is the app's GTK application ID on Linux, and the name of its
+// desktop entry and icon. Wayland matches a window to the desktop entry of the
+// same name, which gives the window its icon. GLib also uses it as the program
+// name, so WebKit keeps its own data under it, apart from enbu's data
+// directory.
+const desktopID = "net.enbu.desktop"
 
 // Typed events let the binding generator emit their payload types for the
 // frontend.
@@ -36,7 +44,7 @@ func singleInstance(goos string, getenv func(string) string, onSecond func(appli
 		return nil
 	}
 	return &application.SingleInstanceOptions{
-		UniqueID:               "net.enbu.desktop",
+		UniqueID:               desktopID,
 		OnSecondInstanceLaunch: onSecond,
 	}
 }
@@ -103,6 +111,8 @@ func activate(w window) {
 }
 
 func main() {
+	// Before anything decrypts: keeps same-user processes out of enbu's memory.
+	_ = process.Harden()
 	logFile := setupLogger()
 	if logFile != nil {
 		defer func() {
@@ -149,7 +159,7 @@ func run() error {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		Linux: application.LinuxOptions{
-			ProgramName: "enbu",
+			ApplicationID: desktopID,
 		},
 		OnShutdown: cancel,
 	})
