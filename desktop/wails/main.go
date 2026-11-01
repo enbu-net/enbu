@@ -12,6 +12,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
+	"github.com/enbu-net/enbu/pkg/process"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -103,6 +104,8 @@ func activate(w window) {
 }
 
 func main() {
+	// Before anything decrypts: keeps same-user processes out of enbu's memory.
+	_ = process.Harden()
 	logFile := setupLogger()
 	if logFile != nil {
 		defer func() {
