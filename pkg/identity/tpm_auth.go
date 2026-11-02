@@ -80,11 +80,32 @@ func (a *tpmAuth) store(credential, secret []byte) ([]byte, error) {
 
 // deriveAuth turns the verifier's secret into a TPM authValue. SHA-256 is the
 // nameAlg of every enbu TPM object, so the authValue may be 32 bytes.
+//
+// The authValue has no zero byte. go-tpm (v0.9.8, hmacKeyFromAuthValue) cuts
+// the HMAC key at the first zero byte instead of only trimming trailing ones
+// as the TPM does, so a value with a zero inside fails with TPM_RC_BAD_AUTH
+// (about one value in eight). The bytes come from a longer HKDF stream with
+// the zeros dropped, which keeps almost 256 bits.
 func deriveAuth(secret []byte) ([]byte, error) {
 	if len(secret) < 32 {
 		return nil, errors.New("user verification returned a short secret")
 	}
-	return hkdf.Key(sha256.New, secret, nil, "enbu tpm auth v1", 32)
+	stream, err := hkdf.Key(sha256.New, secret, nil, "enbu tpm auth v2", 128)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(stream)
+	value := make([]byte, 0, 32)
+	for _, c := range stream {
+		if c != 0 && len(value) < 32 {
+			value = append(value, c)
+		}
+	}
+	if len(value) < 32 {
+		clear(value)
+		return nil, errors.New("could not derive a TPM authValue")
+	}
+	return value, nil
 }
 
 // enrollAuth returns the credential and authValue new keys are created with.

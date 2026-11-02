@@ -251,3 +251,51 @@ func TestTPMAuthIsCachedForItsTTL(t *testing.T) {
 		t.Fatal("a short secret was accepted")
 	}
 }
+
+// TestTPMAuthHasNoZeroByte guards against go-tpm cutting the HMAC key at a
+// zero byte inside the authValue, which made one real-TPM key in eight fail
+// with TPM_RC_BAD_AUTH.
+func TestTPMAuthHasNoZeroByte(t *testing.T) {
+	for i := range 4096 {
+		secret := bytes.Repeat([]byte{byte(i), byte(i >> 8)}, 16)
+		v, err := deriveAuth(secret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(v) != 32 || bytes.IndexByte(v, 0) >= 0 {
+			t.Fatalf("secret %d: authValue %x", i, v)
+		}
+	}
+}
+
+// TestTPMKeysWorkWithEveryAuthValue creates and uses keys under many
+// secrets, so an authValue the TPM and go-tpm disagree on shows up here and
+// not only on a real TPM.
+func TestTPMKeysWorkWithEveryAuthValue(t *testing.T) {
+	v := newVirtualTPM(t)
+	open := func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }
+	for i := range 24 {
+		hello := &fakeVerifier{secret: bytes.Repeat([]byte{byte(i + 1)}, 32)}
+		b := verifiedBackend(t, open, hello)
+		id, _, err := b.Create()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ciphertext, err := age.EncryptForPublicKeys([]byte("secret"), []string{id.Recipient().String()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := age.Decrypt(ciphertext, id); err != nil {
+			t.Fatalf("secret %d: %v", i, err)
+		}
+		s, _, err := b.CreateSigner()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Sign(signing.DomainState, []byte("state")); err != nil {
+			t.Fatalf("secret %d: sign: %v", i, err)
+		}
+		_ = s.Close()
+		_ = id.Close()
+	}
+}
