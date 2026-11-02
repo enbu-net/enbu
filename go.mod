@@ -17,6 +17,7 @@ require (
 	github.com/goccy/tobari v0.14.0
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/go-tpm v0.9.8
+	github.com/google/go-tpm-tools v0.4.11
 	github.com/minio/minio-go/v7 v7.4.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1

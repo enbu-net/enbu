@@ -12,7 +12,7 @@ import (
 
 func TestTPMSignerRoundTripAndRestart(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	s, md, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
@@ -53,13 +53,13 @@ func TestTPMSignerRoundTripAndRestart(t *testing.T) {
 
 func TestTPMSignerRejectsEncryptionKey(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	id, md, err := b.Create()
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = id.Close()
-	_, err = b.LoadSigner(&SignerMetadata{Backend: "tpm", Algorithm: "P-256", TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName})
+	_, err = b.LoadSigner(&SignerMetadata{Backend: "tpm", Algorithm: "P-256", TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName, TPMParentName: md.TPMParentName})
 	if err == nil {
 		t.Fatal("ECDH identity key loaded as a signer")
 	}
@@ -67,7 +67,7 @@ func TestTPMSignerRejectsEncryptionKey(t *testing.T) {
 
 func TestTPMSignerLoadChecksItsMetadata(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	s, md, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestTPMSignerLoadChecksItsMetadata(t *testing.T) {
 
 func TestTPMSignerSignaturesAreLowSAndStopAfterClose(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	s, _, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
@@ -128,14 +128,14 @@ func TestTPMSignerSignaturesAreLowSAndStopAfterClose(t *testing.T) {
 // The ECDH identity key is a different key, so a signer reference must not load as one.
 func TestTPMIdentityKeyIsNotLoadedAsSigner(t *testing.T) {
 	v := newVirtualTPM(t)
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }}
 	s, md, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = s.Close()
 	asIdentity := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256"},
-		TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName}
+		TPMPublic: md.TPMPublic, TPMPrivate: md.TPMPrivate, TPMName: md.TPMName, TPMParentName: md.TPMParentName}
 	if id, err := b.Load(asIdentity); err == nil {
 		_ = id.Close()
 		t.Fatal("a signing key loaded as the encryption identity")

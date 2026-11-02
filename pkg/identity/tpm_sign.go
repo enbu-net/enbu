@@ -5,11 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/google/go-tpm/tpm2"
-	"github.com/google/go-tpm/tpm2/transport"
 )
 
 // signTemplate is a non-restricted ECDSA P-256 signing-only key. It cannot
@@ -29,17 +27,15 @@ func signTemplate() tpm2.TPMTPublic {
 }
 
 func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() { _ = t.Close() }()
-	defer func() {
-		if parent.ObjectHandle != 0 {
-			_ = flush(t, parent.ObjectHandle)
-		}
-	}()
-	created, err := (tpm2.Create{ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}, InPublic: tpm2.New2B(signTemplate())}).Execute(t)
+	// LoadSigner takes its own reference, so this one only spans the creation.
+	defer func() { _ = b.release(c) }()
+	c.mu.Lock()
+	created, err := (tpm2.Create{ParentHandle: c.parentAuth(), InPublic: tpm2.New2B(signTemplate())}).Execute(c.t)
+	c.mu.Unlock()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating TPM signing child: %w", err)
 	}
@@ -52,11 +48,8 @@ func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
 		return nil, nil, err
 	}
 	md := &SignerMetadata{Backend: "tpm", Algorithm: "P-256", Device: b.Device,
-		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer}
-	if err := flush(t, parent.ObjectHandle); err != nil {
-		return nil, nil, err
-	}
-	parent.ObjectHandle = 0
+		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer,
+		TPMParentName: c.name.Buffer}
 	s, err := b.LoadSigner(md)
 	if err != nil {
 		return nil, nil, err
@@ -111,17 +104,22 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return nil, err
 	}
-	loaded, err := (tpm2.Load{ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}, InPublic: *public, InPrivate: *private}).Execute(t)
+	if err := checkParent(c, md.TPMParentName); err != nil {
+		_ = b.release(c)
+		return nil, err
+	}
+	c.mu.Lock()
+	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
+	c.mu.Unlock()
 	if err != nil {
-		_ = flush(t, parent.ObjectHandle)
-		_ = t.Close()
+		_ = b.release(c)
 		return nil, fmt.Errorf("loading TPM signing child blob: %w", err)
 	}
-	s := &tpmSigner{t: t, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk, parent: parent.ObjectHandle}
+	s := &tpmSigner{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk}
 	if !bytes.Equal(loaded.Name.Buffer, md.TPMName) {
 		_ = s.Close()
 		return nil, errors.New("loaded TPM object Name mismatch")
@@ -130,31 +128,30 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 }
 
 type tpmSigner struct {
-	mu     sync.Mutex
-	t      transport.TPMCloser
+	b      *TPMBackend
+	c      *tpmConn
 	handle tpm2.TPMHandle
 	name   tpm2.TPM2BName
 	pk     signing.PublicKey
-	parent tpm2.TPMHandle
-	closed bool
+	closed bool // guarded by c.mu
 }
 
 func (s *tpmSigner) Public() signing.PublicKey { return s.pk }
 
 func (s *tpmSigner) Sign(domain string, body []byte) ([]byte, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil, errors.New("TPM signing key is closed")
-	}
 	if err := signing.ValidateDomain(domain); err != nil {
 		return nil, err
+	}
+	s.c.mu.Lock()
+	defer s.c.mu.Unlock()
+	if s.closed {
+		return nil, errors.New("TPM signing key is closed")
 	}
 	rsp, err := (tpm2.Sign{
 		KeyHandle:  tpm2.AuthHandle{Handle: s.handle, Name: s.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
 		Digest:     tpm2.TPM2BDigest{Buffer: signing.P256Digest(domain, body)},
 		Validation: tpm2.TPMTTKHashCheck{Tag: tpm2.TPMSTHashCheck},
-	}).Execute(s.t)
+	}).Execute(s.c.t)
 	if err != nil {
 		return nil, fmt.Errorf("TPM sign: %w", err)
 	}
@@ -176,11 +173,13 @@ func (s *tpmSigner) Sign(domain string, body []byte) ([]byte, error) {
 }
 
 func (s *tpmSigner) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.c.mu.Lock()
 	if s.closed {
+		s.c.mu.Unlock()
 		return nil
 	}
 	s.closed = true
-	return errors.Join(flush(s.t, s.handle), flush(s.t, s.parent), s.t.Close())
+	err := flush(s.c.t, s.handle)
+	s.c.mu.Unlock()
+	return errors.Join(err, s.b.release(s.c))
 }
