@@ -109,17 +109,11 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	auth, err := b.authFor(md.TPMAuthCredential)
-	if err != nil {
-		return nil, err
-	}
 	c, err := b.acquire()
 	if err != nil {
-		clear(auth)
 		return nil, err
 	}
 	if err := checkParent(c, md.TPMParentName); err != nil {
-		clear(auth)
 		_ = b.release(c)
 		return nil, err
 	}
@@ -127,11 +121,11 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
 	c.mu.Unlock()
 	if err != nil {
-		clear(auth)
 		_ = b.release(c)
 		return nil, fmt.Errorf("loading TPM signing child blob: %w", err)
 	}
-	s := &tpmSigner{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk, auth: auth}
+	s := &tpmSigner{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk,
+		auth: &keyAuth{b: b, credential: bytes.Clone(md.TPMAuthCredential)}}
 	if !bytes.Equal(loaded.Name.Buffer, md.TPMName) {
 		_ = s.Close()
 		return nil, errors.New("loaded TPM object Name mismatch")
@@ -145,8 +139,8 @@ type tpmSigner struct {
 	handle tpm2.TPMHandle
 	name   tpm2.TPM2BName
 	pk     signing.PublicKey
-	auth   []byte // the key's authValue; nil without user verification
-	closed bool   // guarded by c.mu
+	auth   *keyAuth
+	closed bool // guarded by c.mu
 }
 
 func (s *tpmSigner) Public() signing.PublicKey { return s.pk }
@@ -155,13 +149,17 @@ func (s *tpmSigner) Sign(domain string, body []byte) ([]byte, error) {
 	if err := signing.ValidateDomain(domain); err != nil {
 		return nil, err
 	}
+	auth, err := s.auth.get()
+	if err != nil {
+		return nil, err
+	}
 	s.c.mu.Lock()
 	defer s.c.mu.Unlock()
 	if s.closed {
 		return nil, errors.New("TPM signing key is closed")
 	}
 	rsp, err := (tpm2.Sign{
-		KeyHandle:  tpm2.AuthHandle{Handle: s.handle, Name: s.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.Auth(s.auth))},
+		KeyHandle:  tpm2.AuthHandle{Handle: s.handle, Name: s.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.Auth(auth))},
 		Digest:     tpm2.TPM2BDigest{Buffer: signing.P256Digest(domain, body)},
 		Validation: tpm2.TPMTTKHashCheck{Tag: tpm2.TPMSTHashCheck},
 	}).Execute(s.c.t)
@@ -192,7 +190,7 @@ func (s *tpmSigner) Close() error {
 		return nil
 	}
 	s.closed = true
-	clear(s.auth)
+	s.auth.close()
 	err := flush(s.c.t, s.handle)
 	s.c.mu.Unlock()
 	return errors.Join(err, s.b.release(s.c))

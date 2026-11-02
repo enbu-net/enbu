@@ -13,6 +13,9 @@ import (
 // derived from a secret that only a verified user can obtain from the
 // verifier (on Windows, the PRF of a Windows Hello passkey). Without it, any
 // process of the same user could have the TPM decrypt and sign.
+//
+// The caller clears each returned secret after use, so a verifier must return
+// a fresh slice on every call.
 type UserVerifier interface {
 	// Enroll creates a credential, asks the user to verify, and returns the
 	// credential's ID and its secret. It returns ErrUserVerificationUnsupported
@@ -50,7 +53,12 @@ func (a *tpmAuth) clock() time.Time {
 }
 
 func (a *tpmAuth) cached(credential []byte) []byte {
-	if a.value == nil || a.clock().Sub(a.at) > authTTL {
+	if a.value == nil {
+		return nil
+	}
+	if a.clock().Sub(a.at) > authTTL {
+		clear(a.value)
+		a.credential, a.value = nil, nil
 		return nil
 	}
 	if credential != nil && !bytes.Equal(credential, a.credential) {
@@ -130,4 +138,43 @@ func (b *TPMBackend) authFor(credential []byte) ([]byte, error) {
 	}
 	value, err := a.store(credential, secret)
 	return bytes.Clone(value), err
+}
+
+// keyAuth is the authValue of one loaded key. It is resolved on the key's
+// first use, not when the key is loaded, so reading a key's public part (for
+// `enbu identity` or the member list) never asks the user to verify. It is
+// resolved outside the connection lock, so a verification prompt does not
+// block other keys.
+type keyAuth struct {
+	b          *TPMBackend
+	credential []byte
+	mu         sync.Mutex
+	value      []byte
+	resolved   bool
+	closed     bool
+}
+
+func (k *keyAuth) get() ([]byte, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.closed {
+		return nil, errors.New("TPM key is closed")
+	}
+	if !k.resolved {
+		v, err := k.b.authFor(k.credential)
+		if err != nil {
+			return nil, err
+		}
+		k.value, k.resolved = v, true
+	}
+	return k.value, nil
+}
+
+// close clears the authValue. The caller holds the connection lock, so no
+// command is using the value.
+func (k *keyAuth) close() {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	clear(k.value)
+	k.value, k.closed = nil, true
 }

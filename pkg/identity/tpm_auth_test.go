@@ -86,9 +86,6 @@ func TestTPMKeysUseTheVerifiedSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.Close() }()
-	if hello.asks != 1 {
-		t.Fatalf("loading asked the user %d times, want 1", hello.asks)
-	}
 	ciphertext, err := age.EncryptForPublicKeys([]byte("secret"), []string{id.Recipient().String()})
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +95,9 @@ func TestTPMKeysUseTheVerifiedSecret(t *testing.T) {
 	}
 	if _, err := s.Sign(signing.DomainState, []byte("state")); err != nil {
 		t.Fatal(err)
+	}
+	if hello.asks != 1 {
+		t.Fatalf("using the keys asked the user %d times, want 1", hello.asks)
 	}
 
 	// Another secret loads the blobs (only the parent authorizes Load) but
@@ -135,8 +135,56 @@ func TestTPMKeysUseTheVerifiedSecret(t *testing.T) {
 	if _, err := age.Decrypt(ciphertext, bare); err == nil {
 		t.Fatal("an empty authValue decrypted")
 	}
-	if _, err := verifiedBackend(t, open, nil).Load(md); err == nil {
-		t.Fatal("a key that needs verification loaded without a verifier")
+	unverified, err := verifiedBackend(t, open, nil).Load(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unverified.Close() }()
+	if _, err := age.Decrypt(ciphertext, unverified); err == nil {
+		t.Fatal("a key that needs verification decrypted without a verifier")
+	}
+}
+
+// TestTPMLoadingKeysDoesNotAsk loads the identity and signer only to read
+// their public parts, as `enbu identity` and the member list do, and checks
+// that the user is asked only when a key is used.
+func TestTPMLoadingKeysDoesNotAsk(t *testing.T) {
+	v := newVirtualTPM(t)
+	open := func() (transport.TPMCloser, error) { return &virtualTransport{v}, nil }
+	hello := &fakeVerifier{secret: bytes.Repeat([]byte{7}, 32)}
+	b := verifiedBackend(t, open, hello)
+	id, md, err := b.Create()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Close()
+	s, smd, err := b.CreateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+
+	b = verifiedBackend(t, open, hello)
+	id, err = b.Load(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err = b.LoadSigner(smd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = id.Recipient()
+	_ = s.Public()
+	if hello.asks != 0 {
+		t.Fatalf("loading asked the user %d times", hello.asks)
+	}
+	if _, err := s.Sign(signing.DomainState, []byte("state")); err != nil || hello.asks != 1 {
+		t.Fatalf("Sign: asks=%d err=%v", hello.asks, err)
+	}
+	_ = id.Close()
+	_ = s.Close()
+	if _, err := s.Sign(signing.DomainState, []byte("state")); err == nil || hello.asks != 1 {
+		t.Fatalf("a closed signer signed or asked: asks=%d err=%v", hello.asks, err)
 	}
 }
 
@@ -190,6 +238,9 @@ func TestTPMAuthIsCachedForItsTTL(t *testing.T) {
 		t.Fatal("the cache handed out its own buffer")
 	}
 	now = now.Add(authTTL + time.Second)
+	if b.auth.cached(nil) != nil || b.auth.value != nil {
+		t.Fatal("an expired secret stayed in the cache")
+	}
 	if _, err := b.authFor(credential); err != nil || hello.asks != 1 {
 		t.Fatalf("an expired secret was reused: asks=%d err=%v", hello.asks, err)
 	}

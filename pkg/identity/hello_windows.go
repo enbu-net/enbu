@@ -40,6 +40,7 @@ var (
 	procGetAssertion        = modWebAuthn.NewProc("WebAuthNAuthenticatorGetAssertion")
 	procFreeAttestation     = modWebAuthn.NewProc("WebAuthNFreeCredentialAttestation")
 	procFreeAssertion       = modWebAuthn.NewProc("WebAuthNFreeAssertion")
+	procDeleteCredential    = modWebAuthn.NewProc("WebAuthNDeletePlatformCredential")
 	procConsoleWindow       = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow")
 	helloCredentialType, _  = windows.UTF16PtrFromString("public-key")
 	helloHashSHA256, _      = windows.UTF16PtrFromString("SHA-256")
@@ -315,13 +316,14 @@ func (h helloVerifier) Enroll() ([]byte, []byte, error) {
 		return nil, nil, errors.New("no passkey came back from Windows Hello")
 	}
 	defer procFreeAttestation.Call(uintptr(unsafe.Pointer(att))) //nolint:errcheck // void function
-	if att.version < 5 || att.prfEnabled == 0 {
-		return nil, nil, fmt.Errorf("the Windows Hello passkey has no PRF: %w", ErrUserVerificationUnsupported)
-	}
 	if att.credentialIDLen == 0 || att.credentialID == nil {
 		return nil, nil, errors.New("no credential ID came back from Windows Hello")
 	}
 	credential := append([]byte(nil), unsafe.Slice(att.credentialID, att.credentialIDLen)...)
+	if att.version < 5 || att.prfEnabled == 0 {
+		return nil, nil, errors.Join(fmt.Errorf("the Windows Hello passkey has no PRF: %w", ErrUserVerificationUnsupported),
+			deletePasskey(credential))
+	}
 	if att.version >= 7 {
 		if secret := saltOutput(att.hmacSecret); secret != nil {
 			return credential, secret, nil
@@ -331,9 +333,24 @@ func (h helloVerifier) Enroll() ([]byte, []byte, error) {
 	// the user verifies a second time, once per identity.
 	secret, err := h.Secret(credential)
 	if err != nil {
-		return nil, nil, err
+		// No identity will use the new passkey, so do not leave it behind.
+		return nil, nil, errors.Join(err, deletePasskey(credential))
 	}
 	return credential, secret, nil
+}
+
+// deletePasskey removes a passkey that Enroll created but no key uses. A
+// failure is reported with the error that made the passkey unused.
+func deletePasskey(credential []byte) error {
+	if procDeleteCredential.Find() != nil {
+		return nil
+	}
+	hr, _, _ := procDeleteCredential.Call(uintptr(len(credential)), uintptr(unsafe.Pointer(&credential[0])))
+	runtime.KeepAlive(credential)
+	if hr != 0 {
+		return fmt.Errorf("removing the unused Windows Hello passkey: HRESULT 0x%08x", uint32(hr))
+	}
+	return nil
 }
 
 func (helloVerifier) Secret(credential []byte) ([]byte, error) {
