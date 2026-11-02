@@ -272,6 +272,36 @@ func TestTPMAuthIsCachedForItsTTL(t *testing.T) {
 	}
 }
 
+// TestTPMAuthExpiresUnasked checks that the TTL timer wipes the cached value
+// even when nothing reads it again, and that a timer armed for an older value
+// leaves a newer one alone.
+func TestTPMAuthExpiresUnasked(t *testing.T) {
+	b := &TPMBackend{Verifier: &fakeVerifier{secret: bytes.Repeat([]byte{7}, 32)}}
+	if _, _, err := b.enrollAuth(); err != nil {
+		t.Fatal(err)
+	}
+	a := &b.auth
+	stale := a.gen
+	a.mu.Lock()
+	if _, err := a.store([]byte("next"), bytes.Repeat([]byte{8}, 32)); err != nil {
+		t.Fatal(err)
+	}
+	value := a.value
+	a.mu.Unlock()
+	a.expire(stale)
+	if a.value == nil {
+		t.Fatal("a stale timer wiped the newer secret")
+	}
+	a.expire(a.gen)
+	if a.value != nil || a.credential != nil {
+		t.Fatal("the TTL timer left the secret in the cache")
+	}
+	if !bytes.Equal(value, make([]byte, len(value))) {
+		t.Fatal("the TTL timer dropped the secret without clearing it")
+	}
+	a.expiry.Stop()
+}
+
 // TestTPMAuthHasNoZeroByte guards against go-tpm cutting the HMAC key at a
 // zero byte inside the authValue, which made one real-TPM key in eight fail
 // with TPM_RC_BAD_AUTH.

@@ -43,6 +43,10 @@ type tpmAuth struct {
 	value      []byte // the authValue derived from the secret
 	at         time.Time
 	now        func() time.Time
+	// expiry wipes the value when its TTL ends, even if nothing asks for it
+	// again; gen tells it whether the value it was armed for is still there.
+	expiry *time.Timer
+	gen    uint64
 }
 
 func (a *tpmAuth) clock() time.Time {
@@ -75,7 +79,24 @@ func (a *tpmAuth) store(credential, secret []byte) ([]byte, error) {
 	}
 	clear(a.value)
 	a.credential, a.value, a.at = credential, value, a.clock()
+	a.gen++
+	gen := a.gen
+	if a.expiry != nil {
+		a.expiry.Stop()
+	}
+	a.expiry = time.AfterFunc(authTTL, func() { a.expire(gen) })
 	return value, nil
+}
+
+// expire wipes the cached value if it is still the one stored as gen.
+func (a *tpmAuth) expire(gen uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.gen != gen || a.value == nil {
+		return
+	}
+	clear(a.value)
+	a.credential, a.value = nil, nil
 }
 
 // deriveAuth turns the verifier's secret into a TPM authValue. SHA-256 is the
