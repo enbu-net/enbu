@@ -89,9 +89,11 @@ export function DevicePanel({
               : m.device_hardwareUnavailable({ backend: diagnosis.backend })}
           </Text>
           <Text>
-            {diagnosis.fallback_available
-              ? m.device_keyringAvailable()
-              : m.device_keyringUnavailable()}
+            {!diagnosis.fallback_available
+              ? m.device_keyringUnavailable()
+              : diagnosis.fallback === "systemd-creds"
+                ? m.device_credsAvailable()
+                : m.device_keyringAvailable()}
           </Text>
         </VStack>
       )}
