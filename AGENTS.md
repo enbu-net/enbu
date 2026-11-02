@@ -41,6 +41,10 @@ task vscode/check       # Format and lint VS Code extension code
 
 The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
 
+## Releasing
+
+Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
+
 ## Architecture
 
 ```
