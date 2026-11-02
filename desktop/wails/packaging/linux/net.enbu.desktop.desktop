@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=enbu
+GenericName=Secret Manager
+Comment=Keyless .env management
+Exec=enbu-desktop %u
+Icon=net.enbu.desktop
+Terminal=false
+Categories=Development;Security;Utility;
+Keywords=env;dotenv;secrets;
+MimeType=x-scheme-handler/enbu;
+StartupNotify=true
+StartupWMClass=net.enbu.desktop

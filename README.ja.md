@@ -34,6 +34,15 @@ go install github.com/enbu-net/enbu@latest
 ```
 
 または [Releases](https://github.com/enbu-net/enbu/releases) からバイナリをダウンロード  
+Linux向けには、シェル補完も入るパッケージがあります。デスクトップアプリの`.deb`と`.rpm`は、アプリメニューへの追加と`enbu://`リンクの登録も行います。
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian、Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora、RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # デスクトップアプリ（GTK 4、WebKitGTK 6.0）
+```
 
 ## クイックスタート
 
@@ -137,6 +146,7 @@ enbu run --preserve-env -- make  # シェルで既に設定済みの変数を優
 ```
 
 コマンドの終了コードはそのまま返します。
+出力先が端末でないとき（CIやログファイルなど）は、6文字以上の秘密の値を`<concealed by enbu>`に置き換えます。`--no-masking`で無効にできます。置き換えるのは保存された値そのもの（複数行の値は各行も）だけで、コマンドがbase64やURLエンコードなどで変換した値はそのまま出力されます。
 
 ### 6. メンバーの追加
 
@@ -236,9 +246,13 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
-| Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
+| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet）、なければ`systemd-creds --user` |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
 | macOS | Secure Enclave | Keychain |
+
+Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けないため、グループ外のユーザーはkeyringにfallbackします。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。どちらになったかは`enbu doctor`で確認できます。
+
+サーバー、コンテナ、WSLでは、使えるTPMもSecret Serviceもないことがよくあります。その場合enbuはソフトウェア鍵を`systemd-creds --user`（systemd 256以降）で暗号化し、データディレクトリ内のファイルに保管します。鍵はユーザーとマシンのホスト鍵に、TPMがあればTPMにも結び付きます。ユーザーにTPMへのアクセス権は要りません。
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査
@@ -246,7 +260,7 @@ enbu identity create          # 現在のリポジトリ用Identityを作成・�
 enbu identity show            # backend、algorithm、recipient、deviceを表示
 enbu identity upgrade         # この端末を耐量子ハイブリッド鍵へ移行
 export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
-# hardware: ハードウェア必須 / keyring: OS keyringへ保存
+# hardware: ハードウェア必須 / keyring: ソフトウェア鍵（OS keyring、なければsystemd-creds）
 export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の鍵（X25519 / P-256）を作る
 ```
 

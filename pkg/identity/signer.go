@@ -89,11 +89,11 @@ func (m *Manager) LoadSigner(workspaceID string) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if mode == "hardware" && md.Backend == "keyring" || mode == "keyring" && md.Backend != "keyring" {
+	if mode == "hardware" && softwareBackend(md.Backend) || mode == "keyring" && !softwareBackend(md.Backend) {
 		return nil, fmt.Errorf("saved signing backend %s does not satisfy %s", md.Backend, mode)
 	}
 	var s signing.Signer
-	if md.Backend == "keyring" {
+	if softwareBackend(md.Backend) {
 		s, err = m.loadSoftwareSigner(md)
 	} else {
 		hw, ok := m.Hardware.(SignerBackend)
@@ -120,10 +120,11 @@ func (m *Manager) loadSoftwareSigner(md *SignerMetadata) (signing.Signer, error)
 	if md.Algorithm != "Ed25519" || md.Reference == "" {
 		return nil, errors.New("invalid keyring signing metadata")
 	}
-	if m.Vault == nil {
-		return nil, unavailable("keyring unavailable", nil)
+	vault := m.vault(md.Backend)
+	if vault == nil {
+		return nil, unavailable(md.Backend+" unavailable", nil)
 	}
-	secret, err := m.Vault.Load(vaultService, md.Reference)
+	secret, err := vault.Load(vaultService, md.Reference)
 	if err != nil {
 		return nil, keyringError("loading saved keyring signing key", err)
 	}
@@ -182,7 +183,7 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 			}
 			// The metadata is what a later load trusts to find this key, so a
 			// backend that returns none (or the software backend's) is a bug.
-			if s == nil || md == nil || md.Backend == "" || md.Backend == "keyring" {
+			if s == nil || md == nil || md.Backend == "" || softwareBackend(md.Backend) {
 				if s != nil {
 					_ = s.Close()
 				}
@@ -195,7 +196,7 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 			if mode == "hardware" {
 				return nil, info, "", unavailable("hardware signing key unavailable: "+reason, nil)
 			}
-			warning = "Hardware signing key unavailable: " + reason + "; using OS keyring (Ed25519)."
+			warning = "Hardware signing key unavailable: " + reason
 		}
 	}
 	if s == nil {
@@ -203,14 +204,17 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 		if err != nil {
 			return nil, info, warning, err
 		}
+		if warning != "" {
+			warning += "; using " + softwareName(md.Backend) + " (Ed25519)."
+		}
 	}
 	md.Version = 1
 	md.PublicKey = s.Public()
 	md.DeviceID = md.PublicKey.DeviceID()
 	if err := saveJSON(path, md); err != nil {
 		_ = s.Close()
-		if md.Backend == "keyring" {
-			_ = m.Vault.Delete(vaultService, md.Reference)
+		if softwareBackend(md.Backend) {
+			_ = m.vault(md.Backend).Delete(vaultService, md.Reference)
 		} else if cleanup, ok := m.Hardware.(interface{ DeleteSigner(*SignerMetadata) error }); ok {
 			_ = cleanup.DeleteSigner(md)
 		}
@@ -222,13 +226,9 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 }
 
 func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error) {
-	if m.Vault == nil {
-		return nil, nil, unavailable("OS keyring unavailable", nil)
-	}
-	if probe, ok := m.Vault.(interface{ Probe() error }); ok {
-		if err := probe.Probe(); err != nil {
-			return nil, nil, unavailable("OS keyring unavailable", err)
-		}
+	backend, vault, err := m.softwareVault()
+	if err != nil {
+		return nil, nil, err
 	}
 	seed := make([]byte, ed25519.SeedSize)
 	if _, err := rand.Read(seed); err != nil {
@@ -239,8 +239,8 @@ func (m *Manager) createSoftwareSigner() (signing.Signer, *SignerMetadata, error
 	if _, err := rand.Read(ref); err != nil {
 		return nil, nil, err
 	}
-	md := &SignerMetadata{Backend: "keyring", Algorithm: "Ed25519", Reference: signerVaultPrefix + hex.EncodeToString(ref)}
-	if err := m.Vault.Store(vaultService, md.Reference, []byte(hex.EncodeToString(seed))); err != nil {
+	md := &SignerMetadata{Backend: backend, Algorithm: "Ed25519", Reference: signerVaultPrefix + hex.EncodeToString(ref)}
+	if err := vault.Store(vaultService, md.Reference, []byte(hex.EncodeToString(seed))); err != nil {
 		return nil, nil, keyringError("saving OS keyring signing key", err)
 	}
 	return signing.NewEd25519Signer(ed25519.NewKeyFromSeed(seed)), md, nil

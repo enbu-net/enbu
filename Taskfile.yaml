@@ -217,6 +217,22 @@ tasks:
           codesign --force --deep --sign - "$app"
         platforms: [darwin]
 
+  gui/package/linux:
+    desc: Package the desktop app that gui/build built as .deb and .rpm into desktop/wails/build/package (Linux)
+    dir: desktop/wails
+    platforms: [linux]
+    vars:
+      # Package versions must start with a digit.
+      VERSION:
+        sh: git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' | grep . || echo 0.0.0
+    env:
+      VERSION: '{{.VERSION}}'
+      ARCH: '{{ARCH}}'
+    cmds:
+      - mkdir -p build/package
+      - nfpm package --config packaging/linux/nfpm.yaml --packager deb --target build/package/
+      - nfpm package --config packaging/linux/nfpm.yaml --packager rpm --target build/package/
+
   gui/run:
     desc: Run GUI desktop app against the Vite dev server (frontend hot reload; Ctrl-C stops both)
     deps:
@@ -337,7 +353,7 @@ tasks:
     run: once
     dir: vscode
     cmds:
-      - vp env off
+      - task: vp/env
       - vp install --frozen-lockfile
 
   vscode/build/frontend:
@@ -378,12 +394,20 @@ tasks:
     cmds:
       - vp run build:preview
 
+  # vp env off rewrites one global Vite+ config file; gui/install and
+  # vscode/install run in parallel, so they share one run.
+  vp/env:
+    internal: true
+    run: once
+    cmds:
+      - vp env off
+
   gui/install:
     internal: true
     run: once
     dir: web
     cmds:
-      - vp env off
+      - task: vp/env
       - vp install --frozen-lockfile
 
   gui/build/frontend:
