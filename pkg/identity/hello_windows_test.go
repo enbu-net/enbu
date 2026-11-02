@@ -29,7 +29,11 @@ func TestHelloVerifierEnroll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = deletePasskey(credential) }()
+	t.Cleanup(func() {
+		if err := deletePasskey(credential); err != nil {
+			t.Errorf("the test passkey stays on this device: %v", err)
+		}
+	})
 	if len(credential) == 0 || len(secret) < 32 {
 		t.Fatalf("Enroll returned a %d-byte credential and a %d-byte secret", len(credential), len(secret))
 	}

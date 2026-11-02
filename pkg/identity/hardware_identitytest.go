@@ -26,7 +26,12 @@ func platformHardware() HardwareBackend {
 		if err != nil || u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
 			return nil, errors.New("test TPM requires an HTTP loopback endpoint")
 		}
-		return &loopbackTPM{endpoint: endpoint, client: &http.Client{Timeout: 10 * time.Second}}, nil
+		return &loopbackTPM{endpoint: endpoint, client: &http.Client{Timeout: 10 * time.Second,
+			// The endpoint is checked to be loopback; a redirect must not
+			// carry a command elsewhere.
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return errors.New("the test TPM does not follow redirects")
+			}}}, nil
 	}}
 }
 
@@ -40,7 +45,7 @@ func (t *loopbackTPM) Send(command []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("test TPM HTTP status %d", resp.StatusCode)
 	}

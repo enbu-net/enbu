@@ -321,8 +321,12 @@ func (h helloVerifier) Enroll() ([]byte, []byte, error) {
 	}
 	credential := append([]byte(nil), unsafe.Slice(att.credentialID, att.credentialIDLen)...)
 	if att.version < 5 || att.prfEnabled == 0 {
-		return nil, nil, errors.Join(fmt.Errorf("the Windows Hello passkey has no PRF: %w", ErrUserVerificationUnsupported),
-			deletePasskey(credential))
+		// Keys are then created without an authValue, but only once the
+		// unused passkey is gone; a failed removal is reported instead.
+		if err := deletePasskey(credential); err != nil {
+			return nil, nil, err
+		}
+		return nil, nil, fmt.Errorf("the Windows Hello passkey has no PRF: %w", ErrUserVerificationUnsupported)
 	}
 	if att.version >= 7 {
 		if secret := saltOutput(att.hmacSecret); secret != nil {

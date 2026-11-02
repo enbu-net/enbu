@@ -212,6 +212,26 @@ func TestTPMKeysWithoutPRFHaveNoAuthValue(t *testing.T) {
 	if _, err := age.Decrypt(ciphertext, id); err != nil {
 		t.Fatal(err)
 	}
+	s, smd, err := verifiedBackend(t, open, hello).CreateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.Close()
+	if len(smd.TPMAuthCredential) != 0 {
+		t.Fatal("a signer without PRF recorded a credential")
+	}
+	s, err = verifiedBackend(t, open, nil).LoadSigner(smd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	sig, err := s.Sign(signing.DomainState, []byte("state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signing.Verify(s.Public(), signing.DomainState, []byte("state"), sig); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestTPMAuthIsCachedForItsTTL(t *testing.T) {

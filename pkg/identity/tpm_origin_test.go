@@ -231,8 +231,11 @@ func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pin the real primary, so only the template check stands between the
+	// imported blob and a key the TPM would load.
+	parent := primaryName(t, b)
 	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Device: b.Device},
-		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer}
+		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer, TPMParentName: parent}
 	if _, err := b.load(md, false); err == nil {
 		t.Fatal("loaded an imported software key as the identity")
 	}
@@ -248,7 +251,7 @@ func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	smd := &SignerMetadata{Backend: "tpm", Algorithm: "P-256", Device: b.Device,
-		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer}
+		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer, TPMParentName: parent}
 	if _, err := b.LoadSigner(smd); err == nil {
 		t.Fatal("loaded an imported software key as the signer")
 	}
@@ -284,3 +287,14 @@ type funcTransport struct{ execute func([]byte) []byte }
 
 func (t *funcTransport) Send(b []byte) ([]byte, error) { return t.execute(b), nil }
 func (t *funcTransport) Close() error                  { return nil }
+
+// primaryName returns the Name of the storage primary b uses.
+func primaryName(t *testing.T, b *TPMBackend) []byte {
+	t.Helper()
+	c, err := b.acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.release(c) }()
+	return append([]byte(nil), c.name.Buffer...)
+}
