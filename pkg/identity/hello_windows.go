@@ -40,6 +40,7 @@ var (
 	procGetAssertion        = modWebAuthn.NewProc("WebAuthNAuthenticatorGetAssertion")
 	procFreeAttestation     = modWebAuthn.NewProc("WebAuthNFreeCredentialAttestation")
 	procFreeAssertion       = modWebAuthn.NewProc("WebAuthNFreeAssertion")
+	procConsoleWindow       = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleWindow")
 	helloCredentialType, _  = windows.UTF16PtrFromString("public-key")
 	helloHashSHA256, _      = windows.UTF16PtrFromString("SHA-256")
 	helloRPIDPtr, _         = windows.UTF16PtrFromString(helloRPID)
@@ -229,7 +230,22 @@ func newHelloVerifier() UserVerifier {
 	return helloVerifier{api: api}
 }
 
-func helloWindow() uintptr { return uintptr(windows.GetForegroundWindow()) }
+// helloWindow is the window the Hello prompt belongs to: the foreground
+// window when this process owns it (the desktop app), else the console
+// window (the CLI), else the desktop (`enbu rpc` under an editor, which has
+// neither). A foreground window of another process would be a wrong parent.
+func helloWindow() uintptr {
+	if w := windows.GetForegroundWindow(); w != 0 {
+		var pid uint32
+		if _, err := windows.GetWindowThreadProcessId(w, &pid); err == nil && pid == windows.GetCurrentProcessId() {
+			return uintptr(w)
+		}
+	}
+	if w, _, _ := procConsoleWindow.Call(); w != 0 {
+		return w
+	}
+	return uintptr(windows.GetDesktopWindow())
+}
 
 // clientData is the client data webauthn.dll signs. enbu only reads the PRF,
 // never the signature, so the challenge is random and unchecked.
@@ -250,8 +266,9 @@ func helloError(op string, hr uintptr) error {
 		0x800705B4: // HRESULT_FROM_WIN32(ERROR_TIMEOUT)
 		return errHelloCancelled
 	case 0x80090029, // NTE_NOT_SUPPORTED
-		0x80070032, // HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)
-		0x80090027: // NTE_INVALID_PARAMETER: an option this Windows does not know
+		0x80070032: // HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED)
+		// NTE_INVALID_PARAMETER is not here: it would turn a bad option or a
+		// bad window into keys without an authValue, silently.
 		return fmt.Errorf("%s with Windows Hello: %w", op, ErrUserVerificationUnsupported)
 	}
 	return fmt.Errorf("%s with Windows Hello failed: HRESULT 0x%08X", op, uint32(hr))
@@ -271,8 +288,12 @@ func (h helloVerifier) Enroll() ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	salt := helloSalt{firstLen: uint32(len(helloPRFSalt)), first: &helloPRFSalt[0]}
-	// Version 8 (API 8) also evaluates the PRF with the new passkey; older
-	// versions only enable it, and the secret is read with an assertion.
+	// bEnablePrf needs make-credential options version 6 (API 6). Version 8
+	// (API 8) also evaluates the PRF with the new passkey; with version 6 the
+	// secret is read with an assertion.
+	if h.api < 6 {
+		return nil, nil, fmt.Errorf("WebAuthn API %d has no PRF: %w", h.api, ErrUserVerificationUnsupported)
+	}
 	version := uint32(6)
 	if h.api >= 8 {
 		version = 8
