@@ -473,6 +473,11 @@ func verifyEKChain(chain [][]byte, roots, intermediates *x509.CertPool, now time
 		}
 	}
 	leaf.UnhandledCriticalExtensions = unhandled
+	// A nil pool would make Verify fall back to the system roots, under which
+	// any public CA could pass as a TPM maker.
+	if roots == nil {
+		return nil, errors.New("no TPM maker roots to verify the EK certificate against")
+	}
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: pool, CurrentTime: now,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
 		return nil, fmt.Errorf("EK certificate is not issued by a known TPM maker: %w", err)

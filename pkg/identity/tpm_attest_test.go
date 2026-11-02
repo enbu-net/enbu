@@ -190,6 +190,11 @@ func TestTPMAttestation(t *testing.T) {
 			t.Fatal("an EK certificate from an unknown maker was accepted")
 		}
 	})
+	t.Run("no roots", func(t *testing.T) {
+		if _, err := VerifyEvidence(ev, nil, nil, now); err == nil {
+			t.Fatal("evidence was verified without TPM maker roots")
+		}
+	})
 	t.Run("copied EK certificate", func(t *testing.T) {
 		// A genuine certificate of another TPM passes the chain check, but
 		// the challenge is then encrypted to an EK this TPM does not hold.
