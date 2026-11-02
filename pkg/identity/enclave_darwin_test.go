@@ -79,12 +79,10 @@ func TestSecureEnclaveNativeLifecycle(t *testing.T) {
 	if _, err := b.Load(&swapped); err == nil {
 		t.Fatal("loaded another key's data under this public key")
 	}
-	corrupt := *md
-	corrupt.EnclaveKey = append([]byte(nil), md.EnclaveKey...)
-	corrupt.EnclaveKey[len(corrupt.EnclaveKey)/2] ^= 1
-	if _, err := b.Load(&corrupt); err == nil {
-		t.Fatal("loaded corrupted key data")
-	}
+	// Changed key data is not tested here: a real Secure Enclave ignores
+	// some of its bytes (so a change there still restores this key, which
+	// the public-key check accepts) and was seen to block on others. A
+	// restore can only yield this key or be refused, as checked above.
 
 	seed := bytes.Repeat([]byte{3}, mlkem.SeedSize)
 	if err := b.SealSeed(md, seed); err != nil {

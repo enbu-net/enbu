@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -115,6 +116,18 @@ func (a *securityAPI) bytes(d uintptr) []byte {
 	n := a.dataLength(d)
 	return append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(a.dataBytes(d))), int(n))...)
 }
+
+// releaseResult releases what a framework call returned after enbu stopped
+// waiting for it.
+func (a *securityAPI) releaseResult(ref, nativeErr uintptr) {
+	if ref != 0 {
+		a.release(ref)
+	}
+	if nativeErr != 0 {
+		a.release(nativeErr)
+	}
+}
+
 func (a *securityAPI) nativeError(ref uintptr, op string) error {
 	if ref != 0 {
 		code := a.errorCode(ref)
@@ -132,6 +145,12 @@ type enclaveBackend struct{}
 // restores the key; without it the Secure Enclave silently makes a new one, so
 // every restore is checked against the expected public key.
 const enclaveTokenObject = "toid"
+
+// nativeCallTimeout bounds a Secure Enclave key creation or restore. They take
+// milliseconds; a real Secure Enclave was seen to block indefinitely on some
+// malformed wrapped keys and afterwards on every key creation, so enbu must not
+// hang with it.
+var nativeCallTimeout = 15 * time.Second
 
 func (b *enclaveBackend) Probe() Diagnosis {
 	d := Diagnosis{Backend: "secure-enclave", Device: "Secure Enclave"}
@@ -167,25 +186,35 @@ func (b *enclaveBackend) generate() (*enclaveKey, []byte, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	attrs, priv := a.dictionary(), a.dictionary()
-	defer a.release(attrs)
-	defer a.release(priv)
 	var nativeErr uintptr
 	access := a.accessCreate(0, a.constant("kSecAttrAccessibleWhenUnlockedThisDeviceOnly"), 1<<30, &nativeErr) // kSecAccessControlPrivateKeyUsage
 	if access == 0 {
 		return nil, nil, a.nativeError(nativeErr, "access control")
 	}
-	defer a.release(access)
+	// The dictionaries retain their values, so everything but attrs is
+	// released as soon as it is stored; attrs belongs to the call below.
+	priv := a.dictionary()
 	a.set(priv, "kSecAttrAccessControl", access)
+	a.release(access)
 	a.set(priv, "kSecAttrIsPermanent", a.constant("kCFBooleanFalse"))
+	attrs := a.dictionary()
 	a.set(attrs, "kSecPrivateKeyAttrs", priv)
+	a.release(priv)
 	a.set(attrs, "kSecAttrTokenID", a.constant("kSecAttrTokenIDSecureEnclave"))
 	a.set(attrs, "kSecAttrKeyType", a.constant("kSecAttrKeyTypeECSECPrimeRandom"))
 	size := int32(256)
 	n := a.numberCreate(0, 3, &size) // kCFNumberSInt32Type
-	defer a.release(n)
 	a.set(attrs, "kSecAttrKeySizeInBits", n)
-	ref := a.keyCreate(attrs, &nativeErr)
+	a.release(n)
+	ref, nativeErr, err := callWithTimeout(nativeCallTimeout, func() (uintptr, uintptr) {
+		var nativeErr uintptr
+		ref := a.keyCreate(attrs, &nativeErr)
+		a.release(attrs)
+		return ref, nativeErr
+	}, a.releaseResult)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Secure Enclave key creation: %w (the Secure Enclave may need a restart of the Mac)", err)
+	}
 	if ref == 0 {
 		return nil, nil, a.nativeError(nativeErr, "Secure Enclave key creation")
 	}
@@ -234,7 +263,9 @@ func samePoint(want []byte) func([]byte) bool {
 }
 
 // restore rebuilds a Secure Enclave key from its wrapped private key and
-// refuses it unless expected accepts its uncompressed public key.
+// refuses it unless expected accepts its uncompressed public key. The blob is
+// not authenticated as a whole (the Secure Enclave ignores some of its bytes),
+// so the public-key check is what binds it to the identity.
 func (b *enclaveBackend) restore(blob []byte, expected func([]byte) bool) (*enclaveKey, error) {
 	if len(blob) == 0 {
 		return nil, errors.New("missing Secure Enclave key data")
@@ -244,20 +275,29 @@ func (b *enclaveBackend) restore(blob []byte, expected func([]byte) bool) (*encl
 		return nil, err
 	}
 	attrs := a.dictionary()
-	defer a.release(attrs)
 	a.set(attrs, "kSecAttrTokenID", a.constant("kSecAttrTokenIDSecureEnclave"))
 	a.set(attrs, "kSecAttrKeyType", a.constant("kSecAttrKeyTypeECSECPrimeRandom"))
 	a.set(attrs, "kSecAttrKeyClass", a.constant("kSecAttrKeyClassPrivate"))
 	name := a.stringCreate(0, enclaveTokenObject, 0x08000100)
 	if name == 0 {
+		a.release(attrs)
 		return nil, errors.New("CFString creation failed")
 	}
-	defer a.release(name)
 	d := a.data(blob)
-	defer a.release(d)
 	a.dictSet(attrs, name, d)
-	var nativeErr uintptr
-	ref := a.keyWithData(d, attrs, &nativeErr)
+	// The inputs belong to the call: if it outlives the timeout, the late
+	// return releases them together with its result.
+	ref, nativeErr, err := callWithTimeout(nativeCallTimeout, func() (uintptr, uintptr) {
+		var nativeErr uintptr
+		ref := a.keyWithData(d, attrs, &nativeErr)
+		a.release(d)
+		a.release(name)
+		a.release(attrs)
+		return ref, nativeErr
+	}, a.releaseResult)
+	if err != nil {
+		return nil, fmt.Errorf("Secure Enclave key restore: %w", err)
+	}
 	if ref == 0 {
 		return nil, a.nativeError(nativeErr, "Secure Enclave key restore")
 	}
