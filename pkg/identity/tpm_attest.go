@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"slices"
 	"time"
 
 	"github.com/google/go-tpm/tpm2"
@@ -151,7 +152,7 @@ func (b *TPMBackend) Evidence(keys ...CertifiedKey) (*TPMEvidence, error) {
 	defer func() { _ = b.release(c) }()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	cert, _, err := readEKCertificate(c.t)
+	cert, err := readEKCertificate(c.t)
 	if err != nil {
 		return nil, err
 	}
@@ -163,16 +164,22 @@ func (b *TPMBackend) Evidence(keys ...CertifiedKey) (*TPMEvidence, error) {
 	return &TPMEvidence{EKCertificates: [][]byte{cert}, AKPublic: tpm2.Marshal(ak.OutPublic), Keys: keys}, nil
 }
 
-// readEKCertificate returns the TPM's EK certificate, preferring the ECC one,
-// and whether it is the RSA one.
-func readEKCertificate(t transport.TPM) (cert []byte, rsaEK bool, err error) {
-	if cert, err := readNV(t, ekCertIndexECC); err == nil {
-		return cert, false, nil
+// readEKCertificate returns the TPM's EK certificate, preferring the ECC one.
+// It returns ErrNoEKCertificate only when neither index is defined, so a
+// failed read is not mistaken for a TPM without a certificate.
+func readEKCertificate(t transport.TPM) ([]byte, error) {
+	var errs []error
+	for _, index := range []tpm2.TPMHandle{ekCertIndexECC, ekCertIndexRSA} {
+		cert, err := readNV(t, index)
+		if err == nil {
+			return cert, nil
+		}
+		errs = append(errs, err)
 	}
-	if cert, err := readNV(t, ekCertIndexRSA); err == nil {
-		return cert, true, nil
+	if errors.Is(errs[0], tpm2.TPMRCHandle) && errors.Is(errs[1], tpm2.TPMRCHandle) {
+		return nil, ErrNoEKCertificate
 	}
-	return nil, false, ErrNoEKCertificate
+	return nil, fmt.Errorf("reading the TPM's EK certificate: %w", errors.Join(errs...))
 }
 
 // readNV reads a whole NV index, authorizing with the index itself (EK
@@ -230,11 +237,19 @@ func (b *TPMBackend) Activate(credentialBlob, encryptedSecret []byte) ([]byte, e
 	defer func() { _ = b.release(c) }()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, rsaEK, err := readEKCertificate(c.t)
+	cert, err := readEKCertificate(c.t)
 	if err != nil {
 		return nil, err
 	}
-	ek, flushEK, err := loadEK(c.t, rsaEK)
+	leaf, err := x509.ParseCertificate(cert)
+	if err != nil {
+		return nil, fmt.Errorf("EK certificate: %w", err)
+	}
+	want, err := ekFromCertificate(leaf)
+	if err != nil {
+		return nil, err
+	}
+	ek, flushEK, err := loadEK(c.t, want)
 	if err != nil {
 		return nil, err
 	}
@@ -271,15 +286,16 @@ type ekHandle struct {
 	name   tpm2.TPM2BName
 }
 
-// loadEK returns the EK, from its persistent handle when one holds the
-// standard EK (an RSA EK takes seconds to derive), else derived anew.
-func loadEK(t transport.TPM, rsaEK bool) (ekHandle, func(), error) {
+// loadEK returns the EK of the certificate (want), from its persistent handle
+// when that holds it (an RSA EK takes seconds to derive), else derived anew.
+func loadEK(t transport.TPM, want tpm2.TPMTPublic) (ekHandle, func(), error) {
 	template, persistent := tpm2.ECCEKTemplate, ekHandleECC
-	if rsaEK {
+	if want.Type == tpm2.TPMAlgRSA {
 		template, persistent = tpm2.RSAEKTemplate, ekHandleRSA
 	}
+	wanted := tpm2.Marshal(want)
 	if rsp, err := (tpm2.ReadPublic{ObjectHandle: persistent}).Execute(t); err == nil {
-		if public, err := rsp.OutPublic.Contents(); err == nil && matchesTemplate(public, template) {
+		if public, err := rsp.OutPublic.Contents(); err == nil && bytes.Equal(tpm2.Marshal(*public), wanted) {
 			return ekHandle{handle: persistent, name: rsp.Name}, func() {}, nil
 		}
 	}
@@ -287,6 +303,10 @@ func loadEK(t transport.TPM, rsaEK bool) (ekHandle, func(), error) {
 		InPublic: tpm2.New2B(template)}).Execute(t)
 	if err != nil {
 		return ekHandle{}, nil, fmt.Errorf("creating TPM endorsement key: %w", err)
+	}
+	if public, err := ek.OutPublic.Contents(); err != nil || !bytes.Equal(tpm2.Marshal(*public), wanted) {
+		_ = flush(t, ek.ObjectHandle)
+		return ekHandle{}, nil, errors.New("the TPM's endorsement key does not match its EK certificate")
 	}
 	return ekHandle{handle: ek.ObjectHandle, name: ek.Name}, func() { _ = flush(t, ek.ObjectHandle) }, nil
 }
@@ -449,6 +469,9 @@ func ecdsaPublic(public *tpm2.TPMTPublic) (*ecdsa.PublicKey, error) {
 // crypto/x509 leaves unhandled.
 var oidSubjectAltName = asn1.ObjectIdentifier{2, 5, 29, 17}
 
+// oidEKCertificate is tcg-kp-EKCertificate.
+var oidEKCertificate = asn1.ObjectIdentifier{2, 23, 133, 8, 1}
+
 // verifyEKChain verifies the EK certificate chain and returns its leaf.
 func verifyEKChain(chain [][]byte, roots, intermediates *x509.CertPool, now time.Time) (*x509.Certificate, error) {
 	leaf, err := x509.ParseCertificate(chain[0])
@@ -481,6 +504,17 @@ func verifyEKChain(chain [][]byte, roots, intermediates *x509.CertPool, now time
 	if _, err := leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: pool, CurrentTime: now,
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
 		return nil, fmt.Errorf("EK certificate is not issued by a known TPM maker: %w", err)
+	}
+	// An EK is a storage key: RSA ones encipher, ECC ones agree on keys (some
+	// makers mark ECC EKs keyEncipherment too). Extended key usages, when
+	// present, must name the EK certificate purpose.
+	if leaf.KeyUsage&(x509.KeyUsageKeyEncipherment|x509.KeyUsageKeyAgreement) == 0 {
+		return nil, errors.New("EK certificate is not for a storage key")
+	}
+	if len(leaf.ExtKeyUsage) > 0 || len(leaf.UnknownExtKeyUsage) > 0 {
+		if !slices.ContainsFunc(leaf.UnknownExtKeyUsage, oidEKCertificate.Equal) {
+			return nil, errors.New("EK certificate is not for an endorsement key")
+		}
 	}
 	return leaf, nil
 }

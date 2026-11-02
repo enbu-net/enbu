@@ -55,7 +55,7 @@ func (m *testTPMMaker) roots() *x509.CertPool {
 // issue returns an EK certificate for pub shaped like real ones: an empty
 // subject and a critical subject alternative name holding the TPM's maker,
 // model and version as a directory name.
-func (m *testTPMMaker) issue(t *testing.T, pub any) []byte {
+func (m *testTPMMaker) issue(t *testing.T, pub any, adjust ...func(*x509.Certificate)) []byte {
 	t.Helper()
 	tpmAttrs := pkix.Name{ExtraNames: []pkix.AttributeTypeAndValue{
 		{Type: asn1.ObjectIdentifier{2, 23, 133, 2, 1}, Value: "id:414D4400"},
@@ -71,8 +71,12 @@ func (m *testTPMMaker) issue(t *testing.T, pub any) []byte {
 		t.Fatal(err)
 	}
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(2), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
-		KeyUsage:        x509.KeyUsageKeyEncipherment,
-		ExtraExtensions: []pkix.Extension{{Id: oidSubjectAltName, Critical: true, Value: san}}}
+		KeyUsage:           x509.KeyUsageKeyAgreement,
+		UnknownExtKeyUsage: []asn1.ObjectIdentifier{oidEKCertificate},
+		ExtraExtensions:    []pkix.Extension{{Id: oidSubjectAltName, Critical: true, Value: san}}}
+	for _, f := range adjust {
+		f(tmpl)
+	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, m.cert, pub, m.key)
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +197,22 @@ func TestTPMAttestation(t *testing.T) {
 	t.Run("no roots", func(t *testing.T) {
 		if _, err := VerifyEvidence(ev, nil, nil, now); err == nil {
 			t.Fatal("evidence was verified without TPM maker roots")
+		}
+	})
+	t.Run("not an EK certificate", func(t *testing.T) {
+		ek := simulatorEK(t, tpm)
+		for name, adjust := range map[string]func(*x509.Certificate){
+			"signing key usage": func(c *x509.Certificate) { c.KeyUsage = x509.KeyUsageDigitalSignature },
+			"server auth usage": func(c *x509.Certificate) {
+				c.UnknownExtKeyUsage = nil
+				c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
+			},
+		} {
+			e := *ev
+			e.EKCertificates = [][]byte{maker.issue(t, ek, adjust)}
+			if _, err := VerifyEvidence(&e, maker.roots(), nil, now); err == nil {
+				t.Errorf("%s: accepted as an EK certificate", name)
+			}
 		}
 	})
 	t.Run("copied EK certificate", func(t *testing.T) {
