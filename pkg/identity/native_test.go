@@ -59,9 +59,11 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 		t.Fatalf("device = %q, want the host TPM", native.Device)
 	}
 	// Create opens the TPM more than once, so every connection records into
-	// one log.
+	// one log. The log reads TPM2_Create's inSensitive off the bus, which
+	// parameter encryption hides, so this backend sends it in the clear; the
+	// simulator test checks that the real backend encrypts it.
 	rec := &recordingTransport{}
-	b := &TPMBackend{Device: native.Device, Open: func() (transport.TPMCloser, error) {
+	b := &TPMBackend{Device: native.Device, plainSessions: true, Open: func() (transport.TPMCloser, error) {
 		next, err := native.Open()
 		if err != nil {
 			return nil, err
