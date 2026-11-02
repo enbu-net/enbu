@@ -632,17 +632,19 @@ func (m *Manager) Doctor() Diagnosis {
 		d = m.Hardware.Probe()
 	}
 	keyringErr := probeVault(m.Vault)
-	switch {
-	case keyringErr == nil:
+	if keyringErr == nil {
 		d.FallbackAvailable, d.Fallback = true, backendKeyring
-	case m.Creds != nil && probeVault(m.Creds) == nil:
+		return d
+	}
+	d.FallbackReason = "OS keyring unavailable: " + keyringErr.Error()
+	if m.Creds == nil {
+		return d
+	}
+	if credsErr := probeVault(m.Creds); credsErr != nil {
+		d.FallbackReason += "; systemd-creds unavailable: " + credsErr.Error()
+	} else {
 		d.FallbackAvailable, d.Fallback = true, backendCreds
-		d.FallbackReason = "OS keyring unavailable (" + keyringErr.Error() + "); using systemd-creds"
-	default:
-		d.FallbackReason = "OS keyring unavailable: " + keyringErr.Error()
-		if m.Creds != nil {
-			d.FallbackReason += "; systemd-creds unavailable: " + probeVault(m.Creds).Error()
-		}
+		d.FallbackReason += "; using systemd-creds"
 	}
 	return d
 }

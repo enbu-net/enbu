@@ -48,6 +48,11 @@ func (c *CredsBackend) Store(service, key string, secret []byte) error {
 	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
 		return fmt.Errorf("creating credentials directory: %w", err)
 	}
+	// The files are encrypted, but the directory is still kept private, also
+	// when it existed before.
+	if err := os.Chmod(c.Dir, 0o700); err != nil {
+		return fmt.Errorf("securing credentials directory: %w", err)
+	}
 	sealed, err := c.run(secret, "encrypt", "--name="+credName(service, key), "-", "-")
 	if err != nil {
 		return err

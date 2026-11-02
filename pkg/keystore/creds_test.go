@@ -41,6 +41,9 @@ func TestCredsBackendRoundTrip(t *testing.T) {
 	if err := c.Probe(); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(c.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	secret := []byte("AGE-SECRET-KEY-PQ-1EXAMPLE")
 	if err := c.Store("enbu-identity-v1", "abc", secret); err != nil {
 		t.Fatal(err)
