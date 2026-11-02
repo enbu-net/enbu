@@ -337,8 +337,12 @@ func (h helloVerifier) Enroll() ([]byte, []byte, error) {
 	// the user verifies a second time, once per identity.
 	secret, err := h.Secret(credential)
 	if err != nil {
-		// No identity will use the new passkey, so do not leave it behind.
-		return nil, nil, errors.Join(err, deletePasskey(credential))
+		// No identity will use the new passkey, so do not leave it behind. A
+		// failed removal wins, so an unsupported PRF cannot hide it.
+		if derr := deletePasskey(credential); derr != nil {
+			return nil, nil, derr
+		}
+		return nil, nil, err
 	}
 	return credential, secret, nil
 }
