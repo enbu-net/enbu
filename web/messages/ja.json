@@ -173,6 +173,7 @@
   "device_hardwareUnavailable": "ハードウェアの鍵保管（{backend}）を使えません。",
   "device_keyringAvailable": "OS のキーリングに鍵を保管できます。",
   "device_keyringUnavailable": "OS のキーリングを使えません。",
+  "device_credsAvailable": "OS のキーリングは使えませんが、systemd-creds に鍵を保管できます。",
   "import_action": "インポート",
   "import_description": ".env ファイルの変数をまとめて追加",
   "import_done": "{environment} にインポートしました: 追加 {added}、更新 {updated}、変更なし {unchanged}",

@@ -3,9 +3,11 @@ package keystore
 import (
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/zalando/go-keyring"
 )
 
@@ -121,5 +123,17 @@ func TestTextBackend_DeleteNonExistent(t *testing.T) {
 	tb := &TextBackend{}
 	if err := tb.Delete("svc", "nonexistent"); err != nil {
 		t.Fatalf("Delete of nonexistent should not error, got %v", err)
+	}
+}
+
+func TestTextBackendDirFollowsDataDir(t *testing.T) {
+	t.Setenv("ENBU_TEXT_BACKEND_DIR", "")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	if got, want := textBackendDir(), filepath.Join(config.DataDir(), "keys"); got != want {
+		t.Fatalf("textBackendDir() = %q, want %q", got, want)
+	}
+	t.Setenv("ENBU_TEXT_BACKEND_DIR", "/custom")
+	if got := textBackendDir(); got != "/custom" {
+		t.Fatalf("textBackendDir() = %q, want the override", got)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/pkg/fsutil"
+
 	"github.com/BurntSushi/toml"
 )
 
@@ -57,7 +59,7 @@ func SaveGUI(cfg *GUIConfig) error {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("closing GUI config: %w", err)
 	}
-	if err := os.Rename(tmpName, guiConfigPath()); err != nil {
+	if err := fsutil.Rename(tmpName, guiConfigPath()); err != nil {
 		_ = os.Remove(tmpName)
 		return fmt.Errorf("replacing GUI config: %w", err)
 	}

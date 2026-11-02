@@ -25,31 +25,36 @@ func sealTemplate() tpm2.TPMTPublic {
 }
 
 // SealSeed seals seed under the storage primary and records the blobs in md.
-// Like the ECDH results, the seed crosses the TPM interface without parameter
-// encryption: the host uses it in memory anyway, and the sealed blob is what
-// keeps it bound to this TPM at rest.
+// The seed crosses the TPM interface encrypted by a session salted to the
+// primary, and comes back the same way in UnsealSeed, so it is never on the
+// bus in the clear; the sealed blob keeps it bound to this TPM at rest.
 func (b *TPMBackend) SealSeed(md *Metadata, seed []byte) error {
 	if len(seed) != mlkem.SeedSize {
 		return errors.New("ML-KEM seed must be 64 bytes")
 	}
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = t.Close() }()
-	defer func() { _ = flush(t, parent.ObjectHandle) }()
+	defer func() { _ = b.release(c) }()
+	if err := checkParent(c, md.TPMParentName); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	created, err := (tpm2.Create{
-		ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name,
-			Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
+		ParentHandle: tpm2.AuthHandle{Handle: c.handle, Name: c.name,
+			Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptIn))...)},
 		InSensitive: tpm2.TPM2BSensitiveCreate{Sensitive: &tpm2.TPMSSensitiveCreate{
 			Data: tpm2.NewTPMUSensitiveCreate(&tpm2.TPM2BSensitiveData{Buffer: seed})}},
 		InPublic: tpm2.New2B(sealTemplate()),
-	}).Execute(t)
+	}).Execute(c.t)
 	if err != nil {
 		return fmt.Errorf("sealing ML-KEM seed: %w", err)
 	}
 	md.TPMSealPublic = tpm2.Marshal(created.OutPublic)
 	md.TPMSealPrivate = tpm2.Marshal(created.OutPrivate)
+	md.TPMParentName = c.name.Buffer
 	return nil
 }
 
@@ -73,20 +78,23 @@ func (b *TPMBackend) UnsealSeed(md *Metadata) ([]byte, error) {
 	if !bytes.Equal(tpm2.Marshal(expected), tpm2.Marshal(*pub)) {
 		return nil, errors.New("sealed seed does not match the sealed-data template")
 	}
-	t, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = t.Close() }()
-	defer func() { _ = flush(t, parent.ObjectHandle) }()
-	loaded, err := (tpm2.Load{ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
-		InPublic: *public, InPrivate: *private}).Execute(t)
+	defer func() { _ = b.release(c) }()
+	if err := checkParent(c, md.TPMParentName); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
 	if err != nil {
 		return nil, fmt.Errorf("loading sealed seed: %w", err)
 	}
-	defer func() { _ = flush(t, loaded.ObjectHandle) }()
+	defer func() { _ = flush(c.t, loaded.ObjectHandle) }()
 	rsp, err := (tpm2.Unseal{ItemHandle: tpm2.AuthHandle{Handle: loaded.ObjectHandle, Name: loaded.Name,
-		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}}).Execute(t)
+		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut))...)}}).Execute(c.t)
 	if err != nil {
 		return nil, fmt.Errorf("unsealing ML-KEM seed: %w", err)
 	}

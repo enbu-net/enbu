@@ -22,9 +22,12 @@ type IdentityDiagnosis struct {
 	Device            string `json:"device,omitempty"`
 	Available         bool   `json:"available"`
 	FallbackAvailable bool   `json:"fallback_available"`
+	// Fallback is the software backend a new key would use: keyring or
+	// systemd-creds.
+	Fallback string `json:"fallback,omitempty"`
 }
 
-// DiagnoseIdentity probes the hardware and the OS keyring, as `enbu doctor`
+// DiagnoseIdentity probes the hardware and the software key storage, as `enbu doctor`
 // does. It needs no repository.
 func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 	d := s.app.DiagnoseIdentity()
@@ -35,6 +38,7 @@ func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 		Device:            d.Device,
 		Available:         d.Available,
 		FallbackAvailable: d.FallbackAvailable,
+		Fallback:          d.Fallback,
 	}
 }
 

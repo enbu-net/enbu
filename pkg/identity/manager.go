@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,6 +12,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+
+	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -33,6 +37,9 @@ type Metadata struct {
 	TPMPublic  []byte `json:"tpm_public,omitempty"`
 	TPMPrivate []byte `json:"tpm_private,omitempty"`
 	TPMName    []byte `json:"tpm_name,omitempty"`
+	// TPMParentName pins the storage primary the TPM objects were created
+	// under, so sessions are only ever salted to that primary.
+	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
 	// EnclaveKey is the Secure Enclave's wrapped private key: only the Secure
 	// Enclave that created it can use it.
 	EnclaveKey []byte `json:"enclave_key,omitempty"`
@@ -51,7 +58,9 @@ type Diagnosis struct {
 	Available         bool   `json:"available"`
 	Reason            string `json:"reason,omitempty"`
 	FallbackAvailable bool   `json:"fallback_available"`
-	FallbackReason    string `json:"fallback_reason,omitempty"`
+	// Fallback is the software backend that would hold a new key.
+	Fallback       string `json:"fallback,omitempty"`
+	FallbackReason string `json:"fallback_reason,omitempty"`
 }
 
 type HardwareBackend interface {
@@ -69,9 +78,12 @@ type SeedSealer interface {
 }
 
 type Manager struct {
-	Dir      string
-	Mode     string
-	Vault    Vault
+	Dir   string
+	Mode  string
+	Vault Vault
+	// Creds holds software keys where the OS keyring is unavailable: the
+	// systemd-creds backend on Linux, nil elsewhere.
+	Creds    Vault
 	Hardware HardwareBackend
 	// Classical makes Create generate the pre-hybrid keys (X25519, or P-256 on
 	// hardware), for a workspace whose other members still run an enbu that
@@ -85,15 +97,71 @@ const (
 	algP256        = "P-256"
 	algMLKEMP256   = "MLKEM768-P256"
 	classicalFlag  = "ENBU_IDENTITY_CLASSICAL"
+
+	backendKeyring = "keyring"
+	backendCreds   = "systemd-creds"
 )
+
+// softwareBackend reports whether backend keeps a software key, in the OS
+// keyring or with systemd-creds.
+func softwareBackend(backend string) bool {
+	return backend == backendKeyring || backend == backendCreds
+}
+
+// vault is where a software backend keeps its keys.
+func (m *Manager) vault(backend string) Vault {
+	if backend == backendCreds {
+		return m.Creds
+	}
+	return m.Vault
+}
+
+// softwareVault picks where a new software key goes: the OS keyring, or
+// systemd-creds when the keyring is unavailable.
+func (m *Manager) softwareVault() (string, Vault, error) {
+	err := probeVault(m.Vault)
+	if err == nil {
+		return backendKeyring, m.Vault, nil
+	}
+	if m.Creds == nil {
+		return "", nil, unavailable("OS keyring unavailable", err)
+	}
+	credsErr := probeVault(m.Creds)
+	if credsErr == nil {
+		return backendCreds, m.Creds, nil
+	}
+	return "", nil, unavailable("OS keyring and systemd-creds unavailable", errors.Join(err, credsErr))
+}
+
+// softwareName names a software backend in messages.
+func softwareName(backend string) string {
+	if backend == backendCreds {
+		return "systemd-creds"
+	}
+	return "OS keyring"
+}
+
+func probeVault(v Vault) error {
+	if v == nil {
+		return errors.New("not configured")
+	}
+	if probe, ok := v.(interface{ Probe() error }); ok {
+		return probe.Probe()
+	}
+	return nil
+}
 
 // hardwareAlgorithm reports whether alg names a hardware P-256 identity, alone
 // or paired with an ML-KEM-768 seed.
 func hardwareAlgorithm(alg string) bool { return alg == algP256 || alg == algMLKEMP256 }
 
 func New() *Manager {
-	return &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
+	m := &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
 		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), Classical: os.Getenv(classicalFlag) == "1"}
+	if runtime.GOOS == "linux" {
+		m.Creds = &keystore.CredsBackend{Dir: filepath.Join(config.DataDir(), "credentials")}
+	}
+	return m
 }
 
 func (m *Manager) mode() (string, error) {
@@ -151,18 +219,19 @@ func (m *Manager) loadPath(path string) (Identity, error) {
 	if err != nil {
 		return nil, err
 	}
-	if mode == "hardware" && md.Backend == "keyring" || mode == "keyring" && md.Backend != "keyring" {
+	if mode == "hardware" && softwareBackend(md.Backend) || mode == "keyring" && !softwareBackend(md.Backend) {
 		return nil, fmt.Errorf("saved identity backend %s does not satisfy %s", md.Backend, mode)
 	}
 	var id Identity
-	if md.Backend == "keyring" {
+	if softwareBackend(md.Backend) {
 		if md.Algorithm != algX25519 && md.Algorithm != algMLKEMX25519 || md.Reference == "" {
 			return nil, errors.New("invalid keyring metadata")
 		}
-		if m.Vault == nil {
-			return nil, unavailable("keyring unavailable", nil)
+		vault := m.vault(md.Backend)
+		if vault == nil {
+			return nil, unavailable(md.Backend+" unavailable", nil)
 		}
-		secret, err := m.Vault.Load(vaultService, md.Reference)
+		secret, err := vault.Load(vaultService, md.Reference)
 		if err != nil {
 			return nil, keyringError("loading saved keyring identity", err)
 		}
@@ -278,17 +347,16 @@ func (m *Manager) create(path string, classical bool) (id Identity, info PublicI
 			if mode == "hardware" {
 				return nil, info, "", unavailable("hardware identity unavailable: "+d.Reason, nil)
 			}
-			warning = "Hardware identity unavailable: " + d.Reason + "; using OS keyring (X25519)."
+			warning = "Hardware identity unavailable: " + d.Reason
 		}
 	}
 	if id == nil {
-		if m.Vault == nil {
-			return nil, info, warning, unavailable("OS keyring unavailable", nil)
+		backend, vault, err := m.softwareVault()
+		if err != nil {
+			return nil, info, warning, err
 		}
-		if probe, ok := m.Vault.(interface{ Probe() error }); ok {
-			if err := probe.Probe(); err != nil {
-				return nil, info, warning, unavailable("OS keyring unavailable", err)
-			}
+		if warning != "" {
+			warning += "; using " + softwareName(backend) + " (X25519)."
 		}
 		alg, secret, err := generateKeyringIdentity(classical)
 		if err != nil {
@@ -303,9 +371,9 @@ func (m *Manager) create(path string, classical bool) (id Identity, info PublicI
 			return nil, info, warning, err
 		}
 		recipient := key.Recipient().String()
-		md = &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "keyring", Algorithm: alg, Recipient: recipient},
+		md = &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: backend, Algorithm: alg, Recipient: recipient},
 			PublicKey: []byte(recipient), Reference: hex.EncodeToString(ref)}
-		if err := m.Vault.Store(vaultService, md.Reference, []byte(secret)); err != nil {
+		if err := vault.Store(vaultService, md.Reference, []byte(secret)); err != nil {
 			return nil, info, warning, keyringError("saving OS keyring identity", err)
 		}
 		id = key
@@ -313,8 +381,8 @@ func (m *Manager) create(path string, classical bool) (id Identity, info PublicI
 	md.Version = 1
 	if err := saveMetadata(path, md); err != nil {
 		_ = id.Close()
-		if md.Backend == "keyring" {
-			_ = m.Vault.Delete(vaultService, md.Reference)
+		if softwareBackend(md.Backend) {
+			_ = m.vault(md.Backend).Delete(vaultService, md.Reference)
 		} else {
 			m.deleteHardware(md)
 		}
@@ -476,26 +544,52 @@ func (m *Manager) PromotePending(workspaceID string) error {
 	if _, err := m.readPath(next); err != nil {
 		return err
 	}
+	current, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	// The current identity replaces the previous one, whose key material
+	// goes with it, unless the previous slot already holds the current
+	// identity because an earlier promotion stopped between the two steps
+	// below.
 	if old, err := m.readPath(prev); err == nil {
-		m.deleteKeyMaterial(old)
+		saved, err := os.ReadFile(prev)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(saved, current) {
+			m.deleteKeyMaterial(old)
+		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.Rename(path, prev); err != nil {
-		return err
+	// Copy, then replace: each step is one atomic rename, so the current
+	// identity exists at every point, even if enbu or the machine stops in
+	// between. Moving it away first would leave the workspace without one.
+	// Until the rename, the previous slot duplicates the current identity;
+	// the comparison above keeps a rerun from deleting its key material, and
+	// if the pending identity is gone by then the duplicate is harmless.
+	if current != nil {
+		if err := writeFileAtomic(prev, current); err != nil {
+			return err
+		}
 	}
-	return os.Rename(next, path)
+	return renameFile(next, path)
 }
 
 func (m *Manager) deleteKeyMaterial(md *Metadata) {
-	if md.Backend == "keyring" {
-		if m.Vault != nil {
-			_ = m.Vault.Delete(vaultService, md.Reference)
+	if softwareBackend(md.Backend) {
+		if vault := m.vault(md.Backend); vault != nil {
+			_ = vault.Delete(vaultService, md.Reference)
 		}
 		return
 	}
 	m.deleteHardware(md)
 }
+
+// renameFile replaces files in the identity directory; tests swap it to make a
+// rename fail.
+var renameFile = fsutil.Rename
 
 func saveMetadata(path string, md *Metadata) error { return saveJSON(path, md) }
 
@@ -504,6 +598,11 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
+	return writeFileAtomic(path, b)
+}
+
+// writeFileAtomic replaces path with b through a synced temporary file.
+func writeFileAtomic(path string, b []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(path), ".identity-*")
 	if err != nil {
 		return err
@@ -516,7 +615,7 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), path)
+	return renameFile(f.Name(), path)
 }
 
 // Info validates the saved identity before reporting public information.
@@ -533,29 +632,27 @@ func (m *Manager) Info(workspaceID string) (PublicInfo, error) {
 	return md.PublicInfo, nil
 }
 
-// Doctor probes capabilities and keyring access without creating a durable key.
+// Doctor probes capabilities and software key storage without creating a
+// durable key.
 func (m *Manager) Doctor() Diagnosis {
 	d := Diagnosis{Reason: "hardware backend unavailable"}
 	if m.Hardware != nil {
 		d = m.Hardware.Probe()
 	}
-	if m.Vault == nil {
-		d.FallbackReason = "OS keyring unavailable"
+	keyringErr := probeVault(m.Vault)
+	if keyringErr == nil {
+		d.FallbackAvailable, d.Fallback = true, backendKeyring
 		return d
 	}
-	if probe, ok := m.Vault.(interface{ Probe() error }); ok {
-		if err := probe.Probe(); err != nil {
-			d.FallbackReason = err.Error()
-		} else {
-			d.FallbackAvailable = true
-		}
+	d.FallbackReason = "OS keyring unavailable: " + keyringErr.Error()
+	if m.Creds == nil {
 		return d
 	}
-	_, err := m.Vault.Load(vaultService, "probe")
-	if err == nil || errors.Is(err, fs.ErrNotExist) {
-		d.FallbackAvailable = true
+	if credsErr := probeVault(m.Creds); credsErr != nil {
+		d.FallbackReason += "; systemd-creds unavailable: " + credsErr.Error()
 	} else {
-		d.FallbackReason = err.Error()
+		d.FallbackAvailable, d.Fallback = true, backendCreds
+		d.FallbackReason += "; using systemd-creds"
 	}
 	return d
 }
