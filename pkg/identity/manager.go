@@ -44,6 +44,9 @@ type Metadata struct {
 	// Hello passkey) the TPM objects' authValue is derived from; empty when
 	// they have none.
 	TPMAuthCredential []byte `json:"tpm_auth_credential,omitempty"`
+	// TPMCertified is the TPM's statement that it created the key, for
+	// attestation; nil when the TPM could not certify it.
+	TPMCertified *CertifiedKey `json:"tpm_certified,omitempty"`
 	// EnclaveKey is the Secure Enclave's wrapped private key: only the Secure
 	// Enclave that created it can use it.
 	EnclaveKey []byte `json:"enclave_key,omitempty"`

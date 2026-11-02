@@ -40,6 +40,10 @@ func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
 	defer clear(auth)
 	c.mu.Lock()
 	created, err := (tpm2.Create{ParentHandle: c.encryptedParentAuth(), InSensitive: userAuth(auth), InPublic: tpm2.New2B(signTemplate())}).Execute(c.t)
+	var certified *CertifiedKey
+	if err == nil {
+		certified = c.certifyCreated(created)
+	}
 	c.mu.Unlock()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating TPM signing child: %w", err)
@@ -54,7 +58,7 @@ func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
 	}
 	md := &SignerMetadata{Backend: "tpm", Algorithm: "P-256", Device: b.Device,
 		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer,
-		TPMParentName: c.name.Buffer, TPMAuthCredential: credential}
+		TPMParentName: c.name.Buffer, TPMAuthCredential: credential, TPMCertified: certified}
 	s, err := b.LoadSigner(md)
 	if err != nil {
 		return nil, nil, err
