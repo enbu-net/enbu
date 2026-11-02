@@ -33,6 +33,7 @@ type SignerMetadata struct {
 	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
 	// TPMAuthCredential names the credential the key's authValue comes from.
 	TPMAuthCredential []byte `json:"tpm_auth_credential,omitempty"`
+	EnclaveKey        []byte `json:"enclave_key,omitempty"`
 }
 
 // SignerInfo is the public description of the local signing key.
