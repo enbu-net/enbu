@@ -65,4 +65,19 @@ describe("DevicePanel", () => {
     expect(container.textContent).toContain("Hardware key storage (tpm) is not available.");
     expect(container.textContent).toContain("The OS keyring can hold keys.");
   });
+
+  it("says when systemd-creds holds keys instead of the OS keyring", async () => {
+    mocked.diagnoseIdentity.mockResolvedValueOnce({
+      backend: "tpm",
+      available: false,
+      fallback_available: true,
+      fallback: "systemd-creds",
+    });
+    await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
+
+    await act(async () => queryButton("Check hardware")?.click());
+    await settle();
+
+    expect(container.textContent).toContain("systemd-creds can hold keys.");
+  });
 });

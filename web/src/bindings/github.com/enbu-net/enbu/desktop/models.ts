@@ -257,6 +257,12 @@ export class IdentityDiagnosis {
     "available": boolean;
     "fallback_available": boolean;
 
+    /**
+     * Fallback is the software backend a new key would use: keyring or
+     * systemd-creds.
+     */
+    "fallback"?: string;
+
     /** Creates a new IdentityDiagnosis instance. */
     constructor($$source: Partial<IdentityDiagnosis> = {}) {
         if (!("backend" in $$source)) {

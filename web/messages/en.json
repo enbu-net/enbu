@@ -173,6 +173,7 @@
   "device_hardwareUnavailable": "Hardware key storage ({backend}) is not available.",
   "device_keyringAvailable": "The OS keyring can hold keys.",
   "device_keyringUnavailable": "The OS keyring is not available.",
+  "device_credsAvailable": "The OS keyring is not available; systemd-creds can hold keys.",
   "import_action": "Import",
   "import_description": "Add every variable of a .env file",
   "import_done": "Imported into {environment}: {added} added, {updated} updated, {unchanged} unchanged.",
