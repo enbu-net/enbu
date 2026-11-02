@@ -33,8 +33,13 @@ func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
 	}
 	// LoadSigner takes its own reference, so this one only spans the creation.
 	defer func() { _ = b.release(c) }()
+	credential, auth, err := b.enrollAuth()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer clear(auth)
 	c.mu.Lock()
-	created, err := (tpm2.Create{ParentHandle: c.parentAuth(), InPublic: tpm2.New2B(signTemplate())}).Execute(c.t)
+	created, err := (tpm2.Create{ParentHandle: c.encryptedParentAuth(), InSensitive: userAuth(auth), InPublic: tpm2.New2B(signTemplate())}).Execute(c.t)
 	c.mu.Unlock()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating TPM signing child: %w", err)
@@ -49,7 +54,7 @@ func (b *TPMBackend) CreateSigner() (signing.Signer, *SignerMetadata, error) {
 	}
 	md := &SignerMetadata{Backend: "tpm", Algorithm: "P-256", Device: b.Device,
 		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer,
-		TPMParentName: c.name.Buffer}
+		TPMParentName: c.name.Buffer, TPMAuthCredential: credential}
 	s, err := b.LoadSigner(md)
 	if err != nil {
 		return nil, nil, err
@@ -104,11 +109,17 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := b.acquire()
+	auth, err := b.authFor(md.TPMAuthCredential)
 	if err != nil {
 		return nil, err
 	}
+	c, err := b.acquire()
+	if err != nil {
+		clear(auth)
+		return nil, err
+	}
 	if err := checkParent(c, md.TPMParentName); err != nil {
+		clear(auth)
 		_ = b.release(c)
 		return nil, err
 	}
@@ -116,10 +127,11 @@ func (b *TPMBackend) LoadSigner(md *SignerMetadata) (signing.Signer, error) {
 	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
 	c.mu.Unlock()
 	if err != nil {
+		clear(auth)
 		_ = b.release(c)
 		return nil, fmt.Errorf("loading TPM signing child blob: %w", err)
 	}
-	s := &tpmSigner{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk}
+	s := &tpmSigner{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk, auth: auth}
 	if !bytes.Equal(loaded.Name.Buffer, md.TPMName) {
 		_ = s.Close()
 		return nil, errors.New("loaded TPM object Name mismatch")
@@ -133,7 +145,8 @@ type tpmSigner struct {
 	handle tpm2.TPMHandle
 	name   tpm2.TPM2BName
 	pk     signing.PublicKey
-	closed bool // guarded by c.mu
+	auth   []byte // the key's authValue; nil without user verification
+	closed bool   // guarded by c.mu
 }
 
 func (s *tpmSigner) Public() signing.PublicKey { return s.pk }
@@ -148,7 +161,7 @@ func (s *tpmSigner) Sign(domain string, body []byte) ([]byte, error) {
 		return nil, errors.New("TPM signing key is closed")
 	}
 	rsp, err := (tpm2.Sign{
-		KeyHandle:  tpm2.AuthHandle{Handle: s.handle, Name: s.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
+		KeyHandle:  tpm2.AuthHandle{Handle: s.handle, Name: s.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.Auth(s.auth))},
 		Digest:     tpm2.TPM2BDigest{Buffer: signing.P256Digest(domain, body)},
 		Validation: tpm2.TPMTTKHashCheck{Tag: tpm2.TPMSTHashCheck},
 	}).Execute(s.c.t)
@@ -179,6 +192,7 @@ func (s *tpmSigner) Close() error {
 		return nil
 	}
 	s.closed = true
+	clear(s.auth)
 	err := flush(s.c.t, s.handle)
 	s.c.mu.Unlock()
 	return errors.Join(err, s.b.release(s.c))

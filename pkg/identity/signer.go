@@ -31,6 +31,8 @@ type SignerMetadata struct {
 	TPMName    []byte            `json:"tpm_name,omitempty"`
 	// TPMParentName pins the storage primary the key was created under.
 	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
+	// TPMAuthCredential names the credential the key's authValue comes from.
+	TPMAuthCredential []byte `json:"tpm_auth_credential,omitempty"`
 }
 
 // SignerInfo is the public description of the local signing key.

@@ -16,6 +16,11 @@ import (
 type TPMBackend struct {
 	Open   func() (transport.TPMCloser, error)
 	Device string
+	// Verifier, when set, gives new keys an authValue only a verified user
+	// can derive (see UserVerifier).
+	Verifier UserVerifier
+
+	auth tpmAuth
 
 	mu   sync.Mutex
 	conn *tpmConn // shared by the loaded keys; nil when none is loaded
@@ -107,6 +112,19 @@ type tpmConn struct {
 // parentAuth authorizes a command with the storage primary as its parent.
 func (c *tpmConn) parentAuth() tpm2.AuthHandle {
 	return tpm2.AuthHandle{Handle: c.handle, Name: c.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}
+}
+
+// encryptedParentAuth authorizes a command with the primary as its parent in
+// a session that encrypts the first command parameter, which for Create holds
+// the new object's authValue or sealed data.
+func (c *tpmConn) encryptedParentAuth() tpm2.AuthHandle {
+	return tpm2.AuthHandle{Handle: c.handle, Name: c.name,
+		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptIn))...)}
+}
+
+// userAuth is the sensitive part of a new key: only its authValue.
+func userAuth(auth []byte) tpm2.TPM2BSensitiveCreate {
+	return tpm2.TPM2BSensitiveCreate{Sensitive: &tpm2.TPMSSensitiveCreate{UserAuth: tpm2.TPM2BAuth{Buffer: auth}}}
 }
 
 // sessionOpts salts a session to the primary and adds the parameter
@@ -221,8 +239,13 @@ func (b *TPMBackend) Create() (Identity, *Metadata, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	credential, auth, err := b.enrollAuth()
+	if err != nil {
+		return nil, nil, err
+	}
+	defer clear(auth)
 	c.mu.Lock()
-	created, err := (tpm2.Create{ParentHandle: c.parentAuth(), InPublic: tpm2.New2B(pub)}).Execute(c.t)
+	created, err := (tpm2.Create{ParentHandle: c.encryptedParentAuth(), InSensitive: userAuth(auth), InPublic: tpm2.New2B(pub)}).Execute(c.t)
 	c.mu.Unlock()
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating TPM ECDH child: %w", err)
@@ -237,7 +260,7 @@ func (b *TPMBackend) Create() (Identity, *Metadata, error) {
 	}
 	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Device: b.Device},
 		TPMPublic: tpm2.Marshal(created.OutPublic), TPMPrivate: tpm2.Marshal(created.OutPrivate), TPMName: name.Buffer,
-		TPMParentName: c.name.Buffer}
+		TPMParentName: c.name.Buffer, TPMAuthCredential: credential}
 	id, err := b.load(md, false)
 	if err != nil {
 		return nil, nil, err
@@ -294,11 +317,17 @@ func (b *TPMBackend) load(md *Metadata, verify bool) (Identity, error) {
 	if verify && !bytes.Equal(pk.Bytes(), md.PublicKey) {
 		return nil, errors.New("TPM public key mismatch")
 	}
-	c, err := b.acquire()
+	auth, err := b.authFor(md.TPMAuthCredential)
 	if err != nil {
 		return nil, err
 	}
+	c, err := b.acquire()
+	if err != nil {
+		clear(auth)
+		return nil, err
+	}
 	if err := checkParent(c, md.TPMParentName); err != nil {
+		clear(auth)
 		_ = b.release(c)
 		return nil, err
 	}
@@ -306,10 +335,11 @@ func (b *TPMBackend) load(md *Metadata, verify bool) (Identity, error) {
 	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
 	c.mu.Unlock()
 	if err != nil {
+		clear(auth)
 		_ = b.release(c)
 		return nil, fmt.Errorf("loading TPM child blob: %w", err)
 	}
-	key := &tpmKey{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk}
+	key := &tpmKey{b: b, c: c, handle: loaded.ObjectHandle, name: loaded.Name, pk: pk, auth: auth}
 	if !bytes.Equal(loaded.Name.Buffer, md.TPMName) {
 		_ = key.Close()
 		return nil, errors.New("loaded TPM object Name mismatch")
@@ -328,7 +358,8 @@ type tpmKey struct {
 	handle tpm2.TPMHandle
 	name   tpm2.TPM2BName
 	pk     *ecdh.PublicKey
-	closed bool // guarded by c.mu
+	auth   []byte // the key's authValue; nil without user verification
+	closed bool   // guarded by c.mu
 }
 
 func (k *tpmKey) PublicKey() *ecdh.PublicKey { return k.pk }
@@ -347,7 +378,7 @@ func (k *tpmKey) ECDH(peer *ecdh.PublicKey) ([]byte, error) {
 	// The session is salted to the primary and encrypts the response, so the
 	// shared secret does not cross the bus in the clear.
 	policy, closeSession, err := tpm2.PolicySession(c.t, tpm2.TPMAlgSHA256, 16,
-		c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut))...)
+		append(c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut)), tpm2.Auth(k.auth))...)
 	if err != nil {
 		return nil, err
 	}
@@ -380,6 +411,7 @@ func (k *tpmKey) Close() error {
 		return nil
 	}
 	k.closed = true
+	clear(k.auth)
 	err := flush(k.c.t, k.handle)
 	k.c.mu.Unlock()
 	return errors.Join(err, k.b.release(k.c))
