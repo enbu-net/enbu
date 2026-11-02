@@ -40,6 +40,10 @@ type Metadata struct {
 	// TPMParentName pins the storage primary the TPM objects were created
 	// under, so sessions are only ever salted to that primary.
 	TPMParentName []byte `json:"tpm_parent_name,omitempty"`
+	// TPMAuthCredential names the user-verification credential (a Windows
+	// Hello passkey) the TPM objects' authValue is derived from; empty when
+	// they have none.
+	TPMAuthCredential []byte `json:"tpm_auth_credential,omitempty"`
 	// EnclaveKey is the Secure Enclave's wrapped private key: only the Secure
 	// Enclave that created it can use it.
 	EnclaveKey []byte `json:"enclave_key,omitempty"`

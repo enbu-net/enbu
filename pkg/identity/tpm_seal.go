@@ -40,13 +40,19 @@ func (b *TPMBackend) SealSeed(md *Metadata, seed []byte) error {
 	if err := checkParent(c, md.TPMParentName); err != nil {
 		return err
 	}
+	// The seed object shares the identity's authValue.
+	auth, err := b.authFor(md.TPMAuthCredential)
+	if err != nil {
+		return err
+	}
+	defer clear(auth)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	created, err := (tpm2.Create{
-		ParentHandle: tpm2.AuthHandle{Handle: c.handle, Name: c.name,
-			Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptIn))...)},
+		ParentHandle: c.encryptedParentAuth(),
 		InSensitive: tpm2.TPM2BSensitiveCreate{Sensitive: &tpm2.TPMSSensitiveCreate{
-			Data: tpm2.NewTPMUSensitiveCreate(&tpm2.TPM2BSensitiveData{Buffer: seed})}},
+			UserAuth: tpm2.TPM2BAuth{Buffer: auth},
+			Data:     tpm2.NewTPMUSensitiveCreate(&tpm2.TPM2BSensitiveData{Buffer: seed})}},
 		InPublic: tpm2.New2B(sealTemplate()),
 	}).Execute(c.t)
 	if err != nil {
@@ -86,6 +92,11 @@ func (b *TPMBackend) UnsealSeed(md *Metadata) ([]byte, error) {
 	if err := checkParent(c, md.TPMParentName); err != nil {
 		return nil, err
 	}
+	auth, err := b.authFor(md.TPMAuthCredential)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(auth)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	loaded, err := (tpm2.Load{ParentHandle: c.parentAuth(), InPublic: *public, InPrivate: *private}).Execute(c.t)
@@ -94,7 +105,7 @@ func (b *TPMBackend) UnsealSeed(md *Metadata) ([]byte, error) {
 	}
 	defer func() { _ = flush(c.t, loaded.ObjectHandle) }()
 	rsp, err := (tpm2.Unseal{ItemHandle: tpm2.AuthHandle{Handle: loaded.ObjectHandle, Name: loaded.Name,
-		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut))...)}}).Execute(c.t)
+		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, append(c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptOut)), tpm2.Auth(auth))...)}}).Execute(c.t)
 	if err != nil {
 		return nil, fmt.Errorf("unsealing ML-KEM seed: %w", err)
 	}

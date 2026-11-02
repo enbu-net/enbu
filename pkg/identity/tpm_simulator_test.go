@@ -16,18 +16,21 @@ import (
 	"github.com/google/go-tpm/tpm2/transport"
 )
 
-// recordingTPM keeps every response of the reference TPM simulator, which,
-// unlike the virtual TPM of the other tests, implements parameter encryption.
+// recordingTPM keeps every command and response of the reference TPM
+// simulator, which, unlike the virtual TPM of the other tests, implements
+// parameter encryption.
 type recordingTPM struct {
-	mu        sync.Mutex
-	inner     transport.TPM
-	responses [][]byte
+	mu      sync.Mutex
+	inner   transport.TPM
+	traffic [][]byte
 }
 
 func (r *recordingTPM) Send(cmd []byte) ([]byte, error) {
+	// Copy the command first: the simulator decrypts its parameter in place.
+	sent := append([]byte(nil), cmd...)
 	rsp, err := r.inner.Send(cmd)
 	r.mu.Lock()
-	r.responses = append(r.responses, append([]byte(nil), rsp...))
+	r.traffic = append(r.traffic, sent, append([]byte(nil), rsp...))
 	r.mu.Unlock()
 	return rsp, err
 }
@@ -37,8 +40,8 @@ func (r *recordingTPM) Close() error { return nil }
 func (r *recordingTPM) sawInClear(secret []byte) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, rsp := range r.responses {
-		if bytes.Contains(rsp, secret) {
+	for _, msg := range r.traffic {
+		if bytes.Contains(msg, secret) {
 			return true
 		}
 	}
@@ -46,8 +49,9 @@ func (r *recordingTPM) sawInClear(secret []byte) bool {
 }
 
 // TestTPMSimulatorEncryptsSecretsOnTheBus runs the identity, the sealed seed
-// and the signer with parameter encryption on, and checks that neither the
-// ECDH shared secret nor the ML-KEM seed appears in a TPM response.
+// and the signer with parameter encryption and a verified authValue, and
+// checks that neither the ECDH shared secret, the ML-KEM seed nor the
+// authValue crosses the bus in the clear.
 func TestTPMSimulatorEncryptsSecretsOnTheBus(t *testing.T) {
 	sim, err := simulator.Get()
 	if err != nil {
@@ -55,7 +59,12 @@ func TestTPMSimulatorEncryptsSecretsOnTheBus(t *testing.T) {
 	}
 	defer func() { _ = sim.Close() }()
 	rec := &recordingTPM{inner: transport.FromReadWriter(sim)}
-	b := &TPMBackend{Device: "simulator", Open: func() (transport.TPMCloser, error) { return rec, nil }}
+	hello := &fakeVerifier{secret: bytes.Repeat([]byte{7}, 32)}
+	auth, err := deriveAuth(bytes.Clone(hello.secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &TPMBackend{Device: "simulator", Open: func() (transport.TPMCloser, error) { return rec, nil }, Verifier: hello}
 	id, md, err := b.Create()
 	if err != nil {
 		t.Fatal(err)
@@ -113,5 +122,11 @@ func TestTPMSimulatorEncryptsSecretsOnTheBus(t *testing.T) {
 	}
 	if err := signing.Verify(s.Public(), signing.DomainState, []byte("state"), sig); err != nil {
 		t.Fatal(err)
+	}
+	if len(md.TPMAuthCredential) == 0 {
+		t.Fatal("the identity was created without an authValue")
+	}
+	if rec.sawInClear(auth) {
+		t.Fatal("the authValue crossed the bus in the clear")
 	}
 }
