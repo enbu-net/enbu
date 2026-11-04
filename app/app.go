@@ -7,6 +7,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"net/url"
 	"oras.land/oras-go/v2/registry/remote/auth"
+	"path/filepath"
 	"strings"
 	"uuid"
 
@@ -30,10 +31,21 @@ type App struct {
 	// CheckpointDir holds the local rollback checkpoints. Empty means the
 	// per-user data directory.
 	CheckpointDir string
+	// CacheDir holds what this device keeps to avoid fetching again: heads of
+	// stored revisions and the history index. Empty means the per-user data
+	// directory. Nothing in it is trusted or secret.
+	CacheDir string
 	// AcceptNewGenesis lets InitializeRepository replace the genesis this
 	// device pinned for the workspace with the one enbu.toml names. Only a
 	// person who confirmed the workspace was re-founded sets it.
 	AcceptNewGenesis bool
+}
+
+func (a *App) cacheDir() string {
+	if a.CacheDir != "" {
+		return a.CacheDir
+	}
+	return filepath.Join(config.DataDir(), "cache")
 }
 
 func (a *App) SetRepositoryDir(dir string) {
@@ -111,25 +123,11 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		}
 		return storage.NewS3(client, u.Host, strings.Trim(u.Path, "/")), nil
 	case "oci":
-		var credential auth.CredentialFunc
-		switch settings.OCIAuth {
-		case "", "docker":
-		case "github":
-			if u.Host != "ghcr.io" {
-				return nil, apperr.New(apperr.CodeInvalidArgument, "GitHub authentication is only supported for ghcr.io", nil)
-			}
-			credential = func(_ context.Context, host string) (auth.Credential, error) {
-				if host != "ghcr.io" {
-					return auth.EmptyCredential, nil
-				}
-				token, username, err := a.TokenProvider.LoadToken()
-				return auth.Credential{Username: username, Password: token}, err
-			}
-		default:
-			return nil, apperr.New(apperr.CodeInvalidArgument, "invalid OCI authentication mode", nil)
-		}
+		// ghcr.io uses enbu's GitHub login; any other registry uses the Docker
+		// credential configuration.
+		credential := a.ociCredential(u.Host)
 		var opts []storage.OCIOption
-		if settings.OCIAuth == "github" {
+		if u.Host == "ghcr.io" {
 			// Deleting needs the GitHub Packages API, which the same token can reach.
 			if g, ok := storage.GHCRPackagesFor(u.Host+u.Path, func() (string, error) {
 				token, _, err := a.TokenProvider.LoadToken()
@@ -144,6 +142,25 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 	}
 }
 
+// ociCredential is the credential for an OCI registry host: enbu's GitHub
+// login for ghcr.io, or nil, which makes the OCI store read the Docker
+// credential configuration.
+func (a *App) ociCredential(registry string) auth.CredentialFunc {
+	if registry != "ghcr.io" {
+		return nil
+	}
+	return func(_ context.Context, host string) (auth.Credential, error) {
+		if host != "ghcr.io" {
+			return auth.EmptyCredential, nil
+		}
+		token, username, err := a.TokenProvider.LoadToken()
+		if err != nil {
+			return auth.EmptyCredential, apperr.Wrap(apperr.CodeNotAuthenticated, "ghcr.io storage uses enbu's GitHub login; run 'enbu auth login'", err, nil)
+		}
+		return auth.Credential{Username: username, Password: token}, nil
+	}
+}
+
 func (a *App) workspaceStorage(ctx context.Context) (storage.Store, error) {
 	cfg, err := a.loadProject()
 	if err != nil {
@@ -152,7 +169,11 @@ func (a *App) workspaceStorage(ctx context.Context) (storage.Store, error) {
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 		return nil, apperr.New(apperr.CodeNotInitialized, "workspace ID missing or invalid", nil)
 	}
-	return a.openStorage(ctx, cfg)
+	store, err := a.openStorage(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return storage.WithHeadCache(store, filepath.Join(a.cacheDir(), "heads")), nil
 }
 
 func storageError(err error) error {
@@ -225,5 +246,5 @@ func (d *defaultRepoDetector) LoadRepo() (string, string, error) {
 	if !repository.HasRemote {
 		return "", "", fmt.Errorf("git remote not found")
 	}
-	return config.ParseGitRemote(repository.OriginURL)
+	return config.ParseGitHubRemote(repository.OriginURL)
 }

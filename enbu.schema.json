@@ -36,11 +36,6 @@
           "pattern": "^(oci|s3)://",
           "description": "oci://registry/repository or s3://bucket/prefix."
         },
-        "oci_auth": {
-          "type": "string",
-          "enum": ["docker", "github"],
-          "description": "OCI credentials: Docker credential helpers (default) or enbu's GitHub login (ghcr.io only)."
-        },
         "plain_http": {
           "type": "boolean",
           "description": "Use HTTP for a local OCI registry."

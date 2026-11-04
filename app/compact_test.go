@@ -315,3 +315,27 @@ func TestCompactionKeepsRevisionsItCannotJudge(t *testing.T) {
 		t.Fatalf("reads %v", got)
 	}
 }
+
+// A re-encryption is hidden while its parent is readable. Once compaction
+// removes that parent, warm and cold caches must both show the retained state.
+func TestCompactionMakesCachedRepeatVisible(t *testing.T) {
+	a := newAlice(t)
+	if err := a.SyncSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := a.ListHistory(bg, "default"); err != nil || len(entries) != 1 {
+		t.Fatalf("history before compaction = %v, %v", entries, err)
+	}
+	if _, err := a.CompactHistory(bg, "default", 1); err != nil {
+		t.Fatal(err)
+	}
+	warm, err := a.ListHistory(bg, "default")
+	if err != nil || len(warm) != 1 {
+		t.Fatalf("warm history = %v, %v", warm, err)
+	}
+	a.CacheDir = t.TempDir()
+	cold, err := a.ListHistory(bg, "default")
+	if err != nil || len(cold) != 1 || warm[0].Tag != cold[0].Tag {
+		t.Fatalf("cold history = %v, %v; warm = %v", cold, err, warm)
+	}
+}

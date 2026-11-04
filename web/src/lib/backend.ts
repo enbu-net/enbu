@@ -1,427 +1,212 @@
-import {
-  api,
-  type AuthStatus,
-  type ConflictChoice,
-  type ConflictSet,
-  type Environment,
-  type GUIRepoStatus,
-  type InitResult,
-  type JoinRequest,
-  type Member,
-  type SecretsResponse,
-} from "./api";
-import {
-  createAppError,
-  type AppErrorPayload,
-  type BindingResult,
-  type DisplayError,
-  toDisplayError,
-  unwrapBindingResult,
-} from "./app-error";
+import { DesktopService as Desktop } from "../bindings/github.com/enbu-net/enbu/desktop/wails";
+import { AppError, createAppError, toDisplayError } from "./app-error";
+import { host } from "./host";
 import { mockBackend } from "./mock-backend";
+import { vscodeBridge, vscodeService } from "./vscode";
+import type {
+  AuthStatus,
+  ConflictChoice,
+  ConflictSet,
+  Diagnosis,
+  Diff,
+  Environment,
+  EnvironmentDeletion,
+  GUIRepoStatus,
+  HistoryEntry,
+  ImportResult,
+  InitResult,
+  StorageSettings,
+  JoinRequest,
+  KeyUpdateResult,
+  Member,
+  OAuthStart,
+  OAuthStatus,
+  PublicInfo,
+  PullResult,
+  RepoInfo,
+  SecretsResponse,
+} from "./types";
 
-const isMock =
-  (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("mock")) ||
-  import.meta.env.BASE_URL.includes("/enbu/");
+/**
+ * Everything the UI asks of enbu. The desktop app implements it with the
+ * generated Wails bindings, a VS Code webview with the same service over the
+ * extension host (see vscode.ts), and the browser preview with an in-memory
+ * mock. A new operation is a method here, one in the mock, and the Go method in
+ * desktop/wails/binding.go it calls, also listed in desktop/rpc.Methods.
+ */
+export interface Backend {
+  authStatus(): Promise<AuthStatus>;
+  startOAuthLogin(): Promise<OAuthStart>;
+  oauthStatus(sessionID: string): Promise<OAuthStatus>;
+  cancelOAuthLogin(sessionID: string): Promise<void>;
+  logout(): Promise<void>;
 
-export interface OAuthStart {
-  session_id: string;
-  expires_at: string;
+  repoStatus(): Promise<GUIRepoStatus>;
+  browseRepository(): Promise<GUIRepoStatus>;
+  selectRepository(path: string): Promise<GUIRepoStatus>;
+  listRepositories(): Promise<RepoInfo[]>;
+  removeRepository(path: string): Promise<void>;
+  /** Founds a workspace in storage ("" for the suggested one), or joins enbu.toml's. */
+  initialize(storage: StorageSettings, acceptNewGenesis: boolean): Promise<InitResult>;
+  /** The GHCR repository beside the GitHub origin that founding suggests. */
+  suggestStorage(): Promise<string>;
+
+  listEnvironments(): Promise<Environment[]>;
+  createEnvironment(name: string): Promise<void>;
+  switchEnvironment(name: string): Promise<void>;
+  renameEnvironment(name: string, newName: string): Promise<void>;
+  /** With purge the stored revisions go too (admin only); without, the result names their incarnation. */
+  deleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion>;
+  /** Deletes the stored revisions of an environment deleted without purge (admin only). */
+  purgeIncarnation(incarnation: string): Promise<number>;
+
+  listSecrets(env?: string): Promise<SecretsResponse>;
+  addSecret(key: string, value: string, env?: string): Promise<void>;
+  editSecret(key: string, value: string, env?: string): Promise<void>;
+  deleteSecret(key: string, env?: string): Promise<void>;
+  /** With replace the output file's content is dropped, even when enbu cannot read it. */
+  pullSecrets(env?: string, replace?: boolean): Promise<PullResult>;
+  syncSecrets(env?: string): Promise<void>;
+  listConflicts(env?: string): Promise<ConflictSet>;
+  resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void>;
+  /** Adds every variable of a dotenv file's content; overwrite replaces ones with another value. */
+  importSecrets(dotenv: string, overwrite: boolean, env?: string): Promise<ImportResult>;
+
+  /** The revisions that changed env's secrets, oldest first, numbered from 1. */
+  listHistory(env: string): Promise<HistoryEntry[]>;
+  diffHistory(env: string, from: number, to: number): Promise<Diff>;
+  /** Publishes the content of revision index as a new revision. */
+  restoreHistory(env: string, index: number): Promise<void>;
+
+  listMembers(): Promise<Member[]>;
+  listJoinRequests(): Promise<JoinRequest[]>;
+  approveMember(deviceID: string): Promise<void>;
+  removeMember(deviceID: string): Promise<void>;
+  setAdmin(deviceID: string, admin: boolean): Promise<void>;
+  /** Joins member changes two admins made at the same time. */
+  resolveMemberFork(): Promise<void>;
+
+  /** This device's keys in the selected workspace. */
+  identity(): Promise<PublicInfo>;
+  diagnoseIdentity(): Promise<Diagnosis>;
+  /** Switches this device to a post-quantum key; a member's waits for an admin. */
+  upgradeIdentity(): Promise<KeyUpdateResult>;
+
+  readConfig(): Promise<string>;
+  writeConfig(content: string): Promise<void>;
+  appVersion(): Promise<string>;
 }
 
-export interface OAuthStatus {
-  state: "pending" | "success" | "expired" | "denied" | "error";
-  error?: DisplayError;
-  username?: string;
+/**
+ * A failed call rejects with the error's AppError payload as its cause (see
+ * marshalError in desktop/wails). Anything else, such as a binding missing in
+ * an outdated build, becomes an internal error; the details go to the console.
+ */
+export function toAppError(err: unknown): AppError {
+  if (err instanceof AppError) return err;
+  const cause = (err as { cause?: unknown } | null)?.cause;
+  if (
+    cause &&
+    typeof cause === "object" &&
+    typeof (cause as { code?: unknown }).code === "string"
+  ) {
+    return new AppError(cause as AppError["payload"]);
+  }
+  console.error("desktop call failed", err);
+  return createAppError("internal");
 }
 
-type DesktopOAuthStatus = Omit<OAuthStatus, "error"> & { error?: AppErrorPayload };
-
-export interface RepositoryOwner {
-  login: string;
-  organization: boolean;
-}
-
-type DesktopService = {
-  GetAuthStatus: () => Promise<DesktopAuthStatus>;
-  StartOAuthLogin: () => Promise<OAuthStart>;
-  GetOAuthLoginStatus: (sessionID: string) => Promise<DesktopOAuthStatus>;
-  CancelOAuthLogin: (sessionID: string) => Promise<void>;
-  Logout: () => Promise<void>;
-  BrowseRepository: () => Promise<GUIRepoStatus["repo"]>;
-  SelectRepository: (path: string) => Promise<GUIRepoStatus["repo"]>;
-  GetRepoStatus: () => Promise<GUIRepoStatus["repo"]>;
-  Initialize: () => Promise<InitResult>;
-  ListEnvironments: () => Promise<Environment[]>;
-  CreateEnvironment: (name: string) => Promise<void>;
-  SwitchEnvironment: (name: string) => Promise<void>;
-  RenameEnvironment: (name: string, newName: string) => Promise<void>;
-  DeleteEnvironment: (name: string) => Promise<void>;
-  ListSecrets: (env: string) => Promise<SecretsResponse>;
-  AddSecret: (env: string, key: string, value: string) => Promise<void>;
-  EditSecret: (env: string, key: string, value: string) => Promise<void>;
-  DeleteSecret: (env: string, key: string) => Promise<void>;
-  PullSecrets: (env: string) => Promise<void>;
-  SyncSecrets: (env: string) => Promise<void>;
-  ListConflicts: (env: string) => Promise<ConflictSet>;
-  ResolveConflicts: (env: string, heads: string[], choices: ConflictChoice[]) => Promise<void>;
-  ListRepositories: () => Promise<
-    Array<{ path: string; owner: string; repo: string; initialized: boolean }>
-  >;
-  RemoveRepository: (path: string) => Promise<void>;
-  ListMembers: () => Promise<Member[]>;
-  ListJoinRequests: () => Promise<JoinRequest[]>;
-  ApproveMember: (deviceID: string) => Promise<void>;
-  RemoveMember: (deviceID: string) => Promise<void>;
-  ReadConfig: () => Promise<string>;
-  WriteConfig: (content: string) => Promise<void>;
-  GitInit: (path: string) => Promise<GUIRepoStatus["repo"]>;
-  ListRepositoryOwners: () => Promise<RepositoryOwner[]>;
-  GitCreateRemote: (
-    path: string,
-    owner: string,
-    repoName: string,
-    privateRepository: boolean,
-  ) => Promise<GUIRepoStatus["repo"]>;
-  GetAppVersion: () => Promise<string>;
-};
-
-type DesktopBindingService = {
-  [K in keyof DesktopService]: DesktopService[K] extends (
-    ...args: infer Args
-  ) => Promise<infer Result>
-    ? (...args: Args) => Promise<BindingResult<Result>>
-    : never;
-};
-
-type DesktopAuthStatus = Omit<AuthStatus, "repo"> & {
-  repo?: AuthStatus["repo"] & {
-    repo?: string;
-  };
-};
-
-declare global {
-  interface Window {
-    go?: {
-      main?: {
-        DesktopService?: DesktopBindingService;
-      };
-      desktop?: {
-        Service?: DesktopBindingService;
-      };
-    };
+async function call<T>(promise: PromiseLike<T>): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    throw toAppError(err);
   }
 }
 
-let cachedBinding: DesktopBindingService | undefined;
-let cachedService: DesktopService | undefined;
-
-function service(): DesktopService | undefined {
-  const binding = window.go?.main?.DesktopService ?? window.go?.desktop?.Service;
-  if (!binding) return undefined;
-  if (binding === cachedBinding && cachedService) return cachedService;
-
-  cachedBinding = binding;
-  cachedService = new Proxy(binding, {
-    get(target, property) {
-      const method = target[property as keyof DesktopBindingService];
-      if (typeof method !== "function") return method;
-      return async (...args: unknown[]) =>
-        unwrapBindingResult(
-          await (method as (...values: unknown[]) => Promise<BindingResult<unknown>>)(...args),
-        );
-    },
-  }) as unknown as DesktopService;
-  return cachedService;
+function repoStatusOf(repo: RepoInfo | null | undefined): GUIRepoStatus {
+  return repo?.path ? { selected: true, repo } : { selected: false };
 }
 
-const realBackend = {
-  async authStatus(): Promise<AuthStatus> {
-    const svc = service();
-    if (!svc) {
-      return api.auth.status();
-    }
-    return normalizeAuthStatus(await svc.GetAuthStatus());
-  },
-  async startOAuthLogin(): Promise<OAuthStart> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    return svc.StartOAuthLogin();
-  },
-  async oauthStatus(sessionID: string): Promise<OAuthStatus> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    const status = await svc.GetOAuthLoginStatus(sessionID);
-    return {
-      ...status,
-      error: status.error ? toDisplayError(status.error) : undefined,
-    };
-  },
-  async cancelOAuthLogin(sessionID: string): Promise<void> {
-    await service()?.CancelOAuthLogin(sessionID);
-  },
-  async logout(): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.auth.logout();
-      return;
-    }
-    await svc.Logout();
-  },
-  async repoStatus(): Promise<GUIRepoStatus> {
-    const svc = service();
-    if (!svc) {
-      return api.gui.repo();
-    }
-    const repo = await svc.GetRepoStatus();
-    return { selected: Boolean(repo?.path), repo };
-  },
-  async browseRepository(): Promise<GUIRepoStatus> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    const repo = await svc.BrowseRepository();
-    return { selected: Boolean(repo?.path), repo };
-  },
-  async selectRepository(path: string): Promise<GUIRepoStatus> {
-    const svc = service();
-    if (!svc) {
-      return api.gui.selectRepo(path);
-    }
-    const repo = await svc.SelectRepository(path);
-    return { selected: Boolean(repo?.path), repo };
-  },
-  async initialize(): Promise<InitResult> {
-    const svc = service();
-    if (!svc) {
-      return api.init();
-    }
-    return svc.Initialize();
-  },
-  async gitInit(path: string): Promise<GUIRepoStatus> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    const repo = await svc.GitInit(path);
-    return { selected: Boolean(repo?.path), repo };
-  },
-  async gitCreateRemote(
-    path: string,
-    owner: string,
-    repoName: string,
-    privateRepository: boolean,
-  ): Promise<GUIRepoStatus> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    const repo = await svc.GitCreateRemote(path, owner, repoName, privateRepository);
-    return { selected: Boolean(repo?.path), repo };
-  },
-  async listRepositoryOwners(): Promise<RepositoryOwner[]> {
-    const svc = service();
-    if (!svc) {
-      throw createAppError("unavailable");
-    }
-    return svc.ListRepositoryOwners();
-  },
-  async listEnvironments(): Promise<Environment[]> {
-    const svc = service();
-    if (!svc) {
-      return (await api.environments.list()).environments;
-    }
-    return svc.ListEnvironments();
-  },
-  async createEnvironment(name: string): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.environments.create(name);
-      return;
-    }
-    await svc.CreateEnvironment(name);
-  },
-  async switchEnvironment(name: string): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.environments.switch(name);
-      return;
-    }
-    await svc.SwitchEnvironment(name);
-  },
-  async renameEnvironment(name: string, newName: string): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.environments.rename(name, newName);
-      return;
-    }
-    await svc.RenameEnvironment(name, newName);
-  },
-  async deleteEnvironment(name: string): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.environments.delete(name);
-      return;
-    }
-    await svc.DeleteEnvironment(name);
-  },
-  async listSecrets(env = ""): Promise<SecretsResponse> {
-    return service()?.ListSecrets(env) ?? api.secrets.list(env || undefined);
-  },
-  async addSecret(key: string, value: string, env = ""): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.secrets.add(key, value, env || undefined);
-      return;
-    }
-    await svc.AddSecret(env, key, value);
-  },
-  async editSecret(key: string, value: string, env = ""): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.secrets.edit(key, value, env || undefined);
-      return;
-    }
-    await svc.EditSecret(env, key, value);
-  },
-  async deleteSecret(key: string, env = ""): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.secrets.delete(key, env || undefined);
-      return;
-    }
-    await svc.DeleteSecret(env, key);
-  },
-  async pullSecrets(env = ""): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.secrets.pull(env || undefined);
-      return;
-    }
-    await svc.PullSecrets(env);
-  },
-  async syncSecrets(env = ""): Promise<void> {
-    const svc = service();
-    if (!svc) {
-      await api.secrets.sync(env || undefined);
-      return;
-    }
-    await svc.SyncSecrets(env);
-  },
-  async listConflicts(env = ""): Promise<ConflictSet> {
-    const svc = service();
-    if (!svc) throw createAppError("unavailable");
-    const set = await svc.ListConflicts(env);
-    return {
-      environment: set.environment,
-      heads: set.heads ?? [],
-      conflicts: (set.conflicts ?? []).map((c) => ({
-        key: c.key,
-        candidates: c.candidates ?? [],
-      })),
-    };
-  },
-  // Publishing a choice nobody made would be worse than failing, so a missing
-  // service fails loudly.
-  async resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void> {
-    const svc = service();
-    if (!svc) throw createAppError("unavailable");
-    await svc.ResolveConflicts(env, heads, choices);
-  },
-  async listRepositories(): Promise<GUIRepoStatus["repo"][]> {
-    const svc = service();
-    if (!svc) return [];
-    const items = await svc.ListRepositories();
-    return items.map((r) => ({
-      path: r.path,
-      owner: r.owner,
-      repo: r.repo,
-      initialized: r.initialized,
-    }));
-  },
-  async removeRepository(path: string): Promise<void> {
-    await service()?.RemoveRepository(path);
-  },
-  async listMembers(): Promise<Member[]> {
-    const svc = service();
-    if (!svc) return [];
-    const items = await svc.ListMembers();
-    return (items ?? [])
-      .filter((m) => m != null)
-      .map((m) => ({
-        device_id: m.device_id,
-        fingerprint: m.fingerprint,
-        algorithm: m.algorithm,
-        admin: m.admin,
-        self: m.self,
-      }));
-  },
-  async listJoinRequests(): Promise<JoinRequest[]> {
-    const svc = service();
-    if (!svc) return [];
-    const items = await svc.ListJoinRequests();
-    return (items ?? [])
-      .filter((r) => r != null)
-      .map((r) => ({
-        device_id: r.device_id,
-        fingerprint: r.fingerprint,
-        algorithm: r.algorithm,
-        requested_at: r.requested_at,
-      }));
-  },
-  // These change who can read every secret, so a missing service must fail
-  // loudly: resolving would show an approval or removal that never happened.
-  async approveMember(deviceID: string): Promise<void> {
-    const svc = service();
-    if (!svc) throw createAppError("unavailable");
-    await svc.ApproveMember(deviceID);
-  },
-  async removeMember(deviceID: string): Promise<void> {
-    const svc = service();
-    if (!svc) throw createAppError("unavailable");
-    await svc.RemoveMember(deviceID);
-  },
-  async readConfig(): Promise<string> {
-    const svc = service();
-    if (!svc) throw createAppError("unavailable");
-    return svc.ReadConfig();
-  },
-  async writeConfig(content: string): Promise<void> {
-    await service()?.WriteConfig(content);
-  },
-  async appVersion(): Promise<string> {
-    return (await service()?.GetAppVersion()) ?? "";
-  },
+/** The desktop service's methods, by their Go names. */
+export type ServiceMethod = keyof typeof Desktop;
+
+/** A client of the desktop service: the Wails bindings, or the VS Code bridge. */
+export type ServiceClient = {
+  [K in ServiceMethod]: (
+    ...args: Parameters<(typeof Desktop)[K]>
+  ) => PromiseLike<Awaited<ReturnType<(typeof Desktop)[K]>>>;
 };
 
-export const backend = isMock ? mockBackend : realBackend;
-
-export function openURL(url: string): void {
-  // Wails injects window.runtime at startup; use it to open in OS browser
-  // instead of spawning a new app window via window.open
-  const wailsRuntime = (window as unknown as { runtime?: { BrowserOpenURL?: (u: string) => void } })
-    .runtime;
-  if (wailsRuntime?.BrowserOpenURL) {
-    wailsRuntime.BrowserOpenURL(url);
-  } else {
-    window.open(url, "_blank");
-  }
-}
-
-function normalizeAuthStatus(status: DesktopAuthStatus): AuthStatus {
-  if (!status.repo) {
-    return status;
-  }
+export function createServiceBackend(svc: ServiceClient): Backend {
   return {
-    ...status,
-    repo: {
-      owner: status.repo.owner,
-      name: status.repo.name ?? status.repo.repo ?? "",
+    authStatus: () => call(svc.GetAuthStatus()),
+    startOAuthLogin: () => call(svc.StartOAuthLogin()),
+    async oauthStatus(sessionID) {
+      const status = await call(svc.GetOAuthLoginStatus(sessionID));
+      return {
+        state: status.state as OAuthStatus["state"],
+        username: status.username,
+        error: status.error ? toDisplayError(status.error) : undefined,
+      };
     },
+    cancelOAuthLogin: (sessionID) => call(svc.CancelOAuthLogin(sessionID)),
+    logout: () => call(svc.Logout()),
+
+    repoStatus: async () => repoStatusOf(await call(svc.GetRepoStatus())),
+    browseRepository: async () => repoStatusOf(await call(svc.BrowseRepository())),
+    selectRepository: async (path) => repoStatusOf(await call(svc.SelectRepository(path))),
+    listRepositories: () => call(svc.ListRepositories()),
+    removeRepository: (path) => call(svc.RemoveRepository(path)),
+    initialize: (storage, acceptNewGenesis) => call(svc.Initialize(storage, acceptNewGenesis)),
+    suggestStorage: () => call(svc.SuggestStorage()),
+
+    listEnvironments: () => call(svc.ListEnvironments()),
+    createEnvironment: (name) => call(svc.CreateEnvironment(name)),
+    switchEnvironment: (name) => call(svc.SwitchEnvironment(name)),
+    renameEnvironment: (name, newName) => call(svc.RenameEnvironment(name, newName)),
+    deleteEnvironment: (name, purge) => call(svc.DeleteEnvironment(name, purge)),
+    purgeIncarnation: (incarnation) => call(svc.PurgeIncarnation(incarnation)),
+
+    listSecrets: (env = "") => call(svc.ListSecrets(env)),
+    addSecret: (key, value, env = "") => call(svc.AddSecret(env, key, value)),
+    editSecret: (key, value, env = "") => call(svc.EditSecret(env, key, value)),
+    deleteSecret: (key, env = "") => call(svc.DeleteSecret(env, key)),
+    pullSecrets: (env = "", replace = false) => call(svc.PullSecrets(env, replace)),
+    syncSecrets: (env = "") => call(svc.SyncSecrets(env)),
+    listConflicts: (env = "") => call(svc.ListConflicts(env)),
+    resolveConflicts: (env, heads, choices) => call(svc.ResolveConflicts(env, heads, choices)),
+    importSecrets: (dotenv, overwrite, env = "") => call(svc.ImportSecrets(env, dotenv, overwrite)),
+
+    listHistory: (env) => call(svc.ListHistory(env)),
+    async diffHistory(env, from, to) {
+      const diff = await call(svc.DiffHistory(env, from, to));
+      return diff ?? { added: [], removed: [], modified: [] };
+    },
+    restoreHistory: (env, index) => call(svc.RestoreHistory(env, index)),
+
+    listMembers: () => call(svc.ListMembers()),
+    listJoinRequests: () => call(svc.ListJoinRequests()),
+    approveMember: (deviceID) => call(svc.ApproveMember(deviceID)),
+    removeMember: (deviceID) => call(svc.RemoveMember(deviceID)),
+    setAdmin: (deviceID, admin) => call(svc.SetAdmin(deviceID, admin)),
+    resolveMemberFork: () => call(svc.ResolveMemberFork()),
+
+    identity: () => call(svc.GetIdentity()),
+    diagnoseIdentity: () => call(svc.DiagnoseIdentity()),
+    upgradeIdentity: () => call(svc.UpgradeIdentity()),
+
+    readConfig: () => call(svc.ReadConfig()),
+    writeConfig: (content) => call(svc.WriteConfig(content)),
+    appVersion: () => call(svc.GetAppVersion()),
   };
 }
+
+export const desktopBackend: Backend = createServiceBackend(Desktop);
+
+export const backend: Backend =
+  host === "vscode" && vscodeBridge
+    ? createServiceBackend(vscodeService(vscodeBridge))
+    : host === "preview"
+      ? mockBackend
+      : desktopBackend;

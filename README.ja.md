@@ -34,20 +34,35 @@ go install github.com/enbu-net/enbu@latest
 ```
 
 または [Releases](https://github.com/enbu-net/enbu/releases) からバイナリをダウンロード  
+Linux向けには、シェル補完も入るパッケージがあります。デスクトップアプリの`.deb`と`.rpm`は、アプリメニューへの追加と`enbu://`リンクの登録も行います。
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian、Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora、RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # デスクトップアプリ（GTK 4、WebKitGTK 6.0）
+```
 
 ## クイックスタート
 
 ### 1. Storage を選ぶ
 
-GHCR を使う場合は、GitHub にログインしてからレジストリのリポジトリを明示します:
+`origin` が GitHub のリポジトリでは、ログインして `init` するだけです。ワークスペースは
+リポジトリの隣の GHCR（`oci://ghcr.io/OWNER/REPO-enbu`）に置かれます:
 
 ```bash
 enbu auth login
-enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
+enbu init
 ```
 
+GHCR のパッケージは作成者だけが見られる private で作られます。メンバーが参加できるように、
+GitHub でパッケージの設定を開き、リポジトリを接続して「Inherit access from repository」を
+有効にしてください（`init` も案内を表示します）。
+
 ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
-その他の OCI レジストリは、既定で Docker の認証設定を使います:
+それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
+その他の OCI レジストリは Docker の認証設定を使います:
 
 ```bash
 enbu init --storage oci://registry.example.com/team/secrets
@@ -95,7 +110,7 @@ enbu add --env prod DATABASE_URL "postgres://prod/..."
 既存の `.env` をまとめて取り込むには:
 
 ```bash
-enbu import            # ./.env を現在の環境に取り込む
+enbu import .env       # ./.env を現在の環境に取り込む
 enbu import app.env    # 任意の dotenv ファイル。"-" で stdin
 ```
 
@@ -115,11 +130,12 @@ enbu pull # .env ファイルに書き出し
 enbu pull --env dev # dev の設定済み出力先に書き出し
 ```
 
-pull はシークレットの後にマーカー行を書きます。マーカーの下（または enbu がまだ書いていないファイル）にある、
+pull はシークレットの後にマーカー行を書きます。マーカーの下にある、
 enbu が保存していない変数（手元だけの `DEBUG=1` など）はそこに残して stderr に一覧を出します。黙って消すことはありません。
 マーカーより上は enbu の領域で、環境から削除したシークレットは次の pull でファイルから消え、削除した変数として一覧に出ます。
+マーカーの無いファイル（古い enbu や手で書いたもの）では、環境の履歴に一度でもあった変数を削除済みのシークレットとして消し、それ以外は残します。
 残した変数は名前順に書き直し、コメントは残りません。
-`enbu pull --replace` でファイルを丸ごと上書きします。dotenv として読めないファイルは `--replace` 無しでは上書きしません。
+`enbu pull --replace` でファイルを丸ごと上書きします。dotenv として読めないファイルは `--replace` 無しでは上書きしません。デスクトップアプリでは上書きする前に確認します。
 
 秘密をディスクに書かずに使うには、コマンドを enbu 経由で起動します:
 
@@ -130,6 +146,7 @@ enbu run --preserve-env -- make  # シェルで既に設定済みの変数を優
 ```
 
 コマンドの終了コードはそのまま返します。
+出力先が端末でないとき（CIやログファイルなど）は、6文字以上の秘密の値を`<concealed by enbu>`に置き換えます。`--no-masking`で無効にできます。置き換えるのは保存された値そのもの（複数行の値は各行も）だけで、コマンドがbase64やURLエンコードなどで変換した値はそのまま出力されます。
 
 ### 6. メンバーの追加
 
@@ -181,7 +198,6 @@ default_env = "dev"
 
 [storage]
 url = "oci://ghcr.io/your-org/your-repo-enbu"
-oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
@@ -223,16 +239,20 @@ age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号�
 
 新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
-TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではKeychainに保存）。
+TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではSecure Enclave鍵へ暗号化して保存）。
 全メンバーがハイブリッド鍵のときだけファイルは耐量子になり、古典鍵のメンバーが1人でもいれば古典として暗号化されます。
 切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。
 ハイブリッド鍵に対応する前のenbuを使っているメンバーは、先にenbuを更新する必要があります。
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
-| Linux | TPM 2.0（`/dev/tpmrm0`優先） | Secret Service（GNOME Keyring / KWallet） |
+| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet）、なければ`systemd-creds --user` |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
-| macOS | Secure Enclave | Keychain |
+| macOS | Secure Enclave（Apple silicon、またはT2チップのIntel Mac） | Keychain |
+
+Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けないため、グループ外のユーザーはkeyringにfallbackします。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。どちらになったかは`enbu doctor`で確認できます。
+
+サーバー、コンテナ、WSLでは、使えるTPMもSecret Serviceもないことがよくあります。その場合enbuはソフトウェア鍵を`systemd-creds --user`（systemd 256以降）で暗号化し、データディレクトリ内のファイルに保管します。鍵はユーザーとマシンのホスト鍵に、TPMがあればTPMにも結び付きます。ユーザーにTPMへのアクセス権は要りません。
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査
@@ -240,18 +260,18 @@ enbu identity create          # 現在のリポジトリ用Identityを作成・�
 enbu identity show            # backend、algorithm、recipient、deviceを表示
 enbu identity upgrade         # この端末を耐量子ハイブリッド鍵へ移行
 export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
-# hardware: ハードウェア必須 / keyring: OS keyringへ保存
+# hardware: ハードウェア必須 / keyring: ソフトウェア鍵（OS keyring、なければsystemd-creds）
 export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の鍵（X25519 / P-256）を作る
 ```
 
 fallbackは鍵作成前の利用可否検査だけで決めます。
 作成開始後の失敗や保存済みIdentityのロード失敗では、別の鍵を作りません。
 `init`は登録失敗後の再実行でも、保存済みの暗号化鍵と署名鍵を使い続けます。
-TPMでは元の端末でのみロード可能な子鍵blobを、Secure EnclaveではKeychainの参照を保存します。
+TPMでは元の端末でのみロード可能な子鍵blobを、Secure Enclaveでは同じMacでのみ使えるSecure Enclaveが包んだ鍵を保存します。
 Secure Enclave鍵は端末のロック解除中に利用でき、毎回のTouch IDは要求しません。
-macOSでSecure Enclave鍵を永続保存するには、実行ファイルの署名entitlementとユーザーのログインセッションによるdata-protection Keychainへのアクセスが必要です。
-`doctor`は永続鍵を作らずにこのアクセスを検査します。
-署名のない単体ビルドではOS keyringへfallbackする場合があります。
+macOSではSecure Enclave鍵をKeychainに保存しません。data-protection Keychainには単体の実行ファイルが持てないprovisioning profileが必要なため、包んだ鍵をmetadataに保存し、署名のないビルドでも動くようにしています。
+`doctor`は何も保存せずに、鍵の作成と復元ができるかを検査します。
+以前のバージョンで作ったSecure Enclave Identity（Keychainの参照）はロードしません。作り直してください。
 
 version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。

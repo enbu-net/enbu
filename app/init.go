@@ -10,6 +10,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"regexp"
+	"strings"
 	"time"
 	"uuid"
 )
@@ -28,6 +30,8 @@ type InitResult struct {
 	CanDecrypt     *bool  `json:"can_decrypt"`
 	DeviceID       string `json:"device_id"`
 	Fingerprint    string `json:"fingerprint"`
+	// Founded is set when this init created the workspace's genesis Control.
+	Founded bool `json:"founded"`
 	// Pending is set when this device is not yet in the workspace Control; an
 	// admin must approve it.
 	Pending bool `json:"pending"`
@@ -52,6 +56,11 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	}
 	if a.StorageURL != "" {
 		cfg.Storage.URL = a.StorageURL
+	}
+	if cfg.Storage.URL == "" {
+		if cfg.Storage.URL, err = a.DefaultStorageURL(); err != nil {
+			return nil, err
+		}
 	}
 	store, err := a.openStorage(ctx, cfg)
 	if err != nil {
@@ -91,7 +100,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		return nil, err
 	}
 	result = &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL,
-		KeyCreated: info.Created, Mode: "initialize", DeviceID: string(device), Fingerprint: device.Fingerprint(),
+		KeyCreated: info.Created, Mode: "initialize", Founded: s.founded, DeviceID: string(device), Fingerprint: device.Fingerprint(),
 		ControlGenesis: cfg.ControlGenesis, ReplacedGenesis: string(s.replaced.Genesis)}
 	for _, w := range []string{warning, signerWarning} {
 		if w != "" {
@@ -132,6 +141,26 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	}
 	return result, nil
 }
+
+// DefaultStorageURL is the storage a new workspace gets when none is given:
+// a GHCR repository beside the GitHub repository named by the origin remote.
+// It is used once, when init writes enbu.toml, and never derived again.
+func (a *App) DefaultStorageURL() (_ string, err error) {
+	defer apperr.NormalizeInto(&err)
+	owner, repo, err := a.RepoDetector.LoadRepo()
+	if err != nil {
+		return "", apperr.Wrap(apperr.CodeInvalidArgument, "no storage given and the origin remote is not a GitHub repository; pass --storage", err, nil)
+	}
+	path := strings.ToLower(owner) + "/" + strings.ToLower(repo) + "-enbu"
+	if !ociRepositoryName.MatchString(path) {
+		// GitHub allows names OCI does not, such as ".github".
+		return "", apperr.New(apperr.CodeInvalidArgument, "the GitHub repository name is not a valid GHCR repository name; pass --storage", nil)
+	}
+	return "oci://ghcr.io/" + path, nil
+}
+
+// ociRepositoryName is the OCI distribution spec's repository name grammar.
+var ociRepositoryName = regexp.MustCompile(`^[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*$`)
 
 // ensureControl verifies the workspace's Control, creating the genesis Control
 // when the storage has none and this repository has no trusted genesis yet. On

@@ -146,3 +146,23 @@ func TestCheckpointExcusesCompactedHeads(t *testing.T) {
 		t.Fatalf("accepted = %v", got)
 	}
 }
+
+func TestPublishedStatePreservesCompactionFloor(t *testing.T) {
+	floor, removed, late, next := digest.FromString("floor"), digest.FromString("removed"), digest.FromString("late"), digest.FromString("next")
+	floorState := &VerifiedState{Digest: floor, State: State{Parents: []digest.Digest{removed}}}
+	lateState := &VerifiedState{Digest: late, State: State{Parents: []digest.Digest{removed}}}
+	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{floor: floorState, late: lateState},
+		Compacted: Compacted{Floors: []digest.Digest{floor}, Removed: map[digest.Digest]bool{removed: true}}}
+	sv.Graph.Add(floor, floorState.Parents)
+	sv.Graph.Add(late, lateState.Parents)
+	after := sv.With(&VerifiedState{Digest: next, State: State{Parents: []digest.Digest{floor}}})
+	if !after.Compacted.Excuses(removed) {
+		t.Fatal("published view lost the signed deletion record")
+	}
+	if after.Compacted.AboveFloors(after.Graph, late) {
+		t.Fatal("published view trusts a late head below the compaction floor")
+	}
+	if !after.Compacted.AboveFloors(after.Graph, next) {
+		t.Fatal("published view rejects the new head above the floor")
+	}
+}

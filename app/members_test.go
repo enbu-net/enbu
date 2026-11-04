@@ -306,10 +306,11 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	}
 	defer bs.Close()
 	bobsEnv := "staging"
-	bobsRev, err := bs.writeState(bg, bs.resource(bobsEnv), map[string]string{"A": "by bob"}, nil)
+	bobsState, err := bs.writeState(bg, bs.resource(bobsEnv), map[string]string{"A": "by bob"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	bobsRev := bobsState.Digest
 	if err := alice.RemoveMember(bg, mustMember(t, alice, bob).DeviceID); err != nil {
 		t.Fatal(err)
 	}

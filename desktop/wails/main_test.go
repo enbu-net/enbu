@@ -1,45 +1,69 @@
 package main
 
 import (
-	"context"
+	"bytes"
+	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-func TestShowWindow(t *testing.T) {
-	var calls []string
-	actions := windowActions{
-		show:       func(context.Context) { calls = append(calls, "show") },
-		unminimise: func(context.Context) { calls = append(calls, "unminimise") },
-		center:     func(context.Context) { calls = append(calls, "center") },
-	}
+type fakeWindow struct {
+	calls []string
+}
 
-	showWindow(nil, actions) //nolint:staticcheck // The nil guard is intentional and requires direct coverage.
-	if len(calls) != 0 {
-		t.Fatalf("showWindow(nil) called actions: %v", calls)
-	}
+func (w *fakeWindow) Show() application.Window {
+	w.calls = append(w.calls, "show")
+	return nil
+}
 
-	showWindow(context.Background(), actions)
-	want := []string{"show", "unminimise", "center"}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("showWindow() calls = %v, want %v", calls, want)
+func (w *fakeWindow) UnMinimise() { w.calls = append(w.calls, "unminimise") }
+
+func (w *fakeWindow) Focus() { w.calls = append(w.calls, "focus") }
+
+func TestActivate(t *testing.T) {
+	w := &fakeWindow{}
+	activate(w)
+	want := []string{"show", "unminimise", "focus"}
+	if !reflect.DeepEqual(w.calls, want) {
+		t.Fatalf("activate() calls = %v, want %v", w.calls, want)
 	}
 }
 
-func TestActivationHandlers(t *testing.T) {
-	ctx := context.Background()
-	var activated []context.Context
-	onSecondInstanceLaunch, onURLOpen := activationHandlers(
-		func() context.Context { return ctx },
-		func(got context.Context) { activated = append(activated, got) },
-	)
+func TestSingleInstanceNeedsSessionBusOnLinux(t *testing.T) {
+	env := func(vars map[string]string) func(string) string {
+		return func(name string) string { return vars[name] }
+	}
+	onSecond := func(application.SecondInstanceData) {}
+	if got := singleInstance("linux", env(nil), onSecond); got != nil {
+		t.Fatalf("singleInstance() without a session bus = %+v, want nil", got)
+	}
+	bus := map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+	if got := singleInstance("linux", env(bus), onSecond); got == nil || got.UniqueID != "net.enbu.desktop" {
+		t.Fatalf("singleInstance() with a session bus = %+v", got)
+	}
+	for _, goos := range []string{"darwin", "windows"} {
+		if got := singleInstance(goos, env(nil), onSecond); got == nil {
+			t.Fatalf("singleInstance(%q) = nil, want options", goos)
+		}
+	}
+}
 
-	onSecondInstanceLaunch(options.SecondInstanceData{Args: []string{"enbu://auth/complete"}})
-	onURLOpen("enbu://auth/complete")
+func TestWailsLoggerDropsDebugRecords(t *testing.T) {
+	var buf bytes.Buffer
+	app := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := wailsLogger(app).With("component", "wails")
 
-	if len(activated) != 2 || activated[0] != ctx || activated[1] != ctx {
-		t.Fatalf("activation contexts = %v, want the provided context twice", activated)
+	logger.Debug("Binding call complete:", "args", `["default","TOKEN","s3cret"]`)
+	logger.Info("started")
+
+	out := buf.String()
+	if strings.Contains(out, "s3cret") {
+		t.Fatalf("debug record was logged: %s", out)
+	}
+	if !strings.Contains(out, "started") || !strings.Contains(out, "component=wails") {
+		t.Fatalf("info record missing: %s", out)
 	}
 }

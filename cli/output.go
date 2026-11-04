@@ -211,6 +211,9 @@ func RenderExecutionError(cmd *cobra.Command, err error, args []string) {
 		return // the command enbu ran has already said what it had to say
 	}
 	err = apperr.Normalize(err)
+	if os.Getenv("ENBU_DEBUG") != "" {
+		apperr.Report(cmd.Context(), cmd.CommandPath(), err)
+	}
 	if requestedJSON(cmd, args) || jsonEnabled(cmd) {
 		_ = writeErrorJSON(cmd.OutOrStdout(), err)
 		return

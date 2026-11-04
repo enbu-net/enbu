@@ -4,7 +4,7 @@ This file provides guidance to Agent tool when working with code in this reposit
 
 ## What is enbu
 
-Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Authorization Code Flow with PKCE) is used only to reach GHCR and to create repositories from the desktop app.
+Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Authorization Code Flow with PKCE) is used only to reach GHCR.
 
 ## Notes
 
@@ -20,7 +20,7 @@ Keyless `.env` management. Encrypts secrets with age for each member's device ke
 ## Commands
 
 ```bash
-task all/build          # Build CLI and GUI
+task all/build          # Build CLI, GUI and the VS Code extension
 task all/test           # All tests
 task all/check          # Format and lint all code
 task cli/build          # Build CLI
@@ -28,32 +28,45 @@ task cli/test           # All CLI tests
 task cli/test/unit      # Unit tests
 task cli/test/scenario  # Scenario tests
 task cli/check          # Format and lint CLI code
-task gui/build          # Build GUI desktop app
+task gui/build          # Build GUI desktop app (desktop/wails/build/bin)
+task gui/run            # Run the desktop app against the Vite dev server
+task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
 task gui/test           # GUI tests
-task gui/check          # Format and lint GUI code
+task gui/check          # Format and lint GUI code, and fail on stale bindings
+task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
+task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
+task vscode/test        # VS Code extension tests
+task vscode/check       # Format and lint VS Code extension code
 ```
+
+The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
+
+## Releasing
+
+Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
 
 ## Architecture
 
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-desktop/                 → Wails desktop app (service layer + bindings)
-web/                     → React frontend of the desktop app (and the browser preview)
+desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
+vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local, trusted workspaces only
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
 pkg/wsp/                 → workspace security protocol: signed Control DAG, SignedState DAG, join requests, local checkpoints
 pkg/merge/               → 3-way merge of concurrent revisions, conflicts
-pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or X25519 in the OS keyring, plus the signing key
+pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or a software key in the OS keyring (systemd-creds on Linux without one), plus the signing key
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
-pkg/keystore/            → OS keyring access; ENBU_BACKEND=text stores the GitHub token in a file (tokens only, never an Identity)
+pkg/keystore/            → OS keyring access, systemd-creds (`--user`) files for Linux without a keyring; ENBU_BACKEND=text stores the GitHub token in a file (tokens only, never an Identity)
 pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
 pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
-pkg/provider/github/     → GitHub API client (repository creation from the desktop app)
+pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
 pkg/apperr/              → application error type, codes, and normalization helpers
 test/                    → scenario tests (build tag: scenario)
@@ -72,9 +85,9 @@ test/                    → scenario tests (build tag: scenario)
 - `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
 - Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin removes old ones with `enbu history compact --keep N`, which publishes a signed compaction record first so other devices do not see a rollback (ADR-15), and reclaims a whole environment with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - The trust root is the `control_genesis` digest in `enbu.toml`. `WriteConfig` (the desktop settings editor) refuses to change `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`)
-- Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, X25519 in the OS keyring. There is no plaintext Identity backend and no SSH key support
+- Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring, or on Linux without one in files encrypted by `systemd-creds --user`. There is no plaintext Identity backend and no SSH key support
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
-- Frontends: the CLI has every operation. The desktop app covers everyday work, member approval/removal, and choosing between conflicting secrets. Fork resolution, admin rights, compaction and purging are CLI only
+- Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling
@@ -86,4 +99,4 @@ test/                    → scenario tests (build tag: scenario)
 - Never inspect `err.Error()` to control behavior.
 - Desktop UI error state and error component props must use `DisplayError`; never render `err.message`, `String(err)`, an HTTP response body, or an `AppError` payload message directly.
 - Convert unknown frontend and backend failures with `toDisplayError`. Unknown or invalid codes must display the localized `internal` message; detailed causes belong only in logs.
-- Access Wails bindings only through the frontend backend adapter. Every exported Wails `DesktopService` method must return `BindingResponse` through `bindingResult` or `bindingError`.
+- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts`. Every exported `DesktopService` method that returns an error must return it through `result` or `publicError`, so the frontend receives the AppError payload and never an internal cause.

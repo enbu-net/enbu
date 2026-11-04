@@ -20,16 +20,27 @@ import (
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
-	gh "github.com/enbu-net/enbu/pkg/provider/github"
-	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-type DirectoryPicker func(context.Context) (string, error)
-type BrowserOpener func(string) error
+// The shell supplies native dialogs, the OS browser and events to the
+// frontend, so this package stays independent of the GUI toolkit.
+type (
+	DirectoryPicker func(context.Context) (string, error)
+	BrowserOpener   func(string) error
+	EventEmitter    func(name string, data any)
+)
 
-type repositoryPlatform interface {
-	ListRepositoryOwners(context.Context) ([]gh.RepositoryOwner, error)
-	CreateRepository(context.Context, string, string, bool) (*gh.CreateRepoResult, error)
+// Events the frontend can subscribe to.
+const (
+	EventProgress        = "enbu:progress"
+	EventProgressMessage = "enbu:progress_message"
+	EventConflictRetry   = "enbu:conflict_retry"
+)
+
+// ConflictRetry reports that a publish found new heads and starts over.
+type ConflictRetry struct {
+	Attempt     int `json:"attempt"`
+	MaxAttempts int `json:"max_attempts"`
 }
 
 type Service struct {
@@ -38,13 +49,12 @@ type Service struct {
 	pickDir    DirectoryPicker
 	openURL    BrowserOpener
 	git        gitprovider.Client
-	github     func(string) repositoryPlatform
 	repoMu     sync.Mutex
 	authMu     sync.Mutex
 	repoPath   string
 	sessions   map[string]*oauthSession
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
-	emitEvent  func(context.Context, string, ...interface{})
+	emit       EventEmitter
 	AppVersion string
 }
 
@@ -56,15 +66,11 @@ type oauthSession struct {
 
 func NewService(a *app.App) *Service {
 	s := &Service{
-		app:     a,
-		openURL: auth.OpenBrowser,
-		git:     a.Git,
-		github: func(token string) repositoryPlatform {
-			return gh.NewClient(token)
-		},
+		app:       a,
+		openURL:   auth.OpenBrowser,
+		git:       a.Git,
 		sessions:  make(map[string]*oauthSession),
 		authLogin: auth.Login,
-		emitEvent: wailsruntime.EventsEmit,
 	}
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()
@@ -75,33 +81,27 @@ func NewService(a *app.App) *Service {
 }
 
 func (s *Service) OnProgress(msg string) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:progress_message", msg)
-	}
+	s.emitEvent(EventProgressMessage, msg)
 }
 
 func (s *Service) OnStepProgress(step app.ProgressStep) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:progress", step)
-	}
+	s.emitEvent(EventProgress, step)
 }
 
 func (s *Service) OnConflictRetry(attempt, maxAttempts int) {
-	if s.ctx != nil {
-		s.emitEvent(s.ctx, "enbu:conflict_retry", map[string]int{
-			"attempt":      attempt,
-			"max_attempts": maxAttempts,
-		})
+	s.emitEvent(EventConflictRetry, ConflictRetry{Attempt: attempt, MaxAttempts: maxAttempts})
+}
+
+func (s *Service) emitEvent(name string, data any) {
+	if s.emit != nil {
+		s.emit(name, data)
 	}
 }
 
-func (s *Service) Startup(ctx context.Context) {
-	slog.Info("Service.Startup called")
+// Start gives the service the context of the running app; operations started
+// from the frontend are cancelled with it when the app quits.
+func (s *Service) Start(ctx context.Context) {
 	s.ctx = ctx
-}
-
-func (s *Service) Context() context.Context {
-	return s.ctx
 }
 
 func (s *Service) SetDirectoryPicker(picker DirectoryPicker) {
@@ -110,6 +110,10 @@ func (s *Service) SetDirectoryPicker(picker DirectoryPicker) {
 
 func (s *Service) SetBrowserOpener(opener BrowserOpener) {
 	s.openURL = opener
+}
+
+func (s *Service) SetEventEmitter(emit EventEmitter) {
+	s.emit = emit
 }
 
 type AuthStatus struct {
@@ -150,6 +154,15 @@ type SecretsResponse struct {
 	Secrets     []SecretItem `json:"secrets"`
 }
 
+// PullResult says what a pull wrote, so the person sees the local variables it
+// kept and the deleted secrets it removed.
+type PullResult struct {
+	Output  string   `json:"output"`
+	Count   int      `json:"count"`
+	Kept    []string `json:"kept"`
+	Removed []string `json:"removed"`
+}
+
 type SecretItem struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -181,6 +194,13 @@ type ConflictChoice struct {
 	Delete bool   `json:"delete"`
 }
 
+// EnvironmentDeletion is what deleting an environment did to its stored
+// revisions: how many it purged, or the incarnation that still names them.
+type EnvironmentDeletion struct {
+	Purged      int    `json:"purged"`
+	Incarnation string `json:"incarnation,omitempty"`
+}
+
 type HistoryEntry struct {
 	Index     int       `json:"index"`
 	Timestamp time.Time `json:"timestamp"`
@@ -194,6 +214,8 @@ type Member struct {
 	Algorithm   string `json:"algorithm"`
 	Admin       bool   `json:"admin"`
 	Self        bool   `json:"self"`
+	// PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
+	PostQuantum bool `json:"post_quantum"`
 }
 
 // JoinRequest is a device waiting for an admin to approve it.
@@ -202,6 +224,26 @@ type JoinRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
+	// KeyUpdate is set for a member replacing its key, as `enbu identity
+	// upgrade` asks, rather than a new device asking to join.
+	KeyUpdate bool `json:"key_update"`
+}
+
+// InitResult describes this device after initializing a workspace. Pending
+// is set while an admin still has to approve the device.
+type InitResult struct {
+	PublicKey   string `json:"public_key"`
+	Username    string `json:"username"`
+	Environment string `json:"environment"`
+	DeviceID    string `json:"device_id"`
+	Fingerprint string `json:"fingerprint"`
+	Pending     bool   `json:"pending"`
+	// Storage is where the workspace lives, and Founded is set when this init
+	// created it: a GHCR package then starts private to its creator.
+	Storage string `json:"storage"`
+	Founded bool   `json:"founded"`
+	// ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
+	ReplacedGenesis string `json:"replaced_genesis,omitempty"`
 }
 
 func (s *Service) GetAuthStatus() (AuthStatus, error) {
@@ -211,7 +253,7 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 	s.repoMu.Unlock()
 	if path != "" {
 		if cfg, err := config.LoadProjectFrom(path); err == nil {
-			status.WorkspaceConfigured = cfg.Storage.URL != "" && cfg.Storage.OCIAuth != "github"
+			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
 	token, err := auth.LoadToken()
@@ -428,51 +470,6 @@ func (s *Service) RemoveRepository(path string) error {
 	return config.SaveGUI(cfg)
 }
 
-// GitInit runs `git init` in the given path and re-selects it.
-func (s *Service) GitInit(path string) (RepoInfo, error) {
-	if err := s.git.Init(s.context(), path); err != nil {
-		return RepoInfo{}, err
-	}
-	return s.SelectRepository(path)
-}
-
-func (s *Service) ListRepositoryOwners() ([]gh.RepositoryOwner, error) {
-	token, err := auth.LoadToken()
-	if err != nil {
-		return nil, fmt.Errorf("not authenticated: %w", err)
-	}
-	return s.github(token.AccessToken).ListRepositoryOwners(s.context())
-}
-
-// GitCreateRemote creates a GitHub repository and sets it as origin, then re-selects.
-func (s *Service) GitCreateRemote(path, owner, repoName string, private bool) (RepoInfo, error) {
-	token, err := auth.LoadToken()
-	if err != nil {
-		return RepoInfo{}, fmt.Errorf("not authenticated: %w", err)
-	}
-	owner = strings.TrimSpace(owner)
-	if owner == "" {
-		return RepoInfo{}, fmt.Errorf("repository owner is required")
-	}
-	organization := owner
-	if strings.EqualFold(owner, token.Username) {
-		organization = ""
-	}
-	client := s.github(token.AccessToken)
-	result, err := client.CreateRepository(s.context(), organization, repoName, private)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	if err := s.git.AddRemote(s.context(), path, "origin", preferredRemoteURL(result)); err != nil {
-		return RepoInfo{}, fmt.Errorf("git remote add: %w", err)
-	}
-	return s.SelectRepository(path)
-}
-
-func preferredRemoteURL(result *gh.CreateRepoResult) string {
-	return result.HTTPSURL
-}
-
 func (s *Service) ListMembers() ([]Member, error) {
 	return withRepoResult(s, func() ([]Member, error) {
 		infos, err := s.app.ListMembers(s.context())
@@ -481,7 +478,7 @@ func (s *Service) ListMembers() ([]Member, error) {
 		}
 		out := make([]Member, len(infos))
 		for i, m := range infos {
-			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self}
+			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self, PostQuantum: m.PostQuantum}
 		}
 		return out, nil
 	})
@@ -495,7 +492,7 @@ func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
 		}
 		out := make([]JoinRequest, len(infos))
 		for i, r := range infos {
-			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt}
+			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt, KeyUpdate: r.KeyUpdate}
 		}
 		return out, nil
 	})
@@ -509,6 +506,18 @@ func (s *Service) ApproveMember(deviceID string) error {
 
 func (s *Service) RemoveMember(deviceID string) error {
 	return s.withRepo(func() error { return s.app.RemoveMember(s.context(), deviceID) })
+}
+
+// SetAdmin grants or revokes the right to manage members. Granting it is as
+// sensitive as approving a device, so the frontend confirms the fingerprint.
+func (s *Service) SetAdmin(deviceID string, admin bool) error {
+	return s.withRepo(func() error { return s.app.SetAdmin(s.context(), deviceID, admin) })
+}
+
+// ResolveMemberFork joins member changes two admins made at the same time,
+// keeping only the members and admin rights both agree on.
+func (s *Service) ResolveMemberFork() error {
+	return s.withRepo(func() error { return s.app.ResolveControlFork(s.context()) })
 }
 
 func (s *Service) ReadConfig() (string, error) {
@@ -573,22 +582,60 @@ func (s *Service) GetRepoStatus() (RepoInfo, error) {
 	return s.repoInfo(repo)
 }
 
-func (s *Service) Initialize() (map[string]any, error) {
-	return withRepoResult(s, func() (map[string]any, error) {
+// SuggestStorage is the storage Initialize founds a workspace in when given
+// none: a GHCR repository beside the GitHub origin, as `enbu init` picks.
+func (s *Service) SuggestStorage() (string, error) {
+	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
+}
+
+// StorageSettings is where Initialize founds a workspace: the storage URL
+// and the options `enbu init` takes as flags.
+type StorageSettings struct {
+	URL       string `json:"url"`
+	Region    string `json:"region"`
+	Endpoint  string `json:"endpoint"`
+	PathStyle bool   `json:"path_style"`
+	PlainHTTP bool   `json:"plain_http"`
+}
+
+// Initialize sets this device up in the selected repository, as `enbu init`
+// does. It founds a workspace in storage, or in SuggestStorage's when
+// storage.URL is empty; with an enbu.toml that names a storage it joins that
+// workspace, and storage.URL must be empty. acceptNewGenesis is
+// `--accept-new-genesis`.
+func (s *Service) Initialize(storage StorageSettings, acceptNewGenesis bool) (InitResult, error) {
+	return withRepoResult(s, func() (InitResult, error) {
+		if storage.URL != "" {
+			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
+				return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+			}
+			s.app.InitStorage = &config.StorageConfig{
+				URL:       storage.URL,
+				Region:    storage.Region,
+				Endpoint:  storage.Endpoint,
+				PathStyle: storage.PathStyle,
+				PlainHTTP: storage.PlainHTTP,
+			}
+		}
+		s.app.AcceptNewGenesis = acceptNewGenesis
+		defer func() { s.app.InitStorage, s.app.AcceptNewGenesis = nil, false }()
 		result, err := s.app.InitializeRepository(s.context())
 		if err != nil {
-			return nil, err
+			return InitResult{}, err
 		}
 		if err := ensureGitignore(s.app.RepositoryDir); err != nil {
 			slog.Warn("failed to update .gitignore", "err", err)
 		}
-		return map[string]any{
-			"public_key":  result.PublicKey,
-			"username":    result.Username,
-			"environment": result.Environment,
-			"device_id":   result.DeviceID,
-			"fingerprint": result.Fingerprint,
-			"pending":     result.Pending,
+		return InitResult{
+			PublicKey:       result.PublicKey,
+			Username:        result.Username,
+			Environment:     result.Environment,
+			DeviceID:        result.DeviceID,
+			Fingerprint:     result.Fingerprint,
+			Pending:         result.Pending,
+			Storage:         result.Storage,
+			Founded:         result.Founded,
+			ReplacedGenesis: result.ReplacedGenesis,
 		}, nil
 	})
 }
@@ -619,8 +666,40 @@ func (s *Service) RenameEnvironment(name, newName string) error {
 	return s.withRepo(func() error { return s.app.RenameEnvironment(name, newName) })
 }
 
-func (s *Service) DeleteEnvironment(name string) error {
-	return s.withRepo(func() error { return s.app.DeleteEnvironment(name) })
+// DeleteEnvironment removes an environment from enbu.toml. With purge its
+// stored revisions are deleted too (admin only); without, they stay and the
+// result names the incarnation PurgeIncarnation deletes them by later.
+func (s *Service) DeleteEnvironment(name string, purge bool) (EnvironmentDeletion, error) {
+	return withRepoResult(s, func() (EnvironmentDeletion, error) {
+		if purge {
+			purged, err := s.app.DeleteEnvironmentPurging(s.context(), name)
+			return EnvironmentDeletion{Purged: purged}, err
+		}
+		// The incarnation is read before deleting: afterwards enbu.toml no
+		// longer names it, and the caller needs it to purge later.
+		envs, err := s.app.ListEnvironments()
+		if err != nil {
+			return EnvironmentDeletion{}, err
+		}
+		incarnation := ""
+		for _, env := range envs {
+			if env.Name == name {
+				incarnation = env.Incarnation
+			}
+		}
+		if err := s.app.DeleteEnvironment(name); err != nil {
+			return EnvironmentDeletion{}, err
+		}
+		return EnvironmentDeletion{Incarnation: incarnation}, nil
+	})
+}
+
+// PurgeIncarnation deletes the stored revisions of an environment deleted
+// without purging them (admin only), and returns how many it deleted.
+func (s *Service) PurgeIncarnation(incarnation string) (int, error) {
+	return withRepoResult(s, func() (int, error) {
+		return s.app.PurgeIncarnation(s.context(), incarnation)
+	})
 }
 
 func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
@@ -658,8 +737,25 @@ func (s *Service) DeleteSecret(env, key string) error {
 	return s.withRepo(func() error { return s.app.DeleteSecret(s.context(), env, key) })
 }
 
-func (s *Service) PullSecrets(env string) error {
-	return s.withRepo(func() error { return s.app.PullSecretsToFile(s.context(), env) })
+// PullSecrets writes the environment's secrets to its output file. With replace
+// the file's current content is dropped, including a file enbu cannot read
+// (output_unreadable), which a pull otherwise refuses to overwrite.
+func (s *Service) PullSecrets(env string, replace bool) (PullResult, error) {
+	return withRepoResult(s, func() (PullResult, error) {
+		written, err := s.app.PullSecretsToFileWith(s.context(), env, replace)
+		if err != nil {
+			return PullResult{}, err
+		}
+		return PullResult{Output: written.Output, Count: written.Count,
+			Kept: nonNil(written.Kept), Removed: nonNil(written.Removed)}, nil
+	})
+}
+
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 func (s *Service) SyncSecrets(env string) error {

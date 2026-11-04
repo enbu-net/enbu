@@ -81,6 +81,12 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 	if err := validDigest(genesis); err != nil {
 		return nil, invalid("trusted genesis digest: %v", err)
 	}
+	// List first: a cache in front of storage answers only for listed revisions,
+	// and the genesis is normally one of them.
+	revs, err := store.Discover(ctx, storage.KindControl, "")
+	if err != nil {
+		return nil, err
+	}
 	genesisBlob, err := store.FetchHead(ctx, storage.KindControl, "", genesis)
 	if err != nil {
 		return nil, fmt.Errorf("reading genesis control: %w", err)
@@ -91,10 +97,6 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 	}
 	view := &ControlView{Workspace: workspace, Genesis: genesis, verified: map[digest.Digest]*Verified{genesis: root}}
 
-	revs, err := store.Discover(ctx, storage.KindControl, "")
-	if err != nil {
-		return nil, err
-	}
 	pending := map[digest.Digest]pendingControl{}
 	total := len(genesisBlob)
 	load := func(rev digest.Digest) error {

@@ -15,18 +15,15 @@ func newImportCommand(a *app.App) *cobra.Command {
 	var overwrite bool
 
 	cmd := &cobra.Command{
-		Use:   "import [FILE]",
+		Use:   "import FILE",
 		Short: "Add every variable of a .env file as secrets",
-		Long: `Reads a dotenv file (default .env, "-" for stdin) and adds its variables to the
+		Long: `Reads the dotenv file FILE ("-" for stdin) and adds its variables to the
 current environment in one signed state. A variable that already exists with
 the same value is left alone; one with another value stops the import unless
 --overwrite is given.`,
-		Args: appArgs(cobra.MaximumNArgs(1)),
+		Args: appArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := ".env"
-			if len(args) == 1 {
-				path = args[0]
-			}
+			path := args[0]
 			var data []byte
 			var err error
 			if path == "-" {

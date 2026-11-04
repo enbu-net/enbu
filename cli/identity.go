@@ -64,7 +64,7 @@ func newIdentityCommand(a *app.App) *cobra.Command {
 }
 
 func newDoctorCommand(a *app.App) *cobra.Command {
-	return &cobra.Command{Use: "doctor", Short: "Probe hardware and OS keyring without authentication or persistent keys", Args: appArgs(cobra.NoArgs),
+	return &cobra.Command{Use: "doctor", Short: "Probe hardware, OS keyring and systemd-creds without authentication or persistent keys", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			d := a.DiagnoseIdentity()
 			if jsonEnabled(cmd) {
@@ -74,9 +74,12 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 			if d.Reason != "" {
 				cmd.Printf("Reason: %s\n", d.Reason)
 			}
-			cmd.Printf("OS keyring fallback available: %t\n", d.FallbackAvailable)
+			cmd.Printf("Software fallback available: %t\n", d.FallbackAvailable)
+			if d.Fallback != "" {
+				cmd.Printf("Software fallback: %s\n", d.Fallback)
+			}
 			if d.FallbackReason != "" {
-				cmd.Printf("Keyring: %s\n", d.FallbackReason)
+				cmd.Printf("Fallback: %s\n", d.FallbackReason)
 			}
 			return nil
 		}}

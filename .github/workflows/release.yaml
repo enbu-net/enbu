@@ -10,6 +10,7 @@ on:
         description: "Version bump type"
         required: true
         type: choice
+        default: patch
         options:
           - patch
           - minor
@@ -22,79 +23,80 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  tag:
-    name: Create release tag
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+  # A release starts from the GitHub web UI: Actions > Release > Run workflow on
+  # main, pick the bump. This job tags HEAD of main and every later job builds,
+  # signs, attests and publishes that tag. A pushed v* tag skips the tagging.
+  version:
+    name: Resolve release tag
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
     outputs:
-      version: ${{ steps.bump.outputs.version }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require main for manual releases
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::Run the release from main, not $REF"
+          exit 1
+
+      - uses: actions/checkout@v7.0.1
+        if: github.event_name == 'workflow_dispatch'
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache@v6.1.0
+        if: github.event_name == 'workflow_dispatch'
         with:
           path: ~/.local/share/aquaproj-aqua
           key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
           restore-keys: |
             v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
 
-      - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
+      - uses: aquaproj/aqua-installer@v4.1.1
+        if: github.event_name == 'workflow_dispatch'
         with:
-          aqua_version: v2.64.0
+          aqua_version: v2.65.2
 
-      - name: Calculate and push tag with svu
-        id: bump
+      - name: Tag HEAD with the next version
+        id: tag
         env:
           BUMP_TYPE: ${{ inputs.bump_type }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          new_version="$(svu "$BUMP_TYPE" --tag.pattern 'v[0-9]*.[0-9]*.[0-9]*')"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git rev-parse "$new_version" >/dev/null 2>&1; then
-            echo "Tag $new_version already exists, reusing for idempotent retry"
-          else
-            git tag "$new_version"
-            # persist-credentials: false leaves no stored credential, so pass the token explicitly.
-            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$new_version"
-          fi
-          printf 'version=%s\n' "$new_version" >> "$GITHUB_OUTPUT"
-
-  version:
-    name: Resolve version
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    needs: [tag]
-    if: >-
-      always() && (
-        needs.tag.result == 'success' ||
-        (needs.tag.result == 'skipped' && github.event_name != 'workflow_dispatch')
-      )
-    outputs:
-      version: ${{ steps.get.outputs.version }}
-    steps:
-      - name: Get version
-        id: get
-        env:
-          TAG_VERSION: ${{ needs.tag.outputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-          EVENT_NAME: ${{ github.event_name }}
-        shell: bash
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            printf 'version=%s\n' "$TAG_VERSION" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
             printf 'version=%s\n' "$REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          pattern='v[0-9]*.[0-9]*.[0-9]*'
+          # A run that failed after tagging left its tag on HEAD: release that
+          # tag again instead of skipping a version.
+          version="$(git tag --points-at HEAD --list "$pattern" --sort=-v:refname | head -n 1)"
+          if [ -n "$version" ]; then
+            if gh release view "$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "::error::HEAD of main is already released as $version"
+              exit 1
+            fi
+            echo "Reusing unreleased tag $version"
+          else
+            version="$(svu "$BUMP_TYPE" --tag.pattern "$pattern")"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "$version"
+            # persist-credentials: false leaves no stored credential, so pass the token explicitly.
+            git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$version"
+            echo "Created $version"
+          fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
   # Build and attest live in a reusable workflow so the signer identity is
   # release-build.yaml alone (SLSA Build L3); this workflow only publishes.
@@ -119,14 +121,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ needs.version.outputs.version }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Download attested assets
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        uses: actions/download-artifact@v8.0.2
         with:
           name: attested-assets
           path: release-assets
@@ -190,7 +192,7 @@ jobs:
 
       - name: Generate GitHub App token for homebrew-tap
         id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@v3.3.0
         with:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}

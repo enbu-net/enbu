@@ -30,30 +30,35 @@ def test_collects_assets_and_renders_sorted_download_table(tmp_path: Path) -> No
         "enbu-desktop_v1.2.3_linux_amd64.tar.gz",
         "enbu_v1.2.3_windows_amd64.zip",
         "enbu-desktop_v1.2.3_windows_amd64.zip",
+        "enbu-vscode_v1.2.3_darwin_arm64.vsix",
+        "enbu-vscode_v1.2.3_linux_amd64.vsix",
+        "enbu-vscode_v1.2.3_linux_arm64.vsix",
+        "enbu-vscode_v1.2.3_windows_amd64.vsix",
+        "enbu-vscode_v1.2.3_windows_arm64.vsix",
+        "enbu-vscode_v1.2.3_linux_amd64.vsix.sigstore.json",
         "checksums.txt",
         "enbu_v1.2.3_linux_amd64.tar.gz.sbom.spdx.json",
         "enbu_v1.2.3_linux_amd64.tar.gz.sigstore.json",
     )
 
-    cli_assets, desktop_assets = collect_assets(assets_dir, "v1.2.3")
+    assets = collect_assets(assets_dir, "v1.2.3")
     result = render_release_notes(
         "yashikota/enbu",
         "v1.2.3",
-        cli_assets,
-        desktop_assets,
+        assets,
         "## What's Changed\n\n* Add a feature\n",
     )
 
     assert result.splitlines() == [
         "## Downloads",
         "",
-        "| OS | Arch | CLI | Desktop |",
-        "| --- | --- | --- | --- |",
-        "| macOS | arm64 | [`enbu_v1.2.3_darwin_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_darwin_arm64.tar.gz) | [`enbu-desktop_v1.2.3_darwin_arm64.dmg`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_darwin_arm64.dmg) |",
-        "| Linux | x64 | [`enbu_v1.2.3_linux_amd64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_linux_amd64.tar.gz) | [`enbu-desktop_v1.2.3_linux_amd64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_linux_amd64.tar.gz) |",
-        "| Linux | arm64 | [`enbu_v1.2.3_linux_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_linux_arm64.tar.gz) | [`enbu-desktop_v1.2.3_linux_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_linux_arm64.tar.gz) |",
-        "| Windows | x64 | [`enbu_v1.2.3_windows_amd64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_windows_amd64.zip) | [`enbu-desktop_v1.2.3_windows_amd64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_windows_amd64.zip) |",
-        "| Windows | arm64 | [`enbu_v1.2.3_windows_arm64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_windows_arm64.zip) | [`enbu-desktop_v1.2.3_windows_arm64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_windows_arm64.zip) |",
+        "| OS | Arch | CLI | Desktop | VS Code |",
+        "| --- | --- | --- | --- | --- |",
+        "| macOS | arm64 | [`enbu_v1.2.3_darwin_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_darwin_arm64.tar.gz) | [`enbu-desktop_v1.2.3_darwin_arm64.dmg`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_darwin_arm64.dmg) | [`enbu-vscode_v1.2.3_darwin_arm64.vsix`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-vscode_v1.2.3_darwin_arm64.vsix) |",
+        "| Linux | x64 | [`enbu_v1.2.3_linux_amd64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_linux_amd64.tar.gz) | [`enbu-desktop_v1.2.3_linux_amd64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_linux_amd64.tar.gz) | [`enbu-vscode_v1.2.3_linux_amd64.vsix`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-vscode_v1.2.3_linux_amd64.vsix) |",
+        "| Linux | arm64 | [`enbu_v1.2.3_linux_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_linux_arm64.tar.gz) | [`enbu-desktop_v1.2.3_linux_arm64.tar.gz`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_linux_arm64.tar.gz) | [`enbu-vscode_v1.2.3_linux_arm64.vsix`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-vscode_v1.2.3_linux_arm64.vsix) |",
+        "| Windows | x64 | [`enbu_v1.2.3_windows_amd64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_windows_amd64.zip) | [`enbu-desktop_v1.2.3_windows_amd64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_windows_amd64.zip) | [`enbu-vscode_v1.2.3_windows_amd64.vsix`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-vscode_v1.2.3_windows_amd64.vsix) |",
+        "| Windows | arm64 | [`enbu_v1.2.3_windows_arm64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu_v1.2.3_windows_arm64.zip) | [`enbu-desktop_v1.2.3_windows_arm64.zip`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-desktop_v1.2.3_windows_arm64.zip) | [`enbu-vscode_v1.2.3_windows_arm64.vsix`](https://github.com/yashikota/enbu/releases/download/v1.2.3/enbu-vscode_v1.2.3_windows_arm64.vsix) |",
         "",
         "## What's Changed",
         "",
@@ -65,11 +70,14 @@ def test_renders_missing_asset_as_dash_and_unknown_labels_verbatim() -> None:
     result = render_release_notes(
         "owner/repo",
         "release/1",
-        {("freebsd", "riscv64"): "enbu_release-1_freebsd_riscv64.tar.gz"},
-        {("linux", "amd64"): "enbu desktop.zip"},
+        {
+            "cli": {("freebsd", "riscv64"): "enbu_release-1_freebsd_riscv64.tar.gz"},
+            "desktop": {("linux", "amd64"): "enbu desktop.zip"},
+        },
     )
 
     assert "| Linux | x64 | — | [`enbu desktop.zip`]" in result
+    assert "/enbu%20desktop.zip) | — |" in result
     assert "| freebsd | riscv64 | [`enbu_release-1_freebsd_riscv64.tar.gz`]" in result
     assert "/release%2F1/enbu%20desktop.zip" in result
 
@@ -83,7 +91,7 @@ def test_rejects_directory_without_matching_assets(tmp_path: Path) -> None:
         "enbu_1.0.0_linux_amd64.tar.gz",
     )
 
-    with pytest.raises(ReleaseNotesError, match="no CLI or desktop release assets"):
+    with pytest.raises(ReleaseNotesError, match="no release assets"):
         collect_assets(assets_dir, "v1.0.0")
 
 

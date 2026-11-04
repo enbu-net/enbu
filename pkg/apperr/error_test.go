@@ -1,8 +1,13 @@
 package apperr
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/newmo-oss/ergo"
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -112,7 +117,11 @@ func TestWorkspaceSecurityCodes(t *testing.T) {
 		if !IsKnownCode(code) {
 			t.Fatalf("%q is not a known code", code)
 		}
-		if got := PayloadOf(New(code, "message", nil)).Code; got != code {
+		params := Params{}
+		for _, name := range definitions[code].params {
+			params[name] = "test"
+		}
+		if got := PayloadOf(New(code, "message", params)).Code; got != code {
 			t.Fatalf("payload code = %q, want %q", got, code)
 		}
 	}
@@ -125,5 +134,46 @@ func TestWorkspaceSecurityCodes(t *testing.T) {
 		if ExitCode(New(code, "integrity", nil)) != 5 {
 			t.Fatalf("%s exit code is not 5", code)
 		}
+	}
+}
+
+func TestPublicPayloadDropsDetailsAndUndeclaredParams(t *testing.T) {
+	err := Wrap(CodeSecretMissing, "token=secret", errors.New("private cause"), Params{"key": "NAME", "token": "secret"})
+	p := PayloadOf(err)
+	if p.Message != `Secret "NAME" does not exist.` || p.Params["key"] != "NAME" || len(p.Params) != 1 {
+		t.Fatalf("unsafe payload: %#v", p)
+	}
+	if ergo.StackTraceOf(err) == nil {
+		t.Fatal("missing stack")
+	}
+}
+func TestReportDoesNotLogSecretDetails(t *testing.T) {
+	var out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	Report(context.Background(), "test", New(CodeInternal, "secret-value", Params{"token": "secret-value"}))
+	if strings.Contains(out.String(), "secret-value") || !strings.Contains(out.String(), "error_test.go:") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestNormalizePreservesWrappedText(t *testing.T) {
+	original := fmt.Errorf("syncing: %w", New(CodeConflict, "changed", nil))
+	if got := Normalize(original); got.Error() != original.Error() {
+		t.Fatalf("got %q want %q", got, original)
+	}
+}
+func TestMissingPublicParameterIsInternal(t *testing.T) {
+	for _, params := range []Params{nil, {"key": ""}} {
+		if p := PayloadOf(New(CodeSecretMissing, "detail", params)); p.Code != CodeInternal || len(p.Params) != 0 {
+			t.Fatal(p)
+		}
+	}
+}
+func TestIdentityPayloadDoesNotExposeBackendReason(t *testing.T) {
+	p := PayloadOf(New(CodeIdentityUnavailable, "private cause", Params{"reason": "secret-value"}))
+	if strings.Contains(p.Message, "secret-value") || len(p.Params) != 0 {
+		t.Fatal(p)
 	}
 }

@@ -3,10 +3,15 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
+	"reflect"
+	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -19,13 +24,19 @@ import (
 func newRunCommand(a *app.App) *cobra.Command {
 	var envName string
 	var preserveEnv bool
+	var noMasking bool
 
 	cmd := &cobra.Command{
 		Use:   "run [flags] -- COMMAND [ARGS...]",
 		Short: "Run a command with the secrets in its environment",
 		Long: `Decrypts the environment's secrets and runs COMMAND with them as environment
 variables, without writing a .env file. Secrets replace variables of the same
-name unless --preserve-env is given. The command's exit status is returned.`,
+name unless --preserve-env is given. The command's exit status is returned.
+
+When stdout or stderr is not a terminal, as in a CI job or a log, secret values
+of 6 characters or more that the command prints there are replaced with
+"<concealed by enbu>". A terminal is passed to the command as it is.
+--no-masking turns this off.`,
 		Args: appArgs(cobra.MinimumNArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonEnabled(cmd) {
@@ -36,15 +47,29 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 				return err
 			}
 			child := exec.Command(args[0], args[1:]...)
+			release := bindToEnbu(child)
+			defer release()
 			child.Env = mergedEnv(os.Environ(), result.Secrets, preserveEnv)
 			child.Stdin = cmd.InOrStdin()
-			child.Stdout = cmd.OutOrStdout()
-			child.Stderr = cmd.ErrOrStderr()
+			values := maskedValues(result.Secrets)
+			stdout := outputFor(cmd.OutOrStdout(), values, noMasking)
+			stderr := stdout
+			if !sameWriter(cmd.ErrOrStderr(), cmd.OutOrStdout()) {
+				stderr = outputFor(cmd.ErrOrStderr(), values, noMasking)
+			}
+			child.Stdout = stdout
+			child.Stderr = stderr
+			// Wait has copied all output once it returns; what a masker
+			// still holds is output that did not turn into a value.
+			defer flushMasked(stdout, stderr)
 			// Ctrl-C reaches the whole foreground process group, so the
 			// command gets it directly and decides what it means; enbu only
 			// stays alive to report how it ended. Termination signals sent
 			// to enbu alone are passed on, so the command, which holds the
 			// secrets, is not left running on its own.
+			if err := containCommand(); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: the command may outlive enbu if enbu is killed: %v\n", err)
+			}
 			signals := make(chan os.Signal, 1)
 			signal.Notify(signals, append([]os.Signal{os.Interrupt}, forwardedSignals...)...)
 			defer signal.Stop(signals)
@@ -79,7 +104,24 @@ name unless --preserve-env is given. The command's exit status is returned.`,
 	cmd.Flags().SetInterspersed(false)
 	cmd.Flags().StringVarP(&envName, "env", "e", "", "Environment to use (overrides current)")
 	cmd.Flags().BoolVar(&preserveEnv, "preserve-env", false, "Keep variables already set in the environment over secrets of the same name")
+	cmd.Flags().BoolVar(&noMasking, "no-masking", false, "Do not conceal secret values in output that is not a terminal")
 	return cmd
+}
+
+// sameWriter reports whether a and b are one writer, so stdout and stderr
+// share a masker and keep their order. It never compares values whose type
+// cannot be compared, which would panic.
+func sameWriter(a, b io.Writer) bool {
+	t := reflect.TypeOf(a)
+	return t == reflect.TypeOf(b) && t != nil && t.Comparable() && a == b
+}
+
+func flushMasked(writers ...io.Writer) {
+	for _, w := range writers {
+		if m, ok := w.(*masker); ok {
+			_ = m.Flush()
+		}
+	}
 }
 
 // forwardedSignals are passed on to the command when enbu receives them.
@@ -110,22 +152,53 @@ func startFailureCode(err error) int {
 // mergedEnv is base with secrets applied. Secrets win over base unless
 // preserve is set. The result is sorted so it is stable.
 func mergedEnv(base []string, secrets map[string]string, preserve bool) []string {
-	env := map[string]string{}
+	return mergeEnv(base, secrets, preserve, runtime.GOOS == "windows")
+}
+
+// mergeEnv is mergedEnv with the platform's rule for names: with foldCase,
+// names that differ only in case are one variable, as on Windows, and the
+// spelling that wins is kept.
+func mergeEnv(base []string, secrets map[string]string, preserve, foldCase bool) []string {
+	type variable struct{ name, value string }
+	key := func(name string) string {
+		if foldCase {
+			return strings.ToUpper(name)
+		}
+		return name
+	}
+	env := map[string]variable{}
 	for _, kv := range base {
-		if k, v, ok := strings.Cut(kv, "="); ok {
-			env[k] = v
+		if name, value, ok := cutEnv(kv); ok {
+			env[key(name)] = variable{name, value}
 		}
 	}
-	for k, v := range secrets {
+	// Sorted, so when two secrets fold to one name the same one always wins.
+	for _, name := range slices.Sorted(maps.Keys(secrets)) {
+		value := secrets[name]
+		k := key(name)
 		if _, set := env[k]; set && preserve {
 			continue
 		}
-		env[k] = v
+		env[k] = variable{name, value}
 	}
 	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
+	for _, v := range env {
+		out = append(out, v.name+"="+v.value)
 	}
 	sort.Strings(out)
 	return out
+}
+
+// cutEnv splits NAME=VALUE. A leading '=' is part of the name: Windows keeps
+// the working directory of each drive in hidden variables such as
+// "=C:=C:\work", which must reach the command unchanged.
+func cutEnv(kv string) (name, value string, ok bool) {
+	if kv == "" {
+		return "", "", false
+	}
+	i := strings.IndexByte(kv[1:], '=')
+	if i < 0 {
+		return "", "", false
+	}
+	return kv[:i+1], kv[i+2:], true
 }

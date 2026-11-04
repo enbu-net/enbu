@@ -73,7 +73,8 @@ func run(root string) ([]string, error) {
 	}
 
 	for name := range codes {
-		if usages[name] == 0 {
+		// These classifications are supplied and consumed by the shared boundary.
+		if usages[name] == 0 && name != "CodeInternal" && name != "CodeUnavailable" {
 			violations = append(violations, fmt.Sprintf("pkg/apperr/error.go: error code %s is unused in production code", name))
 		}
 	}
@@ -165,13 +166,9 @@ func inspectGoFile(root, path string) ([]string, map[string]int, error) {
 				position := fset.Position(current.Pos())
 				violations = append(violations, fmt.Sprintf("%s:%d: exported app operation %s must defer apperr.NormalizeInto", relative, position.Line, current.Name.Name))
 			}
-			if isDesktopBindingMethod(current) {
+			if isDesktopBindingMethod(current) && returnsError(current) && !callsBindingHelper(current.Body) {
 				position := fset.Position(current.Pos())
-				if !returnsBindingResponse(current) {
-					violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must return BindingResponse", relative, position.Line, current.Name.Name))
-				} else if !callsBindingHelper(current.Body) {
-					violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must call bindingResult or bindingError", relative, position.Line, current.Name.Name))
-				}
+				violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must return its error through result or publicError", relative, position.Line, current.Name.Name))
 			}
 		}
 		return true
@@ -198,12 +195,15 @@ func receiverTypeName(receiver *ast.FieldList) string {
 	return ""
 }
 
-func returnsBindingResponse(function *ast.FuncDecl) bool {
-	if function.Type.Results == nil || len(function.Type.Results.List) != 1 {
+// returnsError reports whether the last result is an error, which a bound
+// method must normalize before it reaches the frontend.
+func returnsError(function *ast.FuncDecl) bool {
+	results := function.Type.Results
+	if results == nil || len(results.List) == 0 {
 		return false
 	}
-	ident, ok := function.Type.Results.List[0].Type.(*ast.Ident)
-	return ok && ident.Name == "BindingResponse"
+	ident, ok := results.List[len(results.List)-1].Type.(*ast.Ident)
+	return ok && ident.Name == "error"
 }
 
 func callsBindingHelper(body *ast.BlockStmt) bool {
@@ -219,7 +219,7 @@ func callsBindingHelper(body *ast.BlockStmt) bool {
 				name = ident.Name
 			}
 		}
-		found = name == "bindingResult" || name == "bindingError"
+		found = name == "result" || name == "publicError"
 		return !found
 	})
 	return found
@@ -298,16 +298,25 @@ func hasNormalizeDefer(body *ast.BlockStmt) bool {
 	return false
 }
 
+// inspectTranslations checks the error_<code> messages of the web UI's
+// Paraglide message files against the codes the Go code defines.
 func inspectTranslations(root string, codes map[string]string) ([]string, error) {
 	load := func(locale string) (map[string]string, error) {
-		path := filepath.Join(root, "web", "src", "locales", "errors", locale+".json")
+		path := filepath.Join(root, "web", "messages", locale+".json")
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
 		}
-		var messages map[string]string
-		if err := json.Unmarshal(data, &messages); err != nil {
+		var all map[string]any
+		if err := json.Unmarshal(data, &all); err != nil {
 			return nil, err
+		}
+		messages := make(map[string]string)
+		for key, value := range all {
+			text, isText := value.(string)
+			if code, ok := strings.CutPrefix(key, "error_"); ok && isText {
+				messages[code] = text
+			}
 		}
 		return messages, nil
 	}
@@ -324,21 +333,21 @@ func inspectTranslations(root string, codes map[string]string) ([]string, error)
 		enMessage, enOK := en[code]
 		jaMessage, jaOK := ja[code]
 		if !enOK || !jaOK {
-			violations = append(violations, fmt.Sprintf("web/src/locales/errors: code %q must have en and ja messages", code))
+			violations = append(violations, fmt.Sprintf("web/messages: code %q must have en and ja error_ messages", code))
 			continue
 		}
 		if strings.Join(placeholders(enMessage), ",") != strings.Join(placeholders(jaMessage), ",") {
-			violations = append(violations, fmt.Sprintf("web/src/locales/errors: code %q has mismatched placeholders", code))
+			violations = append(violations, fmt.Sprintf("web/messages: code %q has mismatched placeholders", code))
 		}
 	}
 	for code := range en {
 		if !containsCode(codes, code) {
-			violations = append(violations, fmt.Sprintf("web/src/locales/errors/en.json: unknown code %q", code))
+			violations = append(violations, fmt.Sprintf("web/messages/en.json: unknown code %q", code))
 		}
 	}
 	for code := range ja {
 		if !containsCode(codes, code) {
-			violations = append(violations, fmt.Sprintf("web/src/locales/errors/ja.json: unknown code %q", code))
+			violations = append(violations, fmt.Sprintf("web/messages/ja.json: unknown code %q", code))
 		}
 	}
 	return violations, nil

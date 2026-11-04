@@ -1,5 +1,6 @@
 const messages = {
-  directWailsBinding: "Wails bindings may only be accessed through src/lib/backend.ts.",
+  directWailsBinding:
+    "Wails bindings and runtime may only be used through src/lib/backend.ts, src/lib/platform.ts and src/lib/types.ts.",
   errorAlertMessage: "ErrorAlert accepts typed DisplayError through the error prop.",
   rawErrorDetail: "User-visible errors must pass through toDisplayError.",
 };
@@ -46,6 +47,16 @@ function isRawErrorFallback(node) {
   );
 }
 
+// The generated bindings (src/bindings) and the Wails runtime.
+function isWailsModule(source) {
+  return (
+    typeof source === "string" &&
+    (source === "@wailsio/runtime" ||
+      source.startsWith("@wailsio/runtime/") ||
+      /(^|\/)bindings(\/|$)/.test(source))
+  );
+}
+
 const noDirectWailsBinding = {
   meta: {
     type: "problem",
@@ -53,12 +64,14 @@ const noDirectWailsBinding = {
     schema: [],
   },
   create(context) {
+    const check = (node) => {
+      if (isWailsModule(node.source?.value)) context.report({ node, messageId: "forbidden" });
+    };
     return {
-      MemberExpression(node) {
-        if (isNamedProperty(node, "window", "go")) {
-          context.report({ node, messageId: "forbidden" });
-        }
-      },
+      ImportDeclaration: check,
+      ImportExpression: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
     };
   },
 };

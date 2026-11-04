@@ -2,32 +2,53 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import { resolve } from "path";
 
 const loadPlugins = async () => {
-  const [{ TanStackRouterVite }, { default: react }] = await Promise.all([
+  const [{ TanStackRouterVite }, { default: react }, { paraglideVitePlugin }] = await Promise.all([
     import("@tanstack/router-plugin/vite"),
     import("@vitejs/plugin-react"),
+    import("@inlang/paraglide-js"),
   ]);
 
-  return [TanStackRouterVite(), react()];
+  return [
+    TanStackRouterVite(),
+    react(),
+    // Keep these options in step with the compile in package.json's prepare script.
+    paraglideVitePlugin({
+      project: "./project.inlang",
+      outdir: "./src/paraglide",
+      strategy: ["localStorage", "preferredLanguage", "baseLocale"],
+      emitTsDeclarations: true,
+    }),
+  ];
 };
 
 // Vite 0.2.9's recursive PluginOption type exceeds TypeScript's comparison depth.
 const lazyPluginFactory = loadPlugins as unknown as Parameters<typeof lazyPlugins>[0];
 
+// The VS Code extension loads the UI from its own files through webview URIs,
+// so that build uses relative asset paths.
+const bases: Record<string, string> = {
+  preview: process.env.PREVIEW_BASE ?? "/enbu/web/",
+  vscode: "./",
+};
+const outDirs: Record<string, string> = { preview: "dist-preview", vscode: "dist-vscode" };
+
 export default defineConfig(({ mode }) => ({
-  base: mode === "preview" ? (process.env.PREVIEW_BASE ?? "/enbu/web/") : undefined,
+  base: bases[mode],
   build: {
-    outDir: mode === "preview" ? "dist-preview" : "dist",
+    outDir: outDirs[mode] ?? "dist",
   },
   fmt: {
     ignorePatterns: [
       "dist/**",
       "dist-preview/**",
+      "dist-vscode/**",
       "index.html",
       "panda.config.ts",
       "postcss.config.cjs",
       "src/components/**",
       "src/routeTree.gen.ts",
-      "src/wailsjs/**",
+      "src/bindings/**",
+      "src/paraglide/**",
       "styled-system/**",
       "tsconfig*.json",
     ],
@@ -36,8 +57,10 @@ export default defineConfig(({ mode }) => ({
     ignorePatterns: [
       "dist/**",
       "dist-preview/**",
+      "dist-vscode/**",
       "src/routeTree.gen.ts",
-      "src/wailsjs/**",
+      "src/bindings/**",
+      "src/paraglide/**",
       "styled-system/**",
     ],
     options: {
@@ -60,6 +83,8 @@ export default defineConfig(({ mode }) => ({
         files: ["**/*.test.ts", "**/*.test.tsx"],
         rules: {
           "typescript/no-unsafe-assignment": "off",
+          // expect(vi.mocked(backend).method) reads a mock, never calls it unbound.
+          "typescript/unbound-method": "off",
         },
       },
       {
@@ -69,7 +94,13 @@ export default defineConfig(({ mode }) => ({
         },
       },
       {
-        files: ["src/lib/backend.test.ts", "src/lib/backend.ts"],
+        files: [
+          "src/lib/backend.ts",
+          "src/lib/platform.ts",
+          "src/lib/types.ts",
+          "src/lib/vscode.ts",
+          "src/lib/*.test.ts",
+        ],
         rules: {
           "enbu/no-direct-wails-binding": "off",
         },
@@ -93,22 +124,21 @@ export default defineConfig(({ mode }) => ({
       "~/components": resolve(__dirname, "src/components"),
     },
   },
-  server: {
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:3939",
-        changeOrigin: true,
-      },
-    },
-  },
   test: {
     environment: "jsdom",
+    setupFiles: ["src/test/teardown.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "../.tmp/coverage/frontend",
       reporter: ["text", "html", "lcov", "json-summary"],
       include: ["src/**/*.{ts,tsx}"],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/routeTree.gen.ts", "src/wailsjs/**"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/routeTree.gen.ts",
+        "src/bindings/**",
+        "src/paraglide/**",
+        "src/test/**",
+      ],
       reportOnFailure: true,
     },
   },

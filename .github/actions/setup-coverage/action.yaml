@@ -4,23 +4,23 @@ description: Install Go, aqua tools, Tobari, and Vite+ for a coverage job
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+    - uses: actions/setup-go@v7.0.0
       with:
         go-version-file: go.mod
         cache: true
 
-    - uses: aquaproj/aqua-installer@82d0e83878a8657c4a6f2ff1755d3bfbfc67f329 # v4.1.0
+    - uses: aquaproj/aqua-installer@v4.1.1
       with:
-        aqua_version: v2.64.0
+        aqua_version: v2.65.2
 
-    - uses: goccy/tobari-action/setup@76a7fd11fada4de8bc0a2a1d749f2ba3689ba623 # v1.3.0
+    - uses: goccy/tobari-action/setup@v1.3.0
       with:
         # The tobari CLI must match the github.com/goccy/tobari module in go.mod:
         # a mismatch fails the test link with "fingerprint mismatch". Renovate
         # updates both together (customManagers in renovate.json).
         version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
 
-    - uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+    - uses: voidzero-dev/setup-vp@v1.22.0
       with:
         run-install: false
         package-manager: false

@@ -27,9 +27,6 @@ func newInitCommand(a *app.App) *cobra.Command {
 		if cmd.Flags().Changed("path-style") {
 			settings.PathStyle, _ = cmd.Flags().GetBool("path-style")
 		}
-		if cmd.Flags().Changed("oci-auth") {
-			settings.OCIAuth, _ = cmd.Flags().GetString("oci-auth")
-		}
 		if cmd.Flags().Changed("plain-http") {
 			settings.PlainHTTP, _ = cmd.Flags().GetBool("plain-http")
 		}
@@ -60,6 +57,9 @@ func newInitCommand(a *app.App) *cobra.Command {
 		for _, warning := range result.Warnings {
 			cmd.PrintErrln(warning)
 		}
+		if hint := ghcrAccessHint(result); hint != "" {
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), hint)
+		}
 		if result.Pending {
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Waiting for approval. Ask an admin to run 'enbu member approve' and confirm this fingerprint:\n  %s\n", result.Fingerprint)
 		} else if result.CanDecrypt != nil && !*result.CanDecrypt {
@@ -70,11 +70,23 @@ func newInitCommand(a *app.App) *cobra.Command {
 	cmd.Flags().StringVar(&settings.Region, "region", "", "S3 region")
 	cmd.Flags().StringVar(&settings.Endpoint, "endpoint", "", "S3 service endpoint")
 	cmd.Flags().BoolVar(&settings.PathStyle, "path-style", false, "Use S3 path-style addressing")
-	cmd.Flags().StringVar(&settings.OCIAuth, "oci-auth", "docker", "OCI credentials: docker or github")
 	cmd.Flags().BoolVar(&settings.PlainHTTP, "plain-http", false, "Use HTTP for a local OCI registry")
 	cmd.Flags().BoolVar(&acceptNewGenesis, "accept-new-genesis", false, "Trust the control_genesis in enbu.toml although this device trusted another one (only after an admin confirms the workspace was re-created)")
 	return cmd
 }
+
+// ghcrAccessHint tells the founder of a GHCR workspace how to let teammates
+// in: GHCR creates the package private to its creator, so others cannot even
+// leave a join request until it inherits the repository's access.
+func ghcrAccessHint(result *app.InitResult) string {
+	path, ok := strings.CutPrefix(result.Storage, "oci://ghcr.io/")
+	if !result.Founded || !ok {
+		return ""
+	}
+	owner, pkg, _ := strings.Cut(path, "/")
+	return fmt.Sprintf("GHCR created the package %s private to you. So that teammates can join, open it on GitHub (%s → Packages → %s → Package settings), connect this repository and turn on 'Inherit access from repository'.", pkg, owner, pkg)
+}
+
 func cfgOrDefault(cfg *config.ProjectConfig) *config.ProjectConfig {
 	if cfg != nil {
 		return cfg

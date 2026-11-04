@@ -3,8 +3,11 @@ package config
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -22,7 +25,6 @@ type StorageConfig struct {
 	Region    string `toml:"region,omitempty"`
 	Endpoint  string `toml:"endpoint,omitempty"`
 	PathStyle bool   `toml:"path_style,omitempty"`
-	OCIAuth   string `toml:"oci_auth,omitempty"`
 	PlainHTTP bool   `toml:"plain_http,omitempty"`
 }
 
@@ -397,44 +399,73 @@ func baseDir(dir string) string {
 	}
 	return wd
 }
-func ParseGitRemote(url string) (string, string, error) {
-	url = strings.TrimSuffix(url, "/")
-	if strings.HasPrefix(url, "git@") {
-		parts := strings.SplitN(url, ":", 2)
-		if len(parts) != 2 {
-			return "", "", fmt.Errorf("invalid SSH remote: %s", url)
+
+// ParseGitHubRemote returns the owner and repository of a github.com remote
+// (git@github.com:owner/repo, https://github.com/owner/repo or
+// ssh://git@github.com/owner/repo, each with or without .git). Other hosts are
+// an error.
+func ParseGitHubRemote(remote string) (string, string, error) {
+	var path string
+	if rest, ok := strings.CutPrefix(remote, "git@github.com:"); ok {
+		path = rest
+	} else {
+		u, err := url.Parse(remote)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "ssh") || u.Hostname() != "github.com" {
+			return "", "", errors.New("not a GitHub remote")
 		}
-		return splitOwnerRepo(strings.TrimSuffix(parts[1], ".git"))
+		path = u.Path
 	}
-
-	url = strings.TrimSuffix(url, ".git")
-	parts := strings.Split(url, "/")
-	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid remote URL: %s", url)
+	path = strings.TrimSuffix(strings.Trim(path, "/"), ".git")
+	owner, repo, ok := strings.Cut(path, "/")
+	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
+		return "", "", errors.New("not a GitHub remote")
 	}
-	return parts[len(parts)-2], parts[len(parts)-1], nil
+	return owner, repo, nil
 }
 
-func splitOwnerRepo(path string) (string, string, error) {
-	parts := strings.SplitN(path, "/", 2)
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid owner/repo: %s", path)
-	}
-	return parts[0], parts[1], nil
-}
-
+// DataDir is enbu's per-user data directory. It is always absolute: a relative
+// path would put identities and checkpoints under the working directory, which
+// is usually a Git repository. XDG_DATA_HOME is used only when absolute, as the
+// XDG Base Directory specification requires.
 func DataDir() string {
-	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+	return dataDir(runtime.GOOS, os.Getenv, homeDir)
+}
+
+func dataDir(goos string, getenv func(string) string, home func() string) string {
+	if xdg := getenv("XDG_DATA_HOME"); filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, "enbu")
 	}
-	switch runtime.GOOS {
+	switch goos {
 	case "darwin":
-		return filepath.Join(os.Getenv("HOME"), "Library", "Application Support", "enbu")
+		return filepath.Join(home(), "Library", "Application Support", "enbu")
 	case "windows":
-		return filepath.Join(os.Getenv("LOCALAPPDATA"), "enbu")
+		if local := getenv("LOCALAPPDATA"); filepath.IsAbs(local) {
+			return filepath.Join(local, "enbu")
+		}
+		return filepath.Join(home(), "AppData", "Local", "enbu")
 	default:
-		return filepath.Join(os.Getenv("HOME"), ".local", "share", "enbu")
+		return filepath.Join(home(), ".local", "share", "enbu")
 	}
+}
+
+// unresolvedHome stands in for a home directory that cannot be found. It is
+// absolute, so nothing lands in the working directory, and it does not exist,
+// so reads find nothing and writes fail instead of going somewhere unexpected.
+// On Windows it sits on the drive of the temporary directory, because a path
+// without a drive letter is not absolute there.
+var unresolvedHome = filepath.VolumeName(os.TempDir()) + string(filepath.Separator) + "nonexistent"
+
+// homeDir is the user's home directory: $HOME (or %USERPROFILE%) when it is
+// absolute, otherwise the home directory in the user database, which cron jobs,
+// some services and `env -i` still have when HOME is unset.
+func homeDir() string {
+	if home, err := os.UserHomeDir(); err == nil && filepath.IsAbs(home) {
+		return home
+	}
+	if u, err := user.Current(); err == nil && filepath.IsAbs(u.HomeDir) {
+		return u.HomeDir
+	}
+	return unresolvedHome
 }
 
 func uuidOrHash(id string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(id))) }
