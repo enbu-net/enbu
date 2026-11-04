@@ -267,12 +267,6 @@ func (g *jsonInitGit) Inspect(context.Context, string) (gitprovider.Repository, 
 	return gitprovider.Repository{Root: g.root, HasGit: true}, nil
 }
 
-func (*jsonInitGit) Init(context.Context, string) error { return nil }
-
-func (*jsonInitGit) AddRemote(context.Context, string, string, string) error { return nil }
-
-func (*jsonInitGit) CommitFiles(context.Context, string, []string, string) error { return nil }
-
 // A device that trusts one genesis refuses an enbu.toml naming another until
 // init runs with --accept-new-genesis, which reports what it replaced.
 func TestJSONInitAcceptNewGenesis(t *testing.T) {

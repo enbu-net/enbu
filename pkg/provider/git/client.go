@@ -19,9 +19,6 @@ type Repository struct {
 
 type Client interface {
 	Inspect(ctx context.Context, path string) (Repository, error)
-	Init(ctx context.Context, path string) error
-	AddRemote(ctx context.Context, path, name, url string) error
-	CommitFiles(ctx context.Context, path string, files []string, message string) error
 }
 
 type Runner interface {
@@ -60,36 +57,6 @@ func (c *CLIClient) Inspect(ctx context.Context, path string) (Repository, error
 		repository.HasRemote = true
 	}
 	return repository, nil
-}
-
-func (c *CLIClient) Init(ctx context.Context, path string) error {
-	if _, err := c.runner.Run(ctx, path, "init"); err != nil {
-		return fmt.Errorf("git init: %w", err)
-	}
-	return nil
-}
-
-func (c *CLIClient) AddRemote(ctx context.Context, path, name, url string) error {
-	if _, err := c.runner.Run(ctx, path, "remote", "add", name, url); err != nil {
-		return fmt.Errorf("git remote add: %w", err)
-	}
-	return nil
-}
-
-func (c *CLIClient) CommitFiles(
-	ctx context.Context,
-	path string,
-	files []string,
-	message string,
-) error {
-	addArgs := append([]string{"add", "--"}, files...)
-	if _, err := c.runner.Run(ctx, path, addArgs...); err != nil {
-		return fmt.Errorf("git add: %w", err)
-	}
-	if _, err := c.runner.Run(ctx, path, "commit", "-m", message); err != nil {
-		return fmt.Errorf("git commit: %w", err)
-	}
-	return nil
 }
 
 type ExecRunner struct{}

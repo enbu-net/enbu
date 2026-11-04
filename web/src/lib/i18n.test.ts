@@ -1,65 +1,36 @@
-import { beforeEach, describe, expect, it } from "vite-plus/test";
-import { detectLocale, translate } from "./i18n";
+import { afterEach, describe, expect, it } from "vite-plus/test";
+import { m } from "../paraglide/messages";
+import { getLocale, localStorageKey, setLocale } from "../paraglide/runtime";
 
-const storage = new Map<string, string>();
-
-beforeEach(() => {
-  storage.clear();
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    value: {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value),
-      clear: () => storage.clear(),
-    },
-  });
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: { language: "en-US" },
-  });
+afterEach(() => {
+  localStorage.removeItem(localStorageKey);
 });
 
-describe("i18n", () => {
-  it("uses saved locale first", () => {
-    localStorage.setItem("enbu_locale", "ja");
-    expect(detectLocale()).toBe("ja");
+describe("messages", () => {
+  it("prefers the saved locale over the browser's", () => {
+    localStorage.setItem(localStorageKey, "ja");
+    expect(getLocale()).toBe("ja");
   });
 
-  it("falls back to English for unsupported locale", () => {
-    localStorage.setItem("enbu_locale", "fr");
-    expect(detectLocale()).toBe("en");
+  it("falls back to English for an unsupported locale", () => {
+    localStorage.setItem(localStorageKey, "fr");
+    expect(getLocale()).toBe("en");
   });
 
-  it("translates with interpolation", () => {
-    expect(translate("en", "repo.current", { owner: "octo", repo: "hello" })).toBe(
+  it("interpolates parameters in both locales", () => {
+    expect(m.repo_current({ owner: "octo", repo: "hello" }, { locale: "en" })).toBe(
       "Repository: octo/hello",
     );
-    expect(translate("ja", "auth.expiresIn", { seconds: 30 })).toBe("有効期限まで 30 秒");
-    expect(translate("ja", "init.gitAction")).toBe("Gitを初期化");
-    expect(translate("en", "init.createRemote")).toBe("Create repository");
-    expect(translate("ja", "init.repositoryOwner")).toBe("作成先アカウント");
-    expect(translate("ja", "dashboard.key")).toBe("名前");
-    expect(translate("ja", "dashboard.copyKey")).toBe("名前をコピー");
-    expect(translate("ja", "dashboard.keyCopied")).toBe("名前をコピー済み");
-  });
-
-  it("translates duplicateKey with key interpolation", () => {
-    expect(translate("en", "dashboard.duplicateKey", { key: "MY_SECRET" })).toBe(
-      'Key "MY_SECRET" already exists. Edit the existing secret instead.',
-    );
-    expect(translate("ja", "dashboard.duplicateKey", { key: "MY_SECRET" })).toBe(
+    expect(m.auth_expiresIn({ seconds: 30 }, { locale: "ja" })).toBe("有効期限まで 30 秒");
+    expect(m.dashboard_duplicateKey({ key: "MY_SECRET" }, { locale: "ja" })).toBe(
       "キー「MY_SECRET」はすでに存在します。既存のシークレットを編集してください。",
     );
   });
 
-  it("has ARIA label keys", () => {
-    expect(translate("en", "sidebar.navigation")).toBe("Navigation");
-    expect(translate("ja", "sidebar.navigation")).toBe("ナビゲーション");
-    expect(translate("en", "sidebar.repositoryOptions")).toBe("Repository options");
-    expect(translate("ja", "sidebar.repositoryOptions")).toBe("リポジトリの操作");
-    expect(translate("en", "dashboard.showValue")).toBe("Show value");
-    expect(translate("ja", "dashboard.showValue")).toBe("値を表示");
-    expect(translate("en", "dashboard.hideValue")).toBe("Hide value");
-    expect(translate("ja", "dashboard.hideValue")).toBe("値を非表示");
+  it("follows the current locale", async () => {
+    await setLocale("ja", { reload: false });
+    expect(m.sidebar_navigation()).toBe("ナビゲーション");
+    await setLocale("en", { reload: false });
+    expect(m.sidebar_navigation()).toBe("Navigation");
   });
 });

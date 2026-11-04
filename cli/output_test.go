@@ -133,6 +133,7 @@ func TestJSONUserInputErrorsAreInvalidArguments(t *testing.T) {
 		{"switch", "--delete", "--json"},
 		{"switch", "--move", "old", "--json"},
 		{"pull", "--stdout", "--json"},
+		{"import", "--json"},
 		{"auth", "login", "--device", "--json"},
 	}
 
@@ -349,4 +350,16 @@ func stringField(t *testing.T, object map[string]any, key string) string {
 		t.Fatalf("%s is %T, want string", key, object[key])
 	}
 	return value
+}
+
+func TestOrdinaryJSONErrorDoesNotLog(t *testing.T) {
+	t.Setenv("ENBU_DEBUG", "")
+	cmd := NewWithApp("test", &app.App{})
+	var out, stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	RenderExecutionError(cmd, invalidArgument("bad input", nil), []string{"--json"})
+	if stderr.Len() != 0 {
+		t.Fatal(stderr.String())
+	}
 }

@@ -75,17 +75,14 @@ func createSensitiveSize(command []byte) int {
 // existing key into the TPM" would. It returns the imported blobs.
 func importSoftwareKey(t *testing.T, b *TPMBackend, template tpm2.TPMTPublic) (tpm2.TPM2BPublic, tpm2.TPM2BPrivate, error) {
 	t.Helper()
-	tr, parent, err := b.primary()
+	c, err := b.acquire()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = tr.Close() }()
-	defer func() { _ = flush(tr, parent.ObjectHandle) }()
-	parentPublic, err := parent.OutPublic.Contents()
-	if err != nil {
-		t.Fatal(err)
-	}
-	kem, err := tpm2.ImportEncapsulationKey(parentPublic)
+	defer func() { _ = b.release(c) }()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	kem, err := tpm2.ImportEncapsulationKey(&c.public)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,10 +105,10 @@ func importSoftwareKey(t *testing.T, b *TPMBackend, template tpm2.TPMTPublic) (t
 	}
 	public := tpm2.New2B(template)
 	imported, err := (tpm2.Import{
-		ParentHandle: tpm2.AuthHandle{Handle: parent.ObjectHandle, Name: parent.Name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)},
+		ParentHandle: c.parentAuth(),
 		ObjectPublic: public, Duplicate: tpm2.TPM2BPrivate{Buffer: duplicate},
 		InSymSeed: tpm2.TPM2BEncryptedSecret{Buffer: seed}, Symmetric: tpm2.TPMTSymDef{Algorithm: tpm2.TPMAlgNull},
-	}).Execute(tr)
+	}).Execute(c.t)
 	if err != nil {
 		return tpm2.TPM2BPublic{}, tpm2.TPM2BPrivate{}, err
 	}
@@ -132,7 +129,7 @@ func importable(template tpm2.TPMTPublic) tpm2.TPMTPublic {
 // the TPM the backend opened.
 func TestTPMIdentityIsGeneratedAndUsedInTheTPM(t *testing.T) {
 	rec := &recordingTransport{next: &virtualTransport{newVirtualTPM(t)}}
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return rec, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return rec, nil }}
 	id, md, err := b.Create()
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +175,7 @@ func TestTPMIdentityIsGeneratedAndUsedInTheTPM(t *testing.T) {
 
 func TestTPMSignerIsGeneratedAndUsedInTheTPM(t *testing.T) {
 	rec := &recordingTransport{next: &virtualTransport{newVirtualTPM(t)}}
-	b := &TPMBackend{Device: "test", Open: func() (transport.TPMCloser, error) { return rec, nil }}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: func() (transport.TPMCloser, error) { return rec, nil }}
 	s, md, err := b.CreateSigner()
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +214,7 @@ func TestTPMSignerIsGeneratedAndUsedInTheTPM(t *testing.T) {
 // A key generated outside the TPM and imported is refused even though the TPM
 // itself would use it.
 func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
-	b := &TPMBackend{Device: "test", Open: virtualOpener(newVirtualTPM(t))}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: virtualOpener(newVirtualTPM(t))}
 	ecdhPub, err := ecdhTemplate()
 	if err != nil {
 		t.Fatal(err)
@@ -234,8 +231,11 @@ func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pin the real primary, so only the template check stands between the
+	// imported blob and a key the TPM would load.
+	parent := primaryName(t, b)
 	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Device: b.Device},
-		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer}
+		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer, TPMParentName: parent}
 	if _, err := b.load(md, false); err == nil {
 		t.Fatal("loaded an imported software key as the identity")
 	}
@@ -251,7 +251,7 @@ func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	smd := &SignerMetadata{Backend: "tpm", Algorithm: "P-256", Device: b.Device,
-		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer}
+		TPMPublic: tpm2.Marshal(public), TPMPrivate: tpm2.Marshal(private), TPMName: name.Buffer, TPMParentName: parent}
 	if _, err := b.LoadSigner(smd); err == nil {
 		t.Fatal("loaded an imported software key as the signer")
 	}
@@ -259,7 +259,7 @@ func TestTPMRefusesImportedSoftwareKeys(t *testing.T) {
 
 // A key is bound to the TPM that generated it: another TPM cannot load it.
 func TestTPMKeyDoesNotLoadOnAnotherTPM(t *testing.T) {
-	b := &TPMBackend{Device: "test", Open: virtualOpener(newVirtualTPM(t))}
+	b := &TPMBackend{Device: "test", plainSessions: true, Open: virtualOpener(newVirtualTPM(t))}
 	id, md, err := b.Create()
 	if err != nil {
 		t.Fatal(err)
@@ -287,3 +287,14 @@ type funcTransport struct{ execute func([]byte) []byte }
 
 func (t *funcTransport) Send(b []byte) ([]byte, error) { return t.execute(b), nil }
 func (t *funcTransport) Close() error                  { return nil }
+
+// primaryName returns the Name of the storage primary b uses.
+func primaryName(t *testing.T, b *TPMBackend) []byte {
+	t.Helper()
+	c, err := b.acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = b.release(c) }()
+	return append([]byte(nil), c.name.Buffer...)
+}

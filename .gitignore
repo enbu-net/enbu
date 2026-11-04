@@ -1,10 +1,11 @@
-enbu
+/enbu
 dist/
 .env
 .worktrees/
 *.enc
 output/
 .tmp/
+.task/
 .kotowari/
 
 # Binaries for programs and plugins
@@ -38,8 +39,9 @@ docs/superpowers/
 web/node_modules/
 web/dist/
 web/dist-preview/
+web/dist-vscode/
 web/package.json.md5
 web/src/routeTree.gen.ts
-web/src/wailsjs/
 desktop/wails/build/
+desktop/wails/rsrc_windows_*.syso
 .superpowers/

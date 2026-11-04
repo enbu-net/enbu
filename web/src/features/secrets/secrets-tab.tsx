@@ -1,0 +1,327 @@
+import { useRef, useState } from "react";
+import { Download, Plus } from "lucide-react";
+import { Box, HStack, styled } from "styled-system/jsx";
+import { Button, Input, Spinner, Text } from "../../components/ui";
+import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
+import { ConflictPanel } from "../../components/conflict-panel";
+import { Notice } from "../../components/notice";
+import { SectionHeader } from "../../components/layout";
+import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
+import { backend } from "../../lib/backend";
+import type { ImportResult, PullResult } from "../../lib/types";
+import type { RunTransfer } from "../dashboard/use-transfer";
+import type { Workspace } from "../dashboard/use-workspace";
+import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
+import { ImportButton } from "./import-button";
+import { SecretRow } from "./secret-row";
+import { m } from "../../paraglide/messages";
+
+export function SecretsTab({
+  workspace,
+  transfer,
+}: {
+  workspace: Workspace;
+  transfer: RunTransfer;
+}) {
+  const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
+  // An import can finish after another environment was picked; reload that one.
+  const latestEnv = useRef(env);
+  latestEnv.current = env;
+  const [pullLoading, setPullLoading] = useState(false);
+  const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
+  const [imported, setImported] = useState<ImportResult | null>(null);
+  const [replaceFile, setReplaceFile] = useState<string | null>(null);
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const addEnvironmentTriggerRef = useRef<HTMLButtonElement>(null);
+  const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
+  const [newEnv, setNewEnv] = useState("");
+  const [environmentCreateLoading, setEnvironmentCreateLoading] = useState(false);
+
+  const report = (err: unknown) => setError(toDisplayError(err));
+
+  // A pull refuses to overwrite an output file it cannot read; the person
+  // confirms, and the pull runs again replacing the file.
+  async function pull(replace: boolean) {
+    setPullLoading(true);
+    try {
+      await transfer("pull", async () => {
+        const result = await backend.pullSecrets(env, replace);
+        setPullNotice(result.kept.length > 0 || result.removed.length > 0 ? result : null);
+        await refresh(env);
+      });
+      setReplaceFile(null);
+    } catch (err) {
+      const display = toDisplayError(err);
+      if (display.code === "output_unreadable" && !replace) {
+        setReplaceFile(display.params.file ?? "");
+      } else {
+        setReplaceFile(null);
+        setError(display);
+      }
+    } finally {
+      setPullLoading(false);
+    }
+  }
+
+  async function createEnvironment() {
+    const created = newEnv.trim();
+    if (!created) return;
+    setEnvironmentCreateLoading(true);
+    setError(null);
+    try {
+      await backend.createEnvironment(created);
+      await backend.switchEnvironment(created);
+      await refresh(created);
+      setEnvironmentModalOpen(false);
+      setNewEnv("");
+    } catch (err) {
+      report(err);
+    } finally {
+      setEnvironmentCreateLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title={
+          <EnvironmentSelector
+            environments={workspace.environments}
+            value={env}
+            addTriggerRef={addEnvironmentTriggerRef}
+            onSelect={async (environment) => {
+              if (environment === env) return;
+              try {
+                await backend.switchEnvironment(environment);
+                await refresh(environment);
+              } catch (err) {
+                report(err);
+              }
+            }}
+            onAdd={() => setEnvironmentModalOpen(true)}
+          />
+        }
+      >
+        <HStack gap="2">
+          <ImportButton
+            env={env}
+            onError={setError}
+            onImported={async (result) => {
+              setImported(result);
+              await refresh(latestEnv.current);
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            loading={pullLoading}
+            title={m.dashboard_pullDescription()}
+            onClick={() => void pull(false)}
+          >
+            <Download size={14} />
+            {m.dashboard_pull()}
+          </Button>
+        </HStack>
+      </SectionHeader>
+      {pullNotice && <PullNotice result={pullNotice} onDismiss={() => setPullNotice(null)} />}
+      {imported && (
+        <Notice onDismiss={() => setImported(null)}>
+          {m.import_done({
+            environment: imported.environment,
+            added: imported.added.length,
+            updated: imported.updated.length,
+            unchanged: imported.unchanged.length,
+          })}
+        </Notice>
+      )}
+      <ConfirmDeleteDialog
+        open={replaceFile !== null}
+        title={m.dashboard_pullReplaceTitle({ file: replaceFile ?? "" })}
+        description={m.dashboard_pullReplaceDescription()}
+        cancelLabel={m.config_cancel()}
+        confirmLabel={m.dashboard_pullReplace()}
+        loading={pullLoading}
+        onClose={() => setReplaceFile(null)}
+        onConfirm={() => pull(true)}
+      />
+      {/* Only the first load shows the spinner: a refresh keeps the rows, and
+          with them the focused input, mounted. */}
+      {workspace.loading && !secrets ? (
+        <HStack role="status" py="8" justify="center">
+          <Spinner size="sm" aria-hidden="true" />
+          <Text color="fg.muted">{m.common_loading()}</Text>
+        </HStack>
+      ) : conflicts && conflicts.conflicts.length > 0 ? (
+        <ConflictPanel
+          key={conflicts.heads.join()}
+          set={conflicts}
+          loading={resolveLoading}
+          onResolve={async (choices) => {
+            setResolveLoading(true);
+            let failure: DisplayError | null = null;
+            try {
+              await backend.resolveConflicts(env, conflicts.heads, choices);
+            } catch (err) {
+              failure = toDisplayError(err);
+            } finally {
+              setResolveLoading(false);
+            }
+            // If someone wrote meanwhile, this shows the values they added.
+            await refresh(env);
+            if (failure) setError(failure);
+          }}
+        />
+      ) : (
+        <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
+          {secrets?.secrets.map((secret) => (
+            <SecretRow
+              key={secret.key}
+              secretKey={secret.key}
+              secretValue={secret.value}
+              onEdit={async (value) => {
+                try {
+                  await backend.editSecret(secret.key, value, env);
+                  await refresh(env);
+                } catch (err) {
+                  report(err);
+                }
+              }}
+              onDelete={async () => {
+                try {
+                  await transfer("delete", async () => {
+                    await backend.deleteSecret(secret.key, env);
+                    await refresh(env);
+                  });
+                } catch (err) {
+                  report(err);
+                }
+              }}
+              deleteLabel={m.dashboard_delete()}
+            />
+          ))}
+          {(secrets?.secrets.length ?? 0) === 0 && (
+            <Text color="fg.muted" textAlign="center" py="8">
+              {m.dashboard_empty()}
+            </Text>
+          )}
+        </Box>
+      )}
+      <AddSecretForm
+        existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
+        onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
+        onAdd={async (key, value) => {
+          try {
+            await transfer("add", async () => {
+              await backend.addSecret(key, value, env);
+              await refresh(env);
+            });
+            return true;
+          } catch (err) {
+            report(err);
+            return false;
+          }
+        }}
+      />
+      <EnvironmentNameModal
+        open={environmentModalOpen}
+        value={newEnv}
+        loading={environmentCreateLoading}
+        triggerRef={addEnvironmentTriggerRef}
+        onValueChange={setNewEnv}
+        onClose={() => {
+          if (environmentCreateLoading) return;
+          setEnvironmentModalOpen(false);
+          setNewEnv("");
+        }}
+        onCreate={createEnvironment}
+      />
+    </>
+  );
+}
+
+function PullNotice({ result, onDismiss }: { result: PullResult; onDismiss: () => void }) {
+  return (
+    <Notice onDismiss={onDismiss}>
+      {result.removed.length > 0 && (
+        <Text fontSize="sm">{m.dashboard_pullRemoved({ keys: result.removed.join(", ") })}</Text>
+      )}
+      {result.kept.length > 0 && (
+        <Text fontSize="sm">{m.dashboard_pullKept({ keys: result.kept.join(", ") })}</Text>
+      )}
+    </Notice>
+  );
+}
+
+/** Adds a secret; Enter in either field submits. */
+function AddSecretForm({
+  existingKeys,
+  onDuplicate,
+  onAdd,
+}: {
+  existingKeys: string[];
+  onDuplicate: (key: string) => void;
+  /** Resolves true when the secret was added, so the form clears. */
+  onAdd: (key: string, value: string) => Promise<boolean>;
+}) {
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    const trimmedKey = key.trim();
+    if (!trimmedKey || loading) return;
+    if (existingKeys.includes(trimmedKey)) {
+      onDuplicate(trimmedKey);
+      return;
+    }
+    setLoading(true);
+    try {
+      if (await onAdd(trimmedKey, value)) {
+        setKey("");
+        setValue("");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <styled.form
+      mt="4"
+      p="3"
+      display="grid"
+      gridTemplateColumns={{
+        base: "1fr",
+        md: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
+      }}
+      gap="2"
+      bg="bg.muted"
+      borderRadius="lg"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <Input
+        aria-label={m.dashboard_key()}
+        placeholder={m.dashboard_key()}
+        autoComplete="off"
+        spellCheck={false}
+        value={key}
+        onChange={(event) => setKey(event.target.value)}
+      />
+      <Input
+        aria-label={m.dashboard_value()}
+        placeholder={m.dashboard_value()}
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <Button type="submit" colorPalette="accent" loading={loading} disabled={!key.trim()}>
+        <Plus size={15} />
+        {m.dashboard_add()}
+      </Button>
+    </styled.form>
+  );
+}

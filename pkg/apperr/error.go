@@ -3,6 +3,8 @@ package apperr
 import (
 	"errors"
 	"fmt"
+	"github.com/newmo-oss/ergo"
+	"strings"
 )
 
 type Code string
@@ -20,6 +22,7 @@ const (
 	CodeEnvironmentExists  Code = "environment_already_exists"
 	CodeSecretMissing      Code = "secret_not_found"
 	CodeSecretExists       Code = "secret_already_exists"
+	CodeImportConflict     Code = "import_conflict"
 	CodeArtifactNotFound   Code = "artifact_not_found"
 	CodeConflict           Code = "conflict"
 	CodeUnavailable        Code = "unavailable"
@@ -36,36 +39,8 @@ const (
 
 	// Local device.
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
+	CodeOutputUnreadable    Code = "output_unreadable"    // the output file is not dotenv; pulling again with replace overwrites it
 )
-
-var knownCodes = map[Code]struct{}{
-	CodeInternal:           {},
-	CodeInvalidArgument:    {},
-	CodeNotAuthenticated:   {},
-	CodeAccessDenied:       {},
-	CodeAuthExpired:        {},
-	CodeNotInitialized:     {},
-	CodeConfigNotFound:     {},
-	CodeConfigProtected:    {},
-	CodeEnvironmentMissing: {},
-	CodeEnvironmentExists:  {},
-	CodeSecretMissing:      {},
-	CodeSecretExists:       {},
-	CodeArtifactNotFound:   {},
-	CodeConflict:           {},
-	CodeUnavailable:        {},
-
-	CodeNotMember:           {},
-	CodeUntrusted:           {},
-	CodeRollback:            {},
-	CodeIncompatibleStorage: {},
-	CodeSecretConflict:      {},
-	CodeControlForked:       {},
-	CodeReencryptIncomplete: {},
-	CodeTrustRootChanged:    {},
-
-	CodeIdentityUnavailable: {},
-}
 
 type Params map[string]string
 
@@ -76,38 +51,34 @@ type Payload struct {
 }
 
 type Error struct {
-	code    Code
-	message string
-	params  Params
-	cause   error
+	code   Code
+	detail error
+	params Params
 }
 
 func New(code Code, message string, params Params) *Error {
-	return &Error{code: code, message: message, params: cloneParams(params)}
+	return &Error{code: code, detail: ergo.New(message), params: cloneParams(params)}
 }
 
 func Wrap(code Code, message string, cause error, params Params) *Error {
 	if cause == nil {
 		return New(code, message, params)
 	}
-	return &Error{code: code, message: message, params: cloneParams(params), cause: cause}
+	return &Error{code: code, detail: ergo.Wrap(cause, message), params: cloneParams(params)}
 }
 
 func (e *Error) Error() string {
 	if e == nil {
 		return "<nil>"
 	}
-	if e.cause == nil {
-		return e.message
-	}
-	return fmt.Sprintf("%s: %v", e.message, e.cause)
+	return e.detail.Error()
 }
 
 func (e *Error) Unwrap() error {
 	if e == nil {
 		return nil
 	}
-	return e.cause
+	return e.detail
 }
 
 func (e *Error) Code() Code {
@@ -147,7 +118,7 @@ func Normalize(err error) error {
 
 	var appErr *Error
 	if errors.As(err, &appErr) && appErr != nil {
-		return Wrap(appErr.code, appErr.message, err, appErr.params)
+		return Wrap(appErr.code, "", err, appErr.params)
 	}
 	return Wrap(CodeInternal, "unexpected error", err, nil)
 }
@@ -165,17 +136,26 @@ func PayloadOf(err error) Payload {
 	if !ok || !IsKnownCode(appErr.code) {
 		return Payload{Code: CodeInternal, Message: "An unexpected error occurred.", Params: Params{}}
 	}
-	message := appErr.message
-	params := appErr.Params()
-	if appErr.code == CodeInternal {
-		message = "An unexpected error occurred."
-		params = Params{}
+	definition := definitions[appErr.code]
+	params := make(Params)
+	// Only declared display parameters cross the process boundary. Error details
+	// and arbitrary diagnostic attributes must never become user-facing messages.
+	for _, name := range definition.params {
+		value, ok := appErr.params[name]
+		if !ok || value == "" {
+			return Payload{Code: CodeInternal, Message: definitions[CodeInternal].message, Params: Params{}}
+		}
+		params[name] = value
 	}
-	return Payload{Code: appErr.code, Message: message, Params: params}
+	pairs := make([]string, 0, len(params)*2)
+	for key, value := range params {
+		pairs = append(pairs, "{"+key+"}", value)
+	}
+	return Payload{Code: appErr.code, Message: strings.NewReplacer(pairs...).Replace(definition.message), Params: params}
 }
 
 func IsKnownCode(code Code) bool {
-	_, ok := knownCodes[code]
+	_, ok := definitions[code]
 	return ok
 }
 
@@ -192,7 +172,7 @@ func ExitCode(err error) int {
 		return exit.Code
 	}
 	switch CodeOf(err) {
-	case CodeInvalidArgument:
+	case CodeInvalidArgument, CodeOutputUnreadable:
 		return 2
 	case CodeNotAuthenticated, CodeAccessDenied:
 		return 3

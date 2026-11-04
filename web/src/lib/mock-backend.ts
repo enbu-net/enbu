@@ -2,15 +2,27 @@ import type {
   AuthStatus,
   ConflictChoice,
   ConflictSet,
+  Diff,
   Environment,
+  EnvironmentDeletion,
   GUIRepoStatus,
+  Diagnosis,
+  HistoryEntry,
+  ImportResult,
   InitResult,
+  StorageSettings,
+  KeyUpdateResult,
+  PublicInfo,
   JoinRequest,
   Member,
+  OAuthStart,
+  OAuthStatus,
+  PullResult,
+  RepoInfo,
   SecretsResponse,
-} from "./api";
+} from "./types";
 import { createAppError } from "./app-error";
-import type { OAuthStart, OAuthStatus } from "./backend";
+import type { Backend } from "./backend";
 
 const previewUsername = "yashikota";
 
@@ -54,6 +66,33 @@ let mockConflictsByEnv: Record<string, ConflictSet> = {
   },
 };
 
+// Each environment's past contents, oldest first; the last is the current one.
+const mockHistoryByEnv: Record<string, { timestamp: string; secrets: Record<string, string> }[]> = {
+  development: [
+    {
+      timestamp: "2026-10-01T09:00:00Z",
+      secrets: { API_KEY: "sk-demo-old", DATABASE_URL: "postgres://localhost:5432/enbu" },
+    },
+    {
+      timestamp: "2026-10-05T14:20:00Z",
+      secrets: {
+        API_KEY: "sk-demo-abc123",
+        DATABASE_URL: "postgres://localhost:5432/enbu",
+        SECRET_TOKEN: "tok-enbu-xyz789",
+      },
+    },
+  ],
+};
+
+function diffSecrets(from: Record<string, string>, to: Record<string, string>): Diff {
+  const keys = (record: Record<string, string>) => Object.keys(record).sort();
+  return {
+    added: keys(to).filter((key) => !(key in from)),
+    removed: keys(from).filter((key) => !(key in to)),
+    modified: keys(to).filter((key) => key in from && from[key] !== to[key]),
+  };
+}
+
 let mockMembers: Member[] = [
   {
     device_id: "aabbccdd".repeat(8),
@@ -61,6 +100,7 @@ let mockMembers: Member[] = [
     algorithm: "p256",
     admin: true,
     self: true,
+    post_quantum: false,
   },
   {
     device_id: "11223344".repeat(8),
@@ -68,6 +108,7 @@ let mockMembers: Member[] = [
     algorithm: "ed25519",
     admin: false,
     self: false,
+    post_quantum: true,
   },
 ];
 
@@ -77,11 +118,20 @@ let mockJoinRequests: JoinRequest[] = [
     fingerprint: "5566-7788-5566-7788-5566",
     algorithm: "p256",
     requested_at: "2026-10-06T09:30:00Z",
+    key_update: false,
   },
 ];
 
-const mockRepoHistory: NonNullable<GUIRepoStatus["repo"]>[] = [
-  { path: "/demo/enbu", owner: "enbu-net", repo: "enbu", initialized: true },
+const mockRepoHistory: RepoInfo[] = [
+  {
+    path: "/demo/enbu",
+    owner: "enbu-net",
+    repo: "enbu",
+    initialized: true,
+    has_git: true,
+    has_remote: true,
+    storage_configured: true,
+  },
 ];
 let mockSelectedRepoPath = mockRepoHistory[0]?.path ?? "";
 
@@ -96,12 +146,12 @@ function secretsForEnv(env: string): { key: string; value: string }[] {
   return (mockSecretsByEnv[name] ??= []);
 }
 
-export const mockBackend = {
+export const mockBackend: Backend = {
   async authStatus(): Promise<AuthStatus> {
     return {
       authenticated: true,
       username: previewUsername,
-      repo: { owner: "enbu-net", name: "enbu" },
+      workspace_configured: true,
     };
   },
 
@@ -124,14 +174,7 @@ export const mockBackend = {
   async repoStatus(): Promise<GUIRepoStatus> {
     const selected = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
     if (!selected) return { selected: false };
-    return {
-      selected: true,
-      repo: {
-        ...selected,
-        has_git: true,
-        has_remote: true,
-      },
-    };
+    return { selected: true, repo: Object.assign({}, selected) };
   },
 
   async browseRepository(): Promise<GUIRepoStatus> {
@@ -143,28 +186,21 @@ export const mockBackend = {
     return mockBackend.repoStatus();
   },
 
-  async initialize(): Promise<InitResult> {
-    return { public_key: "age1demo...", username: previewUsername, environment: "development" };
+  async initialize(storage: StorageSettings): Promise<InitResult> {
+    return {
+      public_key: "age1demo...",
+      username: previewUsername,
+      environment: "development",
+      device_id: mockMembers[0].device_id,
+      fingerprint: mockMembers[0].fingerprint,
+      pending: false,
+      storage: storage.url || "oci://ghcr.io/enbu-net/enbu-enbu",
+      founded: true,
+    };
   },
 
-  async gitInit(_path: string): Promise<GUIRepoStatus> {
-    return mockBackend.repoStatus();
-  },
-
-  async gitCreateRemote(
-    _path: string,
-    _owner: string,
-    _repoName: string,
-    _privateRepository: boolean,
-  ): Promise<GUIRepoStatus> {
-    return mockBackend.repoStatus();
-  },
-
-  async listRepositoryOwners() {
-    return [
-      { login: previewUsername, organization: false },
-      { login: "enbu-net", organization: true },
-    ];
+  async suggestStorage(): Promise<string> {
+    return "oci://ghcr.io/enbu-net/enbu-enbu";
   },
 
   async listEnvironments(): Promise<Environment[]> {
@@ -179,20 +215,28 @@ export const mockBackend = {
   },
 
   async switchEnvironment(name: string): Promise<void> {
-    mockEnvs = mockEnvs.map((e) => ({ ...e, current: e.name === name }));
+    mockEnvs = mockEnvs.map((e) => ({ name: e.name, current: e.name === name }));
   },
 
   async renameEnvironment(name: string, newName: string): Promise<void> {
-    mockEnvs = mockEnvs.map((e) => (e.name === name ? { ...e, name: newName } : e));
+    mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
       delete mockSecretsByEnv[name];
     }
   },
 
-  async deleteEnvironment(name: string): Promise<void> {
+  async deleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion> {
+    if (currentEnvName() === name) throw createAppError("invalid_argument", { name });
     mockEnvs = mockEnvs.filter((e) => e.name !== name);
     delete mockSecretsByEnv[name];
+    return purge
+      ? { purged: mockHistoryByEnv[name]?.length ?? 0 }
+      : { purged: 0, incarnation: "0b6f2c1e-6a4d-4c47-9d1e-3f2a7c5b8e90" };
+  },
+
+  async purgeIncarnation(_incarnation: string): Promise<number> {
+    return 1;
   },
 
   async listSecrets(env = ""): Promise<SecretsResponse> {
@@ -225,8 +269,8 @@ export const mockBackend = {
     mockSecretsByEnv[name] = secretsForEnv(env).filter((s) => s.key !== key);
   },
 
-  async pullSecrets(_env = ""): Promise<void> {
-    // no-op in mock
+  async pullSecrets(env = "", _replace = false): Promise<PullResult> {
+    return { output: ".env", count: secretsForEnv(env).length, kept: [], removed: [] };
   },
 
   async syncSecrets(_env = ""): Promise<void> {
@@ -251,7 +295,63 @@ export const mockBackend = {
     const { [name]: _resolved, ...rest } = mockConflictsByEnv;
     mockConflictsByEnv = rest;
   },
-  async listRepositories(): Promise<NonNullable<GUIRepoStatus["repo"]>[]> {
+  async listHistory(env: string): Promise<HistoryEntry[]> {
+    return (mockHistoryByEnv[env || currentEnvName()] ?? []).map((entry, i) => ({
+      index: i + 1,
+      timestamp: entry.timestamp,
+      tag: `mock-revision-${i + 1}`,
+    }));
+  },
+  async diffHistory(env: string, from: number, to: number): Promise<Diff> {
+    const history = mockHistoryByEnv[env || currentEnvName()] ?? [];
+    const at = (index: number) => {
+      const entry = history[index - 1];
+      if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+      return entry.secrets;
+    };
+    return diffSecrets(at(from), at(to));
+  },
+  async restoreHistory(env: string, index: number): Promise<void> {
+    const name = env || currentEnvName();
+    const history = (mockHistoryByEnv[name] ??= []);
+    const entry = history[index - 1];
+    if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+    history.push({ timestamp: new Date().toISOString(), secrets: { ...entry.secrets } });
+    mockSecretsByEnv[name] = Object.entries(entry.secrets)
+      .map(([key, value]) => ({ key, value }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  },
+  async importSecrets(dotenv: string, overwrite: boolean, env = ""): Promise<ImportResult> {
+    const name = env || currentEnvName();
+    const secrets = secretsForEnv(name);
+    const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
+    const incoming = dotenv
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#") && line.includes("="))
+      .map((line) => {
+        const at = line.indexOf("=");
+        return { key: line.slice(0, at).trim(), value: line.slice(at + 1).replace(/^"|"$/g, "") };
+      });
+    if (incoming.length === 0) throw createAppError("invalid_argument");
+    const changed = incoming.filter((item) =>
+      secrets.some((s) => s.key === item.key && s.value !== item.value),
+    );
+    if (changed.length > 0 && !overwrite) {
+      throw createAppError("secret_already_exists", {
+        keys: changed.map((item) => item.key).join(","),
+      });
+    }
+    for (const item of incoming) {
+      const existing = secrets.find((s) => s.key === item.key);
+      if (!existing) result.added.push(item.key);
+      else if (existing.value === item.value) result.unchanged.push(item.key);
+      else result.updated.push(item.key);
+      await mockBackend.addSecret(item.key, item.value, name);
+    }
+    return result;
+  },
+  async listRepositories(): Promise<RepoInfo[]> {
     return [...mockRepoHistory];
   },
   async removeRepository(path: string): Promise<void> {
@@ -277,6 +377,7 @@ export const mockBackend = {
         algorithm: request.algorithm,
         admin: false,
         self: false,
+        post_quantum: true,
       },
     ];
   },
@@ -284,6 +385,47 @@ export const mockBackend = {
     if (!mockMembers.some((m) => m.device_id === deviceID))
       throw createAppError("invalid_argument");
     mockMembers = mockMembers.filter((m) => m.device_id !== deviceID);
+  },
+  async setAdmin(deviceID: string, admin: boolean): Promise<void> {
+    if (!mockMembers.some((m) => m.device_id === deviceID))
+      throw createAppError("invalid_argument");
+    mockMembers = mockMembers.map((m) =>
+      m.device_id === deviceID ? Object.assign({}, m, { admin }) : m,
+    );
+  },
+  async resolveMemberFork(): Promise<void> {
+    throw createAppError("invalid_argument");
+  },
+  async identity(): Promise<PublicInfo> {
+    const self = mockMembers[0];
+    return {
+      backend: "keyring",
+      algorithm: self.post_quantum ? "ML-KEM-768+X25519" : "X25519",
+      recipient: self.post_quantum ? "age1pq1demo..." : "age1demo...",
+      device_id: self.device_id,
+      fingerprint: self.fingerprint,
+    };
+  },
+  async diagnoseIdentity(): Promise<Diagnosis> {
+    return {
+      backend: "tpm",
+      available: false,
+      fallback_available: true,
+    };
+  },
+  async upgradeIdentity(): Promise<KeyUpdateResult> {
+    mockMembers = mockMembers.map((m) =>
+      m.self ? Object.assign({}, m, { post_quantum: true }) : m,
+    );
+    const self = mockMembers[0];
+    return {
+      backend: "keyring",
+      algorithm: "ML-KEM-768+X25519",
+      recipient: "age1pq1demo...",
+      device_id: self.device_id,
+      fingerprint: self.fingerprint,
+      pending: false,
+    };
   },
   async readConfig(): Promise<string> {
     return mockConfig;

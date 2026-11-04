@@ -27,67 +27,39 @@ func TestNewProjectWorkspaceIDs(t *testing.T) {
 	}
 }
 
-func TestParseGitRemoteSSH(t *testing.T) {
-	owner, repo, err := ParseGitRemote("git@github.com:enbu-net/enbu.git")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "enbu-net" || repo != "enbu" {
-		t.Fatalf("got %s/%s, want enbu-net/enbu", owner, repo)
-	}
-}
-
-func TestParseGitRemoteHTTPS(t *testing.T) {
-	owner, repo, err := ParseGitRemote("https://github.com/enbu-net/enbu.git")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "enbu-net" || repo != "enbu" {
-		t.Fatalf("got %s/%s, want enbu-net/enbu", owner, repo)
+func TestParseGitHubRemote(t *testing.T) {
+	for _, remote := range []string{
+		"git@github.com:enbu-net/enbu.git",
+		"git@github.com:enbu-net/enbu",
+		"https://github.com/enbu-net/enbu.git",
+		"https://github.com/enbu-net/enbu",
+		"https://github.com/enbu-net/enbu/",
+		"https://user@github.com/enbu-net/enbu.git",
+		"ssh://git@github.com/enbu-net/enbu.git",
+	} {
+		owner, repo, err := ParseGitHubRemote(remote)
+		if err != nil || owner != "enbu-net" || repo != "enbu" {
+			t.Errorf("%s: got %s/%s %v, want enbu-net/enbu", remote, owner, repo, err)
+		}
 	}
 }
 
-func TestParseGitRemoteHTTPSNoSuffix(t *testing.T) {
-	owner, repo, err := ParseGitRemote("https://github.com/enbu-net/enbu")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "enbu-net" || repo != "enbu" {
-		t.Fatalf("got %s/%s, want enbu-net/enbu", owner, repo)
-	}
-}
-
-func TestParseGitRemoteSSHNoSuffix(t *testing.T) {
-	owner, repo, err := ParseGitRemote("git@github.com:org/repo")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "org" || repo != "repo" {
-		t.Fatalf("got %s/%s, want org/repo", owner, repo)
-	}
-}
-
-func TestParseGitRemoteTrailingSlash(t *testing.T) {
-	owner, repo, err := ParseGitRemote("https://github.com/enbu-net/enbu/")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if owner != "enbu-net" || repo != "enbu" {
-		t.Fatalf("got %s/%s, want enbu-net/enbu", owner, repo)
-	}
-}
-
-func TestParseGitRemoteInvalid(t *testing.T) {
-	_, _, err := ParseGitRemote("not-a-url")
-	if err == nil {
-		t.Fatal("expected error for invalid URL")
-	}
-}
-
-func TestParseGitRemoteInvalidSSH(t *testing.T) {
-	_, _, err := ParseGitRemote("git@github.com")
-	if err == nil {
-		t.Fatal("expected error for invalid SSH URL without colon")
+func TestParseGitHubRemoteRejectsOthers(t *testing.T) {
+	for _, remote := range []string{
+		"not-a-url",
+		"git@github.com",
+		"git@github.com:enbu-net",
+		"https://github.com/enbu-net",
+		"https://github.com/enbu-net/enbu/tree/main",
+		"https://gitlab.com/enbu-net/enbu.git",
+		"git@gitlab.com:enbu-net/enbu.git",
+		"https://github.example.com/enbu-net/enbu.git",
+		"file:///srv/git/enbu.git",
+		"/srv/git/enbu.git",
+	} {
+		if owner, repo, err := ParseGitHubRemote(remote); err == nil {
+			t.Errorf("%s: got %s/%s, want an error", remote, owner, repo)
+		}
 	}
 }
 

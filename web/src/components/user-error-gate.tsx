@@ -14,7 +14,7 @@ import {
   toDisplayError,
   type DisplayError,
 } from "../lib/app-error";
-import { useI18n } from "../lib/i18n";
+import { m } from "../paraglide/messages";
 
 export function UserErrorGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState<DisplayError | null>(null);
@@ -49,7 +49,6 @@ function GlobalError({
   error: DisplayError | null;
   onDismiss?: () => void;
 }) {
-  const { locale, t } = useI18n();
   if (!error) return null;
   return (
     <Box
@@ -71,7 +70,7 @@ function GlobalError({
       <HStack gap="3">
         <AlertCircle size={18} aria-hidden="true" />
         <Text flex="1" fontSize="sm">
-          {formatDisplayError(error, locale)}
+          {formatDisplayError(error)}
         </Text>
         {onDismiss && (
           <Button
@@ -79,7 +78,7 @@ function GlobalError({
             w="28px"
             h="28px"
             p="0"
-            aria-label={t("common.close")}
+            aria-label={m.common_close()}
             onClick={onDismiss}
           >
             <X size={14} />

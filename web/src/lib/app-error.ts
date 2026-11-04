@@ -1,18 +1,18 @@
-import en from "../locales/errors/en.json";
-import ja from "../locales/errors/ja.json";
-import type { Locale } from "./i18n";
+import { m } from "../paraglide/messages";
+import { getLocale, type Locale } from "../paraglide/runtime";
 
-export type ErrorCode = keyof typeof en;
+type Messages = typeof m;
+
+/** The codes the UI can show, one per error_* message. */
+export type ErrorCode = {
+  [K in keyof Messages]: K extends `error_${infer Code}` ? Code : never;
+}[keyof Messages];
 
 export type AppErrorPayload = {
   code: string;
   message?: string;
   params?: Record<string, string>;
 };
-
-export type BindingResult<T> =
-  | { data: T; error?: never }
-  | { data?: never; error: AppErrorPayload };
 
 declare const displayErrorBrand: unique symbol;
 
@@ -22,8 +22,11 @@ export type DisplayError = {
   readonly [displayErrorBrand]: true;
 };
 
-const messages: Record<Locale, Record<ErrorCode, string>> = { en, ja };
-const knownCodes = new Set<ErrorCode>(Object.keys(en) as ErrorCode[]);
+const knownCodes = new Set<string>(
+  Object.keys(m)
+    .filter((key) => key.startsWith("error_"))
+    .map((key) => key.slice("error_".length)),
+);
 
 export class AppError extends Error {
   readonly payload: AppErrorPayload;
@@ -55,23 +58,16 @@ export function displayError(code: ErrorCode, params: Record<string, string> = {
   return makeDisplayError(code, params);
 }
 
-export function formatDisplayError(error: DisplayError, locale: Locale): string {
-  const template = messages[locale][error.code] ?? messages[locale].internal;
-  return Object.entries(error.params).reduce(
-    (text, [name, value]) => text.replaceAll(`{${name}}`, () => value),
-    template,
-  );
-}
-
-export function unwrapBindingResult<T>(result: BindingResult<T>): T {
-  if (result.error) {
-    throw new AppError(result.error);
-  }
-  return result.data;
+export function formatDisplayError(error: DisplayError, locale: Locale = getLocale()): string {
+  const format = m[`error_${error.code}`] as (
+    inputs: Readonly<Record<string, string>>,
+    options: { locale: Locale },
+  ) => string;
+  return format(error.params, { locale });
 }
 
 function isErrorCode(code: string): code is ErrorCode {
-  return knownCodes.has(code as ErrorCode);
+  return knownCodes.has(code);
 }
 
 function asPayload(value: unknown): AppErrorPayload | undefined {

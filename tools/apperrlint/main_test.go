@@ -24,8 +24,8 @@ func (a *App) Run() (err error) {
 }`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
-	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal","unused":"Unused"}`)
-	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部","unused":"未使用"}`)
+	writeFixture(t, root, "web/messages/en.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"Internal","error_unused":"Unused"}`)
+	writeFixture(t, root, "web/messages/ja.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"内部","error_unused":"未使用"}`)
 
 	violations, err := run(root)
 	if err != nil {
@@ -48,8 +48,8 @@ const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "app/app.go", `package app
 type App struct{}
 func (a *App) Run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
-	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal {name}"}`)
-	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部"}`)
+	writeFixture(t, root, "web/messages/en.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"Internal {name}"}`)
+	writeFixture(t, root, "web/messages/ja.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"内部"}`)
 
 	violations, err := run(root)
 	if err != nil {
@@ -72,23 +72,31 @@ const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
 	writeFixture(t, root, "desktop/wails/binding.go", `package main
-type BindingResponse struct{}
-type DesktopService struct{}
-func (s *DesktopService) Raw() error { return nil }
-func (s *DesktopService) Bypass() BindingResponse { return BindingResponse{} }`)
-	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal"}`)
-	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部"}`)
+type DesktopService struct{ core interface{ List() ([]string, error); Save() error } }
+func result[T any](v T, err error) (T, error) { return v, err }
+func publicError(err error) error { return err }
+func (s *DesktopService) Raw() error { return s.core.Save() }
+func (s *DesktopService) RawResult() ([]string, error) { return s.core.List() }
+func (s *DesktopService) Saved() error { return publicError(s.core.Save()) }
+func (s *DesktopService) Listed() ([]string, error) { return result(s.core.List()) }
+func (s *DesktopService) Version() string { return "v1" }`)
+	writeFixture(t, root, "web/messages/en.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"Internal"}`)
+	writeFixture(t, root, "web/messages/ja.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"内部"}`)
 
 	violations, err := run(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(violations, "\n")
-	if !strings.Contains(joined, "Raw must return BindingResponse") {
-		t.Fatalf("missing response violation:\n%s", joined)
+	for _, method := range []string{"Raw", "RawResult"} {
+		if !strings.Contains(joined, method+" must return its error through result or publicError") {
+			t.Fatalf("missing violation for %s:\n%s", method, joined)
+		}
 	}
-	if !strings.Contains(joined, "Bypass must call bindingResult or bindingError") {
-		t.Fatalf("missing helper violation:\n%s", joined)
+	for _, method := range []string{"Saved", "Listed", "Version"} {
+		if strings.Contains(joined, "method "+method+" ") {
+			t.Fatalf("unexpected violation for %s:\n%s", method, joined)
+		}
 	}
 }
 
@@ -112,8 +120,8 @@ func (a *App) Run() (err error) {
 func self() { _ = apperr.CodeOnlySelf }`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
-	writeFixture(t, root, "web/src/locales/errors/en.json", `{"internal":"Internal","only_self":"Self"}`)
-	writeFixture(t, root, "web/src/locales/errors/ja.json", `{"internal":"内部","only_self":"自身"}`)
+	writeFixture(t, root, "web/messages/en.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"Internal","error_only_self":"Self"}`)
+	writeFixture(t, root, "web/messages/ja.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"内部","error_only_self":"自身"}`)
 
 	violations, err := run(root)
 	if err != nil {

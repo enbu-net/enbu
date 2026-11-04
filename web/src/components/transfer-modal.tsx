@@ -2,15 +2,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import { User, Cloud, Lock, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
 import { Box, HStack, VStack } from "../../styled-system/jsx";
 import { Button, Text } from "./ui";
-import { useI18n } from "../lib/i18n";
 import { useFocusTrap } from "../lib/use-focus-trap";
 import { formatDisplayError, type DisplayError } from "../lib/app-error";
-
-export interface ProgressStep {
-  op: "add" | "pull" | "sync" | "delete";
-  step: string;
-  status: "start" | "done";
-}
+import { onProgress } from "../lib/platform";
+import type { ProgressStep } from "../lib/types";
+import { m } from "../paraglide/messages";
 
 interface TransferModalProps {
   open: boolean;
@@ -26,8 +22,18 @@ const DEFAULT_STEPS: Record<"add" | "pull" | "sync" | "delete", string[]> = {
   delete: ["pull_recipients", "pull_secrets", "encrypt", "push"],
 };
 
+// The label of each progress step the backend reports.
+const stepLabels: Record<string, () => string> = {
+  pull_recipients: m.transfer_steps_pull_recipients,
+  pull_secrets: m.transfer_steps_pull_secrets,
+  encrypt: m.transfer_steps_encrypt,
+  push: m.transfer_steps_push,
+  decrypt: m.transfer_steps_decrypt,
+  write: m.transfer_steps_write,
+  reencrypt: m.transfer_steps_reencrypt,
+};
+
 export function TransferModal({ open, operation, error, onClose }: TransferModalProps) {
-  const { locale, t } = useI18n();
   const [currentStep, setCurrentStep] = useState<ProgressStep | null>(null);
   const [isDone, setIsDone] = useState(false);
   const isDoneRef = useRef(false);
@@ -36,7 +42,8 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
   isDoneRef.current = isDone;
   useFocusTrap(open, dialogRef);
 
-  // Event listener & Fallback simulation
+  // Shows the backend's progress events; without them, steps the operation
+  // usually goes through.
   useEffect(() => {
     if (!open || !operation) {
       setCurrentStep(null);
@@ -47,32 +54,14 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
 
     let hasRealEvents = false;
 
-    const handleCustomEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<ProgressStep>;
-      if (customEvent.detail) {
-        hasRealEvents = true;
-        setCurrentStep(customEvent.detail);
-        if (customEvent.detail.status === "done") {
-          setIsDone(true);
-        }
+    const unsubscribe = onProgress((step) => {
+      hasRealEvents = true;
+      setCurrentStep(step);
+      if (step.status === "done") {
+        setIsDone(true);
       }
-    };
-    window.addEventListener("enbu:progress", handleCustomEvent);
+    });
 
-    const wailsRuntime = (window as unknown as { runtime?: { EventsOn?: (event: string, callback: (data: ProgressStep) => void) => () => void } }).runtime;
-    let unsubscribeWails: (() => void) | undefined;
-
-    if (wailsRuntime?.EventsOn) {
-      unsubscribeWails = wailsRuntime.EventsOn("enbu:progress", (step: ProgressStep) => {
-        hasRealEvents = true;
-        setCurrentStep(step);
-        if (step.status === "done") {
-          setIsDone(true);
-        }
-      });
-    }
-
-    // Fallback simulation timer for mock environment
     const fallbackSteps = DEFAULT_STEPS[operation];
     let stepIdx = 0;
 
@@ -98,10 +87,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
     });
 
     return () => {
-      window.removeEventListener("enbu:progress", handleCustomEvent);
-      if (typeof unsubscribeWails === "function") {
-        unsubscribeWails();
-      }
+      unsubscribe();
       clearInterval(timer);
     };
   }, [open, operation]);
@@ -124,23 +110,22 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
 
   const modalTitle =
     operation === "add"
-      ? t("transfer.addTitle")
+      ? m.transfer_addTitle()
       : operation === "pull"
-      ? t("transfer.pullTitle")
+      ? m.transfer_pullTitle()
       : operation === "delete"
-      ? t("transfer.deleteTitle")
-      : t("transfer.syncTitle");
+      ? m.transfer_deleteTitle()
+      : m.transfer_syncTitle();
 
-  const stepKey = `transfer.steps.${stepType}` as Parameters<typeof t>[0];
-  const stepTranslated = stepType ? t(stepKey) : "";
+  const stepTranslated = stepType && stepType in stepLabels ? stepLabels[stepType]() : "";
 
   const statusText = error
-    ? formatDisplayError(error, locale)
+    ? formatDisplayError(error)
     : isDone
-    ? t("transfer.done")
-    : stepTranslated !== stepKey
+    ? m.transfer_done()
+    : stepTranslated
     ? stepTranslated
-    : t("common.loading");
+    : m.common_loading();
 
   return (
     <Box
@@ -324,7 +309,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
           </Text>
           {error && (
             <Button type="button" variant="outline" onClick={onClose}>
-              {t("common.close")}
+              {m.common_close()}
             </Button>
           )}
         </VStack>

@@ -32,20 +32,36 @@ See [ROADMAP.md](ROADMAP.md) for planned features.
 go install github.com/enbu-net/enbu@latest
 ```
 
-Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases).
+Or download a binary from [Releases](https://github.com/enbu-net/enbu/releases). On Linux,
+Releases also has packages that install shell completions; the desktop app's `.deb` and
+`.rpm` add it to the app menu and register `enbu://` links:
+
+```bash
+sudo apt install ./enbu_vX.Y.Z_linux_amd64.deb          # Debian, Ubuntu
+sudo dnf install ./enbu_vX.Y.Z_linux_amd64.rpm          # Fedora, RHEL
+sudo apk add --allow-untrusted ./enbu_vX.Y.Z_linux_amd64.apk  # Alpine
+sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
+sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # Desktop app (GTK 4, WebKitGTK 6.0)
+```
 
 ## Quick Start
 
 ### 1. Choose storage
 
-For GHCR, authenticate and specify the registry repository explicitly:
+In a repository whose `origin` is on GitHub, sign in and run `init`. The workspace is
+stored on GHCR beside the repository, at `oci://ghcr.io/OWNER/REPO-enbu`:
 
 ```bash
 enbu auth login
-enbu init --storage oci://ghcr.io/your-org/your-repo-enbu --oci-auth github
+enbu init
 ```
 
-Any other OCI registry uses Docker credential configuration by default:
+GHCR creates the package private to you. So that teammates can join, open the package's
+settings on GitHub, connect the repository and turn on "Inherit access from repository";
+`init` prints this reminder.
+
+Anywhere else, name the storage with `--storage`. `ghcr.io` always uses enbu's GitHub
+login; any other OCI registry uses the Docker credential configuration:
 
 ```bash
 enbu init --storage oci://registry.example.com/team/secrets
@@ -92,8 +108,8 @@ such as certificates work this way.
 To bring an existing `.env` into enbu at once:
 
 ```bash
-enbu import            # reads ./.env into the current environment
-enbu import app.env    # or any dotenv file, "-" for stdin
+enbu import .env       # reads ./.env into the current environment
+enbu import app.env    # any dotenv file, "-" for stdin
 ```
 
 Variables that already exist with the same value are left alone; one with a
@@ -113,13 +129,15 @@ enbu pull --env dev  # Writes to the configured output for dev
 ```
 
 Each pull writes the secrets, then a marker line. Variables below the marker
-(a local `DEBUG=1`, say), or anywhere in a file enbu has not written yet, that
-enbu does not store are kept there and listed on stderr, so a pull never throws
-them away silently. Variables above the marker belong to enbu: one deleted from
-the environment leaves the file on the next pull and is listed as removed. Kept
-variables are rewritten in sorted order without their comments.
-`enbu pull --replace` overwrites the file completely. A file that is not valid
-dotenv is not overwritten without `--replace`.
+(a local `DEBUG=1`, say) that enbu does not store are kept there and listed on
+stderr, so a pull never throws them away silently. Variables above the marker
+belong to enbu: one deleted from the environment leaves the file on the next pull
+and is listed as removed. In a file without the marker (written by an older enbu,
+or by hand), a variable the environment's history once held is treated as a
+deleted secret and removed; the others are kept. Kept variables are rewritten in
+sorted order without their comments. `enbu pull --replace` overwrites the file
+completely. A file that is not valid dotenv is not overwritten without `--replace`;
+the desktop app asks before overwriting it.
 
 To use the secrets without writing them to disk at all, run the command through enbu:
 
@@ -130,6 +148,10 @@ enbu run --preserve-env -- make  # variables already set in the shell win
 ```
 
 The command's exit status is returned as is.
+When the command's output is not a terminal, as in CI or a log file, secret values of
+6 characters or more are replaced with `<concealed by enbu>`. `--no-masking` turns
+this off. Only the value as stored (and each line of a multi-line value) is matched;
+a value the command transforms, such as base64- or URL-encoded, is printed as is.
 
 ### 6. Add a team member
 
@@ -182,7 +204,6 @@ default_env = "dev"
 
 [storage]
 url = "oci://ghcr.io/your-org/your-repo-enbu"
-oci_auth = "github"
 
 [env.dev]
 output = ".env.dev"
@@ -228,7 +249,7 @@ New identities are post-quantum hybrids, so ciphertext stored today stays safe a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
 ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
 P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
-kept in the Keychain). A file is post-quantum only when every member has a hybrid key;
+encrypted to the Secure Enclave key). A file is post-quantum only when every member has a hybrid key;
 with any classical member it is encrypted classically. Members created before this
 switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
 the new key with `enbu member approve`, and `enbu member list` shows how many members
@@ -236,9 +257,18 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
-| Linux | TPM 2.0 (`/dev/tpmrm0`, then `/dev/tpm0`) | Secret Service (GNOME Keyring / KWallet) |
+| Linux | TPM 2.0 (`/dev/tpmrm0`) | Secret Service (GNOME Keyring / KWallet), else `systemd-creds --user` |
 | Windows | TPM 2.0 through TBS | Credential Manager |
-| macOS | Secure Enclave | Keychain |
+| macOS | Secure Enclave (Apple silicon, or Intel with a T2 chip) | Keychain |
+
+On Linux, `/dev/tpmrm0` belongs to the `tss` group on most distributions, so a
+user outside it gets the keyring fallback. `sudo usermod -aG tss $USER`, then log
+in again, lets enbu use the TPM; `enbu doctor` reports which one it found.
+
+A server, container or WSL often has neither a usable TPM nor a Secret Service. There
+enbu keeps the software keys in files under its data directory, encrypted with
+`systemd-creds --user` (systemd 256 or later), which binds them to the user and to the
+machine's host key, and to the TPM when one exists. The user does not need TPM access.
 
 ```bash
 enbu doctor                  # No authentication or persistent key creation
@@ -246,7 +276,7 @@ enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
 enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
-# Other choices: hardware (required), keyring (stored in the OS keyring)
+# Other choices: hardware (required), keyring (software key: OS keyring, or systemd-creds without one)
 export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
@@ -254,13 +284,15 @@ Fallback is allowed only when hardware is unavailable before creation begins.
 Creation errors and saved-key load errors never silently replace the key.
 `init` registers the saved recipient and reuses it after a registration failure.
 Hardware identities have no private-key export API. TPM metadata contains encrypted
-child blobs bound to the original TPM; Secure Enclave metadata contains a Keychain
-reference. Secure Enclave keys require the device to be unlocked and do not prompt
-for Touch ID on every use.
-On macOS, permanent Secure Enclave storage requires access to the data-protection
-Keychain through the executable's signing entitlements and a user login session.
-`doctor` checks this access without creating a permanent key. Unsigned standalone
-builds may use the OS keyring fallback instead.
+child blobs bound to the original TPM; Secure Enclave metadata contains the key wrapped
+by the Secure Enclave, which only the same Mac can use. Secure Enclave keys require the
+device to be unlocked and do not prompt for Touch ID on every use.
+On macOS the Secure Enclave keys are not stored in the Keychain: the data-protection
+Keychain needs a provisioning profile that a standalone executable cannot carry, so
+the wrapped key is kept in the metadata instead and works with unsigned builds.
+`doctor` checks that a key can be created and restored, without saving anything.
+Secure Enclave identities created by earlier versions (a Keychain reference) are not
+loaded; create the identity again.
 
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).

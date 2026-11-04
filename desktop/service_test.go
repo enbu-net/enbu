@@ -21,61 +21,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
-	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
-	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
-
-type fakeRepositoryPlatform struct {
-	owners       []gh.RepositoryOwner
-	organization string
-}
-
-func (f *fakeRepositoryPlatform) ListRepositoryOwners(context.Context) ([]gh.RepositoryOwner, error) {
-	return f.owners, nil
-}
-
-func (f *fakeRepositoryPlatform) CreateRepository(
-	_ context.Context,
-	organization string,
-	name string,
-	_ bool,
-) (*gh.CreateRepoResult, error) {
-	f.organization = organization
-	owner := organization
-	if owner == "" {
-		owner = "octo"
-	}
-	return &gh.CreateRepoResult{
-		Owner:    owner,
-		Name:     name,
-		SSHURL:   "git@github.com:" + owner + "/" + name + ".git",
-		HTTPSURL: "https://github.com/" + owner + "/" + name + ".git",
-	}, nil
-}
-
-type fakeServiceGit struct {
-	hasRemote bool
-	remote    string
-}
-
-func (f *fakeServiceGit) Inspect(_ context.Context, path string) (gitprovider.Repository, error) {
-	return gitprovider.Repository{
-		Root:      path,
-		OriginURL: f.remote,
-		HasGit:    true,
-		HasRemote: f.hasRemote,
-	}, nil
-}
-
-func (*fakeServiceGit) Init(context.Context, string) error { return nil }
-
-func (f *fakeServiceGit) AddRemote(_ context.Context, _, _, url string) error {
-	f.hasRemote = true
-	f.remote = url
-	return nil
-}
-
-func (*fakeServiceGit) CommitFiles(context.Context, string, []string, string) error { return nil }
 
 type desktopKeyStore struct {
 	apptest.Signers
@@ -110,22 +56,30 @@ func TestValidateRepoPath(t *testing.T) {
 	}
 }
 
-func TestOnStepProgressEmitsWailsEvent(t *testing.T) {
+func TestProgressEmitsEvents(t *testing.T) {
 	s := NewService(app.New())
-	s.ctx = context.Background()
-	var eventName string
-	var payload []interface{}
-	s.emitEvent = func(_ context.Context, name string, data ...interface{}) {
-		eventName = name
-		payload = data
+	// Without an emitter the hooks are no-ops.
+	s.OnStepProgress(app.ProgressStep{Op: "pull"})
+
+	type event struct {
+		name string
+		data any
 	}
-	want := app.ProgressStep{Op: "pull", Step: "decrypt", Status: "done"}
-	s.OnStepProgress(want)
-	if eventName != "enbu:progress" {
-		t.Fatalf("event name = %q", eventName)
+	var events []event
+	s.SetEventEmitter(func(name string, data any) {
+		events = append(events, event{name, data})
+	})
+	step := app.ProgressStep{Op: "pull", Step: "decrypt", Status: "done"}
+	s.OnStepProgress(step)
+	s.OnProgress("decrypting")
+	s.OnConflictRetry(2, 5)
+	want := []event{
+		{EventProgress, step},
+		{EventProgressMessage, "decrypting"},
+		{EventConflictRetry, ConflictRetry{Attempt: 2, MaxAttempts: 5}},
 	}
-	if len(payload) != 1 || !reflect.DeepEqual(payload[0], want) {
-		t.Fatalf("payload = %#v, want %#v", payload, want)
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
 	}
 }
 
@@ -147,89 +101,6 @@ func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
 		if _, err := s.SelectRepository(path); !apperr.Is(err, apperr.CodeInvalidArgument) {
 			t.Errorf("SelectRepository(%q) error = %v, want %q", path, err, apperr.CodeInvalidArgument)
 		}
-	}
-}
-
-func TestGitInitInitializesSelectedDirectory(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	dir := t.TempDir()
-	s := NewService(app.New())
-	s.ctx = context.Background()
-
-	repo, err := s.GitInit(dir)
-	if err != nil {
-		t.Fatalf("GitInit: %v", err)
-	}
-	if !repo.HasGit {
-		t.Fatal("GitInit returned HasGit=false")
-	}
-	if repo.HasRemote {
-		t.Fatal("GitInit returned HasRemote=true without origin")
-	}
-	if repo.Path != runGit(t, dir, "rev-parse", "--show-toplevel") {
-		t.Fatalf("repo path = %q, want initialized directory", repo.Path)
-	}
-}
-
-func TestListRepositoryOwners(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("GITHUB_TOKEN", "test-token")
-	t.Setenv("GITHUB_ACTOR", "octo")
-	want := []gh.RepositoryOwner{
-		{Login: "octo"},
-		{Login: "octo-org", Organization: true},
-	}
-	platform := &fakeRepositoryPlatform{owners: want}
-	s := NewService(app.New())
-	s.github = func(token string) repositoryPlatform {
-		if token != "test-token" {
-			t.Fatalf("token = %q", token)
-		}
-		return platform
-	}
-
-	owners, err := s.ListRepositoryOwners()
-	if err != nil {
-		t.Fatalf("ListRepositoryOwners: %v", err)
-	}
-	if !reflect.DeepEqual(owners, want) {
-		t.Fatalf("owners = %#v, want %#v", owners, want)
-	}
-}
-
-func TestGitCreateRemoteSelectsPersonalOrOrganizationOwner(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("GITHUB_TOKEN", "test-token")
-	t.Setenv("GITHUB_ACTOR", "octo")
-
-	tests := []struct {
-		name             string
-		owner            string
-		wantOrganization string
-	}{
-		{name: "personal account", owner: "octo", wantOrganization: ""},
-		{name: "organization", owner: "octo-org", wantOrganization: "octo-org"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gitClient := &fakeServiceGit{}
-			platform := &fakeRepositoryPlatform{}
-			a := app.New()
-			a.Git = gitClient
-			s := NewService(a)
-			s.github = func(string) repositoryPlatform { return platform }
-
-			repo, err := s.GitCreateRemote(t.TempDir(), tt.owner, "example", true)
-			if err != nil {
-				t.Fatalf("GitCreateRemote: %v", err)
-			}
-			if platform.organization != tt.wantOrganization {
-				t.Fatalf("organization = %q, want %q", platform.organization, tt.wantOrganization)
-			}
-			if repo.Owner != tt.owner || !repo.HasRemote {
-				t.Fatalf("repo = %#v", repo)
-			}
-		})
 	}
 }
 
@@ -484,7 +355,7 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	if err != nil || !status.WorkspaceConfigured {
 		t.Fatalf("%+v %v", status, err)
 	}
-	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace", OCIAuth: "github"}
+	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace"}
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -541,13 +412,6 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 		if !apperr.Is(err, apperr.CodeInvalidArgument) {
 			t.Fatalf("WriteConfig(%q) error = %v, want invalid_argument", content, err)
 		}
-	}
-}
-
-func TestPreferredRemoteURLUsesHTTPS(t *testing.T) {
-	result := &gh.CreateRepoResult{SSHURL: "git@github.com:octo/hello.git", HTTPSURL: "https://github.com/octo/hello.git"}
-	if got := preferredRemoteURL(result); got != result.HTTPSURL {
-		t.Fatalf("preferredRemoteURL = %q, want %q", got, result.HTTPSURL)
 	}
 }
 
