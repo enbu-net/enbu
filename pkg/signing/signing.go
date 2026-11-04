@@ -28,6 +28,7 @@ const (
 	DomainControl = "enbu.workspace-control.v1"
 	DomainState   = "enbu.workspace-state.v1"
 	DomainJoin    = "enbu.join-request.v1"
+	DomainCompact = "enbu.workspace-compaction.v1"
 
 	deviceIDDomain = "enbu.device-id.v1\x00"
 	p256SigSize    = 64

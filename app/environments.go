@@ -229,27 +229,6 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	return config.SaveLocalState(cfg.WorkspaceID, local)
 }
 
-// PurgeEnvironment deletes every stored revision of an environment that is
-// still in enbu.toml and leaves the environment itself. It is how storage is
-// reclaimed: enbu never trims history by itself. To delete the environment as
-// well, use DeleteEnvironmentPurging. It returns how many revisions were deleted.
-func (a *App) PurgeEnvironment(ctx context.Context, name string) (deleted int, err error) {
-	defer apperr.NormalizeInto(&err)
-	if _, err := a.resolveEnvironment(name); err != nil {
-		return 0, err
-	}
-	cfg, err := a.loadProject()
-	if err != nil {
-		return 0, err
-	}
-	s, err := a.openPurgeSession(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer s.Close()
-	return s.purgeResource(ctx, cfg.Resource(name))
-}
-
 // PurgeIncarnation deletes the stored revisions of an environment that was
 // deleted without --purge, which only forgot where they are. The incarnation is
 // the one switch --delete printed (it is also in enbu.toml's git history). An

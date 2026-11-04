@@ -265,7 +265,15 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 		if sv.Graph.Len() == 0 {
 			return nil, storageError(storage.ErrNotFound)
 		}
-		err = s.cps.CheckStates(resource, sv.Graph)
+		// Load signed deletion records only when something is missing.
+		if len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
+			records, err := wsp.LoadCompactions(ctx, s.store, s.view, s.workspace, resource)
+			if err != nil {
+				return nil, wspError(err)
+			}
+			sv.Compacted = wsp.Compute(records, sv.Graph)
+		}
+		err = s.cps.CheckStates(resource, sv.Graph, sv.Compacted.Excuses)
 		if err == nil {
 			return sv, nil
 		}
@@ -313,7 +321,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 		if err != nil || !record {
 			return r, err
 		}
-		err = s.cps.AcceptStates(resource, sv.Graph, r.parents())
+		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents())
 		if err == nil {
 			return r, nil
 		}
@@ -344,7 +352,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	if len(maps) == 1 {
 		r.secrets = maps[0]
 	} else {
-		if missing := sv.Graph.Missing(); len(missing) > 0 {
+		if missing := sv.MissingParents(); len(missing) > 0 {
 			return nil, wspError(fmt.Errorf("%w: revision %s is missing, so the heads cannot be merged yet", wsp.ErrRollback, missing[0]))
 		}
 		var bases []map[string]string
@@ -368,6 +376,11 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 // it neither injects content nor blocks reading.
 func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*wsp.VerifiedState {
 	trusted := func(h *wsp.VerifiedState) bool {
+		// A head below a compaction floor was built on removed history: its
+		// merge base may be gone, so it cannot be merged.
+		if !sv.Compacted.AboveFloors(sv.Graph, h.Digest) {
+			return false
+		}
 		return wsp.AuthorIsCurrent(s.head, h) == nil || slices.Contains(accepted, h.Digest)
 	}
 	var heads []*wsp.VerifiedState
@@ -488,5 +501,5 @@ func (s *session) acceptView(resource string, sv *wsp.StateView) error {
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return s.cps.AcceptStates(resource, sv.Graph, digests)
+	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests)
 }

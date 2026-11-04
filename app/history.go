@@ -136,6 +136,8 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	for d := range h.states {
 		f, ok := known[d]
 		if f.Repeats {
+			// A cached repeat becomes visible if compaction removed the
+			// parent whose content it repeated.
 			_, ok = h.states[f.RepeatParent]
 		}
 		if !ok {
