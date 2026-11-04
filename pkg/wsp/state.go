@@ -197,49 +197,53 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 	if err != nil {
 		return nil, err
 	}
-	if len(revs)+len(also) > maxRevisions {
+	if len(revs) > maxRevisions {
 		return nil, invalid("resource has too many revisions")
 	}
-	fetched := prefetchHeads(ctx, store, scope, revs)
 	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
 	tried := map[digest.Digest]bool{}
 	// also names revisions the caller knows exist, such as one it just published
 	// that a stale listing may not show yet.
 	queue := append(append([]digest.Digest(nil), revs...), also...)
 	for len(queue) > 0 {
-		rev := queue[0]
-		queue = queue[1:]
-		if tried[rev] {
-			continue
+		batch := make([]digest.Digest, 0, headFetches)
+		for len(queue) > 0 && len(batch) < headFetches {
+			rev := queue[0]
+			queue = queue[1:]
+			if tried[rev] {
+				continue
+			}
+			tried[rev] = true
+			if len(tried) > maxRevisions {
+				return nil, invalid("resource has too many revisions")
+			}
+			batch = append(batch, rev)
 		}
-		tried[rev] = true
-		if len(tried) > maxRevisions {
-			return nil, invalid("resource has too many revisions")
-		}
-		f, ok := fetched[rev]
-		if !ok {
-			f.head, f.err = store.FetchHead(ctx, storage.KindState, scope, rev)
-		}
-		head, err := f.head, f.err
-		switch {
-		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
-			sv.Skipped++
-			continue
-		case err != nil:
+		fetched, err := prefetchHeads(ctx, store, scope, batch)
+		if err != nil {
 			return nil, err
 		}
-		st, err := VerifyRevision(view, workspace, resource, rev, head)
-		if err != nil {
-			if errors.Is(err, ErrRollback) {
-				return nil, err
+		for _, rev := range batch {
+			f := fetched[rev]
+			switch {
+			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
+				sv.Skipped++
+				continue
 			}
-			sv.Skipped++
-			continue
+			st, err := VerifyRevision(view, workspace, resource, rev, f.head)
+			if err != nil {
+				if errors.Is(err, ErrRollback) {
+					return nil, err
+				}
+				sv.Skipped++
+				continue
+			}
+			sv.States[rev] = st
+			sv.Graph.Add(rev, st.Parents)
+			queue = append(queue, st.Parents...)
 		}
-		sv.States[rev] = st
-		sv.Graph.Add(rev, st.Parents)
-		queue = append(queue, st.Parents...) // ancestors a stale listing hid
 	}
+
 	for _, d := range sv.Graph.Heads() {
 		sv.Heads = append(sv.Heads, sv.States[d])
 	}
@@ -275,27 +279,37 @@ type fetchedHead struct {
 	err  error
 }
 
-// prefetchHeads fetches the heads of the listed revisions concurrently, so a
-// device that has none of them cached waits for a few round trips rather than
-// one per revision. A failure is kept per revision and handled by the caller.
-func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) map[digest.Digest]fetchedHead {
+// prefetchHeads fetches one bounded batch. Terminal failures cancel the other
+// requests; the caller verifies and releases this batch before fetching more.
+func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) (map[digest.Digest]fetchedHead, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	out := make(map[digest.Digest]fetchedHead, len(revs))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, headFetches)
+	var failure error
 	for _, rev := range revs {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func() {
-			defer func() { <-sem; wg.Done() }()
+			defer wg.Done()
 			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
 			mu.Lock()
+			defer mu.Unlock()
 			out[rev] = fetchedHead{head, err}
-			mu.Unlock()
+			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) && failure == nil {
+				failure = err
+				cancel()
+			}
 		}()
 	}
 	wg.Wait()
-	return out
+	if failure != nil {
+		return nil, failure
+	}
+	return out, ctx.Err()
 }
 
 // MaxCiphertextBytes bounds one revision's ciphertext.

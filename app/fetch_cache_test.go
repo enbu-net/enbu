@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -57,15 +58,15 @@ func TestReadsUseCachedHeads(t *testing.T) {
 }
 
 // A write lists the resource to read it and once more just before publishing,
-// and records what it published without listing a third time.
-func TestWriteListsStatesTwice(t *testing.T) {
+// then checks storage once more before advancing its checkpoint.
+func TestWriteChecksStorageAfterPublishing(t *testing.T) {
 	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
 	calls := countCalls(a)
 	if err := a.AddSecret(context.Background(), "default", "B", "2"); err != nil {
 		t.Fatal(err)
 	}
-	if calls.stateListings.Load() != 2 {
-		t.Fatalf("state listings = %d, want 2", calls.stateListings.Load())
+	if calls.stateListings.Load() != 3 {
+		t.Fatalf("state listings = %d, want 3", calls.stateListings.Load())
 	}
 	got, err := a.ListSecrets(context.Background(), "default")
 	if err != nil || got["B"] != "2" {
@@ -216,5 +217,116 @@ func TestReadRecordsAfterAnotherProcessAcceptedMeanwhile(t *testing.T) {
 	got, err := a.ListSecrets(context.Background(), "default")
 	if err != nil || got["B"] != "2" {
 		t.Fatalf("secrets = %v, %v", got, err)
+	}
+}
+
+func TestWriteDoesNotForgetARevisionDeletedDuringPublish(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	s, err := a.openSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := s.resource("default")
+	accepted, err := s.cps.State(resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storage.StateScope(s.workspace, resource)
+	s.Close()
+	real := a.Storage
+	raceOnPublish(a, func() {
+		for _, d := range accepted {
+			if err := real.Delete(context.Background(), storage.KindState, scope, d); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	if err := a.AddSecret(context.Background(), "default", "B", "2"); !apperr.Is(err, apperr.CodeRollback) {
+		t.Fatalf("write error = %v, want rollback", err)
+	}
+	s, err = a.openSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	after, err := s.cps.State(resource)
+	if err != nil || !reflect.DeepEqual(after, accepted) {
+		t.Fatalf("checkpoint = %v, %v; want %v", after, err, accepted)
+	}
+}
+
+func TestHistoryIndexChangesWithLoadedIdentities(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	s, err := a.openSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	resource := s.resource("default")
+	original := a.openHistoryIndex(s, resource)
+	s.ids = append(s.ids, mustKeyPair(t).Identity)
+	retained := a.openHistoryIndex(s, resource)
+	if retained.path == original.path {
+		t.Fatal("adding a retained identity reused the original flags")
+	}
+	s.ids[0], s.ids[1] = s.ids[1], s.ids[0]
+	if a.openHistoryIndex(s, resource).path != retained.path {
+		t.Fatal("identity order changed the cache key")
+	}
+	s.ids = s.ids[1:]
+	if a.openHistoryIndex(s, resource).path != original.path {
+		t.Fatal("removing the retained identity did not restore the original cache key")
+	}
+}
+
+// Local flags are display hints trusted as written. They cannot add revisions,
+// but editing them can hide entries and change the numeric history indices.
+func TestHistoryIndexTrustsLocalDisplayFlags(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	entries, err := a.ListHistory(context.Background(), "default")
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("history = %v, %v", entries, err)
+	}
+	s, err := a.openSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := a.openHistoryIndex(s, s.resource("default"))
+	s.Close()
+	d := digest.NewDigestFromEncoded(digest.SHA256, entries[0].Tag)
+	index.save(map[digest.Digest]historyFlags{d: {}}, map[digest.Digest]*wsp.VerifiedState{d: nil})
+	entries, err = a.ListHistory(context.Background(), "default")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("edited history = %v, %v", entries, err)
+	}
+}
+
+func TestHistoryRepeatBecomesVisibleWhenParentDisappears(t *testing.T) {
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
+	if err := a.SyncSecrets(context.Background(), "default"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := a.ListHistory(context.Background(), "default")
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("history = %v, %v", entries, err)
+	}
+	s, err := a.openSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storage.StateScope(s.workspace, s.resource("default"))
+	s.Close()
+	old := digest.NewDigestFromEncoded(digest.SHA256, entries[0].Tag)
+	if err := a.Storage.Delete(context.Background(), storage.KindState, scope, old); err != nil {
+		t.Fatal(err)
+	}
+	warm, err := a.ListHistory(context.Background(), "default")
+	if err != nil || len(warm) != 1 || warm[0].Tag == entries[0].Tag {
+		t.Fatalf("warm history = %v, %v", warm, err)
+	}
+	a.CacheDir = t.TempDir()
+	cold, err := a.ListHistory(context.Background(), "default")
+	if err != nil || !reflect.DeepEqual(cold, warm) {
+		t.Fatalf("cold = %v, %v; warm = %v", cold, err, warm)
 	}
 }

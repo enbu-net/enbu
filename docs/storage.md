@@ -122,7 +122,12 @@ again on each read. It answers only for revisions the latest listing showed, so 
 never brings back a revision that storage deleted. `enbu history` likewise keeps,
 per revision, whether this device can decrypt it and whether it only repeats a
 parent (a re-encryption), so a later listing decrypts only new revisions, and
-`enbu history diff` / `restore` decrypt only the versions they name.
+`enbu history diff` / `restore` decrypt only the versions they name. This display
+index is keyed by the full set of loaded decryption identities and remembers which
+parent a revision repeats; removing that parent causes the flag to be recomputed.
+Unlike digest-verified heads, these local display flags are trusted as written:
+editing them can hide entries and change the numeric indices used by diff and
+restore. They cannot add a revision outside the verified history.
 
 `Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
 of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and
