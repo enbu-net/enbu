@@ -463,17 +463,9 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 	return st, nil
 }
 
-// acceptPublished records the view that includes a revision just published, so
-// a later view without it is a rollback. before is the view the revision was
-// written on top of (nil for the first revision); it was checked against the
-// checkpoint when it was loaded, so storage is usually not listed again. If
-// another process of this device accepted a newer head meanwhile, before lacks
-// it, and the resource is read again instead.
-func (s *session) acceptPublished(ctx context.Context, resource string, before *wsp.StateView, st *wsp.VerifiedState) error {
-	err := s.acceptView(resource, before.With(st))
-	if !errors.Is(err, wsp.ErrRollback) {
-		return wspError(err)
-	}
+// acceptPublished checks storage again before advancing the checkpoint: a
+// revision accepted before publishing must not disappear during the write.
+func (s *session) acceptPublished(ctx context.Context, resource string, st *wsp.VerifiedState) error {
 	for attempt := 0; ; attempt++ {
 		sv, err := s.loadResource(ctx, resource, st.Digest)
 		if err != nil {

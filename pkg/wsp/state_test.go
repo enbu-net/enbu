@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -284,5 +286,71 @@ func TestLoadStatesNeverOpensABlob(t *testing.T) {
 	}
 	if opened != 0 {
 		t.Fatalf("%d blobs were opened while building the DAG", opened)
+	}
+}
+
+func TestLoadStatesCountsDuplicateRequestedRevisionOnce(t *testing.T) {
+	f := newStateFixture(t)
+	rev := f.publish(t, f.state(f.alice), f.alice, "root")
+	old := maxRevisions
+	maxRevisions = 1
+	t.Cleanup(func() { maxRevisions = old })
+	sv, err := LoadStates(context.Background(), f.store, f.view, testWorkspace, testResource, rev, rev)
+	if err != nil || sv.Graph.Len() != 1 {
+		t.Fatalf("load at limit = %v, %v", sv, err)
+	}
+}
+
+func TestLoadStatesStopsAfterAFailedBatch(t *testing.T) {
+	f := newStateFixture(t)
+	for i := range headFetches * 3 {
+		f.publish(t, f.state(f.alice), f.alice, string(rune('a'+i)))
+	}
+	failure := errors.New("storage unavailable")
+	var calls atomic.Int64
+	store := storagetest.Wrap(f.store, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			calls.Add(1)
+			return nil, failure
+		},
+	})
+	if _, err := LoadStates(context.Background(), store, f.view, testWorkspace, testResource); !errors.Is(err, failure) {
+		t.Fatalf("load error = %v", err)
+	}
+	if got := calls.Load(); got == 0 || got > headFetches {
+		t.Fatalf("fetches after failure = %d, want at most %d", got, headFetches)
+	}
+}
+
+func TestLoadStatesCancelsOtherFetchesAfterFailure(t *testing.T) {
+	f := newStateFixture(t)
+	for i := range headFetches {
+		f.publish(t, f.state(f.alice), f.alice, string(rune('a'+i)))
+	}
+	failure := errors.New("storage unavailable")
+	var started, canceled atomic.Int64
+	ready := make(chan struct{})
+	store := storagetest.Wrap(f.store, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			n := started.Add(1)
+			if n == headFetches {
+				close(ready)
+			}
+			<-ready
+			if n == 1 {
+				return nil, failure
+			}
+			<-ctx.Done()
+			canceled.Add(1)
+			return nil, ctx.Err()
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := LoadStates(ctx, store, f.view, testWorkspace, testResource); !errors.Is(err, failure) {
+		t.Fatalf("load error = %v", err)
+	}
+	if canceled.Load() != headFetches-1 {
+		t.Fatalf("canceled fetches = %d", canceled.Load())
 	}
 }

@@ -141,3 +141,28 @@ func TestHeadCacheKeepsPublishedHeads(t *testing.T) {
 		t.Fatalf("fetches = %d, %v; want the published head from the cache", counting.fetches, err)
 	}
 }
+
+func TestHeadCacheRefetchesOversizedEntry(t *testing.T) {
+	mem := storagetest.NewMemory()
+	rev := publishControl(t, mem, "control one")
+	dir := t.TempDir()
+	file, err := os.Create(filepath.Join(dir, rev.Encoded()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(int64(storage.MaxHeadBytes) + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	counting := &countingStore{Store: mem}
+	cached := storage.WithHeadCache(counting, dir)
+	if _, err := cached.Discover(context.Background(), storage.KindControl, ""); err != nil {
+		t.Fatal(err)
+	}
+	head, err := cached.FetchHead(context.Background(), storage.KindControl, "", rev)
+	if err != nil || string(head) != "control one" || counting.fetches != 1 {
+		t.Fatalf("head = %q, %v, fetches = %d", head, err, counting.fetches)
+	}
+}

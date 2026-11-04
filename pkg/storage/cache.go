@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -83,7 +84,12 @@ func (c *headCache) FetchHead(ctx context.Context, kind Kind, scope string, rev 
 // read returns a cached head that still matches its digest. Anything else is
 // treated as absent and removed, so a damaged file costs one fetch.
 func (c *headCache) read(rev digest.Digest) ([]byte, bool) {
-	head, err := os.ReadFile(c.path(rev))
+	file, err := os.Open(c.path(rev))
+	if err != nil {
+		return nil, false
+	}
+	head, err := io.ReadAll(io.LimitReader(file, MaxHeadBytes+1))
+	_ = file.Close()
 	if err != nil {
 		return nil, false
 	}

@@ -135,6 +135,9 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	var listed []digest.Digest
 	for d := range h.states {
 		f, ok := known[d]
+		if f.Repeats {
+			_, ok = h.states[f.RepeatParent]
+		}
 		if !ok {
 			r, err := readable(d)
 			if err != nil {
@@ -195,6 +198,7 @@ func (h *historyView) flags(ctx context.Context, d digest.Digest, readable func(
 		}
 		if maps.Equal(parent, mine) {
 			f.Repeats = true
+			f.RepeatParent = p
 			break
 		}
 	}
