@@ -36,11 +36,17 @@ export function ImportButton({
       setPending(null);
     } catch (err) {
       const display = toDisplayError(err);
-      if ((display.code === "secret_already_exists" || display.code === "import_conflict") && !overwrite) {
+      if (
+        (display.code === "secret_already_exists" || display.code === "import_conflict") &&
+        !overwrite
+      ) {
         setPending({
           dotenv,
           env: target,
-          keys: display.code === "import_conflict" ? display.params.keys ?? "" : display.params.key ?? "",
+          keys:
+            display.code === "import_conflict"
+              ? (display.params.keys ?? "")
+              : (display.params.key ?? ""),
         });
       } else {
         setPending(null);
