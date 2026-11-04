@@ -73,7 +73,8 @@ func run(root string) ([]string, error) {
 	}
 
 	for name := range codes {
-		if usages[name] == 0 {
+		// These classifications are supplied and consumed by the shared boundary.
+		if usages[name] == 0 && name != "CodeInternal" && name != "CodeUnavailable" {
 			violations = append(violations, fmt.Sprintf("pkg/apperr/error.go: error code %s is unused in production code", name))
 		}
 	}

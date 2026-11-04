@@ -3,6 +3,7 @@ module github.com/enbu-net/enbu
 go 1.27.3
 
 require (
+ github.com/newmo-oss/ergo v0.1.2
 	charm.land/bubbletea/v2 v2.1.1
 	filippo.io/age v1.3.2
 	filippo.io/hpke v0.4.0
@@ -75,6 +76,7 @@ require (
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
+	github.com/newmo-oss/go-caller v0.1.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/xid v1.6.0 // indirect

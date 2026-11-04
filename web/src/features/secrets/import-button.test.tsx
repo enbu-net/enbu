@@ -33,7 +33,7 @@ describe("ImportButton", () => {
 
   it("asks before replacing secrets that hold another value", async () => {
     mocked.importSecrets.mockRejectedValueOnce(
-      createAppError("secret_already_exists", { keys: "A,B" }),
+      createAppError("import_conflict", { count: "2", keys: "A, B" }),
     );
     const onImported = vi.fn();
     await renderAndSettle(<ImportButton env="default" onImported={onImported} onError={vi.fn()} />);
@@ -74,7 +74,7 @@ describe("ImportButton", () => {
 
   it("overwrites in the environment the conflict was found in", async () => {
     mocked.importSecrets.mockRejectedValueOnce(
-      createAppError("secret_already_exists", { keys: "A" }),
+      createAppError("secret_already_exists", { key: "A" }),
     );
     const props = { onImported: vi.fn(), onError: vi.fn() };
     await renderAndSettle(<ImportButton env="staging" {...props} />);

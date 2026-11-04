@@ -72,7 +72,7 @@ func TestMarshalErrorNormalizesForeignErrors(t *testing.T) {
 	}
 }
 
-func TestPublicErrorLogsUnavailableCause(t *testing.T) {
+func TestPublicErrorLogsClassificationWithoutCause(t *testing.T) {
 	var logs bytes.Buffer
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
@@ -88,7 +88,7 @@ func TestPublicErrorLogsUnavailableCause(t *testing.T) {
 	if payload := decodePayload(t, marshalError(err)); payload.Code != apperr.CodeUnavailable {
 		t.Fatalf("code = %q", payload.Code)
 	}
-	if !strings.Contains(logs.String(), "opening keyring failed") {
-		t.Fatalf("unavailable cause was not logged: %q", logs.String())
+	if strings.Contains(logs.String(), "opening keyring failed") || !strings.Contains(logs.String(), "code=unavailable") {
+		t.Fatalf("unsafe or missing classification log: %q", logs.String())
 	}
 }

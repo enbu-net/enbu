@@ -54,3 +54,22 @@ func TestImportSecretsRejectsNothing(t *testing.T) {
 		t.Fatalf("empty import: %v", err)
 	}
 }
+
+func TestImportConflictPublicPayloadListsAllKeys(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(bg, "default", "OTHER", "old"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := alice.ImportSecrets(bg, "default", map[string]string{"KEY": "changed", "OTHER": "changed"}, false)
+	p := apperr.PayloadOf(err)
+	if p.Code != apperr.CodeImportConflict || p.Params["count"] != "2" || p.Params["keys"] != "KEY, OTHER" {
+		t.Fatalf("payload: %#v", p)
+	}
+	if p.Message != "2 secrets already have different values: KEY, OTHER. Use --overwrite to replace them." {
+		t.Fatal(p.Message)
+	}
+	got := mustSecrets(t, alice, "default")
+	if got["KEY"] != "v1" || got["OTHER"] != "old" {
+		t.Fatal("refused import changed secrets")
+	}
+}

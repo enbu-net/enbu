@@ -49,9 +49,12 @@ func (a *App) ImportSecrets(ctx context.Context, env string, secrets map[string]
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
+			if len(conflicts) > 1 {
+				return apperr.New(apperr.CodeImportConflict, "import conflicts", apperr.Params{"count": fmt.Sprint(len(conflicts)), "keys": strings.Join(conflicts, ", ")})
+			}
 			return apperr.New(apperr.CodeSecretExists,
 				fmt.Sprintf("%d secret(s) already exist with another value (use --overwrite to replace them): %s", len(conflicts), strings.Join(conflicts, ", ")),
-				apperr.Params{"keys": strings.Join(conflicts, ",")})
+				apperr.Params{"key": strings.Join(conflicts, ", ")})
 		}
 		for key, value := range secrets {
 			current[key] = value

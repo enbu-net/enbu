@@ -27,6 +27,7 @@ export enum Code {
     CodeEnvironmentExists = "environment_already_exists",
     CodeSecretMissing = "secret_not_found",
     CodeSecretExists = "secret_already_exists",
+    CodeImportConflict = "import_conflict",
     CodeArtifactNotFound = "artifact_not_found",
     CodeConflict = "conflict",
     CodeUnavailable = "unavailable",
