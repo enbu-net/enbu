@@ -137,6 +137,10 @@ github.com/minio/minio-go/v7 v7.4.1 h1:PtU/zIOfQRWZ+QydXAZysc+xZYHdG+BBR4Z6TUvy7
 github.com/minio/minio-go/v7 v7.4.1/go.mod h1:nQnQi7zTfXR4lREtYXZQWqo5aw0Rqv+ZqCGrTORygRk=
 github.com/muesli/cancelreader v0.2.2 h1:3I4Kt4BQjOR54NavqnDogx/MIoWBFa0StPA8ELUXHmA=
 github.com/muesli/cancelreader v0.2.2/go.mod h1:3XuTXfFS2VjM+HTLZY9Ak0l6eUKfijIfMUZ4EgX0QYo=
+github.com/newmo-oss/ergo v0.1.2 h1:i1b/bEA0+h2H36AZCYnXR308N6MVbte7L3/gYi6q1Qo=
+github.com/newmo-oss/ergo v0.1.2/go.mod h1:ah09+ikOzkCF3CD+HmLDYHxWDRhcU+Rlprk48OZIZoo=
+github.com/newmo-oss/go-caller v0.1.0 h1:jZS2Vz8587TXXUZPWhVUTH9EwndOMJUYrae6tHGV5HI=
+github.com/newmo-oss/go-caller v0.1.0/go.mod h1:5m36S/OzQm/FwFnT1Z9KJyzf1Kf8A3kdI0x92c04+a4=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=

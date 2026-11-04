@@ -1,8 +1,13 @@
 package apperr
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/newmo-oss/ergo"
+	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -125,5 +130,26 @@ func TestWorkspaceSecurityCodes(t *testing.T) {
 		if ExitCode(New(code, "integrity", nil)) != 5 {
 			t.Fatalf("%s exit code is not 5", code)
 		}
+	}
+}
+
+func TestPublicPayloadDropsDetailsAndUndeclaredParams(t *testing.T) {
+	err := Wrap(CodeSecretMissing, "token=secret", errors.New("private cause"), Params{"key": "NAME", "token": "secret"})
+	p := PayloadOf(err)
+	if p.Message != `Secret "NAME" does not exist.` || p.Params["key"] != "NAME" || len(p.Params) != 1 {
+		t.Fatalf("unsafe payload: %#v", p)
+	}
+	if ergo.StackTraceOf(err) == nil {
+		t.Fatal("missing stack")
+	}
+}
+func TestReportDoesNotLogSecretDetails(t *testing.T) {
+	var out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	Report(context.Background(), "test", New(CodeInternal, "secret-value", Params{"token": "secret-value"}))
+	if strings.Contains(out.String(), "secret-value") || !strings.Contains(out.String(), "stack") {
+		t.Fatal(out.String())
 	}
 }
