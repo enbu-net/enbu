@@ -229,5 +229,6 @@
   "error_reencrypt_incomplete": "メンバーは変更されましたが、一部のシークレットが再暗号化されていません。sync を実行して完了してください。",
   "error_identity_unavailable": "このデバイスで使える Identity バックエンドがありません。詳細は enbu doctor で確認してください。",
   "error_output_unreadable": "{file} は enbu が読める dotenv ファイルではありません。上書きして pull すると、中身を置き換えます。",
-  "error_trust_root_changed": "enbu.toml の信頼の根 (control_genesis) が、このデバイスがこのワークスペースで信頼しているものと異なります。管理者がワークスペースを作り直したことを別経路で確認できるまで続けないでください。確認できたら新しい信頼の根を受け入れてください ('enbu init --accept-new-genesis')。"
+  "error_trust_root_changed": "enbu.toml の信頼の根 (control_genesis) が、このデバイスがこのワークスペースで信頼しているものと異なります。管理者がワークスペースを作り直したことを別経路で確認できるまで続けないでください。確認できたら新しい信頼の根を受け入れてください ('enbu init --accept-new-genesis')。",
+  "error_import_conflict": "{count} 個のシークレットに異なる値が保存されています: {keys}。置き換えるには --overwrite を指定してください。"
 }

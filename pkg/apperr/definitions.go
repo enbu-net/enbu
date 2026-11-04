@@ -6,6 +6,7 @@ type definition struct {
 }
 
 var definitions = map[Code]definition{
+	CodeImportConflict:      {message: "{count} secrets already have different values: {keys}. Use --overwrite to replace them.", params: []string{"count", "keys"}},
 	CodeInternal:            {message: "An unexpected error occurred.", params: []string{}},
 	CodeInvalidArgument:     {message: "The input is invalid.", params: []string{}},
 	CodeNotAuthenticated:    {message: "Sign in with GitHub to continue.", params: []string{}},

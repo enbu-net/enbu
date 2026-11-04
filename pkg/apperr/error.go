@@ -22,6 +22,7 @@ const (
 	CodeEnvironmentExists  Code = "environment_already_exists"
 	CodeSecretMissing      Code = "secret_not_found"
 	CodeSecretExists       Code = "secret_already_exists"
+	CodeImportConflict     Code = "import_conflict"
 	CodeArtifactNotFound   Code = "artifact_not_found"
 	CodeConflict           Code = "conflict"
 	CodeUnavailable        Code = "unavailable"
