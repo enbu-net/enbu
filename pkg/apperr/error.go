@@ -140,7 +140,11 @@ func PayloadOf(err error) Payload {
 	// Only declared display parameters cross the process boundary. Error details
 	// and arbitrary diagnostic attributes must never become user-facing messages.
 	for _, name := range definition.params {
-		params[name] = appErr.params[name]
+		value, ok := appErr.params[name]
+		if !ok || value == "" {
+			return Payload{Code: CodeInternal, Message: definitions[CodeInternal].message, Params: Params{}}
+		}
+		params[name] = value
 	}
 	pairs := make([]string, 0, len(params)*2)
 	for key, value := range params {

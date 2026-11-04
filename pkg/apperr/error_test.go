@@ -117,7 +117,11 @@ func TestWorkspaceSecurityCodes(t *testing.T) {
 		if !IsKnownCode(code) {
 			t.Fatalf("%q is not a known code", code)
 		}
-		if got := PayloadOf(New(code, "message", nil)).Code; got != code {
+		params := Params{}
+		for _, name := range definitions[code].params {
+			params[name] = "test"
+		}
+		if got := PayloadOf(New(code, "message", params)).Code; got != code {
 			t.Fatalf("payload code = %q, want %q", got, code)
 		}
 	}
@@ -149,7 +153,27 @@ func TestReportDoesNotLogSecretDetails(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	Report(context.Background(), "test", New(CodeInternal, "secret-value", Params{"token": "secret-value"}))
-	if strings.Contains(out.String(), "secret-value") || !strings.Contains(out.String(), "stack") {
+	if strings.Contains(out.String(), "secret-value") || !strings.Contains(out.String(), "error_test.go:") {
 		t.Fatal(out.String())
+	}
+}
+
+func TestNormalizePreservesWrappedText(t *testing.T) {
+	original := fmt.Errorf("syncing: %w", New(CodeConflict, "changed", nil))
+	if got := Normalize(original); got.Error() != original.Error() {
+		t.Fatalf("got %q want %q", got, original)
+	}
+}
+func TestMissingPublicParameterIsInternal(t *testing.T) {
+	for _, params := range []Params{nil, {"key": ""}} {
+		if p := PayloadOf(New(CodeSecretMissing, "detail", params)); p.Code != CodeInternal || len(p.Params) != 0 {
+			t.Fatal(p)
+		}
+	}
+}
+func TestIdentityPayloadDoesNotExposeBackendReason(t *testing.T) {
+	p := PayloadOf(New(CodeIdentityUnavailable, "private cause", Params{"reason": "secret-value"}))
+	if strings.Contains(p.Message, "secret-value") || len(p.Params) != 0 {
+		t.Fatal(p)
 	}
 }
