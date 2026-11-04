@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -181,45 +182,118 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 	if err != nil {
 		return nil, err
 	}
+	if len(revs) > maxRevisions {
+		return nil, invalid("resource has too many revisions")
+	}
 	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
 	tried := map[digest.Digest]bool{}
 	// also names revisions the caller knows exist, such as one it just published
 	// that a stale listing may not show yet.
 	queue := append(append([]digest.Digest(nil), revs...), also...)
 	for len(queue) > 0 {
-		rev := queue[0]
-		queue = queue[1:]
-		if tried[rev] {
-			continue
+		batch := make([]digest.Digest, 0, headFetches)
+		for len(queue) > 0 && len(batch) < headFetches {
+			rev := queue[0]
+			queue = queue[1:]
+			if tried[rev] {
+				continue
+			}
+			tried[rev] = true
+			if len(tried) > maxRevisions {
+				return nil, invalid("resource has too many revisions")
+			}
+			batch = append(batch, rev)
 		}
-		tried[rev] = true
-		if len(tried) > maxRevisions {
-			return nil, invalid("resource has too many revisions")
-		}
-		head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
-		switch {
-		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
-			sv.Skipped++
-			continue
-		case err != nil:
+		fetched, err := prefetchHeads(ctx, store, scope, batch)
+		if err != nil {
 			return nil, err
 		}
-		st, err := VerifyRevision(view, workspace, resource, rev, head)
-		if err != nil {
-			if errors.Is(err, ErrRollback) {
-				return nil, err
+		for _, rev := range batch {
+			f := fetched[rev]
+			switch {
+			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
+				sv.Skipped++
+				continue
 			}
-			sv.Skipped++
-			continue
+			st, err := VerifyRevision(view, workspace, resource, rev, f.head)
+			if err != nil {
+				if errors.Is(err, ErrRollback) {
+					return nil, err
+				}
+				sv.Skipped++
+				continue
+			}
+			sv.States[rev] = st
+			sv.Graph.Add(rev, st.Parents)
+			queue = append(queue, st.Parents...)
 		}
-		sv.States[rev] = st
-		sv.Graph.Add(rev, st.Parents)
-		queue = append(queue, st.Parents...) // ancestors a stale listing hid
 	}
+
 	for _, d := range sv.Graph.Heads() {
 		sv.Heads = append(sv.Heads, sv.States[d])
 	}
 	return sv, nil
+}
+
+// With returns a copy of the view that also holds st, such as a revision the
+// caller just published on top of it. sv may be nil for a resource that had no
+// revision yet.
+func (sv *StateView) With(st *VerifiedState) *StateView {
+	out := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
+	if sv != nil {
+		for d, v := range sv.States {
+			out.States[d] = v
+			out.Graph.Add(d, v.Parents)
+		}
+		out.Skipped = sv.Skipped
+	}
+	out.States[st.Digest] = st
+	out.Graph.Add(st.Digest, st.Parents)
+	for _, d := range out.Graph.Heads() {
+		out.Heads = append(out.Heads, out.States[d])
+	}
+	return out
+}
+
+// headFetches bounds how many heads LoadStates fetches at once.
+const headFetches = 8
+
+type fetchedHead struct {
+	head []byte
+	err  error
+}
+
+// prefetchHeads fetches one bounded batch. Terminal failures cancel the other
+// requests; the caller verifies and releases this batch before fetching more.
+func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) (map[digest.Digest]fetchedHead, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	out := make(map[digest.Digest]fetchedHead, len(revs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var failure error
+	for _, rev := range revs {
+		if ctx.Err() != nil {
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
+			mu.Lock()
+			defer mu.Unlock()
+			out[rev] = fetchedHead{head, err}
+			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) && failure == nil {
+				failure = err
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+	if failure != nil {
+		return nil, failure
+	}
+	return out, ctx.Err()
 }
 
 // MaxCiphertextBytes bounds one revision's ciphertext.

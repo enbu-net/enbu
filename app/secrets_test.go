@@ -70,6 +70,7 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 		RepoDetector:  &staticRepoDetector{owner: owner, repo: repo},
 		Identities:    ks,
 		CheckpointDir: t.TempDir(),
+		CacheDir:      t.TempDir(),
 	}
 
 	prepareApp(t, a, env)

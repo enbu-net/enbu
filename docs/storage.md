@@ -108,10 +108,24 @@ Reads are separate on purpose. Finding a resource's heads and merge base needs
 only the small head of every revision, so `FetchHead` never transfers a
 ciphertext, and `OpenBlob` streams one blob for a revision whose content is
 actually used (the heads, and the merge base when they are merged). So the
-ciphertext a read transfers does not grow with the history. Listing the names and
-reading and verifying every head still do; that has not been a problem and is left
-until it is measured to be. The caller checks a blob against the digest its head
-names.
+ciphertext a read transfers does not grow with the history. The caller checks a
+blob against the digest its head names.
+
+Listing the names still grows with the history, and so does verifying every head.
+Fetching the heads does not: each device keeps the heads it has fetched or
+published in its data directory (`cache/heads`, one file per digest) and fetches
+only heads it has not seen, several at a time. A head is named by its digest and
+never changes, so the cache needs no trust or expiry, and every head is verified
+again on each read. It answers only for revisions the latest listing showed, so it
+never brings back a revision that storage deleted. `enbu history` likewise keeps,
+per revision, whether this device can decrypt it and whether it only repeats a
+parent (a re-encryption), so a later listing decrypts only new revisions, and
+`enbu history diff` / `restore` decrypt only the versions they name. This display
+index is keyed by the full set of loaded decryption identities and remembers which
+parent a revision repeats; removing that parent causes the flag to be recomputed.
+Unlike digest-verified heads, these local display flags are trusted as written:
+editing them can hide entries and change the numeric indices used by diff and
+restore. They cannot add a revision outside the verified history.
 
 `Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
 of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and
