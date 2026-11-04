@@ -29,6 +29,6 @@ var definitions = map[Code]definition{
 	CodeControlForked:       {message: "Two admins changed the members at the same time. An admin must join the changes (Join member changes on the Members tab, or \"enbu member resolve-fork\") before anything else can proceed.", params: []string{}},
 	CodeReencryptIncomplete: {message: "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.", params: []string{}},
 	CodeTrustRootChanged:    {message: "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then accept the new root ('enbu init --accept-new-genesis').", params: []string{}},
-	CodeIdentityUnavailable: {message: "No usable identity backend on this device: {reason}. Run 'enbu doctor' for details.", params: []string{"reason"}},
+	CodeIdentityUnavailable: {message: "No usable identity backend on this device. Run 'enbu doctor' for details.", params: []string{}},
 	CodeOutputUnreadable:    {message: "{file} is not a dotenv file enbu can read. Pull again and overwrite it to replace its content.", params: []string{"file"}},
 }

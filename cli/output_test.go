@@ -351,3 +351,15 @@ func stringField(t *testing.T, object map[string]any, key string) string {
 	}
 	return value
 }
+
+func TestOrdinaryJSONErrorDoesNotLog(t *testing.T) {
+	t.Setenv("ENBU_DEBUG", "")
+	cmd := NewWithApp("test", &app.App{})
+	var out, stderr bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&stderr)
+	RenderExecutionError(cmd, invalidArgument("bad input", nil), []string{"--json"})
+	if stderr.Len() != 0 {
+		t.Fatal(stderr.String())
+	}
+}
