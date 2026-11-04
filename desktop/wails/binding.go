@@ -1,9 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/desktop"
@@ -36,9 +36,7 @@ func publicError(err error) error {
 func toBindingError(err error) *bindingError {
 	normalized := apperr.Normalize(err)
 	payload := apperr.PayloadOf(normalized)
-	if payload.Code == apperr.CodeInternal || payload.Code == apperr.CodeUnavailable {
-		slog.Error("desktop operation failed", "err", normalized)
-	}
+	apperr.Report(context.Background(), "desktop", normalized)
 	return &bindingError{payload: payload}
 }
 

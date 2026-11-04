@@ -367,9 +367,7 @@ func invoke(method reflect.Value, args []reflect.Value) (any, error) {
 func applicationError(method string, err error) *Error {
 	normalized := apperr.Normalize(err)
 	payload := apperr.PayloadOf(normalized)
-	if payload.Code == apperr.CodeInternal || payload.Code == apperr.CodeUnavailable {
-		slog.Error("rpc operation failed", "method", method, "err", normalized)
-	}
+	apperr.Report(context.Background(), "rpc."+method, normalized)
 	return &Error{Code: codeApplication, Message: payload.Message, Data: &payload}
 }
 
