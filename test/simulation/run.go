@@ -6,6 +6,7 @@ import (
 )
 
 type Plan struct {
+	Compound      *CompoundCase
 	Swarm         string
 	MergeCase     *MergeCase
 	AdminRace     string
@@ -50,6 +51,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.Compound != nil {
+		if err := w.Compound(ctx, *plan.Compound); err != nil {
+			return err
+		}
 	}
 	if plan.Swarm != "" {
 		if err := w.Swarm(ctx, plan.Swarm); err != nil {

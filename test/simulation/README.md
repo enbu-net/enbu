@@ -63,6 +63,21 @@ or a clean merge, every device restarts and concurrently adds another unique
 key; reverse-order sync must preserve all acknowledged changes on every device.
 Unrelated values and each writer's untouched keys are compared with the model.
 
+`TestCompoundMultiUserMatrix` crosses two membership changes (remove a writer
+or demote a competing admin), three publication failures (stop before, stop
+after, lost reply), three pairs of resolution choices (same value, different
+values, value versus deletion), and four schedules: 72 record/replay cases.
+Each case starts with an edit/delete conflict and an offline device, forces
+the admins to fork Control while the data conflict is unresolved, checks that
+the fork blocks resolution, and verifies exact membership after joining the
+Control branches. Incomplete data re-encryption must be reported. Two members
+then resolve simultaneously while one fails at publication; durable competing
+choices must remain an explicit conflict. The fixture resolves again, syncs,
+compacts, reconnects the observer, readmits the removed writer when applicable,
+and checks both environments and a fresh write. Same-value sibling resolutions
+must refuse compaction until sync. The separate production environment must
+retain its sentinel throughout, and removal denies access to it too.
+
 `TestTeamMembershipWriteMatrix` overlaps six membership changes (approve a
 joiner, remove another member, remove the writer, promote another member, demote
 the writer, approve the writer's key update) with add/edit/delete/import/sync,

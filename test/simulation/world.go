@@ -165,12 +165,31 @@ func (w *World) Check(ctx context.Context, env string) error {
 	return nil
 }
 func (w *World) runBatch(ctx context.Context, hold string, ops []func(int) error) ([]error, error) {
+	devices := make([]int, len(ops))
+	for i := range devices {
+		devices[i] = i
+	}
+	return w.runDeviceBatch(ctx, hold, devices, ops)
+}
+
+func (w *World) runDeviceBatch(ctx context.Context, hold string, devices []int, ops []func(int) error) ([]error, error) {
+	if len(devices) != len(ops) {
+		return nil, fmt.Errorf("device and operation counts differ")
+	}
+	seen := map[int]bool{}
+	for _, i := range devices {
+		if i < 0 || i >= len(w.Devices) || seen[i] {
+			return nil, fmt.Errorf("invalid or duplicate batch device %d", i)
+		}
+		seen[i] = true
+	}
 	jobs := make([]func(*Actor) error, len(ops))
 	for i, op := range ops {
 		jobs[i] = func(actor *Actor) error {
-			w.Devices[i].Store.Actor = actor
-			defer func() { w.Devices[i].Store.Actor = nil }()
-			return op(i)
+			device := devices[i]
+			w.Devices[device].Store.Actor = actor
+			defer func() { w.Devices[device].Store.Actor = nil }()
+			return op(device)
 		}
 	}
 	w.Scheduler.Hold = hold
