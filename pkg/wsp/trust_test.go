@@ -99,7 +99,7 @@ func TestTrustRootRejectsAnInvalidRoot(t *testing.T) {
 }
 
 func TestFoundingReplacementChecksExpectedPinUnderLock(t *testing.T) {
-	trust := OpenTrustRoot(t.TempDir(), testWorkspace)
+	trust := OpenTrustRoot(t.TempDir(), testWorkspace, clock.New())
 	old := Root{Workspace: testWorkspace, Genesis: d("old")}
 	newer := Root{Workspace: testWorkspace, Genesis: d("newer")}
 	target := Root{Workspace: testWorkspace, Genesis: d("founding")}

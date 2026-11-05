@@ -179,13 +179,13 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 
 func TestAcceptanceEpochPersistsAndAdvancesWithoutChangingHeads(t *testing.T) {
 	dir := t.TempDir()
-	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 	view := stateView(map[string][]string{"head": nil})
 	for _, epoch := range []digest.Digest{d("before-removal"), d("after-readmission")} {
 		if err := cps.AcceptStates(testResource, view.Graph, nil, []digest.Digest{d("head")}, epoch); err != nil {
 			t.Fatal(err)
 		}
-		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 		got, err := fresh.Accepted(testResource)
 		if err != nil || got.Control != epoch || len(got.Heads) != 1 || got.Heads[0] != d("head") {
 			t.Fatalf("acceptance not persisted: %+v %v", got, err)
