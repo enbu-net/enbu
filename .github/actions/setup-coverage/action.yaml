@@ -11,7 +11,7 @@ runs:
 
     - uses: aquaproj/aqua-installer@v4.1.1
       with:
-        aqua_version: v2.65.2
+        aqua_version: v2.66.0
 
     - uses: goccy/tobari-action/setup@v1.3.0
       with:
