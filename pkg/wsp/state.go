@@ -287,6 +287,10 @@ func WithSerialHeadReads(ctx context.Context) context.Context {
 	return context.WithValue(ctx, serialHeadReadsKey{}, true)
 }
 
+func terminalHeadError(err error) bool {
+	return err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt)
+}
+
 // prefetchHeads fetches one bounded batch. Terminal failures cancel the other
 // requests; the caller verifies and releases this batch before fetching more.
 func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) (map[digest.Digest]fetchedHead, error) {
@@ -297,7 +301,7 @@ func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs 
 		for _, rev := range revs {
 			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
 			out[rev] = fetchedHead{head, err}
-			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) {
+			if terminalHeadError(err) {
 				return nil, err
 			}
 		}
@@ -318,7 +322,7 @@ func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs 
 			mu.Lock()
 			defer mu.Unlock()
 			out[rev] = fetchedHead{head, err}
-			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) && failure == nil {
+			if terminalHeadError(err) && failure == nil {
 				failure = err
 				cancel()
 			}
