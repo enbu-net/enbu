@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration"}
+var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -36,6 +36,12 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 	}
 	w.Model["default"]["BASE"] = "original"
 	switch name {
+	case "request-signature-attack":
+		return w.RequestSignatureAttack(ctx)
+	case "rejected-edits":
+		return w.RejectedEdits(ctx)
+	case "locked-device":
+		return w.LockedDevice(ctx)
 	case "team-migration":
 		return w.TeamMigration(ctx)
 	case "team-incident":

@@ -25,6 +25,10 @@ func TestOracleMutationExperiments(t *testing.T) {
 		{"wrong-observer-acceptance-epoch", "app/workspace.go", "s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())", "s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())", "TestAcceptanceEpochSmoke"},
 		{"revive-revoked-author", "pkg/wsp/state.go", "if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "if false && !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "TestAcceptanceEpochSmoke"},
 		{"skip-state-signature-verification", "pkg/wsp/state.go", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil && false {", "TestScenarios/forged-state-signature"},
+		{"control-parent-admin-check", "pkg/wsp/control.go", "if !ok || !author.Admin {\n\t\t\treturn nil, invalid(\"control author", "if !ok {\n\t\t\treturn nil, invalid(\"control author", "TestAuthorityAttackSmoke/member-promotes-self"},
+		{"compaction-admin-check", "pkg/wsp/compaction.go", "if !ok || !author.Admin {", "if !ok {", "TestAuthorityAttackSmoke/member-excuses-rollback"},
+		{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c); err != nil {", "if err := checkResolution(parents, c); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
+		{"join-request-signature", "pkg/wsp/join.go", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil {", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil && false {", "TestScenarios/request-signature-attack"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

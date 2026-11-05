@@ -6,21 +6,22 @@ import (
 )
 
 type Plan struct {
-	Acceptance     *AcceptanceCase
-	CompactionRace *CompactionRaceCase
-	Clock          string
-	Compound       *CompoundCase
-	Swarm          string
-	MergeCase      *MergeCase
-	AdminRace      string
-	Team           *TeamCase
-	Concurrent     *ConcurrentCase
-	StateCase      *StateCase
-	FoundingFault  *Fault
-	Probe          *Probe
-	Devices        int
-	Scenario       string
-	Actions        []Action
+	AuthorityAttack string
+	Acceptance      *AcceptanceCase
+	CompactionRace  *CompactionRaceCase
+	Clock           string
+	Compound        *CompoundCase
+	Swarm           string
+	MergeCase       *MergeCase
+	AdminRace       string
+	Team            *TeamCase
+	Concurrent      *ConcurrentCase
+	StateCase       *StateCase
+	FoundingFault   *Fault
+	Probe           *Probe
+	Devices         int
+	Scenario        string
+	Actions         []Action
 }
 
 // Execute consumes the recorded plan, including bootstrap, on a fresh root.
@@ -60,6 +61,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.AuthorityAttack != "" {
+		if err := w.AuthorityAttack(ctx, plan.AuthorityAttack); err != nil {
+			return err
+		}
 	}
 	if plan.Acceptance != nil {
 		if err := w.AcceptanceCase(ctx, *plan.Acceptance); err != nil {
