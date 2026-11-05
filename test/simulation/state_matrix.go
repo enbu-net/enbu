@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -12,7 +13,7 @@ import (
 // StateCase is an explicit cross product, not a randomly sampled coverage claim.
 type StateCase struct{ Operation, State, Role string }
 
-var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts"}
+var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade"}
 var DataStates = []string{"empty", "populated", "deleted", "missing-environment"}
 var MemberStates = []string{"admin", "member", "pending", "removed"}
 
@@ -62,6 +63,29 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	default:
 		return fmt.Errorf("unknown role %s", c.Role)
 	}
+	controlOperation := false
+	switch c.Operation {
+	case "members", "requests", "approve", "remove", "admin", "upgrade":
+		controlOperation = true
+	}
+	if c.Operation == "approve" {
+		if err := founder.RemoveMember(ctx, w.Devices[2].ID); err != nil {
+			return err
+		}
+		if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+			return err
+		}
+	}
+	membership := map[string]bool{}
+	for index, device := range w.Devices {
+		if index == actor && (c.Role == "pending" || c.Role == "removed") {
+			continue
+		}
+		if index == 2 && c.Operation == "approve" {
+			continue
+		}
+		membership[device.ID] = index == 0
+	}
 	a := w.Devices[actor].App
 	env := "default"
 	if c.State == "missing-environment" {
@@ -70,11 +94,13 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	want := clone(w.Model["default"])
 	expected := ""
 	switch {
-	case c.State == "missing-environment":
+	case c.State == "missing-environment" && !controlOperation:
 		expected = string(apperr.CodeEnvironmentMissing)
+	case c.Operation == "members" || c.Operation == "requests":
+		// Control metadata is public, including for pending and removed devices.
 	case c.Role == "pending" || c.Role == "removed":
 		expected = string(apperr.CodeNotMember)
-	case c.Operation == "compact" && c.Role == "member":
+	case (c.Operation == "compact" || c.Operation == "approve" || c.Operation == "remove" || c.Operation == "admin") && c.Role == "member":
 		expected = string(apperr.CodeAccessDenied)
 	case c.Operation == "add" && c.State == "populated":
 		expected = string(apperr.CodeSecretExists)
@@ -114,6 +140,18 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		out, err = a.CompactHistory(ctx, env, 1)
 	case "conflicts":
 		out, err = a.ListConflicts(ctx, env)
+	case "members":
+		out, err = a.ListMembers(ctx)
+	case "requests":
+		out, err = a.ListJoinRequests(ctx)
+	case "approve":
+		err = a.ApproveMember(ctx, w.Devices[2].ID)
+	case "remove":
+		err = a.RemoveMember(ctx, w.Devices[2].ID)
+	case "admin":
+		err = a.SetAdmin(ctx, w.Devices[2].ID, true)
+	case "upgrade":
+		out, err = a.UpgradeIdentity(ctx)
 	default:
 		return fmt.Errorf("unknown state operation %s", c.Operation)
 	}
@@ -121,7 +159,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		return te
 	}
 	if ErrorCode(err) != expected {
-		return fmt.Errorf("%+v: got %s want %s: %w", c, ErrorCode(err), expected, err)
+		return fmt.Errorf("%+v: got %s want %s: %v", c, ErrorCode(err), expected, err)
 	}
 	if expected == "" {
 		switch c.Operation {
@@ -131,10 +169,72 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 			delete(want, "BASE")
 		case "restore":
 			want["BASE"] = "original"
+		case "pull":
+			if !reflect.DeepEqual(out.(*app.PulledSecrets).Secrets, want) {
+				return fmt.Errorf("pull differs from model")
+			}
+		case "history":
+			count := 0
+			switch c.State {
+			case "populated":
+				count = 1
+			case "deleted":
+				count = 2
+			}
+			if len(out.([]app.HistoryEntry)) != count {
+				return fmt.Errorf("history count differs from model")
+			}
+		case "members":
+			listed := map[string]bool{}
+			for _, m := range out.([]app.MemberInfo) {
+				listed[m.DeviceID] = m.Admin
+			}
+			if !reflect.DeepEqual(listed, membership) {
+				return fmt.Errorf("listed membership differs from model")
+			}
 		case "read":
 			if !reflect.DeepEqual(out, want) {
 				return fmt.Errorf("read differs from model")
 			}
+		}
+	}
+	if expected == "" {
+		switch c.Operation {
+		case "approve":
+			membership[w.Devices[2].ID] = false
+		case "remove":
+			delete(membership, w.Devices[2].ID)
+		case "admin":
+			membership[w.Devices[2].ID] = true
+		case "upgrade":
+			update := out.(*app.KeyUpdateResult)
+			if update.Pending != (c.Role == "member") {
+				return fmt.Errorf("key approval bypass: %+v", update)
+			}
+		}
+	}
+	members, err := founder.ListMembers(ctx)
+	if err != nil {
+		return err
+	}
+	gotMembership := map[string]bool{}
+	for _, m := range members {
+		gotMembership[m.DeviceID] = m.Admin
+	}
+	if !reflect.DeepEqual(gotMembership, membership) {
+		return fmt.Errorf("membership differs: got %v want %v", gotMembership, membership)
+	}
+	if expected == "" && c.Operation == "upgrade" && c.Role == "member" {
+		if err := founder.ApproveMember(ctx, w.Devices[actor].ID); err != nil {
+			return err
+		}
+	}
+	if _, present := membership[w.Devices[2].ID]; !present {
+		if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+			return err
+		}
+		if err := founder.ApproveMember(ctx, w.Devices[2].ID); err != nil {
+			return err
 		}
 	}
 	w.Model["default"] = want

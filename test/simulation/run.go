@@ -6,6 +6,7 @@ import (
 )
 
 type Plan struct {
+	Concurrent    *ConcurrentCase
 	StateCase     *StateCase
 	FoundingFault *Fault
 	Probe         *Probe
@@ -45,6 +46,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.Concurrent != nil {
+		if err := w.ConcurrentCase(ctx, *plan.Concurrent); err != nil {
+			return err
+		}
 	}
 	if plan.StateCase != nil {
 		if err := w.StateCase(ctx, *plan.StateCase); err != nil {

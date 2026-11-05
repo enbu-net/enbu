@@ -16,6 +16,7 @@ type Action struct {
 	Device      int
 	Key, Value  string
 	Environment string
+	Admin       bool
 }
 
 func Generate(seed uint64, steps, devices int) []Action {
@@ -23,7 +24,7 @@ func Generate(seed uint64, steps, devices int) []Action {
 	out := make([]Action, 0, steps)
 	kinds := []string{"add", "edit", "delete", "import", "read", "sync", "restart", "pull", "history", "invalid", "create-env", "switch-env", "rename-env", "delete-env", "compact", "members", "rejoin", "role"}
 	for i := 0; i < steps; i++ {
-		out = append(out, Action{Kind: kinds[r.IntN(len(kinds))], Device: r.IntN(devices), Key: fmt.Sprintf("K_%d", r.IntN(12)), Value: fmt.Sprintf("v_%d_%d", i, r.Uint64()), Environment: fmt.Sprintf("env_%d", r.IntN(3))})
+		out = append(out, Action{Kind: kinds[r.IntN(len(kinds))], Device: r.IntN(devices), Key: fmt.Sprintf("K_%d", r.IntN(12)), Value: fmt.Sprintf("v_%d_%d", i, r.Uint64()), Environment: fmt.Sprintf("env_%d", r.IntN(3)), Admin: r.IntN(2) == 0})
 	}
 	return out
 }
@@ -32,6 +33,14 @@ func Generate(seed uint64, steps, devices int) []Action {
 // acceptable just because the application returned them.
 func (w *World) Workload(ctx context.Context, actions []Action) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
+	initialMembers, err := w.Devices[0].App.ListMembers(ctx)
+	if err != nil {
+		return err
+	}
+	membership := map[string]bool{}
+	for _, member := range initialMembers {
+		membership[member.DeviceID] = member.Admin
+	}
 	for step, op := range actions {
 		d := w.Devices[op.Device]
 		a := d.App
@@ -155,7 +164,8 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			out, e = a.ListMembers(ctx)
 		case "role":
 			target := 1 + op.Device%(len(w.Devices)-1)
-			e = w.Devices[0].App.SetAdmin(ctx, w.Devices[target].ID, op.Key < "K_6")
+			e = w.Devices[0].App.SetAdmin(ctx, w.Devices[target].ID, op.Admin)
+			membership[w.Devices[target].ID] = op.Admin
 		case "rejoin":
 			target := 1 + op.Device%(len(w.Devices)-1)
 			e = w.Devices[0].App.RemoveMember(ctx, w.Devices[target].ID)
@@ -169,6 +179,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			if e == nil {
 				e = w.Devices[0].App.ApproveMember(ctx, w.Devices[target].ID)
 			}
+			membership[w.Devices[target].ID] = false
 		case "invalid":
 			e = a.SwitchEnvironment("../invalid")
 			expected = string(apperr.CodeInvalidArgument)
@@ -181,6 +192,21 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 		}
 		if code != expected {
 			return &Violation{Kind: "result/" + op.Kind + "/" + op.Key, Detail: fmt.Errorf("step %d %s: code %q want %q: %v", step, op.Kind, code, expected, e)}
+		}
+		if op.Kind == "role" || op.Kind == "rejoin" || op.Kind == "members" || op.Kind == "restart" {
+			for _, device := range w.Devices {
+				members, err := device.App.ListMembers(ctx)
+				if err != nil {
+					return err
+				}
+				actual := map[string]bool{}
+				for _, member := range members {
+					actual[member.DeviceID] = member.Admin
+				}
+				if !reflect.DeepEqual(actual, membership) {
+					return &Violation{Kind: "membership/" + op.Kind, Detail: fmt.Errorf("got %v want %v", actual, membership)}
+				}
+			}
 		}
 		names := make([]string, 0, len(w.Model))
 		for name := range w.Model {
