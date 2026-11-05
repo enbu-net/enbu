@@ -25,8 +25,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Validate workflows independently of CI
-        # actionlint does not yet recognize native actions.lock local refs.
-        # Keep the exception specific; CI separately verifies actions.lock.
-        run: >-
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -color
-          -ignore 'specifying action "\$/\.github/actions/[^" ]+" in invalid format because ref is missing' 
+        # Validate the native parallel container, then lint each contained step.
+        # Upstream actionlint v1.7.12 does not parse the new group syntax yet.
+        run: go run ./tools/workflowlint
