@@ -71,6 +71,10 @@ func referenceMerge(bases, heads []mergeDatum) (mergeDatum, bool) {
 }
 
 func (w *World) publishMergeNode(ctx context.Context, actor int, values map[string]string, parents ...digest.Digest) (storage.Object, error) {
+	return w.publishNodeAtControl(ctx, actor, "", values, parents...)
+}
+
+func (w *World) publishNodeAtControl(ctx context.Context, actor int, epoch digest.Digest, values map[string]string, parents ...digest.Digest) (storage.Object, error) {
 	d := w.Devices[actor]
 	cfg, err := config.LoadProjectFrom(d.App.RepositoryDir)
 	if err != nil {
@@ -94,6 +98,9 @@ func (w *World) publishMergeNode(ctx context.Context, actor int, values map[stri
 	}
 	defer func() { _ = signer.Close() }()
 	state := wsp.State{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: control.Digest, Parents: slices.Clone(parents), Author: signer.Public().DeviceID(), Ciphertext: digest.FromBytes(cipher), CreatedAt: d.App.Runtime.Clock.Now().Unix()}
+	if epoch != "" {
+		state.Control = epoch
+	}
 	signed, err := wsp.SignState(state, signer)
 	if err != nil {
 		return storage.Object{}, err

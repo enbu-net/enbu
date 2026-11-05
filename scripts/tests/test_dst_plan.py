@@ -133,3 +133,10 @@ def test_missing_old_commit_never_skips_coverage(monkeypatch):
 
     monkeypatch.setattr(dst_plan.subprocess, "check_output", output)
     assert dst_plan.changed({"before": "missing", "after": "new"}) == ["go.mod"]
+
+
+@pytest.mark.parametrize("path", ["app/members.go", "pkg/wsp/checkpoint.go"])
+def test_acceptance_epoch_matrix_runs_for_membership_and_checkpoint_changes(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval")
+    assert selected(plan, "TestAcceptanceEpochSmoke")
