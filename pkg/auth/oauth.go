@@ -89,6 +89,9 @@ type callbackResult struct {
 }
 
 func (c Client) Login(ctx context.Context, openBrowser BrowserOpener) (*StoredToken, error) {
+	if c.Clock == nil {
+		c.Clock = clock.New()
+	}
 	return newOAuthClient(authEndpoint, newHTTPClient(), c.Clock).login(ctx, openBrowser)
 }
 

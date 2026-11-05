@@ -92,7 +92,7 @@ type joined struct{ DeviceID, Fingerprint string }
 // device that is not a member.
 func requestJoin(t *testing.T, d *App) joined {
 	t.Helper()
-	id, err := apptest.JoinRequest(bg, d.Storage, mustWorkspace(t, d), d.Identities)
+	id, err := apptest.JoinRequest(bg, d.Storage, mustWorkspace(t, d), d.Identities, d.clock())
 	if err != nil {
 		t.Fatal(err)
 	}

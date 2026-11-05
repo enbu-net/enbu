@@ -33,3 +33,11 @@ func TestLockTimeoutUsesInjectedClock(t *testing.T) {
 		t.Fatal("contended lock ignored its injected timeout")
 	}
 }
+
+func TestLockWithNilClock(t *testing.T) {
+	release, err := lockFile(filepath.Join(t.TempDir(), "checkpoint"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+}

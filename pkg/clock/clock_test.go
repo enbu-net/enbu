@@ -101,3 +101,25 @@ func TestWaitUsesClockAndCancellation(t *testing.T) {
 		t.Fatalf("wait ignored cancellation: %v", err)
 	}
 }
+
+// readyClock makes both signals ready before Wait reaches its select.
+type readyClock struct {
+	*clockwork.FakeClock
+	cancel context.CancelFunc
+}
+
+func (c readyClock) NewTimer(d time.Duration) clockwork.Timer {
+	timer := c.FakeClock.NewTimer(d)
+	c.cancel()
+	c.Advance(d)
+	return timer
+}
+func TestWaitCancellationWinsWhenBothSignalsAreReady(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		ctx, cancel := context.WithCancel(t.Context())
+		c := readyClock{clockwork.NewFakeClock(), cancel}
+		if err := Wait(ctx, c, time.Second); err != context.Canceled {
+			t.Fatalf("both ready: got %v", err)
+		}
+	}
+}

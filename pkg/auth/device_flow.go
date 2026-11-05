@@ -61,6 +61,9 @@ type deviceTokenResponse struct {
 }
 
 func (c Client) LoginDevice(ctx context.Context, clientID string, prompt DevicePrompter) (*StoredToken, error) {
+	if c.Clock == nil {
+		c.Clock = clock.New()
+	}
 	client := &deviceFlowClient{
 		clock:         c.Clock,
 		deviceCodeURL: githubDeviceCodeURL,

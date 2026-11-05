@@ -89,6 +89,9 @@ const lockTimeout = 5 * time.Second
 // lockFile takes an exclusive OS lock on path+".lock", waiting up to
 // lockTimeout, and returns the function that releases it.
 func lockFile(path string, c clock.Clock) (func(), error) {
+	if c == nil {
+		c = clock.New()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}

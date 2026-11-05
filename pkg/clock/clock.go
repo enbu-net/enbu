@@ -18,7 +18,9 @@ type Clock interface {
 
 func New() Clock { return clockwork.NewRealClock() }
 
-// Wait also observes cancellation when a fake clock has not advanced.
+// Wait waits for d on c or context cancellation. Cancellation takes precedence
+// if ctx is already done when the timer completion is observed, including when
+// both signals are ready. It returns ctx.Err() in that case, otherwise nil.
 func Wait(ctx context.Context, c Clock, d time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
