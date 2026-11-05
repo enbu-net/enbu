@@ -2,7 +2,9 @@ package simulation
 
 import (
 	"context"
+	"fmt"
 	"github.com/enbu-net/enbu/pkg/config"
+	"sort"
 	"testing"
 )
 
@@ -41,5 +43,32 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 				t.Fatal(e)
 			}
 		})
+	}
+}
+
+func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
+	w, err := NewWorld(t.TempDir(), NewTape(456, ""), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts, err := w.FoundingProbe(context.Background(), Fault{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := make([]string, 0, len(counts))
+	for method := range counts {
+		methods = append(methods, method)
+	}
+	sort.Strings(methods)
+	for _, method := range methods {
+		for at := 1; at <= counts[method]; at++ {
+			modes := []string{"before", "cancel", "crash-before"}
+			if method == "publish" {
+				modes = append(modes, "after", "crash-after")
+			}
+			for _, mode := range modes {
+				t.Run(fmt.Sprintf("%s-%d-%s", method, at, mode), func(t *testing.T) { exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{method, at, mode}}) })
+			}
+		}
 	}
 }

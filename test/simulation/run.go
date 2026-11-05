@@ -6,10 +6,11 @@ import (
 )
 
 type Plan struct {
-	Probe    *Probe
-	Devices  int
-	Scenario string
-	Actions  []Action
+	FoundingFault *Fault
+	Probe         *Probe
+	Devices       int
+	Scenario      string
+	Actions       []Action
 }
 
 // Execute consumes the recorded plan, including bootstrap, on a fresh root.
@@ -29,6 +30,12 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	w, e := NewWorld(root, tape, plan.Devices)
 	if e != nil {
 		return e
+	}
+	if plan.FoundingFault != nil {
+		if _, err := w.FoundingProbe(ctx, *plan.FoundingFault); err != nil {
+			return err
+		}
+		return tape.Finish()
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e

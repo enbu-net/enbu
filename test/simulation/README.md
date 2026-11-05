@@ -23,7 +23,7 @@ production head prefetch remains parallel.
 
 | Application operations | Scenarios, rejection, concurrency, faults and recovery |
 | --- | --- |
-| `InitializeRepository` | Bootstrap, bootstrap lost-reply tests; founder and joiner paths; retry exact signed Control. |
+| `InitializeRepository` | Bootstrap, founding faults at every external-call occurrence, lost-reply and digest-mismatch tests; founder and joiner paths; retry exact signed Control. |
 | `CreateIdentity`, `IdentityInfo`, `DiagnoseIdentity`, `LoadWorkspaceIdentities` | public-surface; synthetic software identities. OS/hardware failure and diagnostic detail stay in identity E2E. |
 | `DefaultStorageURL`, `SetRepositoryDir`, `WorkspaceID` | public-surface; fixture repository; shared workspace identifiers and per-device paths. |
 | `ListSecrets`, `AddSecret`, `EditSecret`, `DeleteSecret`, `ImportSecrets`, `SyncSecrets`, `PullSecretsData`, `PullSecrets` | Generated independent reference model; duplicate/missing keys, overwrite, invalid operations; concurrent-keys, stale-writer, write/read-faults; operation fault matrix. |
@@ -49,7 +49,7 @@ states. Generated sequences and fault exploration supplement the fixed assertion
 - `ENBU_SIM_ARTIFACTS`: recording output directory; failed runs are always saved.
 - `ENBU_SIM_SAVE_ALL=1`: also retain passing runs.
 
-The operation fault matrix first measures each operation's actual external calls,
+Founding has its own full boundary matrix, including verification after publication. Recovery bytes remain until trust acceptance succeeds. The operation fault matrix first measures each operation's actual external calls,
 then injects network failure, cancellation and simulated device stops at each selected position, plus lost
 responses after publish/delete. Before recovery, state must equal either the old
 or intended committed state. An acknowledged operation must have its intended
