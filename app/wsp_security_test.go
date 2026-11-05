@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"testing"
 
@@ -401,7 +402,7 @@ func TestFounderRecordsTheGenesisBeforePublishingIt(t *testing.T) {
 	}
 }
 
-func TestFailedPublishLeavesNoGenesisBehind(t *testing.T) {
+func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 	fail := true
 	a := foundingApp(t, func(context.Context, []byte) error {
 		if fail {
@@ -412,8 +413,12 @@ func TestFailedPublishLeavesNoGenesisBehind(t *testing.T) {
 	if _, err := a.InitializeRepository(bg); err == nil {
 		t.Fatal("init succeeded although the control could not be published")
 	}
-	if g := genesisInConfig(t, a); g != "" {
-		t.Fatalf("control_genesis %q was left for a control that does not exist", g)
+	g := genesisInConfig(t, a)
+	if g == "" {
+		t.Fatal("failed publication lost the trusted genesis")
+	}
+	if _, err := os.Stat(a.pendingGenesisPath(g)); err != nil {
+		t.Fatalf("pending genesis: %v", err)
 	}
 	fail = false
 	if _, err := a.InitializeRepository(bg); err != nil {

@@ -8,10 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -263,6 +261,17 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 			return nil, wspError(err)
 		}
 		if sv.Graph.Len() == 0 {
+			accepted, err := s.cps.State(resource)
+			if err != nil {
+				return nil, err
+			}
+			if len(accepted) > 0 {
+				if attempt < acceptedRetries {
+					also = append(also, accepted...)
+					continue
+				}
+				return nil, wspError(fmt.Errorf("%w: all previously accepted revisions are missing", wsp.ErrRollback))
+			}
 			return nil, storageError(storage.ErrNotFound)
 		}
 		// Load signed deletion records only when something is missing.
@@ -300,6 +309,11 @@ const acceptedRetries = 2
 // blob is transferred, so only revisions whose content is used cost anything.
 func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[string]string, error) {
 	ciphertext, err := wsp.ReadCiphertext(ctx, s.store, st)
+	// A signed state exists, so a missing blob is lost data, never an empty
+	// environment. Treating it as not-found lets mutations replace its secrets.
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, wspError(fmt.Errorf("%w: ciphertext for %s is missing", wsp.ErrRollback, st.Digest))
+	}
 	if err != nil {
 		return nil, wspError(err)
 	}
@@ -445,7 +459,7 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // and the next reader merges them. The revision is returned once it is
 // published, even when the error says members changed meanwhile.
 func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
+	ciphertext, err := s.app.encrypt(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +467,7 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 		return nil, err
 	}
 	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
-		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
+		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: s.app.now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
 		return nil, err
