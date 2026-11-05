@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 	"uuid"
 )
 
@@ -49,7 +52,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		return nil, err
 	}
 	if missing {
-		cfg = config.NewProjectWithEnvironment(DefaultEnvironment)
+		cfg = a.newProject(DefaultEnvironment)
 	}
 	if a.InitStorage != nil {
 		cfg.Storage = *a.InitStorage
@@ -71,7 +74,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		// the enbu.toml an admin shares: it holds the workspace and the trusted
 		// genesis, and nothing in storage can be trusted to name them.
 		if cfg.WorkspaceID == "" {
-			cfg.WorkspaceID = uuid.NewV4().String()
+			cfg.WorkspaceID = a.newID()
 		}
 	}
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
@@ -112,7 +115,22 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	if _, ok := s.head.Principal(device); !ok {
 		// Not a member: leave a request an admin can pick from a list. It carries
 		// no authority, so anyone able to write to storage can do the same.
-		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, time.Now(), signer)
+		// A removed device may have upgraded its encryption key since its
+		// original join. Remove its own obsolete signed requests before
+		// asking again, otherwise approval sees two different recipients.
+		// Never choose a request by its untrusted listing order or timestamp.
+		requests, err := wsp.ListJoinRequests(ctx, store, cfg.WorkspaceID)
+		if err != nil {
+			return nil, storageError(err)
+		}
+		for _, request := range requests {
+			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
+				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil {
+					return nil, storageError(err)
+				}
+			}
+		}
+		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, a.now(), signer)
 		if err != nil {
 			return nil, err
 		}
@@ -188,30 +206,84 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 				return apperr.New(apperr.CodeIncompatibleStorage, "storage already holds a workspace; use the enbu.toml an admin shared, or an empty location", nil)
 			}
 		}
-		// Record the trusted digest in enbu.toml before publishing the control.
-		// The other order can leave a published control that this repository
-		// never learned to trust, locking the founder out of their own workspace.
+
 		blob, genesis, gerr := wsp.NewGenesis(s.workspace, founder, s.signer)
 		if gerr != nil {
 			return gerr
 		}
+		// Keep the exact signed bytes before publishing: a response can be lost
+		// after storage commits, and hardware signatures cannot be regenerated.
+		path, err := a.pendingGenesisPath(s.workspace, string(genesis))
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		f, err := os.CreateTemp(filepath.Dir(path), "founding-*")
+		if err != nil {
+			return err
+		}
+		tmp := f.Name()
+		defer func() { _ = os.Remove(tmp) }()
+		if _, err = f.Write(blob); err == nil {
+			err = f.Sync()
+		}
+		closeErr := f.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if err := os.Rename(tmp, path); err != nil {
+			return err
+		}
 		s.cfg.ControlGenesis = string(genesis)
 		if err := a.saveProject(s.cfg); err != nil {
-			s.cfg.ControlGenesis = ""
-			return err // nothing has been published yet
+			return err
 		}
 		s.founded = true
-		if cerr := wsp.PublishGenesis(ctx, s.store, blob); cerr != nil {
-			s.cfg.ControlGenesis = ""
-			if serr := a.saveProject(s.cfg); serr != nil {
-				return fmt.Errorf("could not undo the recorded control_genesis in enbu.toml, remove it by hand: %w", errors.Join(serr, cerr))
-			}
-			return storageError(cerr)
-		}
+
 	}
+	path, err := a.pendingGenesisPath(s.workspace, s.cfg.ControlGenesis)
+	if err != nil {
+		return err
+	}
+	recovery := false
+	if blob, err := os.ReadFile(path); err == nil {
+		if _, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis)); err != nil {
+			return wspError(err)
+		}
+		pinned, err := a.trustRoot(s.workspace).Pinned()
+		if err != nil {
+			return err
+		}
+		root := wsp.Root{Workspace: s.workspace, Genesis: digest.Digest(s.cfg.ControlGenesis)}
+		if !s.acceptNewGenesis && pinned != (wsp.Root{}) && pinned != root {
+			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: root})
+		}
+		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
+			return storageError(err)
+		}
+		recovery = true
+		s.founded = pinned == (wsp.Root{})
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
 	// A genesis the repository trusts but storage lacks is reported by verifyControl
 	// as incompatible storage; trust is never re-rooted silently.
-	return a.verifyControl(ctx, s)
+	if err := a.verifyControl(ctx, s); err != nil {
+		return err
+	}
+	if recovery {
+		// Retain the exact founding bytes until verification and both trust
+		// pins commit. A disconnect before this point must remain retryable.
+		// Afterward leftover public bytes are harmless if cleanup fails.
+		_ = os.Remove(path)
+	}
+	return nil
 }
 
 // identityError turns "this device has no backend for a key" into an error
@@ -224,4 +296,19 @@ func identityError(err error) error {
 	}
 	return apperr.Wrap(apperr.CodeIdentityUnavailable,
 		"no usable identity backend on this device: "+unavailable.Reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": unavailable.Reason})
+}
+
+// A recovery capability belongs to this workspace in this checkout, never
+// another repository that happens to name the same genesis in enbu.toml.
+func (a *App) pendingGenesisPath(workspace, genesis string) (string, error) {
+	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	if err != nil {
+		return "", err
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(workspace + "\x00" + path + "\x00" + genesis))
+	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.cbor", sum)), nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"time"
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -76,7 +75,7 @@ func (a *App) UpgradeIdentity(ctx context.Context) (result *KeyUpdateResult, err
 		result.Warnings = append(result.Warnings, warning)
 		a.emit(warning)
 	}
-	blob, err := wsp.NewKeyUpdateRequest(s.workspace, info.Recipient, self.Recipient, time.Now(), s.signer)
+	blob, err := wsp.NewKeyUpdateRequest(s.workspace, info.Recipient, self.Recipient, a.now(), s.signer)
 	if err != nil {
 		s.Close()
 		return nil, err
