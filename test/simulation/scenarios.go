@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults"}
+var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -36,6 +36,8 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 	}
 	w.Model["default"]["BASE"] = "original"
 	switch name {
+	case "forged-state-signature":
+		return w.StateSignatureAttack(ctx)
 	case "environments":
 		if e := a.CreateEnvironment("staging"); e != nil {
 			return e

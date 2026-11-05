@@ -22,6 +22,9 @@ func TestOracleMutationExperiments(t *testing.T) {
 		{"missed-rollback", "app/workspace.go", "return nil, wspError(fmt.Errorf(\"%w: all previously accepted revisions are missing\", wsp.ErrRollback))", "return nil,storageError(storage.ErrNotFound)", "TestScenarios/adversarial-storage"},
 		{"delete-late-valid-state", "app/compact.go", "return err != nil && !errors.Is(err, wsp.ErrRollback), nil", "return true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
 		{"delete-temporarily-unreachable-state", "app/compact.go", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn false, nil", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
+		{"wrong-observer-acceptance-epoch", "app/workspace.go", "s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())", "s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())", "TestAcceptanceEpochSmoke"},
+		{"revive-revoked-author", "pkg/wsp/state.go", "if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "if false && !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "TestAcceptanceEpochSmoke"},
+		{"skip-state-signature-verification", "pkg/wsp/state.go", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil && false {", "TestScenarios/forged-state-signature"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
