@@ -168,7 +168,7 @@ unrelated values. Persistent partitions, stale writers, truncated reads, corrupt
 missing objects and invalid signed objects have separate scenarios.
 
 Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows ARM64. Each platform uses 32
-shards, with at most five matrix jobs running simultaneously, each exploring 32 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
+shards, with at most fifteen matrix jobs running simultaneously, each exploring 32 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
 cases. Two independent worlds run in parallel per job; each world still uses
 its own deterministic scheduler and strict replay. The seed partition test
 proves that repartitioning retains the original 1,024 seeds per platform. A timeout is failure. Failure artifacts contain synthetic private keys and
