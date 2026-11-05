@@ -40,12 +40,16 @@ The catalog test fails when an exported App operation has no driver or inventory
 entry. The table describes tested behaviors, not exhaustive proof over all possible
 states. Generated sequences and fault exploration supplement the fixed assertions.
 
-`TestOperationStateMatrix` enumerates 12 data/history operations × 4 states
+`TestOperationStateMatrix` enumerates 18 data/history/membership operations × 4 states
 (never written, populated, last key deleted, absent environment) × 4 membership
-states (admin, member, pending, removed): 192 named cases. Every case records
+states (admin, member, pending, removed): 288 named cases. Every case records
 and replays, asserts the expected result code, checks the resulting secret map on
-all devices, and checks a second environment was unaffected. This matrix covers
-these dimensions explicitly; compound partitions, forks, local file failures and
+all devices and the exact member/admin set, and checks a second environment was unaffected. This matrix covers
+these dimensions explicitly; environment presence is inapplicable to Control metadata
+and membership operations. `TestConcurrentOperationMatrix` enumerates all ordered
+pairs of edit/delete/import/sync, same and different keys, under four seeded
+schedules (128 record/replay cases). Conflicts must retain both candidates and
+require explicit resolution; disjoint changes must compose. Compound partitions, forks, local file failures and
 hardware behavior remain the separately named scenarios and integration tests.
 
 Generated sequences mix secret operations with environment create/switch/rename/
