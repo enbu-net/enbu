@@ -45,15 +45,7 @@ func NewWorld(root string, tape *Tape, n int) (*World, error) {
 		}
 		k := &Keys{Tape: tape, Device: i}
 		s := &Store{Store: memory, Tape: tape, Device: i, advance: func() { w.tick++; w.timeline.Advance(time.Millisecond) }}
-		a := &app.App{Storage: s, Identities: k, RepositoryDir: dir, CheckpointDir: filepath.Join(dir, "checkpoints"), CacheDir: filepath.Join(dir, "cache"), StorageURL: "oci://simulation.invalid/workspace", RepoDetector: simulationRepo{}, TokenProvider: simulationToken{}}
-		a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Clock: deviceClock{FakeClock: w.timeline, world: w, device: i, devices: n}, NewID: func() string {
-			w.id++
-			return fmt.Sprintf("%08x-0000-4000-8000-%012x", uint32(tape.Recording.Seed), w.id)
-		}, Encrypt: func(p []byte, r []string) ([]byte, error) {
-			var b []byte
-			e := tape.Value("encrypt", []any{i, p, r}, func() (any, error) { return age.EncryptForPublicKeys(p, r) }, &b)
-			return b, e
-		}}
+		a := w.newApp(i, n, k, s)
 		w.Devices = append(w.Devices, &Device{App: a, Store: s, Keys: k})
 	}
 	return w, nil
@@ -226,7 +218,29 @@ func clone(m map[string]string) map[string]string {
 	}
 	return out
 }
-func (w *World) Restart(i int) { d := w.Devices[i]; a := *d.App; d.App = &a }
+
+// Restart discards process-owned App, Runtime and identity-manager wrappers.
+// Storage faults belong to the external harness; only synthetic key material
+// and files represent durable device state.
+func (w *World) Restart(i int) {
+	d := w.Devices[i]
+	d.Keys = &Keys{Tape: w.Tape, Device: i, workspaces: d.Keys.workspaces}
+	d.App = w.newApp(i, len(w.Devices), d.Keys, d.Store)
+}
+
+func (w *World) newApp(i, n int, k *Keys, s *Store) *app.App {
+	dir := filepath.Join(w.Root, fmt.Sprintf("device-%d", i))
+	a := &app.App{Storage: s, Identities: k, RepositoryDir: dir, CheckpointDir: filepath.Join(dir, "checkpoints"), CacheDir: filepath.Join(dir, "cache"), StorageURL: "oci://simulation.invalid/workspace", RepoDetector: simulationRepo{}, TokenProvider: simulationToken{}}
+	a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Clock: deviceClock{FakeClock: w.timeline, world: w, device: i, devices: n}, NewID: func() string {
+		w.id++
+		return fmt.Sprintf("%08x-0000-4000-8000-%012x", uint32(w.Tape.Recording.Seed), w.id)
+	}, Encrypt: func(p []byte, r []string) ([]byte, error) {
+		var b []byte
+		e := w.Tape.Value("encrypt", []any{i, p, r}, func() (any, error) { return age.EncryptForPublicKeys(p, r) }, &b)
+		return b, e
+	}}
+	return a
+}
 
 type simulationRepo struct{}
 

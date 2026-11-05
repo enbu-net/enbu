@@ -607,7 +607,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		w.Model["default"]["ONLINE"] = "kept"
 		w.Devices[1].Store.Arm(Fault{})
 		w.Restart(1)
-		if e := b.SyncSecrets(ctx, "default"); e != nil {
+		if e := w.Devices[1].App.SyncSecrets(ctx, "default"); e != nil {
 			return e
 		}
 		return w.Check(ctx, "default")
