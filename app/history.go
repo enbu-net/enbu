@@ -107,7 +107,7 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	if err != nil {
 		return err
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return err
 	}

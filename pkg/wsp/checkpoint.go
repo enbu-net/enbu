@@ -19,12 +19,12 @@ import (
 
 // checkpointVersion is the on-disk format. Files of an older format held a
 // single digest per object and are not carried over: they start empty.
-const checkpointVersion = 2
+const checkpointVersion = 3
 
 type checkpointFile struct {
 	Version int                        `json:"version"`
 	Control []digest.Digest            `json:"control,omitempty"`
-	States  map[string][]digest.Digest `json:"states,omitempty"`
+	States  map[string]StateAcceptance `json:"states,omitempty"`
 }
 
 // Checkpoints persists the heads a client has accepted, locally only, so
@@ -159,8 +159,21 @@ func (c *Checkpoints) Control() ([]digest.Digest, error) {
 	return f.Control, err
 }
 
+// StateAcceptance binds accepted heads to the Control epoch in which this
+// observer read them. Revocation checks must start at acceptance, not authorship.
+type StateAcceptance struct {
+	Heads   []digest.Digest `json:"heads"`
+	Control digest.Digest   `json:"control"`
+}
+
 // State returns the accepted heads of resource, or nil if none.
 func (c *Checkpoints) State(resource string) ([]digest.Digest, error) {
+	state, err := c.Accepted(resource)
+	return state.Heads, err
+}
+
+// Accepted reads heads and their acceptance epoch from the same file snapshot.
+func (c *Checkpoints) Accepted(resource string) (StateAcceptance, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f, err := c.read()
@@ -232,20 +245,20 @@ func shownOrExcused(g *Graph, excused func(digest.Digest) bool) func(digest.Dige
 // author has been removed. Accepted heads a compaction removed (excused) are
 // dropped. The check runs again under the lock, so a view that
 // became stale while the caller was working is rejected rather than silently dropped.
-func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest) error {
+func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest, control digest.Digest) error {
 	heads = append([]digest.Digest(nil), heads...)
 	sortDigests(heads)
 	return c.update(func(f *checkpointFile) (bool, error) {
-		if d, gone := missingFrom(f.States[resource], shownOrExcused(g, excused)); gone {
+		if d, gone := missingFrom(f.States[resource].Heads, shownOrExcused(g, excused)); gone {
 			return false, fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
 		}
-		if sameDigests(f.States[resource], heads) {
+		if sameDigests(f.States[resource].Heads, heads) && f.States[resource].Control == control {
 			return false, nil
 		}
 		if f.States == nil {
-			f.States = map[string][]digest.Digest{}
+			f.States = map[string]StateAcceptance{}
 		}
-		f.States[resource] = heads
+		f.States[resource] = StateAcceptance{Heads: heads, Control: control}
 		return true, nil
 	})
 }

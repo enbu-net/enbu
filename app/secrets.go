@@ -277,7 +277,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			if err != nil {
 				return err
 			}
-			accepted, err := s.cps.State(resource)
+			accepted, err := s.cps.Accepted(resource)
 			if err != nil {
 				return err
 			}
@@ -492,7 +492,7 @@ func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, erro
 	if err != nil {
 		return nil, err
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return nil, err
 	}

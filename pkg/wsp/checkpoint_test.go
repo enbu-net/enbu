@@ -67,7 +67,7 @@ func acceptView(c *Checkpoints, sv *StateView) error {
 	for i, h := range sv.Heads {
 		heads[i] = h.Digest
 	}
-	return c.AcceptStates(testResource, sv.Graph, nil, heads)
+	return c.AcceptStates(testResource, sv.Graph, nil, heads, d("control"))
 }
 
 func controlView(names ...string) *ControlView {
@@ -173,5 +173,21 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 	// Whatever won, the checkpoint never holds something a later view must lose.
 	if err := cps.CheckStates(testResource, views[2].Graph, nil); err != nil {
 		t.Fatalf("newest view rejected: %v", err)
+	}
+}
+
+func TestAcceptanceEpochPersistsAndAdvancesWithoutChangingHeads(t *testing.T) {
+	dir := t.TempDir()
+	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+	view := stateView(map[string][]string{"head": nil})
+	for _, epoch := range []digest.Digest{d("before-removal"), d("after-readmission")} {
+		if err := cps.AcceptStates(testResource, view.Graph, nil, []digest.Digest{d("head")}, epoch); err != nil {
+			t.Fatal(err)
+		}
+		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+		got, err := fresh.Accepted(testResource)
+		if err != nil || got.Control != epoch || len(got.Heads) != 1 || got.Heads[0] != d("head") {
+			t.Fatalf("acceptance not persisted: %+v %v", got, err)
+		}
 	}
 }
