@@ -1,6 +1,11 @@
 # Deterministic simulation
 
-Run `task simulation/test`. The implementation is Go, uses the real application,
+Run `task simulation/test` for complete matrices and exploration. Ordinary
+`go test ./...` and coverage keep bounded record/replay regressions; full matrices
+require `ENBU_SIM_EXPLORE=1`. `task simulation/smoke` runs three representative
+concurrency, crash-recovery, and compound-clock cases. Native `all/test` uses this
+bounded smoke target instead of duplicating full exploration in unit and scenario
+coverage. The implementation is Go, uses the real application,
 age encryption/decryption, signed protocol and merge, and needs no cloud credentials,
 Docker, frontend build or OS keyring. Every identity and value is synthetic.
 
@@ -103,6 +108,16 @@ all branches to resolve, and resolve to the membership/admin intersection.
 Compound partitions, forks, local file failures and
 hardware behavior remain the separately named scenarios and integration tests.
 
+Generated sequences contain a concurrent group every 16 actions. Each group
+chooses two distinct devices, edit/delete/import/sync, and same/different keys
+from the seed; on workspaces with at least three devices it may also overlap a
+third admin's history compaction. Writers reach publication before any writer
+commits. The independent merge oracle checks exact conflicts or composition,
+preserves the preceding workload's unrelated values, and seals the group before
+later sequential actions. Group boundaries and schedules are recorded and replayed.
+Membership races remain the explicit team/compound matrices rather than arbitrary
+generated three-way membership combinations.
+
 Generated sequences mix secret operations with environment create/switch/rename/
 delete, compaction, membership remove/rejoin, role changes and restarts. After
 every action, all live environments are compared on every device. Rejoining after
@@ -151,6 +166,7 @@ must succeed, and the observer must be able to publish a fresh change.
 
 ## Exploration controls
 
+- `ENBU_SIM_EXPLORE=1`: enable complete finite matrices; DST CI and `task simulation/test` set it explicitly.
 - `ENBU_SIM_SEEDS`, `ENBU_SIM_STEPS`: generated sequences per shard and sequence length.
 - `ENBU_SIM_SHARDS`, `ENBU_SIM_SHARD`: reproducible disjoint seed ranges and operation fault matrices.
 - `ENBU_SIM_EXHAUSTIVE=1`: inject at every observed external-call occurrence;
@@ -171,7 +187,7 @@ Every generated run is replayed. CI runs once per branch push, and supports manu
 shards, with at most fifteen matrix jobs running simultaneously, each exploring 32 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
 cases. Two independent worlds run in parallel per job; each world still uses
 its own deterministic scheduler and strict replay. The seed partition test
-proves that repartitioning retains the original 1,024 seeds per platform. A timeout is failure. Failure artifacts contain synthetic private keys and
+proves that repartitioning retains the original 1,024 seeds per platform. A timeout is failure. Every shard uploads an App coverage profile; failure artifacts contain synthetic private keys and
 plaintext so they can recreate the exact fixture; never use real workspace data.
 Oracle failures in long operation sequences are reduced by chunk deletion, and a
 reduced case is kept only when a fresh recording reproduces the same property
@@ -188,7 +204,11 @@ in those suites. The in-memory fault store itself runs the shared storage contra
 
 Physical filesystem/power-loss durability, external provider behavior, hardware
 failures and arbitrary Go data races are not modeled by the virtual scheduler.
-A simulated stop aborts application control flow at a storage boundary and recreates the App from preserved files and synthetic identities. Deferred handle releases still run; interruption within a filesystem syscall and loss of volatile OS buffers are outside this model. Restart scenarios preserve files and identities while replacing App instances;
+A simulated stop aborts application control flow at a storage boundary and recreates the App from preserved files and synthetic identities. Deferred handle releases still run; interruption within a filesystem syscall and loss of volatile OS buffers are outside this model. Restart reconstructs App, Runtime, and the identity-manager wrapper through the
+same explicit factory used at startup. Only durable synthetic key material,
+local files, and the external storage/fault harness survive. A regression poisons
+old process callbacks and flags, then verifies durable selection, pending keys,
+checkpoints and fresh writes survive without reusing them;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
 
