@@ -21,10 +21,22 @@ var ConcurrentOperations = []string{"edit", "delete", "import", "sync"}
 // keys must compose; different changes to the same key must remain a conflict.
 func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
+	if c.Right == "compact" {
+		if err := w.Devices[0].App.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
+			return err
+		}
+	}
 	base := map[string]string{"K0": "original", "K1": "original", "UNRELATED": "kept"}
 	if c.Left == "add" && c.Right == "add" {
 		delete(base, "K0")
 		delete(base, "K1")
+	}
+	if c.Left == "restore" || c.Right == "restore" {
+		historical := clone(base)
+		historical["K0"] = "historical"
+		if _, err := w.Devices[0].App.ImportSecrets(ctx, "default", historical, true); err != nil {
+			return err
+		}
 	}
 	if _, err := w.Devices[0].App.ImportSecrets(ctx, "default", base, true); err != nil {
 		return err
@@ -38,6 +50,9 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	values := []string{"left", "right"}
 	ops := make([]func(int) error, 2)
 	for i, kind := range kinds {
+		if kind == "restore" {
+			keys[i], values[i] = "K0", "historical"
+		}
 		ops[i] = func(_ int) error {
 			a := w.Devices[i].App
 			switch kind {
@@ -52,12 +67,20 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 				return err
 			case "sync":
 				return a.SyncSecrets(ctx, "default")
+			case "restore":
+				return a.RestoreHistory(ctx, "default", 1)
+			case "compact":
+				result, err := a.CompactHistory(ctx, "default", 1)
+				if err == nil && result.Removed == 0 {
+					return fmt.Errorf("concurrent compaction removed no historical revision")
+				}
+				return err
 			default:
 				return fmt.Errorf("unknown concurrent operation %s", kind)
 			}
 		}
 	}
-	conflict := c.SameKey && c.Left != "sync" && c.Right != "sync" && (c.Left != "delete" || c.Right != "delete")
+	conflict := c.SameKey && c.Left != "sync" && c.Right != "sync" && (c.Left != "delete" || c.Right != "delete") && (c.Left != "restore" || c.Right != "restore")
 	results, err := w.runBatch(ctx, "publish", ops)
 	if err != nil {
 		return err
@@ -102,7 +125,7 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	} else {
 		for i, kind := range kinds {
 			switch kind {
-			case "add", "edit", "import":
+			case "add", "edit", "import", "restore":
 				w.Model["default"][keys[i]] = values[i]
 			case "delete":
 				delete(w.Model["default"], keys[i])

@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 type TeamCase struct{ Control, Write string }
 
-var TeamWrites = []string{"add", "edit", "delete", "import", "sync"}
+var TeamWrites = []string{"add", "edit", "delete", "import", "sync", "restore"}
 
 var TeamControls = []string{"approve-joiner", "remove-other", "remove-writer", "promote-other", "demote-writer", "approve-key-update"}
 
@@ -22,6 +23,13 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	a, b := w.Devices[0].App, w.Devices[1].App
 	before := map[string]string{"BASE": "original", "UNRELATED": "acknowledged"}
+	if c.Write == "restore" {
+		historical := clone(before)
+		historical["BASE"] = "historical"
+		if _, err := a.ImportSecrets(ctx, "default", historical, true); err != nil {
+			return err
+		}
+	}
 	if _, err := a.ImportSecrets(ctx, "default", before, true); err != nil {
 		return err
 	}
@@ -78,6 +86,8 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 			return err
 		case "sync":
 			return b.SyncSecrets(ctx, "default")
+		case "restore":
+			return b.RestoreHistory(ctx, "default", 1)
 		default:
 			return fmt.Errorf("unknown team write %s", c.Write)
 		}
@@ -89,6 +99,8 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		after["BASE"] = "changed"
 	case "delete":
 		delete(after, "BASE")
+	case "restore":
+		after["BASE"] = "historical"
 	}
 	results, err := w.runBatch(ctx, "publish", []func(int) error{control, write})
 	if err != nil {
@@ -132,6 +144,57 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		return err
 	}
 	w.Model["default"] = want
+	if c.Control == "approve-joiner" {
+		// Re-encryption and a concurrent write can leave sibling heads
+		// whose common base predates the returning member's access. That
+		// device must retain every differing value until an existing member
+		// with the old key syncs the heads; it must never guess a base.
+		joined, readErr := w.Devices[3].App.ListSecrets(ctx, "default")
+		if err := w.Tape.Observe("joiner-read", c, []any{joined, ErrorCode(readErr)}); err != nil {
+			return err
+		}
+		if readErr == nil {
+			if !reflect.DeepEqual(joined, after) {
+				return fmt.Errorf("joined device lost committed change: got %v want %v", joined, after)
+			}
+		} else {
+			if err := requireCode(readErr, apperr.CodeSecretConflict); err != nil {
+				return err
+			}
+			set, err := w.Devices[3].App.ListConflicts(ctx, "default")
+			if err != nil {
+				return err
+			}
+			expectedCandidates := map[string]map[app.ConflictCandidate]bool{}
+			keys := map[string]bool{}
+			for key := range before {
+				keys[key] = true
+			}
+			for key := range after {
+				keys[key] = true
+			}
+			for key := range keys {
+				old, oldOK := before[key]
+				next, nextOK := after[key]
+				if old != next || oldOK != nextOK {
+					expectedCandidates[key] = map[app.ConflictCandidate]bool{{Value: old, Deleted: !oldOK}: true, {Value: next, Deleted: !nextOK}: true}
+				}
+			}
+			actualCandidates := map[string]map[app.ConflictCandidate]bool{}
+			for _, conflict := range set.Conflicts {
+				actualCandidates[conflict.Key] = map[app.ConflictCandidate]bool{}
+				for _, candidate := range conflict.Candidates {
+					actualCandidates[conflict.Key][candidate] = true
+				}
+			}
+			if !reflect.DeepEqual(actualCandidates, expectedCandidates) {
+				return fmt.Errorf("joiner conflict candidates got %v want %v", actualCandidates, expectedCandidates)
+			}
+		}
+		if err := a.SyncSecrets(ctx, "default"); err != nil {
+			return err
+		}
+	}
 	members, err := a.ListMembers(ctx)
 	if err != nil {
 		return err
