@@ -425,7 +425,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e != nil {
 			return e
 		}
-		return nil
+		return w.fileLifecycle(ctx)
 	case "public-surface":
 		a.SetRepositoryDir(a.RepositoryDir)
 		if _, e := a.WorkspaceID(); e != nil {

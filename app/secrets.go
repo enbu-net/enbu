@@ -476,7 +476,10 @@ func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, erro
 		return nil, err
 	}
 	keys := map[string]bool{}
-	for _, st := range historyStates(sv, s.trustedHeads(sv, accepted)) {
+	history := historyStates(sv, s.trustedHeads(sv, accepted))
+	// Decryption can fetch a blob: map order must not decide external effects.
+	for _, revision := range slices.Sorted(maps.Keys(history)) {
+		st := history[revision]
 		secrets, err := s.decrypt(ctx, st)
 		var noMatch *agecrypto.NoIdentityMatchError
 		if errors.As(err, &noMatch) {
