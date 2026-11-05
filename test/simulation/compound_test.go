@@ -8,6 +8,7 @@ import (
 )
 
 func TestCompoundMultiUserMatrix(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, control := range []string{"remove-writer", "demote-admin"} {
 		for _, fault := range []string{"crash-before", "crash-after", "after"} {

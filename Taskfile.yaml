@@ -14,11 +14,19 @@ tasks:
       - gui/test
       - vscode/test
       - scripts/test
-      - simulation/test
+      - simulation/smoke
+
+  simulation/smoke:
+    desc: Run bounded deterministic simulation regressions
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=2m ./test/simulation -run '^TestSimulationSmoke$'
 
   simulation/test:
     desc: Run deterministic simulations and strict replays
     env:
+      ENBU_SIM_EXPLORE: '1'
       CGO_ENABLED: '0'
     cmds:
       - go test -count=1 -timeout=55m ./pkg/merge ./test/simulation

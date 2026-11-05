@@ -11,6 +11,7 @@ import (
 )
 
 func TestOperationFaultMatrix(t *testing.T) {
+	exploration(t)
 	for index, op := range ProbeOperations {
 		if os.Getenv("ENBU_SIM_SHARDS") != "" {
 			shards := integer(t, "ENBU_SIM_SHARDS", 1)

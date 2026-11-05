@@ -8,6 +8,7 @@ import (
 )
 
 func TestConcurrentAdminMatrix(t *testing.T) {
+	exploration(t)
 	for index, kind := range AdminRaces {
 		if raw := os.Getenv("ENBU_SIM_SHARDS"); raw != "" {
 			shards := integer(t, "ENBU_SIM_SHARDS", 1)

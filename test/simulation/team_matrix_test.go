@@ -8,6 +8,7 @@ import (
 )
 
 func TestTeamMembershipWriteMatrix(t *testing.T) {
+	exploration(t)
 	for index, control := range TeamControls {
 		if raw := os.Getenv("ENBU_SIM_SHARDS"); raw != "" {
 			shards := integer(t, "ENBU_SIM_SHARDS", 1)

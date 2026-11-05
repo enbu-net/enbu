@@ -47,6 +47,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 }
 
 func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
+	exploration(t)
 	baseline := exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{}})
 	counts := countsBetween(t, baseline, "founding-start", "founding-result")
 	methods := make([]string, 0, len(counts))

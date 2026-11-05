@@ -8,6 +8,7 @@ import (
 )
 
 func TestThreeWayMergeDAGMatrix(t *testing.T) {
+	exploration(t)
 	index := 0
 	run := func(c MergeCase) {
 		index++

@@ -12,6 +12,7 @@ import (
 )
 
 func TestMultiUserClockProfiles(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, clock := range []string{"frozen", "backward", "skewed"} {
 		for _, scenario := range []string{"history", "key-update", "membership", "concurrent-keys", "conflicting-edits", "control-fork"} {
@@ -69,6 +70,7 @@ func TestClockReadsDoNotAdvanceTimers(t *testing.T) {
 }
 
 func TestClockProfilesWithCompoundRaces(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, profile := range []string{"frozen", "backward", "skewed"} {
 		for _, control := range []string{"remove-writer", "demote-admin"} {

@@ -219,3 +219,21 @@ func revision(t *testing.T) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// exploration is opt-in so ordinary unit/scenario coverage retains bounded
+// regression cases instead of executing the unsharded search repeatedly.
+func exploration(t *testing.T) {
+	t.Helper()
+	if os.Getenv("ENBU_SIM_EXPLORE") != "1" {
+		t.Skip("set ENBU_SIM_EXPLORE=1 for complete simulation matrices")
+	}
+}
+func TestSimulationSmoke(t *testing.T) {
+	for i, plan := range []Plan{
+		{Devices: 3, Concurrent: &ConcurrentCase{Left: "edit", Right: "delete", SameKey: true}},
+		{Devices: 3, CompactionRace: &CompactionRaceCase{Publication: "valid", Fault: "crash-after"}},
+		{Devices: 4, Clock: "backward", Compound: &CompoundCase{Control: "remove-writer", Fault: "crash-after", Resolution: "different"}},
+	} {
+		t.Run(fmt.Sprintf("case-%d", i), func(t *testing.T) { exercise(t, uint64(200+i), plan) })
+	}
+}

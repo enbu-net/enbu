@@ -8,6 +8,7 @@ import (
 )
 
 func TestMultiUserSwarmMatrix(t *testing.T) {
+	exploration(t)
 	index := 0
 	for devices := 3; devices <= 8; devices++ {
 		for _, scene := range []string{"disjoint-add", "disjoint-mixed", "identical-edit", "identical-delete", "distinct-edit", "edit-delete", "conflicting-import", "offline-observer"} {

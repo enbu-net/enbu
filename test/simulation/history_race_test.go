@@ -8,6 +8,7 @@ import (
 )
 
 func TestConcurrentHistoryRestore(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, right := range []string{"edit", "delete", "import", "sync", "restore", "compact"} {
 		for _, same := range []bool{false, true} {

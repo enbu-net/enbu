@@ -42,7 +42,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			}
 			control := exec.Command("go", "test", "-json", "-count=1", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			control.Dir = root
-			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
 			if output, err := control.CombinedOutput(); err != nil {
 				t.Fatalf("unmodified control failed; mutant cannot be scored: %v\n%s", err, output)
 			}

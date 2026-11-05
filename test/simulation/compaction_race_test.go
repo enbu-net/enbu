@@ -8,6 +8,7 @@ import (
 )
 
 func TestCompactionLatePublicationAndCrashRecovery(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, publication := range []string{"valid", "junk", "missing", "corrupt"} {
 		for _, fault := range []string{"", "before", "after", "cancel", "crash-before", "crash-after"} {

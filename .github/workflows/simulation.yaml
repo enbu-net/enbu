@@ -35,6 +35,7 @@ jobs:
             runner: windows-11-arm
     env:
       CGO_ENABLED: '0'
+      ENBU_SIM_EXPLORE: '1'
       ENBU_SIM_EXHAUSTIVE: '1'
       ENBU_SIM_SEEDS: '32'
       ENBU_SIM_STEPS: '256'

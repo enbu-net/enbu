@@ -7,6 +7,7 @@ import (
 )
 
 func TestOperationStateMatrix(t *testing.T) {
+	exploration(t)
 	for index, op := range StateOperations {
 		shards := integer(t, "ENBU_SIM_SHARDS", 1)
 		shard := 0

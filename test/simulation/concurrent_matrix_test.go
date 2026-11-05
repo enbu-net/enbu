@@ -8,6 +8,7 @@ import (
 )
 
 func TestConcurrentOperationMatrix(t *testing.T) {
+	exploration(t)
 	index := 0
 	for _, left := range ConcurrentOperations {
 		for _, right := range ConcurrentOperations {
@@ -34,6 +35,7 @@ func TestConcurrentOperationMatrix(t *testing.T) {
 }
 
 func TestConcurrentAdditions(t *testing.T) {
+	exploration(t)
 	for _, same := range []bool{false, true} {
 		for seed := uint64(0); seed < 4; seed++ {
 			t.Run(fmt.Sprintf("same-%t/seed-%d", same, seed), func(t *testing.T) {
