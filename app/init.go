@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -125,7 +127,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		}
 		for _, request := range requests {
 			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
-				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil {
+				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil && !errors.Is(err, storage.ErrUnsupported) && !errors.Is(err, storage.ErrNotFound) {
 					return nil, storageError(err)
 				}
 			}
@@ -217,7 +219,22 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		if err := fsutil.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		previousRepo := wsp.Root{}
+		if repo := a.repositoryTrustRoot(); repo != nil {
+			previousRepo, err = repo.Pinned()
+			if err != nil {
+				return err
+			}
+		}
+		repository, err := a.foundingRepository()
+		if err != nil {
+			return err
+		}
+		pending, err := json.Marshal(pendingFounding{Root: wsp.Root{Workspace: s.workspace, Genesis: genesis}, Repository: repository, PreviousRepo: previousRepo, Genesis: blob})
+		if err != nil {
 			return err
 		}
 		f, err := os.CreateTemp(filepath.Dir(path), "founding-*")
@@ -226,7 +243,7 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		}
 		tmp := f.Name()
 		defer func() { _ = os.Remove(tmp) }()
-		if _, err = f.Write(blob); err == nil {
+		if _, err = f.Write(pending); err == nil {
 			err = f.Sync()
 		}
 		closeErr := f.Close()
@@ -236,7 +253,7 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		if closeErr != nil {
 			return closeErr
 		}
-		if err := os.Rename(tmp, path); err != nil {
+		if err := fsutil.Rename(tmp, path); err != nil {
 			return err
 		}
 		s.cfg.ControlGenesis = string(genesis)
@@ -251,23 +268,46 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		return err
 	}
 	recovery := false
-	if blob, err := os.ReadFile(path); err == nil {
-		if _, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis)); err != nil {
+	if data, err := os.ReadFile(path); err == nil {
+		root := wsp.Root{Workspace: s.workspace, Genesis: digest.Digest(s.cfg.ControlGenesis)}
+		repository, err := a.foundingRepository()
+		if err != nil {
+			return err
+		}
+		var pending pendingFounding
+		if err := json.Unmarshal(data, &pending); err != nil || pending.Root != root || pending.Repository != repository {
+			return apperr.New(apperr.CodeUntrusted, "invalid founding authorization", nil)
+		}
+		if _, err := wsp.VerifyGenesis(s.workspace, pending.Genesis, root.Genesis); err != nil {
 			return wspError(err)
 		}
 		pinned, err := a.trustRoot(s.workspace).Pinned()
 		if err != nil {
 			return err
 		}
-		root := wsp.Root{Workspace: s.workspace, Genesis: digest.Digest(s.cfg.ControlGenesis)}
 		if !s.acceptNewGenesis && pinned != (wsp.Root{}) && pinned != root {
 			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: root})
 		}
-		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
-			return storageError(err)
+		repoPin := wsp.Root{}
+		if repo := a.repositoryTrustRoot(); repo != nil {
+			repoPin, err = repo.Pinned()
+			if err != nil {
+				return err
+			}
+		}
+		// The durable capability names the exact repository pin that founding
+		// was authorized to replace. A matching workspace pin alone is not
+		// permission to overwrite a checkout that has since changed roots.
+		if !s.acceptNewGenesis && repoPin != root && repoPin != pending.PreviousRepo {
+			return wspError(&wsp.TrustRootChangedError{Pinned: repoPin, Configured: root})
+		}
+		if pinned != root {
+			if err := wsp.PublishGenesis(ctx, s.store, pending.Genesis); err != nil {
+				return storageError(err)
+			}
 		}
 		recovery = true
-		s.founded = pinned == (wsp.Root{})
+		s.founded = !s.acceptNewGenesis && (pinned != root || repoPin != root)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -310,5 +350,22 @@ func (a *App) pendingGenesisPath(workspace, genesis string) (string, error) {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(workspace + "\x00" + path + "\x00" + genesis))
-	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.cbor", sum)), nil
+	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.json", sum)), nil
+}
+
+// pendingFounding is a local authorization, persisted before configuration or
+// trust pins change. It is never obtained from untrusted workspace storage.
+type pendingFounding struct {
+	Root         wsp.Root `json:"root"`
+	Repository   string   `json:"repository"`
+	PreviousRepo wsp.Root `json:"previous_repo"`
+	Genesis      []byte   `json:"genesis"`
+}
+
+func (a *App) foundingRepository() (string, error) {
+	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(path)
 }
