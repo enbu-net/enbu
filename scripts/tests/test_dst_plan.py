@@ -175,3 +175,18 @@ def test_workload_changes_select_generated_exploration(path):
     plan = dst_plan.select([path])
     assert selected(plan, "TestSimulation")
     assert selected(plan, "TestGeneratedTeamGroupsPreservePriorWork")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "test/simulation/secret_formats.go",
+        "test/simulation/request_attack.go",
+        "test/simulation/scenarios.go",
+    ],
+)
+def test_scenario_helpers_select_scenarios_without_unrelated_matrices(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestScenarios")
+    assert selected(plan, "TestSimulation")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")

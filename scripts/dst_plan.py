@@ -9,6 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SIM = ROOT / "test" / "simulation"
 
+SCENARIO_SOURCES = {
+    "file_lifecycle.go",
+    "signature_attack.go",
+    "locked_device.go",
+    "rejected_edits.go",
+    "request_attack.go",
+    "secret_formats.go",
+}
+
 # Shared implementation changes deliberately widen the affected test set.
 DOMAINS = {
     "secrets": {
@@ -66,7 +75,9 @@ def select(paths: list[str], full: bool = False) -> dict:
             )
             if source.endswith(".md"):
                 continue
-            if candidate.is_file():
+            if source in SCENARIO_SOURCES or source == "scenarios.go":
+                files.add(SIM / "simulation_test.go")
+            elif candidate.is_file():
                 files.add(candidate)
                 if source == "workload.go":
                     files |= {
@@ -133,6 +144,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "generated_team_test.go",
                     SIM / "authority_attack_test.go",
                     SIM / "refounding_test.go",
+                    SIM / "onboarding_test.go",
                 }
                 mutation |= domain in {
                     "secrets",

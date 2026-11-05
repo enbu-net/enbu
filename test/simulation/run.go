@@ -59,7 +59,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 		}
 		return tape.Finish()
 	}
-	if e := w.Bootstrap(ctx); e != nil {
+	if plan.Scenario == "first-member" {
+		if err := w.FirstMember(ctx); err != nil {
+			return err
+		}
+	} else if e := w.Bootstrap(ctx); e != nil {
 		return e
 	}
 	if plan.AuthorityAttack != "" {
@@ -117,7 +121,7 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 			return e
 		}
 	}
-	if plan.Scenario != "" {
+	if plan.Scenario != "" && plan.Scenario != "first-member" {
 		if e := w.Scenario(ctx, plan.Scenario); e != nil {
 			return fmt.Errorf("scenario %s: %w", plan.Scenario, e)
 		}

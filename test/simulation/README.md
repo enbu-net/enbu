@@ -341,3 +341,20 @@ Native key-store/hardware, OAuth, shell execution, and GUI/editor event handling
 remain the complementary integration suites listed above, not simulated hardware.
 This inventory is finite and reviewable; it does not assert that every unbounded
 operation sequence or every future use case has been enumerated.
+
+
+`first-member` begins before all-member bootstrap: a solo founder maintains
+three environments and multiple historical revisions, then genuinely new devices
+join for the first time. Before approval, read and file pull must fail and leave
+local-only variables intact. Approval must re-encrypt all current environments;
+newcomers may collaborate immediately but their keys cannot decrypt retained
+pre-join ciphertext. `TestFirstMemberOnboardingClocks` repeats this journey with
+2, 3, and 8 devices under four clock profiles (12 record/replay cases).
+
+
+`secret-formats` shares empty values, multiline certificate/key fixtures, JSON,
+Unicode, leading/trailing whitespace, CRLF, quotes/backslashes, comment/equal
+characters, and literal shell/variable-expansion syntax. Every device must see
+identical plaintext and round-trip dotenv bytes and files without interpreting
+those values. Local-only values remain local; sync, compaction, and restart must
+retain every exact value.
