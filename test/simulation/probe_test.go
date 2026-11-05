@@ -51,9 +51,9 @@ func TestOperationFaultMatrix(t *testing.T) {
 						occurrences = append(occurrences, i)
 					}
 				}
-				modes := []string{"before", "cancel"}
+				modes := []string{"before", "cancel", "crash-before"}
 				if method == "publish" || method == "delete" {
-					modes = append(modes, "after")
+					modes = append(modes, "after", "crash-after")
 				}
 				for _, at := range occurrences {
 					for _, mode := range modes {

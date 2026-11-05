@@ -13,6 +13,23 @@ import (
 
 var ErrOffline = errors.New("simulated network partition")
 
+// ErrCrash aborts application control flow at a recorded storage boundary. The
+// harness catches only this sentinel and recreates the App from durable fixtures.
+var ErrCrash = errors.New("simulated device crash")
+
+func catchCrash(run func() error) (err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if recovered == ErrCrash {
+				err = ErrCrash
+			} else {
+				panic(recovered)
+			}
+		}
+	}()
+	return run()
+}
+
 // Fault targets an exact occurrence at an external boundary, rather than a
 // wall-clock duration. After is meaningful for writes: durable effect, lost reply.
 type Fault struct {
@@ -77,14 +94,23 @@ func (s *Store) effect(method string, input any, f func(string) (any, error)) er
 		}
 		return e
 	}
+	var err error
 	if s.Actor != nil {
-		return s.Actor.Boundary(method, run)
+		err = s.Actor.Boundary(method, run)
+	} else {
+		err = run()
 	}
-	return run()
+	if errors.Is(err, ErrCrash) {
+		panic(ErrCrash)
+	}
+	return err
 }
 func before(ctx context.Context, mode string) error {
 	if e := ctx.Err(); e != nil {
 		return e
+	}
+	if mode == "crash-before" {
+		return ErrCrash
 	}
 	if mode == "before" || mode == "partition" {
 		return ErrOffline
@@ -102,6 +128,9 @@ func (s *Store) Publish(ctx context.Context, o storage.Object) error {
 		e := s.Store.Publish(ctx, o)
 		if e == nil && mode == "after" {
 			e = ErrOffline
+		}
+		if e == nil && mode == "crash-after" {
+			e = ErrCrash
 		}
 		return nil, e
 	})
@@ -212,6 +241,9 @@ func (s *Store) Delete(ctx context.Context, k storage.Kind, scope string, r dige
 		e := s.Store.Delete(ctx, k, scope, r)
 		if e == nil && mode == "after" {
 			e = ErrOffline
+		}
+		if e == nil && mode == "crash-after" {
+			e = ErrCrash
 		}
 		return nil, e
 	})

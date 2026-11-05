@@ -7,7 +7,7 @@ import (
 )
 
 func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
-	for _, mode := range []string{"before", "after"} {
+	for _, mode := range []string{"before", "after", "crash-before", "crash-after"} {
 		t.Run(mode, func(t *testing.T) {
 			tape := NewTape(123, "")
 			w, e := NewWorld(t.TempDir(), tape, 2)
@@ -16,7 +16,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			}
 			d := w.Devices[0]
 			d.Store.Arm(Fault{"publish", 1, mode})
-			if _, e := d.App.InitializeRepository(context.Background()); e == nil {
+			if e := catchCrash(func() error { _, err := d.App.InitializeRepository(context.Background()); return err }); e == nil {
 				t.Fatal("fault not returned")
 			}
 			cfg, e := config.LoadProjectFrom(d.App.RepositoryDir)

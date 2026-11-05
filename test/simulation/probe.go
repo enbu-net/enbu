@@ -103,7 +103,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		}
 	}
 	store.Arm(p.Fault)
-	result := invoke()
+	result := catchCrash(invoke)
 	if p.Fault.Method == "" && result != nil {
 		return nil, fmt.Errorf("baseline %s: %w", p.Operation, result)
 	}
@@ -115,6 +115,10 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		return nil, e
 	}
 	store.Arm(Fault{})
+	if result == ErrCrash {
+		w.Restart(0)
+		a = w.Devices[0].App
+	}
 	if p.Fault.Method != "" && counts[p.Fault.Method] < p.Fault.At {
 		return nil, fmt.Errorf("unreached fault: %+v calls %v", p, counts)
 	}

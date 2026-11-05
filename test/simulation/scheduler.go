@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"runtime/debug"
 	"sort"
 	"sync"
 )
@@ -78,7 +79,19 @@ func (s *Scheduler) Run(ctx context.Context, jobs []func(*Actor) error) ([]error
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e := job(a)
+			var e error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if r == ErrCrash {
+							e = ErrCrash
+						} else {
+							e = fmt.Errorf("actor panic: %v\n%s", r, debug.Stack())
+						}
+					}
+				}()
+				e = job(a)
+			}()
 			select {
 			case a.events <- request{done: true, err: e}:
 			case <-ctx.Done():

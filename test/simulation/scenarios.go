@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments"}
+var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -658,6 +658,44 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			return e
 		}
 		return w.Check(ctx, "default")
+
+	case "concurrent-faults":
+		for index, mode := range []string{"before", "after", "crash-before", "crash-after"} {
+			left, right := fmt.Sprintf("LEFT_%d", index), fmt.Sprintf("RIGHT_%d", index)
+			w.Devices[0].Store.Arm(Fault{"publish", 1, mode})
+			results, e := w.runBatch(ctx, "publish", []func(int) error{func(int) error { return a.AddSecret(ctx, "default", left, "a") }, func(int) error { return b.AddSecret(ctx, "default", right, "b") }})
+			if e != nil {
+				return e
+			}
+			if results[0] == nil || results[1] != nil {
+				return fmt.Errorf("concurrent fault %s: %v", mode, results)
+			}
+			w.Devices[0].Store.Arm(Fault{})
+			if errors.Is(results[0], ErrCrash) {
+				w.Restart(0)
+				a = w.Devices[0].App
+			}
+			w.Model["default"][right] = "b"
+			if mode == "after" || mode == "crash-after" {
+				w.Model["default"][left] = "a"
+			}
+			if e := w.Check(ctx, "default"); e != nil {
+				return e
+			}
+			if _, ok := w.Model["default"][left]; !ok {
+				if e := a.AddSecret(ctx, "default", left, "a"); e != nil {
+					return e
+				}
+				w.Model["default"][left] = "a"
+			}
+			if e := a.SyncSecrets(ctx, "default"); e != nil {
+				return e
+			}
+			if e := w.Check(ctx, "default"); e != nil {
+				return e
+			}
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("unknown scenario %q", name)

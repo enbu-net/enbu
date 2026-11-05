@@ -58,6 +58,9 @@ func ErrorCode(e error) string {
 	if e == nil {
 		return ""
 	}
+	if errors.Is(e, ErrCrash) {
+		return "crash"
+	}
 	var a *apperr.Error
 	if errors.As(e, &a) {
 		return string(a.Code())
@@ -136,7 +139,7 @@ func (w *World) Check(ctx context.Context, env string) error {
 	}
 	return nil
 }
-func (w *World) Batch(ctx context.Context, hold string, ops []func(int) error) error {
+func (w *World) runBatch(ctx context.Context, hold string, ops []func(int) error) ([]error, error) {
 	jobs := make([]func(*Actor) error, len(ops))
 	for i, op := range ops {
 		jobs[i] = func(actor *Actor) error {
@@ -148,12 +151,21 @@ func (w *World) Batch(ctx context.Context, hold string, ops []func(int) error) e
 	w.Scheduler.Hold = hold
 	results, e := w.Scheduler.Run(ctx, jobs)
 	if e != nil {
-		return e
+		return nil, e
 	}
 	for i, e := range results {
 		if te := w.Tape.Observe("batch-result", i, ErrorCode(e)); te != nil {
-			return te
+			return nil, te
 		}
+	}
+	return results, nil
+}
+func (w *World) Batch(ctx context.Context, hold string, ops []func(int) error) error {
+	results, e := w.runBatch(ctx, hold, ops)
+	if e != nil {
+		return e
+	}
+	for i, e := range results {
 		if e != nil {
 			return fmt.Errorf("actor %d: %w", i, e)
 		}

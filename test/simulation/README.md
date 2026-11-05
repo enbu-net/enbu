@@ -50,7 +50,7 @@ states. Generated sequences and fault exploration supplement the fixed assertion
 - `ENBU_SIM_SAVE_ALL=1`: also retain passing runs.
 
 The operation fault matrix first measures each operation's actual external calls,
-then injects network failure and cancellation at each selected position, plus lost
+then injects network failure, cancellation and simulated device stops at each selected position, plus lost
 responses after publish/delete. Before recovery, state must equal either the old
 or intended committed state. An acknowledged operation must have its intended
 result. Recovery retries only effects not already committed, then verifies all
@@ -77,6 +77,6 @@ in those suites. The in-memory fault store itself runs the shared storage contra
 
 Physical filesystem/power-loss durability, external provider behavior, hardware
 failures and arbitrary Go data races are not modeled by the virtual scheduler.
-Restart scenarios preserve files and identities while replacing App instances;
+A simulated stop aborts application control flow at a storage boundary and recreates the App from preserved files and synthetic identities. Deferred handle releases still run; interruption within a filesystem syscall and loss of volatile OS buffers are outside this model. Restart scenarios preserve files and identities while replacing App instances;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
