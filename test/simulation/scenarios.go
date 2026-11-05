@@ -254,6 +254,25 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if r.Pending {
 			return fmt.Errorf("admin key still pending")
 		}
+
+		// Complete the transition as well as exercising mixed recipients.
+		for i := 2; i < len(w.Devices); i++ {
+			if _, e := w.Devices[i].App.UpgradeIdentity(ctx); e != nil {
+				return e
+			}
+			if e := a.ApproveMember(ctx, w.Devices[i].ID); e != nil {
+				return e
+			}
+		}
+		members, e := a.ListMembers(ctx)
+		if e != nil {
+			return e
+		}
+		for _, member := range members {
+			if !member.PostQuantum {
+				return fmt.Errorf("hybrid transition left a classical member")
+			}
+		}
 		return w.Check(ctx, "default")
 	case "concurrent-keys":
 		var ops []func(int) error

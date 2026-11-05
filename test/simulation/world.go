@@ -102,6 +102,9 @@ func (w *World) Bootstrap(ctx context.Context) error {
 		if e := w.Observe("init", i, r, e); e != nil {
 			return e
 		}
+		if !r.KeyCreated {
+			return fmt.Errorf("new device was not reported as newly created")
+		}
 		d.ID = r.DeviceID
 		if i > 0 {
 			if !r.Pending {
