@@ -318,7 +318,9 @@ or implicit approval.
 ## Team use-case verification map
 
 Use-case coverage is tracked separately from statement coverage. The following
-finite inventory names executable tests and the properties they check. All rows
+finite inventory names executable tests and the properties they check. It is a
+tested subset, not a complete product inventory; the gap register below blocks
+any claim of 100% product use-case coverage. All rows
 must pass; a successful API call without its behavioral assertions is insufficient.
 
 | Team workflow | Normal operation and collaboration | Failure, attack, and recovery evidence |
@@ -358,3 +360,51 @@ characters, and literal shell/variable-expansion syntax. Every device must see
 identical plaintext and round-trip dotenv bytes and files without interpreting
 those values. Local-only values remain local; sync, compaction, and restart must
 retain every exact value.
+
+
+## Additional workflows and known gaps
+
+`same-user-processes` uses fresh App/Runtime/key-store wrappers and independent
+storage actors for the same device identity. Both processes share checkpoints,
+caches, and personal selection. It covers one checkout and two checkouts, each
+with concurrent disjoint edits, edit/delete conflict, restore/import conflict,
+and edit/compaction. The genuine second teammate must observe the result after
+its actor slot is restored. Four clock profiles and four schedules exercise 128
+operation groups with strict replay. This models App interleavings, not arbitrary
+filesystem syscall scheduling or actual GUI/RPC process lifetimes.
+
+`lost-device-replacement` replaces private keys while retaining a checkout backup.
+The replacement must have a new device ID, remain unapproved until explicitly
+accepted, and never inherit admin authority. A lost laptop retains its old keys:
+it can decrypt old ciphertext but not rotated current data. Genuine signatures
+from that retired device must not revive its old branch. A new-device write,
+compaction, and restart must preserve both environments. Twelve combinations of
+2/3/8 devices and four clock profiles exercise this journey.
+
+The original ten broad workflow areas do not exhaust enbu. The following
+independent dimensions are missing or only partly verified in DST. Existing
+native/unit coverage is not counted as deterministic team-workflow coverage.
+
+| Area | Current evidence and remaining gap |
+| --- | --- |
+| Same person using multiple clients/processes | New shared-identity App interleavings; actual CLI/GUI/RPC/extension concurrency and filesystem scheduling remain partial. |
+| Multiple workspaces under one user | Synthetic key namespace unit checks exist; no complete simultaneous-workspace journey across keys, trust pins, caches, and personal selection. |
+| Git branches, worktrees, and configuration merges | Config sharing and stale checkout migration are modeled; actual Git merge conflicts and branch checkout sequences are not. |
+| Checkout move, clone, and backup recovery | New lost-key checkout restoration and path-bound founding tests cover parts; arbitrary repository relocation and partial metadata restoration are not fully modeled. |
+| OAuth/session lifecycle during collaboration | Native auth tests cover denial/expiry; expiry, logout, account changes, and reauthentication overlapping team publication are not a DST journey. |
+| Registry/bucket permission changes | Generic storage faults and App role checks exist; pull-only credentials, ACL changes, token revocation, and capability-specific errors are not a complete team matrix. |
+| Real provider semantics | OCI/S3 fixtures are complementary tests; pagination, throttling, eventual listings, interrupted multipart transfer, and remote deletion behavior are not fully crossed with team workflows. |
+| Local filesystem failures | Corrupt files/caches and failed-output preservation are checked; syscall-level short writes, ENOSPC, permission changes, fsync/rename failure, symlinks, and OS-specific path behavior are not fully scheduled. |
+| Actual cancellation and process termination | Boundary errors/stops are simulated; cancellation while waiting on locks/HTTP, RPC disconnect during publication, and killing a process inside a local write remain partial. |
+| CLI child-process execution and secret masking | CLI native tests cover injection, precedence, masking, and exit status; these are not yet coupled to DST team changes and cancellation. |
+| Frontend stale views and repeated submissions | App conflict/seen-head checks and adapter tests exist; actual UI edit/save, workspace switching, double submission, and reconnect sequences are not a complete DST journey. |
+| Scale and protocol limits | Worlds contain 2–8 simulated devices; more participants, high revision counts, payload/key/entry limits, maximum head/parent counts, and paginated compaction need additional end-to-end boundaries. |
+| Storage equivocation between readers | Stale listings, partitions, and rollback have tests; arbitrary per-reader Control/state/compaction views are not exhaustively scheduled. |
+| Permanent device loss and partial key recovery | New replacement journey retains a stolen-key attacker; loss of only signing/encryption/pending/retained keys and interrupted native key promotion need further cases. |
+| Human approval and fingerprint handling | App requires explicit approval; wrong-device selection, fingerprint confirmation/cancellation, and stale approval screens need adapter/UI evidence. |
+| Long-lived service workspace selection | Local selections and separate devices are checked; a desktop/RPC service changing workspace while older requests remain in flight needs dedicated coverage. |
+
+These are open gaps, not rows marked covered by being declared outside the
+in-memory harness. Transport faults are inapplicable only to operations with no
+transport effect; their local state and user-visible failure paths still require
+appropriate tests.
