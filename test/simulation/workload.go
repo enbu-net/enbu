@@ -38,6 +38,11 @@ func Generate(seed uint64, steps, devices int) []Action {
 				out[len(out)-1].Parallel.Compact = true
 			}
 		}
+		if devices >= 3 && i%32 == 23 {
+			out[len(out)-1].Kind = "team-group"
+			out[len(out)-1].Parallel = nil
+			out[len(out)-1].Key = "TEAM_" + out[len(out)-1].Value
+		}
 	}
 	return out
 }
@@ -83,6 +88,9 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 		var out any
 		var e error
 		switch op.Kind {
+		case "team-group":
+			e = w.GeneratedTeamGroup(ctx, op.Key, op.Value)
+			membership[w.Devices[len(w.Devices)-1].ID] = false
 		case "parallel":
 			if op.Parallel == nil {
 				return fmt.Errorf("parallel group has no operations")

@@ -153,3 +153,25 @@ def test_acceptance_epoch_matrix_runs_for_membership_and_checkpoint_changes(path
 )
 def test_team_incident_workflow_is_selected(path):
     assert selected(dst_plan.select([path]), "TestTeamIncidentMatrix")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/members.go",
+        "pkg/wsp/control.go",
+        "pkg/wsp/compaction.go",
+        "test/simulation/authority_attack.go",
+    ],
+)
+def test_authority_attacks_are_selected(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestAuthorityAttackSmoke")
+    assert selected(plan, "TestAuthorityAttackMatrix")
+
+
+@pytest.mark.parametrize("path", ["app/secrets.go", "test/simulation/workload.go"])
+def test_workload_changes_select_generated_exploration(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestSimulation")
+    assert selected(plan, "TestGeneratedTeamGroupsPreservePriorWork")

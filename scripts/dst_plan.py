@@ -12,9 +12,11 @@ SIM = ROOT / "test" / "simulation"
 # Shared implementation changes deliberately widen the affected test set.
 DOMAINS = {
     "secrets": {
+        "simulation",
         "concurrent_matrix",
         "swarm",
         "generated_groups",
+        "generated_team",
         "state_matrix",
         "workload",
     },
@@ -66,6 +68,12 @@ def select(paths: list[str], full: bool = False) -> dict:
                 continue
             if candidate.is_file():
                 files.add(candidate)
+                if source == "workload.go":
+                    files |= {
+                        SIM / "simulation_test.go",
+                        SIM / "generated_groups_test.go",
+                        SIM / "generated_team_test.go",
+                    }
                 mutation |= source == "mutation_test.go"
             else:
                 broad = True
@@ -119,7 +127,12 @@ def select(paths: list[str], full: bool = False) -> dict:
                 broad = True
                 mutation = True
             if domain:
-                files |= {SIM / "team_incident_test.go", SIM / "team_migration_test.go"}
+                files |= {
+                    SIM / "team_incident_test.go",
+                    SIM / "team_migration_test.go",
+                    SIM / "generated_team_test.go",
+                    SIM / "authority_attack_test.go",
+                }
                 mutation |= domain in {
                     "secrets",
                     "history",

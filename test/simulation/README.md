@@ -45,9 +45,9 @@ The catalog test fails when an exported App operation has no driver or inventory
 entry. The table describes tested behaviors, not exhaustive proof over all possible
 states. Generated sequences and fault exploration supplement the fixed assertions.
 
-`TestOperationStateMatrix` enumerates 18 data/history/membership operations × 4 states
+`TestOperationStateMatrix` enumerates 21 data/history/membership operations × 4 states
 (never written, populated, last key deleted, absent environment) × 4 membership
-states (admin, member, pending, removed): 288 named cases. Every case records
+states (admin, member, pending, removed): 336 named cases. Every case records
 and replays, asserts the expected result code, checks the resulting secret map on
 all devices and the exact member/admin set, and checks a second environment was unaffected. This matrix covers
 these dimensions explicitly; environment presence is inapplicable to Control metadata
@@ -115,8 +115,7 @@ third admin's history compaction. Writers reach publication before any writer
 commits. The independent merge oracle checks exact conflicts or composition,
 preserves the preceding workload's unrelated values, and seals the group before
 later sequential actions. Group boundaries and schedules are recorded and replayed.
-Membership races remain the explicit team/compound matrices rather than arbitrary
-generated three-way membership combinations.
+A three-actor team group every 32 actions additionally overlaps removal, a continuing member's write, and the removed device's synchronization. It retains all preceding workload data and checks denial in every environment, explicit readmission, exact membership, and preservation of the continuing member's acknowledged write. Other membership races remain the explicit team/compound matrices.
 
 Generated sequences mix secret operations with environment create/switch/rename/
 delete, compaction, membership remove/rejoin, role changes and restarts. After
@@ -235,10 +234,10 @@ checkpoints and fresh writes survive without reusing them;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
 
-Nine isolated mutation experiments check that the oracles detect lost updates,
+Thirteen isolated mutation experiments check that the oracles detect lost updates,
 missed conflicts, unauthorized membership changes, missed rollback, deletion of
 a valid late publication, deletion of a temporarily unreachable publication, a wrong observer acceptance
-epoch, revival of a revoked author, and omitted signature verification.
+epoch, revival of a revoked author, omitted signature verification, unchecked parent-admin authority, unauthorized compaction records, and unsafe fork resolution.
 Every experiment first requires the unmodified behavioral test to pass; compiler
 failures do not count as detected bugs.
 
@@ -260,3 +259,46 @@ signing under the wrong protocol domain, or truncating the signature. Every
 member must reject the injected value after restart, and subsequent valid writes
 and compaction must preserve the independent model. Parser-invalid junk alone
 would not establish that the cryptographic signature is actually checked.
+
+
+`TestAuthorityAttackMatrix` crosses seven canonical, correctly signed attacks
+with four clock profiles and four seeds: 112 record/replay cases. Ordinary members
+try to promote themselves and remove the founder, demoted admins try to regain
+admin rights, and removed admins try to reinsert themselves. A member-signed
+compaction record must not excuse deletion of an acknowledged head. A genuine
+admin's fork resolution must not introduce a new admin or swap a recipient.
+Every attack checks exact membership, fail-closed access where applicable, a
+second environment, restart, legitimate subsequent writes, and compaction.
+`TestAuthorityAttackSmoke` runs all seven attacks in ordinary CI. Three isolated
+mutations disable the corresponding protocol checks and must fail their specific
+behavioral assertions, rather than merely fail compilation.
+
+`locked-device` models a temporarily unavailable key store: initialization,
+reading, editing, pulling, and synchronization must fail with the actionable
+identity error; the local dotenv file must remain byte-for-byte intact. Another
+developer can update the workspace while the device is locked. Unlock/restart
+must preserve those updates and permit fresh writes without publishing local-only
+variables. `rejected-edits` checks negative, zero, and out-of-range history
+indexes, plus rejected workspace/genesis/incarnation edits leaving the original
+configuration unchanged. The state matrix additionally crosses stale-head
+resolution, missing-head resolution, and file pull with every data/member state.
+
+The team incident journey runs 96 combinations of 3–8 devices, four clock
+profiles, and four seeds. It follows release conflicts, explicit resolution,
+employee departure, retained-key attacks, cross-environment replay, compaction,
+and explicit readmission. The migration journey checks offline checkouts across
+environment renaming and reuse of the old name, preservation of work and local
+variables, configuration refresh, and restart after compaction.
+
+
+`request-signature-attack` publishes canonical join requests with a flipped
+signature, a different signing key, a different protocol domain, or another
+workspace. None may become approvable. A valid request must remain identifiable
+among the injected objects and must not grant membership until an admin approves.
+The corresponding mutation disables request signature verification and must be
+detected by this scenario.
+
+
+`TestGeneratedTeamGroupsPreservePriorWork` checks 24 seeded generated workloads
+across 3–8 devices with the mixed membership/write/sync group. A bounded smoke
+case runs in ordinary CI; full generated exploration includes these groups too.
