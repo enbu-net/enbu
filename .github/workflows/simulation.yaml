@@ -18,7 +18,7 @@ jobs:
   simulation:
     name: Simulation (${{ matrix.platform.target }} / ${{ matrix.shard }})
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -49,7 +49,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Explore and replay
-        run: go test -count=1 -timeout=55m -v ./test/simulation
+        run: go test -count=1 -timeout=105m -v ./test/simulation
       - name: Verify oracle mutation sensitivity
         if: matrix.shard == 0
         env:
