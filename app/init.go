@@ -235,10 +235,14 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
 			return storageError(err)
 		}
-		if err := os.Remove(path); err != nil {
+		// Publication is durable; leftover public recovery bytes are harmless.
+		// A cleanup failure must not turn a successful founding into failure.
+		_ = os.Remove(path)
+		pinned, err := a.trustRoot(s.workspace).Pinned()
+		if err != nil {
 			return err
 		}
-		s.founded = true
+		s.founded = pinned == (wsp.Root{})
 	} else if !os.IsNotExist(err) {
 		return err
 	}

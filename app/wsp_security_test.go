@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
@@ -505,5 +507,62 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 	}
 	if !moved || s.head.Height != 1 || read.heads[0].Control != s.head.Digest {
 		t.Fatalf("moved=%v head=%d state written under %s: it still used the old member list", moved, s.head.Height, read.heads[0].Control)
+	}
+}
+
+func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires Unix directory permission enforcement")
+	}
+	var a *App
+	var pending string
+	a = foundingApp(t, func(_ context.Context, blob []byte) error {
+		pending = a.pendingGenesisPath(string(digest.FromBytes(blob)))
+		return os.Chmod(filepath.Dir(pending), 0500)
+	})
+	t.Cleanup(func() {
+		if pending != "" {
+			_ = os.Chmod(filepath.Dir(pending), 0700)
+		}
+	})
+	first, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Founded {
+		t.Fatal("initial founding not reported")
+	}
+	if _, err := os.Stat(pending); err != nil {
+		t.Fatalf("expected cleanup to fail: %v", err)
+	}
+	again, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Founded {
+		t.Fatal("leftover recovery bytes reported a new founding")
+	}
+	if again.ControlGenesis != first.ControlGenesis {
+		t.Fatal("retry changed genesis")
+	}
+}
+func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
+	calls := 0
+	a := foundingApp(t, func(context.Context, []byte) error { calls++; return errors.New("offline") })
+	if _, err := a.InitializeRepository(bg); err == nil {
+		t.Fatal("initial publication did not fail")
+	}
+	genesis := genesisInConfig(t, a)
+	if err := os.WriteFile(a.pendingGenesisPath(genesis), []byte("different genesis bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("tampered recovery: %v", err)
+	}
+	if calls != 1 {
+		t.Fatal("tampered recovery bytes reached storage")
+	}
+	if genesisInConfig(t, a) != genesis {
+		t.Fatal("tampered recovery changed trust root")
 	}
 }
