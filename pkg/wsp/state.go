@@ -279,12 +279,31 @@ type fetchedHead struct {
 	err  error
 }
 
+type serialHeadReadsKey struct{}
+
+// WithSerialHeadReads disables speculative parallel fetches for a caller that
+// schedules external effects itself. Verification and error handling are identical.
+func WithSerialHeadReads(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serialHeadReadsKey{}, true)
+}
+
 // prefetchHeads fetches one bounded batch. Terminal failures cancel the other
 // requests; the caller verifies and releases this batch before fetching more.
 func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) (map[digest.Digest]fetchedHead, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	out := make(map[digest.Digest]fetchedHead, len(revs))
+	if serial, _ := ctx.Value(serialHeadReadsKey{}).(bool); serial {
+		for _, rev := range revs {
+			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
+			out[rev] = fetchedHead{head, err}
+			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) {
+				return nil, err
+			}
+		}
+		return out, ctx.Err()
+	}
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var failure error

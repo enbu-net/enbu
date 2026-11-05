@@ -81,12 +81,12 @@ func (a *App) setCurrent(cfg *config.ProjectConfig, name, previous string) error
 		cfg.SetDefault(name)
 		return a.saveProject(cfg)
 	}
-	local, err := config.LoadLocalState(cfg.WorkspaceID)
+	local, err := a.loadLocalState(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
 	local.Current, local.Previous = name, previous
-	return config.SaveLocalState(cfg.WorkspaceID, local)
+	return a.saveLocalState(cfg.WorkspaceID, local)
 }
 
 func (a *App) SwitchPrevious() (name string, err error) {
@@ -115,14 +115,14 @@ func (a *App) CreateEnvironment(name string) (err error) {
 		if !apperr.Is(err, apperr.CodeConfigNotFound) {
 			return err
 		}
-		cfg = config.NewProjectWithEnvironment(name)
+		cfg = a.newProject(name)
 		if err := a.saveProject(cfg); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	if err := cfg.AddEnvironment(name); err != nil {
+	if err := cfg.AddEnvironmentWithID(name, a.newID); err != nil {
 		return err
 	}
 
@@ -213,7 +213,7 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 		return nil
 	}
-	local, err := config.LoadLocalState(cfg.WorkspaceID)
+	local, err := a.loadLocalState(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	if local.Previous == oldName {
 		local.Previous = newName
 	}
-	return config.SaveLocalState(cfg.WorkspaceID, local)
+	return a.saveLocalState(cfg.WorkspaceID, local)
 }
 
 // PurgeIncarnation deletes the stored revisions of an environment that was
