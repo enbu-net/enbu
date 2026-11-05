@@ -51,7 +51,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - name: Test core
         run: task core/test
@@ -74,7 +74,7 @@ jobs:
           cache: true
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
       - name: Install Linux Secret Service
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
@@ -107,7 +107,7 @@ jobs:
           cache: true
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
       - name: Storage E2E with unlocked keyring
@@ -131,7 +131,7 @@ jobs:
           cache: true
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
       - name: Test core with race detector
         run: go test -race ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
       - name: AWS SDK export E2E
@@ -174,7 +174,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - uses: voidzero-dev/setup-vp@v1.22.0
         with:
@@ -222,7 +222,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - uses: voidzero-dev/setup-vp@v1.22.0
         with:
@@ -268,7 +268,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - uses: voidzero-dev/setup-vp@v1.22.0
         with:
@@ -309,7 +309,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - uses: voidzero-dev/setup-vp@v1.22.0
         with:
@@ -345,7 +345,7 @@ jobs:
 
       - uses: aquaproj/aqua-installer@v4.1.1
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - name: Install Secret Service
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11

@@ -61,7 +61,7 @@ jobs:
       - uses: aquaproj/aqua-installer@v4.1.1
         if: github.event_name == 'workflow_dispatch'
         with:
-          aqua_version: v2.65.2
+          aqua_version: v2.66.0
 
       - name: Tag HEAD with the next version
         id: tag
