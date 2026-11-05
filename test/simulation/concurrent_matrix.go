@@ -41,12 +41,23 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		delete(base, "K0")
 		delete(base, "K1")
 	}
+	restoreIndex := 0
 	if c.Left == "restore" || c.Right == "restore" {
 		historical := clone(base)
 		historical["K0"] = "historical"
 		if _, err := w.Devices[0].App.ImportSecrets(ctx, "default", historical, true); err != nil {
 			return err
 		}
+		// Earlier workflow steps may already have history. Restore the snapshot
+		// just created for this case rather than assuming it is always index one.
+		history, err := w.Devices[0].App.ListHistory(ctx, "default")
+		if err != nil {
+			return err
+		}
+		if len(history) == 0 {
+			return fmt.Errorf("restore fixture created no history")
+		}
+		restoreIndex = history[len(history)-1].Index
 	}
 	if _, err := w.Devices[0].App.ImportSecrets(ctx, "default", base, true); err != nil {
 		return err
@@ -86,7 +97,7 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 			case "sync":
 				return a.SyncSecrets(ctx, "default")
 			case "restore":
-				return a.RestoreHistory(ctx, "default", 1)
+				return a.RestoreHistory(ctx, "default", restoreIndex)
 			case "compact":
 				result, err := a.CompactHistory(ctx, "default", 1)
 				if err == nil && result.Removed == 0 {
