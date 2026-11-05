@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A branch push and its PR validate the same source. Prefer the newest run;
+# keep every branch eligible instead of restricting pushes to main.
+concurrency:
+  group: simulation-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   simulation:
     name: Simulation (${{ matrix.shard }})
