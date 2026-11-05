@@ -372,6 +372,15 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 		var bases []map[string]string
 		for _, b := range sv.Graph.MergeBases(r.parents()) {
 			m, err := s.decrypt(ctx, sv.States[b])
+			var noMatch *agecrypto.NoIdentityMatchError
+			if errors.As(err, &noMatch) {
+				// A new member can read current heads without having the key
+				// for their pre-join base. Requiring agreement against every
+				// head as a possible base preserves all differing values as
+				// conflicts; an empty base could silently lose a deletion.
+				bases = append(bases, maps...)
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
