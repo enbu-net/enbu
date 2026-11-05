@@ -2,6 +2,7 @@ package simulation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -21,7 +22,7 @@ type CompactionRaceCase struct {
 func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	switch c.Publication {
-	case "valid", "junk", "missing", "corrupt":
+	case "valid", "junk", "missing", "corrupt", "offline", "cancelled":
 	default:
 		return fmt.Errorf("invalid compaction publication %q", c.Publication)
 	}
@@ -88,10 +89,17 @@ func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error 
 				if c.Publication == "corrupt" {
 					return nil, storage.ErrCorrupt
 				}
+				if c.Publication == "offline" {
+					return nil, ErrOffline
+				}
+				if c.Publication == "cancelled" {
+					return nil, context.Canceled
+				}
 			}
 			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
+	d.Store.Arm(Fault{})
 	if c.Fault != "" {
 		d.Store.Arm(Fault{Method: "delete", At: 1, Mode: c.Fault})
 	}
@@ -102,7 +110,16 @@ func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error 
 	if listings != 2 || fetches != 1 {
 		return fmt.Errorf("late publication not examined: listings=%d fetches=%d", listings, fetches)
 	}
-	if c.Fault == "" && err != nil {
+	terminal := c.Publication == "offline" || c.Publication == "cancelled"
+	if terminal {
+		want := ErrOffline
+		if c.Publication == "cancelled" {
+			want = context.Canceled
+		}
+		if !errors.Is(err, want) || d.Store.calls["delete"] != 0 {
+			return fmt.Errorf("terminal fetch was ignored or deletion began: %v deletes=%d", err, d.Store.calls["delete"])
+		}
+	} else if c.Fault == "" && err != nil {
 		return err
 	}
 	if c.Fault != "" && (err == nil || d.Store.faultHits != 1) {

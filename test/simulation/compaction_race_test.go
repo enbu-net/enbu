@@ -10,8 +10,11 @@ import (
 func TestCompactionLatePublicationAndCrashRecovery(t *testing.T) {
 	exploration(t)
 	index := 0
-	for _, publication := range []string{"valid", "junk", "missing", "corrupt"} {
+	for _, publication := range []string{"valid", "junk", "missing", "corrupt", "offline", "cancelled"} {
 		for _, fault := range []string{"", "before", "after", "cancel", "crash-before", "crash-after"} {
+			if (publication == "offline" || publication == "cancelled") && fault != "" {
+				continue
+			}
 			index++
 			if os.Getenv("ENBU_SIM_SHARDS") != "" {
 				shards := integer(t, "ENBU_SIM_SHARDS", 1)

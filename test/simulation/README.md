@@ -153,11 +153,14 @@ all three resolution pairs, and four schedules from the compound fixture. It
 checks Control forks, incomplete re-encryption, simultaneous resolutions, recovery,
 compaction, offline observers, and readmission with the same independent model.
 
-`TestCompactionLatePublicationAndCrashRecovery` adds 96 record/replay cases:
+`TestCompactionLatePublicationAndCrashRecovery` adds 104 record/replay cases:
 four late-publication outcomes (valid signed state, invalid junk, temporarily
 missing head, temporarily corrupt head) crossed with six deletion outcomes
 (success, failure before commit, lost reply, cancellation, crash before commit,
-crash after commit) and four schedules. Publication happens after the compactor's
+crash after commit) and four schedules. Eight further cases return a terminal transport error or
+cancellation while fetching the late head; no deletion may start, the cause
+must survive normalization, and recovery must retain the publication.
+Publication happens after the compactor's
 verified read and before its own listing. Valid or temporarily unreadable objects
 must survive; served invalid objects may be deleted. All devices restart before
 recovery, including an observer whose checkpoint precedes the compaction floor.
@@ -232,8 +235,28 @@ checkpoints and fresh writes survive without reusing them;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
 
-Six isolated mutation experiments check that the oracles detect lost updates,
+Nine isolated mutation experiments check that the oracles detect lost updates,
 missed conflicts, unauthorized membership changes, missed rollback, deletion of
-a valid late publication, and deletion of a temporarily unreachable publication.
+a valid late publication, deletion of a temporarily unreachable publication, a wrong observer acceptance
+epoch, revival of a revoked author, and omitted signature verification.
 Every experiment first requires the unmodified behavioral test to pass; compiler
 failures do not count as detected bugs.
+
+
+`TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval` adds 128 record/replay
+cases: acceptance before/after the observer's removal and readmission, a restarted
+or continuing observer, member/admin roles, four clock profiles, and four seeds.
+The author remains continuously authorized when its old-Control revision is
+published. Control transitions deliberately omit automatic re-encryption so that
+it cannot mask the checkpoint property. After author removal, only a post-readmission
+acceptance may authorize takeover; a pre-removal checkpoint must fall back to
+the earlier legitimate parent. Author readmission must not revive a rejected
+branch. Fresh writes, compaction, restart, and a second environment are checked.
+Two bounded smoke cases run in ordinary CI too.
+
+The `forged-state-signature` scenario keeps valid canonical state bytes and matching
+ciphertext while flipping a signature bit, signing with a different device,
+signing under the wrong protocol domain, or truncating the signature. Every
+member must reject the injected value after restart, and subsequent valid writes
+and compaction must preserve the independent model. Parser-invalid junk alone
+would not establish that the cryptographic signature is actually checked.
