@@ -381,7 +381,11 @@ func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*w
 		if !sv.Compacted.AboveFloors(sv.Graph, h.Digest) {
 			return false
 		}
-		return wsp.AuthorIsCurrent(s.head, h) == nil || slices.Contains(accepted, h.Digest)
+		// A returning device cannot carry its old accepted branches across
+		// its own removal. A continuously present observer may still take
+		// over a revision it accepted before the author's removal.
+		return wsp.AuthorIsCurrent(s.view, s.head, h) == nil ||
+			slices.Contains(accepted, h.Digest) && s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())
 	}
 	var heads []*wsp.VerifiedState
 	seen := map[digest.Digest]bool{}

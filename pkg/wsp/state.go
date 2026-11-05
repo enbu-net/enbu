@@ -131,10 +131,14 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 
 // AuthorIsCurrent reports whether the author of st is still a principal of the
 // current Control. A revision may only be the head of a resource, and so be read
-// as the current value, while its author is.
-func AuthorIsCurrent(head *Verified, st *VerifiedState) error {
+// as the current value, while its author has remained a member. Rejoining
+// must not revive an unaccepted revision signed before removal.
+func AuthorIsCurrent(view *ControlView, head *Verified, st *VerifiedState) error {
 	if _, ok := head.Principal(st.Author); !ok {
 		return invalid("state author %s is no longer a principal of the workspace", st.Author)
+	}
+	if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {
+		return invalid("state author %s was removed after the control it names", st.Author)
 	}
 	return nil
 }
