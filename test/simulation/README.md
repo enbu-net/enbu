@@ -49,7 +49,23 @@ these dimensions explicitly; environment presence is inapplicable to Control met
 and membership operations. `TestConcurrentOperationMatrix` enumerates all ordered
 pairs of edit/delete/import/sync, same and different keys, under four seeded
 schedules (128 record/replay cases). Conflicts must retain both candidates and
-require explicit resolution; disjoint changes must compose. Compound partitions, forks, local file failures and
+require explicit resolution; disjoint changes must compose. Concurrent additions
+also cover same and different keys under four schedules.
+
+`TestTeamMembershipWriteMatrix` overlaps six membership changes (approve a
+joiner, remove another member, remove the writer, promote another member, demote
+the writer, approve the writer's key update) with add/edit/delete/import/sync,
+under four schedules: 120 cases. It verifies the member/admin set, preserved
+unrelated data, removal denial, no resurrection on readmission, and fresh writes
+after readmission. Revocation may set aside a concurrently published old-Control
+branch that no remaining member accepted; readmission must not revive it.
+
+`TestConcurrentAdminMatrix` covers ten competing-admin scenes under four
+schedules: same/different approvals and removals, promotions, promotion versus
+demotion, removal versus promotion/key-update approval, and demotion/removal of
+one competing admin. Every fork must block reads and writes, require an admin of
+all branches to resolve, and resolve to the membership/admin intersection.
+Compound partitions, forks, local file failures and
 hardware behavior remain the separately named scenarios and integration tests.
 
 Generated sequences mix secret operations with environment create/switch/rename/
