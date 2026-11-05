@@ -419,7 +419,7 @@ func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 	if g == "" {
 		t.Fatal("failed publication lost the trusted genesis")
 	}
-	if _, err := os.Stat(a.pendingGenesisPath(g)); err != nil {
+	if _, err := os.Stat(pendingGenesisForTest(t, a, g)); err != nil {
 		t.Fatalf("pending genesis: %v", err)
 	}
 	fail = false
@@ -517,7 +517,7 @@ func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
 	var a *App
 	var pending string
 	a = foundingApp(t, func(_ context.Context, blob []byte) error {
-		pending = a.pendingGenesisPath(string(digest.FromBytes(blob)))
+		pending = pendingGenesisForTest(t, a, string(digest.FromBytes(blob)))
 		return os.Chmod(filepath.Dir(pending), 0500)
 	})
 	t.Cleanup(func() {
@@ -553,7 +553,7 @@ func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
 		t.Fatal("initial publication did not fail")
 	}
 	genesis := genesisInConfig(t, a)
-	if err := os.WriteFile(a.pendingGenesisPath(genesis), []byte("different genesis bytes"), 0600); err != nil {
+	if err := os.WriteFile(pendingGenesisForTest(t, a, genesis), []byte("different genesis bytes"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
@@ -595,7 +595,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 		t.Fatal("verification unexpectedly succeeded")
 	}
 	genesis := genesisInConfig(t, a)
-	if _, err := os.Stat(a.pendingGenesisPath(genesis)); err != nil {
+	if _, err := os.Stat(pendingGenesisForTest(t, a, genesis)); err != nil {
 		t.Fatalf("recovery removed before trust committed: %v", err)
 	}
 	offline = false
@@ -605,5 +605,57 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 	}
 	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
 		t.Fatal("retry changed workspace or root")
+	}
+}
+
+func pendingGenesisForTest(t *testing.T, a *App, genesis string) string {
+	t.Helper()
+	ws, err := a.WorkspaceID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.pendingGenesisPath(ws, genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
+	target := newAlice(t)
+	previous, err := target.repositoryTrustRoot().Pinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	offline := true
+	source := &App{RepositoryDir: t.TempDir(), CheckpointDir: target.CheckpointDir, Identities: target.Identities, TokenProvider: target.TokenProvider, RepoDetector: target.RepoDetector}
+	source.Storage = storagetest.Wrap(storagetest.NewMemory(), storagetest.Hooks{Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+		calls++
+		if offline {
+			return errors.New("offline")
+		}
+		return next.Publish(ctx, o)
+	}})
+	if _, err := source.InitializeRepository(bg); err == nil {
+		t.Fatal("expected interrupted founding")
+	}
+	cfg, err := config.LoadProjectFrom(source.RepositoryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveProjectTo(target.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	target.Storage = source.Storage
+	offline = false
+	if _, err := target.InitializeRepository(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+		t.Fatalf("foreign pending founding accepted: %v", err)
+	}
+	pinned, err := target.repositoryTrustRoot().Pinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned != previous || calls != 1 {
+		t.Fatalf("foreign recovery changed trust or published: %+v calls %d", pinned, calls)
 	}
 }

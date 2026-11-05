@@ -7,6 +7,7 @@ import (
 	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -197,7 +198,10 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		}
 		// Keep the exact signed bytes before publishing: a response can be lost
 		// after storage commits, and hardware signatures cannot be regenerated.
-		path := a.pendingGenesisPath(string(genesis))
+		path, err := a.pendingGenesisPath(s.workspace, string(genesis))
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return err
 		}
@@ -227,20 +231,27 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		s.founded = true
 
 	}
-	path := a.pendingGenesisPath(s.cfg.ControlGenesis)
+	path, err := a.pendingGenesisPath(s.workspace, s.cfg.ControlGenesis)
+	if err != nil {
+		return err
+	}
 	recovery := false
 	if blob, err := os.ReadFile(path); err == nil {
 		if _, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis)); err != nil {
 			return wspError(err)
 		}
-		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
-			return storageError(err)
-		}
-		recovery = true
 		pinned, err := a.trustRoot(s.workspace).Pinned()
 		if err != nil {
 			return err
 		}
+		root := wsp.Root{Workspace: s.workspace, Genesis: digest.Digest(s.cfg.ControlGenesis)}
+		if !s.acceptNewGenesis && pinned != (wsp.Root{}) && pinned != root {
+			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: root})
+		}
+		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
+			return storageError(err)
+		}
+		recovery = true
 		s.founded = pinned == (wsp.Root{})
 	} else if !os.IsNotExist(err) {
 		return err
@@ -272,7 +283,17 @@ func identityError(err error) error {
 		"no usable identity backend on this device: "+unavailable.Reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": unavailable.Reason})
 }
 
-func (a *App) pendingGenesisPath(genesis string) string {
-	sum := sha256.Sum256([]byte(genesis))
-	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.cbor", sum))
+// A recovery capability belongs to this workspace in this checkout, never
+// another repository that happens to name the same genesis in enbu.toml.
+func (a *App) pendingGenesisPath(workspace, genesis string) (string, error) {
+	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	if err != nil {
+		return "", err
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(workspace + "\x00" + path + "\x00" + genesis))
+	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.cbor", sum)), nil
 }
