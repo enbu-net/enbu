@@ -140,3 +140,16 @@ def test_acceptance_epoch_matrix_runs_for_membership_and_checkpoint_changes(path
     plan = dst_plan.select([path])
     assert selected(plan, "TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval")
     assert selected(plan, "TestAcceptanceEpochSmoke")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/members.go",
+        "app/secrets.go",
+        "pkg/wsp/checkpoint.go",
+        "test/simulation/team_incident.go",
+    ],
+)
+def test_team_incident_workflow_is_selected(path):
+    assert selected(dst_plan.select([path]), "TestTeamIncidentMatrix")

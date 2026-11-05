@@ -147,7 +147,7 @@ func TestSimulation(t *testing.T) {
 			t.Parallel()
 			n := 2 + int(seed%7)
 			scenario := Scenarios[int(seed%uint64(len(Scenarios)))]
-			if scenario == "control-fork" && n < 3 {
+			if (scenario == "control-fork" || scenario == "team-incident") && n < 3 {
 				n = 3
 			}
 			exercise(t, seed, Plan{Devices: n, Scenario: scenario, Actions: Generate(seed, steps, n)})

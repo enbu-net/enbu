@@ -119,6 +119,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                 broad = True
                 mutation = True
             if domain:
+                files |= {SIM / "team_incident_test.go", SIM / "team_migration_test.go"}
                 mutation |= domain in {
                     "secrets",
                     "history",
