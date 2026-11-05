@@ -79,6 +79,13 @@ def select(paths: list[str], full: bool = False) -> dict:
                 files.add(SIM / "simulation_test.go")
             elif candidate.is_file():
                 files.add(candidate)
+                if source == "concurrent_matrix.go":
+                    files |= {
+                        SIM / "history_race_test.go",
+                        SIM / "local_processes_test.go",
+                        SIM / "generated_groups_test.go",
+                        SIM / "simulation_test.go",
+                    }
                 if source == "workload.go":
                     files |= {
                         SIM / "simulation_test.go",
@@ -145,6 +152,8 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "authority_attack_test.go",
                     SIM / "refounding_test.go",
                     SIM / "onboarding_test.go",
+                    SIM / "local_processes_test.go",
+                    SIM / "device_replacement_test.go",
                 }
                 mutation |= domain in {
                     "secrets",

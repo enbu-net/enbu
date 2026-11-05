@@ -190,3 +190,19 @@ def test_scenario_helpers_select_scenarios_without_unrelated_matrices(path):
     assert selected(plan, "TestScenarios")
     assert selected(plan, "TestSimulation")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+@pytest.mark.parametrize(
+    "path", ["app/secrets.go", "app/members.go", "pkg/wsp/checkpoint.go"]
+)
+def test_shared_user_and_lost_device_journeys_are_selected(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestSameUserProcessClocks")
+    assert selected(plan, "TestLostDeviceReplacementClocks")
+
+
+def test_shared_concurrent_fixture_selects_restore_and_local_process_users():
+    plan = dst_plan.select(["test/simulation/concurrent_matrix.go"])
+    assert selected(plan, "TestConcurrentHistoryRestore")
+    assert selected(plan, "TestSameUserProcessClocks")
+    assert selected(plan, "TestScenarios")
