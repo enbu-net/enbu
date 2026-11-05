@@ -1,0 +1,91 @@
+package simulation
+
+import (
+	"context"
+	"fmt"
+)
+
+type Plan struct {
+	Probe    *Probe
+	Devices  int
+	Scenario string
+	Actions  []Action
+}
+
+// Execute consumes the recorded plan, including bootstrap, on a fresh root.
+func Execute(ctx context.Context, tape *Tape, root string) error {
+	var plan Plan
+	if e := tape.Value("plan", nil, func() (any, error) {
+		if tape.plan == nil {
+			return nil, fmt.Errorf("no plan")
+		}
+		return *tape.plan, nil
+	}, &plan); e != nil {
+		return e
+	}
+	if plan.Devices < 2 || plan.Devices > 8 {
+		return fmt.Errorf("invalid device count %d", plan.Devices)
+	}
+	w, e := NewWorld(root, tape, plan.Devices)
+	if e != nil {
+		return e
+	}
+	if e := w.Bootstrap(ctx); e != nil {
+		return e
+	}
+	if plan.Probe != nil {
+		if _, e := w.Probe(ctx, *plan.Probe); e != nil {
+			return e
+		}
+	}
+	if plan.Scenario != "" {
+		if e := w.Scenario(ctx, plan.Scenario); e != nil {
+			return fmt.Errorf("scenario %s: %w", plan.Scenario, e)
+		}
+	}
+	if e := w.Workload(ctx, plan.Actions); e != nil {
+		return e
+	}
+	if e := tape.Observe("final-model", nil, w.Model); e != nil {
+		return e
+	}
+	return tape.Finish()
+}
+
+// Prepare writes the explicit operation sequence before execution. Shrinking
+// produces a fresh recording; it never skips mismatched entries in a replay.
+func Prepare(seed uint64, revision string, plan Plan) (*Tape, error) {
+	tape := NewTape(seed, revision)
+	tape.plan = &plan
+	return tape, nil
+}
+
+// Minimize removes chunks, keeping a candidate only if the same failure remains.
+func Minimize(actions []Action, fails func([]Action) bool) []Action {
+	if fails(nil) {
+		return nil
+	}
+	current := append([]Action(nil), actions...)
+	for size := len(current) / 2; size > 0; size /= 2 {
+		for start := 0; start+size <= len(current); {
+			candidate := append([]Action(nil), current[:start]...)
+			candidate = append(candidate, current[start+size:]...)
+			if fails(candidate) {
+				current = candidate
+			} else {
+				start += size
+			}
+		}
+	}
+	return current
+}
+
+// Violation identifies an oracle failure independently of operation indices,
+// allowing shrinking to preserve the property that failed.
+type Violation struct {
+	Kind   string
+	Detail error
+}
+
+func (v *Violation) Error() string { return v.Kind + ": " + v.Detail.Error() }
+func (v *Violation) Unwrap() error { return v.Detail }

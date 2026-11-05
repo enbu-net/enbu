@@ -1,0 +1,72 @@
+package simulation
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+// Mutation experiments edit only disposable copies. A compile error is not a
+// killed mutant: the intended behavioral test must report an actual failure.
+func TestOracleMutationExperiments(t *testing.T) {
+	if os.Getenv("ENBU_SIM_MUTATION") != "1" {
+		t.Skip("set ENBU_SIM_MUTATION=1 for isolated source mutation experiments")
+	}
+	cases := []struct{ name, file, old, new, scenario string }{
+		{"lost-update", "app/secrets.go", "secrets[key] = value", "delete(secrets,key)", "concurrent-keys"},
+		{"missed-conflict", "app/secrets.go", "func conflictError(cs []merge.Conflict) error {", "func conflictError(cs []merge.Conflict) error { return nil;", "conflicting-edits"},
+		{"privilege-escalation", "app/members.go", "if p, _ := s.head.Principal(s.self()); !p.Admin {", "if p, _ := s.head.Principal(s.self()); !p.Admin && false {", "membership"},
+		{"missed-rollback", "app/workspace.go", "return nil, wspError(fmt.Errorf(\"%w: all previously accepted revisions are missing\", wsp.ErrRollback))", "return nil,storageError(storage.ErrNotFound)", "adversarial-storage"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, dir := range []string{"app", "pkg", "test/simulation"} {
+				if e := os.CopyFS(filepath.Join(root, dir), os.DirFS(filepath.Join("../..", dir))); e != nil {
+					t.Fatal(e)
+				}
+			}
+			for _, name := range []string{"go.mod", "go.sum"} {
+				b, e := os.ReadFile(filepath.Join("../..", name))
+				if e != nil {
+					t.Fatal(e)
+				}
+				if e := os.WriteFile(filepath.Join(root, name), b, 0600); e != nil {
+					t.Fatal(e)
+				}
+			}
+			path := filepath.Join(root, tc.file)
+			b, e := os.ReadFile(path)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if !bytes.Contains(b, []byte(tc.old)) {
+				t.Fatalf("mutation target disappeared: %s", tc.file)
+			}
+			b = bytes.Replace(b, []byte(tc.old), []byte(tc.new), 1)
+			if e := os.WriteFile(path, b, 0600); e != nil {
+				t.Fatal(e)
+			}
+			cmd := exec.Command("go", "test", "-json", "-count=1", "-tags=fixture", "./test/simulation", "-run", "^TestScenarios/"+tc.scenario+"$")
+			cmd.Dir = root
+			cmd.Env = append(os.Environ(), "ENBU_SIM_MUTATION=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			out, e := cmd.CombinedOutput()
+			if e == nil {
+				t.Fatal("mutant survived")
+			}
+			killed := false
+			for _, line := range bytes.Split(out, []byte("\n")) {
+				var event struct{ Action, Test string }
+				if json.Unmarshal(line, &event) == nil && event.Action == "fail" && event.Test == "TestScenarios/"+tc.scenario {
+					killed = true
+				}
+			}
+			if !killed {
+				t.Fatalf("mutant did not fail the intended behavioral assertion:\n%s", out)
+			}
+		})
+	}
+}
