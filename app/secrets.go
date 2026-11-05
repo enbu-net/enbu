@@ -254,13 +254,19 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			}
 			secrets, parents = maps.Clone(cur.secrets), cur.parents()
 		}
-		if err := change(secrets); err != nil {
-			if err == errNoChange && len(parents) <= 1 {
-				a.emitStepProgress(op, "pull_secrets", "done")
-				return nil
-			}
-			if err != errNoChange {
-				return err
+		// A membership change after Publish may restart this call. If one
+		// of our revisions is already in the trusted result, its mutation has
+		// committed; applying it again would turn a successful add into a
+		// duplicate error or overwrite a later writer's work.
+		if !publishedInRead(cur, published) {
+			if err := change(secrets); err != nil {
+				if err == errNoChange && len(parents) <= 1 {
+					a.emitStepProgress(op, "pull_secrets", "done")
+					return nil
+				}
+				if err != errNoChange {
+					return err
+				}
 			}
 		}
 		// Look once more just before publishing: heads that appeared during the
@@ -317,6 +323,21 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		return nil
 	}
 	return apperr.New(apperr.CodeConflict, fmt.Sprintf("secrets changed by other users while saving; failed after %d attempts", attempts), nil)
+}
+
+func publishedInRead(read *resourceRead, published []digest.Digest) bool {
+	if read == nil {
+		return false
+	}
+	for _, head := range read.heads {
+		ancestors := read.view.Graph.Ancestors(head.Digest)
+		for _, revision := range published {
+			if ancestors[revision] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sameHeads(a, b []*wsp.VerifiedState) bool {
