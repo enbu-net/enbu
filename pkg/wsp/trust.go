@@ -104,6 +104,16 @@ func (t *TrustRoot) Check(root Root) error {
 // a person confirms that the workspace was really re-founded. It returns the
 // root pinned before, or a zero Root.
 func (t *TrustRoot) Pin(root Root, replace bool) (Root, error) {
+	return t.pin(root, replace, nil)
+}
+
+// PinReplacing atomically replaces only the root authorized by a local founding
+// record. Repeating a replacement that already committed remains idempotent.
+func (t *TrustRoot) PinReplacing(root, expected Root) (Root, error) {
+	return t.pin(root, true, &expected)
+}
+
+func (t *TrustRoot) pin(root Root, replace bool, expected *Root) (Root, error) {
 	if root.Workspace == "" {
 		return Root{}, invalid("trust root has no workspace")
 	}
@@ -116,11 +126,14 @@ func (t *TrustRoot) Pin(root Root, replace bool) (Root, error) {
 	}
 	defer release()
 	pinned, err := t.Pinned()
-	if err != nil && !replace {
+	if err != nil && (!replace || expected != nil) {
 		return Root{}, err
 	}
 	if pinned == root {
 		return pinned, nil
+	}
+	if expected != nil && pinned != *expected {
+		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}
 	}
 	if pinned != (Root{}) && !replace {
 		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}
