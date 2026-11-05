@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"time"
 	"uuid"
@@ -11,17 +12,20 @@ import (
 // changing process globals. Unset dependencies retain production behavior.
 // Encryption injection never bypasses decryption or protocol verification.
 type Runtime struct {
-	Now           func() time.Time
+	Clock         clock.Clock
 	NewID         func() string
 	Encrypt       func([]byte, []string) ([]byte, error)
 	LocalStateDir string
 }
 
 func (a *App) now() time.Time {
-	if a.Runtime != nil && a.Runtime.Now != nil {
-		return a.Runtime.Now()
+	return a.clock().Now()
+}
+func (a *App) clock() clock.Clock {
+	if a.Runtime != nil && a.Runtime.Clock != nil {
+		return a.Runtime.Clock
 	}
-	return time.Now()
+	return clock.New()
 }
 func (a *App) newID() string {
 	if a.Runtime != nil && a.Runtime.NewID != nil {

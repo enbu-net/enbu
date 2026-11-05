@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 		if err := config.SaveProjectTo(dir, cfg); err != nil {
 			t.Fatal(err)
 		}
-		a := app.New()
+		a := app.New(clock.New())
 		a.Identities = &desktopKeyStore{values: map[string][]byte{}}
 		a.CheckpointDir = t.TempDir()
 		s := NewService(a)

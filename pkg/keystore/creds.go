@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
@@ -22,7 +23,8 @@ import (
 // the fallback for Linux without a Secret Service, such as a server, a
 // container or WSL. The secret passes through stdin and stdout only.
 type CredsBackend struct {
-	Dir string
+	Clock clock.Clock
+	Dir   string
 	// Command is the systemd-creds executable; tests replace it.
 	Command string
 }
@@ -101,7 +103,11 @@ func (c *CredsBackend) path(service, key string) string {
 func credName(service, key string) string { return service + "." + sanitizeKey(key) }
 
 func (c *CredsBackend) run(stdin []byte, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), credsTimeout)
+	cClock := c.Clock
+	if cClock == nil {
+		cClock = clock.New()
+	}
+	ctx, cancel := clock.WithTimeout(context.Background(), cClock, credsTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.command(), append([]string{"--user"}, args...)...)
 	cmd.Stdin = bytes.NewReader(stdin)

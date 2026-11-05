@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"net/http"
 	"net/url"
 	"slices"
@@ -70,6 +71,7 @@ func TestDeviceLoginEndToEnd(t *testing.T) {
 	}))
 	var waits []time.Duration
 	client := &deviceFlowClient{
+		clock:         clock.New(),
 		deviceCodeURL: server.URL + "/device/code",
 		tokenURL:      server.URL + "/access_token",
 		http:          httpClient,
@@ -121,6 +123,7 @@ func TestDeviceLoginErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			serverURL, httpClient := newDeviceFlowServer(t, tt.response)
 			client := &deviceFlowClient{
+				clock:         clock.New(),
 				deviceCodeURL: serverURL + "/device/code",
 				tokenURL:      serverURL + "/access_token",
 				http:          httpClient,
@@ -145,6 +148,7 @@ func TestDeviceLoginErrors(t *testing.T) {
 func TestDeviceLoginReportsExpiredWhenDeviceDeadlineElapses(t *testing.T) {
 	serverURL, httpClient := newDeviceFlowServer(t, deviceTokenResponse{})
 	client := &deviceFlowClient{
+		clock:         clock.New(),
 		deviceCodeURL: serverURL + "/device/code",
 		tokenURL:      serverURL + "/access_token",
 		http:          httpClient,
@@ -161,6 +165,7 @@ func TestDeviceLoginReportsExpiredWhenDeviceDeadlineElapses(t *testing.T) {
 func TestDeviceLoginHonorsCancellationBeforePolling(t *testing.T) {
 	serverURL, httpClient := newDeviceFlowServer(t, deviceTokenResponse{})
 	client := &deviceFlowClient{
+		clock:         clock.New(),
 		deviceCodeURL: serverURL + "/device/code",
 		tokenURL:      serverURL + "/access_token",
 		http:          httpClient,

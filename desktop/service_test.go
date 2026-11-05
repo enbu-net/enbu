@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -57,7 +58,7 @@ func TestValidateRepoPath(t *testing.T) {
 }
 
 func TestProgressEmitsEvents(t *testing.T) {
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	// Without an emitter the hooks are no-ops.
 	s.OnStepProgress(app.ProgressStep{Op: "pull"})
 
@@ -96,7 +97,7 @@ func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
 	}
 	paths := []string{"", filepath.Join(t.TempDir(), "missing"), filePath}
 	for _, path := range paths {
-		s := NewService(app.New())
+		s := NewService(app.New(clock.New()))
 		s.ctx = context.Background()
 		if _, err := s.SelectRepository(path); !apperr.Is(err, apperr.CodeInvalidArgument) {
 			t.Errorf("SelectRepository(%q) error = %v, want %q", path, err, apperr.CodeInvalidArgument)
@@ -105,7 +106,7 @@ func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
 }
 
 func TestStartOAuthLogin(t *testing.T) {
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	s.ctx = context.Background()
@@ -156,7 +157,7 @@ func TestGetOAuthLoginStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := NewService(app.New())
+			s := NewService(app.New(clock.New()))
 			s.sessions["session"] = &oauthSession{
 				cancel:    func() {},
 				expiresAt: tt.expiresAt,
@@ -193,7 +194,7 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 	var loginContext context.Context
 	s.authLogin = func(ctx context.Context, _ auth.BrowserOpener) (*auth.StoredToken, error) {
@@ -215,7 +216,7 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 }
 
 func TestStartOAuthLoginClassifiesExpiredContext(t *testing.T) {
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
 		return nil, context.DeadlineExceeded
@@ -230,7 +231,7 @@ func TestStartOAuthLoginClassifiesExpiredContext(t *testing.T) {
 func TestSelectRepositoryUpdatesHistory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	s.ctx = context.Background()
@@ -260,7 +261,7 @@ func TestListRepositoriesDeduplicatesHistory(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 
 	repos, err := s.ListRepositories()
@@ -283,7 +284,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
@@ -308,7 +309,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 		t.Fatal(err)
 	}
 	keyStore := &desktopKeyStore{values: make(map[string][]byte)}
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = keyStore
 	s := NewService(a)
 
@@ -343,7 +344,7 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	info, err := s.SelectRepository(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +372,7 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
@@ -397,7 +398,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a := app.New()
+	a := app.New(clock.New())
 	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
@@ -418,7 +419,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 func TestRemoveRepository(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 
 	if _, err := s.SelectRepository(repoDir); err != nil {
@@ -449,7 +450,7 @@ func TestRemoveRepository(t *testing.T) {
 func TestRemoveRepositoryMatchesNormalizedPath(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	s := NewService(app.New())
+	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatalf("SelectRepository: %v", err)

@@ -2,7 +2,7 @@ package apptest
 
 import (
 	"context"
-	"time"
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -62,7 +62,7 @@ func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, i
 		return "", err
 	}
 	defer func() { _ = signer.Close() }()
-	request, err := wsp.NewJoinRequest(workspaceID, id.Recipient().String(), time.Now(), signer)
+	request, err := wsp.NewJoinRequest(workspaceID, id.Recipient().String(), clock.New().Now(), signer)
 	if err != nil {
 		return "", err
 	}

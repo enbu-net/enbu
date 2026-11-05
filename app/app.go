@@ -12,6 +12,7 @@ import (
 	"uuid"
 
 	enbuauth "github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
@@ -212,11 +213,12 @@ func (a *App) emitStepProgress(op, step, status string) {
 	}
 }
 
-func New() *App {
+func New(c clock.Clock) *App {
 	gitClient := gitprovider.NewCLIClient()
 	return &App{
 		TokenProvider: &defaultTokenProvider{},
-		Identities:    identity.New(),
+		Runtime:       &Runtime{Clock: c},
+		Identities:    identity.New(c),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
 		Git:           gitClient,
 	}

@@ -2,6 +2,7 @@ package wsp
 
 import (
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"testing"
 
@@ -13,7 +14,7 @@ func root(ws, g string) Root { return Root{Workspace: ws, Genesis: digest.FromSt
 func TestTrustRootPinsTheFirstRoot(t *testing.T) {
 	dir := t.TempDir()
 	r1, r2 := root("ws", "g1"), root("ws", "g2")
-	tr := OpenTrustRoot(dir, "ws")
+	tr := OpenTrustRoot(dir, "ws", clock.New())
 	if err := tr.Check(r1); err != nil {
 		t.Fatalf("nothing pinned yet: %v", err)
 	}
@@ -24,7 +25,7 @@ func TestTrustRootPinsTheFirstRoot(t *testing.T) {
 		t.Fatalf("pinning the same root again: %v %v", prev, err)
 	}
 	// A fresh handle reads the pin back from disk.
-	tr = OpenTrustRoot(dir, "ws")
+	tr = OpenTrustRoot(dir, "ws", clock.New())
 	var changed *TrustRootChangedError
 	if err := tr.Check(r2); !errors.As(err, &changed) || changed.Pinned != r1 || changed.Configured != r2 {
 		t.Fatalf("Check accepted another genesis: %v", err)
@@ -47,7 +48,7 @@ func TestTrustRootPinsTheFirstRoot(t *testing.T) {
 // enbu.toml is still a change of trust root.
 func TestRepositoryTrustRootComparesTheWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	tr := OpenRepositoryTrustRoot(dir, "/repo/enbu.toml")
+	tr := OpenRepositoryTrustRoot(dir, "/repo/enbu.toml", clock.New())
 	if _, err := tr.Pin(root("ws1", "g1"), false); err != nil {
 		t.Fatal(err)
 	}
@@ -55,24 +56,24 @@ func TestRepositoryTrustRootComparesTheWorkspace(t *testing.T) {
 	if err := tr.Check(root("ws2", "g2")); !errors.As(err, &changed) || changed.Pinned.Workspace != "ws1" {
 		t.Fatalf("another workspace was accepted: %v", err)
 	}
-	if err := OpenRepositoryTrustRoot(dir, "/other/enbu.toml").Check(root("ws2", "g2")); err != nil {
+	if err := OpenRepositoryTrustRoot(dir, "/other/enbu.toml", clock.New()).Check(root("ws2", "g2")); err != nil {
 		t.Fatalf("a pin leaked to another repository: %v", err)
 	}
 }
 
 func TestTrustRootIsPerWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := OpenTrustRoot(dir, "a").Pin(root("a", "g1"), false); err != nil {
+	if _, err := OpenTrustRoot(dir, "a", clock.New()).Pin(root("a", "g1"), false); err != nil {
 		t.Fatal(err)
 	}
-	if err := OpenTrustRoot(dir, "b").Check(root("b", "g2")); err != nil {
+	if err := OpenTrustRoot(dir, "b", clock.New()).Check(root("b", "g2")); err != nil {
 		t.Fatalf("a pin leaked to another workspace: %v", err)
 	}
 }
 
 func TestTrustRootRejectsACorruptFileUnlessReplaced(t *testing.T) {
 	dir := t.TempDir()
-	tr := OpenTrustRoot(dir, "ws")
+	tr := OpenTrustRoot(dir, "ws", clock.New())
 	if err := os.WriteFile(tr.path, []byte(`{"version":1,"workspace":"ws","genesis":"nope"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestTrustRootRejectsACorruptFileUnlessReplaced(t *testing.T) {
 }
 
 func TestTrustRootRejectsAnInvalidRoot(t *testing.T) {
-	tr := OpenTrustRoot(t.TempDir(), "ws")
+	tr := OpenTrustRoot(t.TempDir(), "ws", clock.New())
 	if _, err := tr.Pin(Root{Workspace: "ws", Genesis: "sha256:short"}, false); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("pinned an invalid digest: %v", err)
 	}

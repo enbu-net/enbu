@@ -17,6 +17,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"filippo.io/age"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"
 )
@@ -162,11 +163,11 @@ func probeVault(v Vault) error {
 // or paired with an ML-KEM-768 seed.
 func hardwareAlgorithm(alg string) bool { return alg == algP256 || alg == algMLKEMP256 }
 
-func New() *Manager {
+func New(c clock.Clock) *Manager {
 	m := &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
-		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), Classical: os.Getenv(classicalFlag) == "1"}
+		Vault: &keystore.KeyringBackend{Clock: c}, Hardware: platformHardware(c), Classical: os.Getenv(classicalFlag) == "1"}
 	if runtime.GOOS == "linux" {
-		m.Creds = &keystore.CredsBackend{Dir: filepath.Join(config.DataDir(), "credentials")}
+		m.Creds = &keystore.CredsBackend{Clock: c, Dir: filepath.Join(config.DataDir(), "credentials")}
 	}
 	return m
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -41,7 +42,7 @@ func startServerWith(t *testing.T, patch func(*Server)) *client {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
 
-	core := desktop.NewService(app.New())
+	core := desktop.NewService(app.New(clock.New()))
 	core.AppVersion = "1.2.3"
 	reqR, reqW := io.Pipe()
 	respR, respW := io.Pipe()
@@ -338,7 +339,7 @@ func TestOversizedMessageIsRejectedAndServingGoesOn(t *testing.T) {
 
 func TestReadsLastMessageWithoutNewline(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	core := desktop.NewService(app.New())
+	core := desktop.NewService(app.New(clock.New()))
 	var out bytes.Buffer
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"GetAppVersion"}`)
 	if err := NewServer(core).Serve(context.Background(), in, &out); err != nil {
@@ -364,7 +365,7 @@ func (w *failAfterServe) Write(p []byte) (int, error) {
 
 func TestServiceStopsWritingAfterServeReturns(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	core := desktop.NewService(app.New())
+	core := desktop.NewService(app.New(clock.New()))
 	out := &failAfterServe{t: t}
 	if err := NewServer(core).Serve(context.Background(), strings.NewReader(""), out); err != nil {
 		t.Fatalf("Serve() error = %v", err)

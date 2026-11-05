@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/clock"
 	gh "github.com/enbu-net/enbu/pkg/provider/github"
 )
 
@@ -50,7 +51,12 @@ var (
 
 type BrowserOpener func(string) error
 
+type Client struct {
+	Clock clock.Clock
+}
+
 type oauthClient struct {
+	clock   clock.Clock
 	baseURL string
 	http    *http.Client
 }
@@ -82,12 +88,12 @@ type callbackResult struct {
 	denied bool
 }
 
-func Login(ctx context.Context, openBrowser BrowserOpener) (*StoredToken, error) {
-	return newOAuthClient(authEndpoint, newHTTPClient()).login(ctx, openBrowser)
+func (c Client) Login(ctx context.Context, openBrowser BrowserOpener) (*StoredToken, error) {
+	return newOAuthClient(authEndpoint, newHTTPClient(), c.Clock).login(ctx, openBrowser)
 }
 
-func newOAuthClient(baseURL string, httpClient *http.Client) *oauthClient {
-	return &oauthClient{baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
+func newOAuthClient(baseURL string, httpClient *http.Client, c clock.Clock) *oauthClient {
+	return &oauthClient{clock: c, baseURL: strings.TrimRight(baseURL, "/"), http: httpClient}
 }
 
 func newHTTPClient() *http.Client {
@@ -107,7 +113,7 @@ func newHTTPClient() *http.Client {
 }
 
 func (c *oauthClient) login(parent context.Context, openBrowser BrowserOpener) (*StoredToken, error) {
-	ctx, cancel := context.WithTimeout(parent, loginTimeout)
+	ctx, cancel := clock.WithTimeout(parent, c.clock, loginTimeout)
 	defer cancel()
 
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -236,20 +242,16 @@ func (c *oauthClient) exchange(ctx context.Context, body exchangeRequest) (*exch
 			return nil, fmt.Errorf("exchanging OAuth code: %w", err)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
-			delay, ok := retryAfter(resp.Header.Get("Retry-After"), time.Now())
+			delay, ok := retryAfter(resp.Header.Get("Retry-After"), c.clock.Now())
 			_ = resp.Body.Close()
 			delay = retryDelay(delay, retryAttempt)
 			retryAttempt++
 			deadline, hasDeadline := ctx.Deadline()
-			if !ok || hasDeadline && !time.Now().Add(delay).Before(deadline) {
+			if !ok || hasDeadline && !c.clock.Now().Add(delay).Before(deadline) {
 				return nil, errors.New("exchanging OAuth code: rate limited")
 			}
-			timer := time.NewTimer(delay)
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return nil, fmt.Errorf("exchanging OAuth code: %w", ctx.Err())
-			case <-timer.C:
+			if err := clock.Wait(ctx, c.clock, delay); err != nil {
+				return nil, fmt.Errorf("exchanging OAuth code: %w", err)
 			}
 			continue
 		}

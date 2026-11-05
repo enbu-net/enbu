@@ -8,6 +8,7 @@ import (
 	"crypto/mlkem"
 	"errors"
 	"fmt"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"runtime"
 	"sync"
 	"time"
@@ -137,7 +138,14 @@ func (a *securityAPI) nativeError(ref uintptr, op string) error {
 	return fmt.Errorf("Security framework %s failed", op)
 }
 
-type enclaveBackend struct{}
+type enclaveBackend struct{ Clock clock.Clock }
+
+func (b *enclaveBackend) clock() clock.Clock {
+	if b.Clock != nil {
+		return b.Clock
+	}
+	return clock.New()
+}
 
 // enclaveTokenObject is the key attribute that carries a Secure Enclave key's
 // wrapped private key, the same blob CryptoKit calls dataRepresentation. Apple
@@ -206,7 +214,7 @@ func (b *enclaveBackend) generate() (*enclaveKey, []byte, error) {
 	n := a.numberCreate(0, 3, &size) // kCFNumberSInt32Type
 	a.set(attrs, "kSecAttrKeySizeInBits", n)
 	a.release(n)
-	ref, nativeErr, err := callWithTimeout(nativeCallTimeout, func() (uintptr, uintptr) {
+	ref, nativeErr, err := callWithTimeout(b.clock(), nativeCallTimeout, func() (uintptr, uintptr) {
 		var nativeErr uintptr
 		ref := a.keyCreate(attrs, &nativeErr)
 		a.release(attrs)
@@ -287,7 +295,7 @@ func (b *enclaveBackend) restore(blob []byte, expected func([]byte) bool) (*encl
 	a.dictSet(attrs, name, d)
 	// The inputs belong to the call: if it outlives the timeout, the late
 	// return releases them together with its result.
-	ref, nativeErr, err := callWithTimeout(nativeCallTimeout, func() (uintptr, uintptr) {
+	ref, nativeErr, err := callWithTimeout(b.clock(), nativeCallTimeout, func() (uintptr, uintptr) {
 		var nativeErr uintptr
 		ref := a.keyWithData(d, attrs, &nativeErr)
 		a.release(d)
