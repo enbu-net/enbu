@@ -73,7 +73,7 @@ func ErrorCode(e error) string {
 }
 func (w *World) Observe(name string, input, output any, e error) error {
 	if te := w.Tape.Observe("operation", []any{name, input}, []any{output, ErrorCode(e)}); te != nil {
-		return te
+		return fmt.Errorf("observing %s (operation error: %v): %w", name, e, te)
 	}
 	return e
 }

@@ -6,6 +6,7 @@ import (
 )
 
 type Plan struct {
+	MergeCase     *MergeCase
 	AdminRace     string
 	Team          *TeamCase
 	Concurrent    *ConcurrentCase
@@ -48,6 +49,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.MergeCase != nil {
+		if err := w.MergeCase(ctx, *plan.MergeCase); err != nil {
+			return err
+		}
 	}
 	if plan.AdminRace != "" {
 		if err := w.AdminRace(ctx, plan.AdminRace); err != nil {
