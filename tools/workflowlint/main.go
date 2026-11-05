@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -25,6 +26,29 @@ func field(n *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+// Inspect runner labels and matrix values, including include/exclude entries.
+// This deliberately rejects ubuntu-latest so image upgrades remain explicit.
+var ubuntuLabel = regexp.MustCompile(`ubuntu-[A-Za-z0-9.-]+`)
+
+func validateUbuntu(n *yaml.Node) error {
+	if n == nil {
+		return nil
+	}
+	if n.Kind == yaml.ScalarNode {
+		for _, label := range ubuntuLabel.FindAllString(n.Value, -1) {
+			if label != "ubuntu-26.04" && label != "ubuntu-26.04-arm" {
+				return fmt.Errorf("line %d: Ubuntu runner %q is forbidden; use ubuntu-26.04 or ubuntu-26.04-arm", n.Line, label)
+			}
+		}
+	}
+	for _, child := range n.Content {
+		if err := validateUbuntu(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func normalize(data []byte) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -34,6 +58,16 @@ func normalize(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("expected one workflow document")
 	}
 	jobs := field(doc.Content[0], "jobs")
+	if jobs != nil {
+		for i := 1; i < len(jobs.Content); i += 2 {
+			job := jobs.Content[i]
+			for _, node := range []*yaml.Node{field(job, "runs-on"), field(field(job, "strategy"), "matrix")} {
+				if err := validateUbuntu(node); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	changed := false
 	if jobs != nil {
 		for i := 1; i < len(jobs.Content); i += 2 {

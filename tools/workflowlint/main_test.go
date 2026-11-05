@@ -10,7 +10,7 @@ import (
 )
 
 func TestNormalizePreservesEveryParallelChildForActionlint(t *testing.T) {
-	input := []byte("name: test\non: push\njobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - parallel:\n          - name: first\n            run: echo first\n            env:\n              VALUE: kept\n          - name: second\n            uses: actions/checkout@v7.0.1\n      - run: echo after\n")
+	input := []byte("name: test\non: push\njobs:\n  test:\n    runs-on: ubuntu-26.04\n    steps:\n      - parallel:\n          - name: first\n            run: echo first\n            env:\n              VALUE: kept\n          - name: second\n            uses: actions/checkout@v7.0.1\n      - run: echo after\n")
 	data, err := normalize(input)
 	if err != nil {
 		t.Fatal(err)
@@ -90,5 +90,20 @@ func TestDSTHasOneJobPerPlatformAndFourDisjointLanes(t *testing.T) {
 	schedule := field(field(doc.Content[0], "on"), "schedule")
 	if field(schedule.Content[0], "cron").Value != "0 17 * * *" {
 		t.Fatal("full DST must start at 02:00 Asia/Tokyo")
+	}
+}
+
+func TestUbuntuRunnerPolicy(t *testing.T) {
+	for _, label := range []string{"ubuntu-latest", "ubuntu-24.04", "ubuntu-24.04-arm", "ubuntu-22.04", "ubuntu-26.04-large"} {
+		for _, runner := range []string{"    runs-on: ${{ github.event_name == 'push' && '" + label + "' || 'windows-2025' }}\n", "    runs-on: " + label + "\n", "    runs-on: [self-hosted, " + label + "]\n", "    runs-on: ${{ matrix.runner }}\n    strategy:\n      matrix:\n        runner: [" + label + "]\n", "    runs-on: ${{ matrix.os }}\n    strategy:\n      matrix:\n        include:\n          - os: " + label + "\n"} {
+			if _, err := normalize([]byte("jobs:\n  test:\n" + runner)); err == nil || !strings.Contains(err.Error(), label) {
+				t.Errorf("accepted forbidden label: %s", runner)
+			}
+		}
+	}
+	for _, label := range []string{"ubuntu-26.04", "ubuntu-26.04-arm", "macos-15", "windows-2025", "windows-11-arm"} {
+		if _, err := normalize([]byte("jobs:\n  test:\n    runs-on: " + label + "\n")); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

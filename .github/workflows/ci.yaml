@@ -21,9 +21,9 @@ jobs:
       matrix:
         include:
           - target: linux-amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - target: linux-arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
           - target: windows-amd64
             runner: windows-2025
           - target: windows-arm64
@@ -63,7 +63,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, windows-2025, macos-15]
+        runner: [ubuntu-26.04, windows-2025, macos-15]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -139,7 +139,7 @@ jobs:
 
   check:
     name: Static checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -201,7 +201,7 @@ jobs:
 
   test:
     name: Unit and component tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v7.0.1
@@ -248,7 +248,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, windows-2025, macos-15]
+        runner: [ubuntu-26.04, windows-2025, macos-15]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -288,7 +288,7 @@ jobs:
 
   scenario:
     name: Scenario tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 65
     steps:
       - uses: actions/checkout@v7.0.1
@@ -324,7 +324,7 @@ jobs:
 
   e2e:
     name: CLI E2E tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
@@ -370,7 +370,7 @@ jobs:
     name: Check
     if: always()
     needs: [core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -381,7 +381,7 @@ jobs:
           echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
 
   renovate-config:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
