@@ -29,6 +29,7 @@ type World struct {
 	Devices   []*Device
 	Root      string
 	Model     map[string]map[string]string
+	Clock     string
 	tick, id  uint64
 }
 
@@ -43,7 +44,19 @@ func NewWorld(root string, tape *Tape, n int) (*World, error) {
 		k := &Keys{Tape: tape, Device: i}
 		s := &Store{Store: memory, Tape: tape, Device: i}
 		a := &app.App{Storage: s, Identities: k, RepositoryDir: dir, CheckpointDir: filepath.Join(dir, "checkpoints"), CacheDir: filepath.Join(dir, "cache"), StorageURL: "oci://simulation.invalid/workspace", RepoDetector: simulationRepo{}, TokenProvider: simulationToken{}}
-		a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Now: func() time.Time { w.tick++; return time.Unix(1700000000+int64(w.tick), 0) }, NewID: func() string {
+		a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Now: func() time.Time {
+			w.tick++
+			seconds := int64(1700000000) + int64(w.tick)
+			switch w.Clock {
+			case "frozen":
+				seconds = 1700000000
+			case "backward":
+				seconds = 1700000000 - int64(w.tick)
+			case "skewed":
+				seconds += int64(i-n/2) * 365 * 24 * 60 * 60
+			}
+			return time.Unix(seconds, 0)
+		}, NewID: func() string {
 			w.id++
 			return fmt.Sprintf("%08x-0000-4000-8000-%012x", uint32(tape.Recording.Seed), w.id)
 		}, Encrypt: func(p []byte, r []string) ([]byte, error) {

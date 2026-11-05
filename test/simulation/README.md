@@ -121,6 +121,13 @@ published merge revision. Partial and stale resolutions must be refused.
 `pkg/merge` additionally enumerates all 64 single-key three-way states with head
 reordering/duplication and both choice types; it runs in the DST CI job too.
 
+`TestMultiUserClockProfiles` repeats history, key update, membership,
+concurrent disjoint writes, conflicting edits, and Control fork with frozen,
+backward-moving, and independently skewed device clocks under four schedules:
+72 record/replay cases. This checks that timestamps do not override causal
+history or membership authority. These profiles use deterministic clock values;
+wall-clock timing never chooses the scheduler's next actor.
+
 ## Exploration controls
 
 - `ENBU_SIM_SEEDS`, `ENBU_SIM_STEPS`: generated sequences per shard and sequence length.

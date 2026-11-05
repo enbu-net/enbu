@@ -6,6 +6,7 @@ import (
 )
 
 type Plan struct {
+	Clock         string
 	Compound      *CompoundCase
 	Swarm         string
 	MergeCase     *MergeCase
@@ -34,6 +35,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	if plan.Devices < 2 || plan.Devices > 8 {
 		return fmt.Errorf("invalid device count %d", plan.Devices)
 	}
+	switch plan.Clock {
+	case "", "frozen", "backward", "skewed":
+	default:
+		return fmt.Errorf("invalid clock profile %q", plan.Clock)
+	}
 	for index, op := range plan.Actions {
 		if op.Device < 0 || op.Device >= plan.Devices {
 			return fmt.Errorf("action %d: invalid device %d", index, op.Device)
@@ -43,6 +49,7 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	if e != nil {
 		return e
 	}
+	w.Clock = plan.Clock
 	if plan.FoundingFault != nil {
 		if _, err := w.FoundingProbe(ctx, *plan.FoundingFault); err != nil {
 			return err
