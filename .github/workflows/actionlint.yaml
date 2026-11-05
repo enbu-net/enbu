@@ -2,6 +2,7 @@ name: Actionlint
 
 on:
   push:
+    branches: [main]
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -14,8 +15,6 @@ concurrency:
 
 jobs:
   actionlint:
-    # Branch pushes cover same-repository PRs once; forks need a PR event.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
