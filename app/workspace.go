@@ -312,7 +312,7 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 	// A signed state exists, so a missing blob is lost data, never an empty
 	// environment. Treating it as not-found lets mutations replace its secrets.
 	if errors.Is(err, storage.ErrNotFound) {
-		return nil, wspError(fmt.Errorf("%w: ciphertext for %s is missing", wsp.ErrRollback, st.Digest))
+		return nil, wspError(fmt.Errorf("%w: ciphertext for %s is missing: %w", wsp.ErrRollback, st.Digest, err))
 	}
 	if err != nil {
 		return nil, wspError(err)
