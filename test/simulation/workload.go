@@ -38,7 +38,7 @@ func Generate(seed uint64, steps, devices int) []Action {
 				out[len(out)-1].Parallel.Compact = true
 			}
 		}
-		if devices >= 3 && i%32 == 23 {
+		if devices >= 3 && i%32 == 15 {
 			out[len(out)-1].Kind = "team-group"
 			out[len(out)-1].Parallel = nil
 			out[len(out)-1].Key = "TEAM_" + out[len(out)-1].Value
