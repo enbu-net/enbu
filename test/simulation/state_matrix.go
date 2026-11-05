@@ -3,6 +3,7 @@ package simulation
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
 
 	"github.com/enbu-net/enbu/app"
@@ -13,7 +14,7 @@ import (
 // StateCase is an explicit cross product, not a randomly sampled coverage claim.
 type StateCase struct{ Operation, State, Role string }
 
-var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade"}
+var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade", "resolve-stale", "resolve-empty", "file-pull"}
 var DataStates = []string{"empty", "populated", "deleted", "missing-environment"}
 var MemberStates = []string{"admin", "member", "pending", "removed"}
 
@@ -94,6 +95,8 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	want := clone(w.Model["default"])
 	expected := ""
 	switch {
+	case c.Operation == "resolve-empty":
+		expected = string(apperr.CodeInvalidArgument)
 	case c.State == "missing-environment" && !controlOperation:
 		expected = string(apperr.CodeEnvironmentMissing)
 	case c.Operation == "members" || c.Operation == "requests":
@@ -102,6 +105,13 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		expected = string(apperr.CodeNotMember)
 	case (c.Operation == "compact" || c.Operation == "approve" || c.Operation == "remove" || c.Operation == "admin") && c.Role == "member":
 		expected = string(apperr.CodeAccessDenied)
+	case c.Operation == "resolve-stale":
+		expected = string(apperr.CodeConflict)
+		if c.State == "empty" {
+			expected = string(apperr.CodeArtifactNotFound)
+		}
+	case c.Operation == "file-pull" && c.State == "empty":
+		expected = string(apperr.CodeArtifactNotFound)
 	case c.Operation == "add" && c.State == "populated":
 		expected = string(apperr.CodeSecretExists)
 	case c.Operation == "edit" && c.State == "empty":
@@ -116,6 +126,12 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	var out any
 	var err error
 	switch c.Operation {
+	case "resolve-stale":
+		err = a.ResolveSecrets(ctx, env, []string{"stale"}, map[string]app.SecretChoice{"BASE": {Value: "must-not-commit"}})
+	case "resolve-empty":
+		err = a.ResolveSecrets(ctx, env, nil, map[string]app.SecretChoice{"BASE": {Value: "must-not-commit"}})
+	case "file-pull":
+		err = a.PullSecretsToFile(ctx, env)
 	case "add":
 		err = a.AddSecret(ctx, env, "BASE", "changed")
 	case "edit":
@@ -169,6 +185,10 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 			delete(want, "BASE")
 		case "restore":
 			want["BASE"] = "original"
+		case "file-pull":
+			if err := w.checkOutput("state-file-pull", filepath.Join(a.RepositoryDir, ".env"), want); err != nil {
+				return err
+			}
 		case "pull":
 			if !reflect.DeepEqual(out.(*app.PulledSecrets).Secrets, want) {
 				return fmt.Errorf("pull differs from model")
