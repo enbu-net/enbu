@@ -6,6 +6,7 @@ import (
 )
 
 type Plan struct {
+	StateCase     *StateCase
 	FoundingFault *Fault
 	Probe         *Probe
 	Devices       int
@@ -44,6 +45,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.StateCase != nil {
+		if err := w.StateCase(ctx, *plan.StateCase); err != nil {
+			return err
+		}
 	}
 	if plan.Probe != nil {
 		if _, e := w.Probe(ctx, *plan.Probe); e != nil {

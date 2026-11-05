@@ -18,6 +18,7 @@ jobs:
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 120
     strategy:
+      max-parallel: 5
       fail-fast: false
       matrix:
         platform:
@@ -29,6 +30,8 @@ jobs:
             runner: macos-15
           - target: windows-amd64
             runner: windows-2025
+          - target: windows-arm64
+            runner: windows-11-arm
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       CGO_ENABLED: '0'
@@ -61,3 +64,16 @@ jobs:
           path: ${{ github.workspace }}/.tmp/simulation
           if-no-files-found: ignore
           retention-days: 14
+
+  simulation-status:
+    name: Simulation
+    if: always()
+    needs: [simulation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every platform and shard to succeed
+        env:
+          RESULT: ${{ needs.simulation.result }}
+        run: test "$RESULT" = success

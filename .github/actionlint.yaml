@@ -1,0 +1,3 @@
+# Hosted label introduced after actionlint v1.7.12's runner catalog.
+self-hosted-runner:
+  labels: [ubuntu-26.04]

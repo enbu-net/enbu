@@ -40,6 +40,19 @@ The catalog test fails when an exported App operation has no driver or inventory
 entry. The table describes tested behaviors, not exhaustive proof over all possible
 states. Generated sequences and fault exploration supplement the fixed assertions.
 
+`TestOperationStateMatrix` enumerates 12 data/history operations × 4 states
+(never written, populated, last key deleted, absent environment) × 4 membership
+states (admin, member, pending, removed): 192 named cases. Every case records
+and replays, asserts the expected result code, checks the resulting secret map on
+all devices, and checks a second environment was unaffected. This matrix covers
+these dimensions explicitly; compound partitions, forks, local file failures and
+hardware behavior remain the separately named scenarios and integration tests.
+
+Generated sequences mix secret operations with environment create/switch/rename/
+delete, compaction, membership remove/rejoin, role changes and restarts. After
+every action, all live environments are compared on every device. Rejoining after
+a hybrid key update has a dedicated regression case.
+
 ## Exploration controls
 
 - `ENBU_SIM_SEEDS`, `ENBU_SIM_STEPS`: generated sequences per shard and sequence length.
@@ -58,8 +71,8 @@ members against the independent model. Temporary failures do not authorize losin
 unrelated values. Persistent partitions, stale writers, truncated reads, corruption,
 missing objects and invalid signed objects have separate scenarios.
 
-Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64 and Windows x64. Each platform uses eight
-shards, each exploring 128 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
+Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows ARM64. Each platform uses eight
+shards, with at most five matrix jobs running simultaneously, each exploring 128 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
 cases. A timeout is failure. Failure artifacts contain synthetic private keys and
 plaintext so they can recreate the exact fixture; never use real workspace data.
 Oracle failures in long operation sequences are reduced by chunk deletion, and a

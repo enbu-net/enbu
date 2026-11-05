@@ -115,6 +115,21 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	if _, ok := s.head.Principal(device); !ok {
 		// Not a member: leave a request an admin can pick from a list. It carries
 		// no authority, so anyone able to write to storage can do the same.
+		// A removed device may have upgraded its encryption key since its
+		// original join. Remove its own obsolete signed requests before
+		// asking again, otherwise approval sees two different recipients.
+		// Never choose a request by its untrusted listing order or timestamp.
+		requests, err := wsp.ListJoinRequests(ctx, store, cfg.WorkspaceID)
+		if err != nil {
+			return nil, storageError(err)
+		}
+		for _, request := range requests {
+			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
+				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil {
+					return nil, storageError(err)
+				}
+			}
+		}
 		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, a.now(), signer)
 		if err != nil {
 			return nil, err
