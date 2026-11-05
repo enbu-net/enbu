@@ -3,6 +3,7 @@ package identity
 import (
 	"bytes"
 	"errors"
+	"github.com/jonboulle/clockwork"
 	"testing"
 	"time"
 
@@ -235,10 +236,9 @@ func TestTPMKeysWithoutPRFHaveNoAuthValue(t *testing.T) {
 }
 
 func TestTPMAuthIsCachedForItsTTL(t *testing.T) {
-	now := time.Unix(0, 0)
+	c := clockwork.NewFakeClockAt(time.Unix(0, 0))
 	hello := &fakeVerifier{secret: bytes.Repeat([]byte{7}, 32)}
-	b := &TPMBackend{Verifier: hello}
-	b.auth.now = func() time.Time { return now }
+	b := &TPMBackend{Verifier: hello, Clock: c}
 	credential, first, err := b.enrollAuth()
 	if err != nil {
 		t.Fatal(err)
@@ -257,8 +257,11 @@ func TestTPMAuthIsCachedForItsTTL(t *testing.T) {
 	if got, _ := b.authFor(credential); bytes.Equal(got, first) {
 		t.Fatal("the cache handed out its own buffer")
 	}
-	now = now.Add(authTTL + time.Second)
-	if b.auth.cached(nil) != nil || b.auth.value != nil {
+	c.Advance(authTTL + time.Second)
+	b.auth.mu.Lock()
+	expired := b.auth.cached(nil) == nil && b.auth.value == nil
+	b.auth.mu.Unlock()
+	if !expired {
 		t.Fatal("an expired secret stayed in the cache")
 	}
 	if _, err := b.authFor(credential); err != nil || hello.asks != 1 {

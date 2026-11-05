@@ -2,4 +2,6 @@
 
 package identity
 
-func platformHardware() HardwareBackend { return nil }
+import "github.com/enbu-net/enbu/pkg/clock"
+
+func platformHardware(c clock.Clock) HardwareBackend { return nil }

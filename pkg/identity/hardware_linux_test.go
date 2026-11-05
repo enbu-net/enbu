@@ -4,6 +4,7 @@ package identity
 
 import (
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"io/fs"
 	"os"
 	"strings"
@@ -30,8 +31,8 @@ func TestExplainTPMOpenError(t *testing.T) {
 }
 
 func TestPlatformHardwareUsesResourceManager(t *testing.T) {
-	b, ok := platformHardware().(*TPMBackend)
+	b, ok := platformHardware(clock.New()).(*TPMBackend)
 	if !ok || b.Device != "/dev/tpmrm0" {
-		t.Fatalf("platformHardware() = %#v, want the TPM backend on /dev/tpmrm0", platformHardware())
+		t.Fatalf("platformHardware(clock.New()) = %#v, want the TPM backend on /dev/tpmrm0", platformHardware(clock.New()))
 	}
 }

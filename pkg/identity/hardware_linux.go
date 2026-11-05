@@ -5,6 +5,7 @@ package identity
 import (
 	"errors"
 	"fmt"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"io/fs"
 
 	"github.com/google/go-tpm/tpm2/transport"
@@ -17,8 +18,8 @@ import (
 // enbu dies. Every kernel since 4.12 has the resource manager.
 const tpmDevice = "/dev/tpmrm0"
 
-func platformHardware() HardwareBackend {
-	return &TPMBackend{Device: tpmDevice, Open: func() (transport.TPMCloser, error) {
+func platformHardware(c clock.Clock) HardwareBackend {
+	return &TPMBackend{Clock: c, Device: tpmDevice, Open: func() (transport.TPMCloser, error) {
 		t, err := linuxtpm.Open(tpmDevice)
 		return t, explainTPMOpenError(err)
 	}}

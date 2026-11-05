@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,7 +36,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 		if err := config.SaveProjectTo(dir, cfg); err != nil {
 			t.Fatal(err)
 		}
-		a := app.New()
+		a := app.New(clock.New())
 		a.Identities = &desktopKeyStore{values: map[string][]byte{}}
 		a.CheckpointDir = t.TempDir()
 		s := NewService(a)
@@ -59,7 +60,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 	if err := os.WriteFile(filepath.Join(bobDir, "enbu.toml"), shared, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	device, err := apptest.JoinRequest(ctx, store, cfg.WorkspaceID, bobApp.Identities)
+	device, err := apptest.JoinRequest(ctx, store, cfg.WorkspaceID, bobApp.Identities, clock.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 // another asks to join with a fresh device, the way a third person would.
 func (f *membersFixture) another(t *testing.T) string {
 	t.Helper()
-	id, err := apptest.JoinRequest(context.Background(), f.store, f.workspace, &desktopKeyStore{values: map[string][]byte{}})
+	id, err := apptest.JoinRequest(context.Background(), f.store, f.workspace, &desktopKeyStore{values: map[string][]byte{}}, clock.New())
 	if err != nil {
 		t.Fatal(err)
 	}

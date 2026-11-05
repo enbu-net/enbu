@@ -3,6 +3,7 @@ package wsp
 import (
 	"context"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -126,7 +127,7 @@ func TestAboveFloors(t *testing.T) {
 }
 
 func TestCheckpointExcusesCompactedHeads(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"))
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"), clock.New())
 	g, ids := graphOf(map[string][]string{"old": nil})
 	if err := cps.AcceptStates(testResource, g, nil, []digest.Digest{ids["old"]}, d("control")); err != nil {
 		t.Fatal(err)

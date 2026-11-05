@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 const (
@@ -34,6 +35,7 @@ type DeviceAuthorization struct {
 type DevicePrompter func(DeviceAuthorization) error
 
 type deviceFlowClient struct {
+	clock         clock.Clock
 	deviceCodeURL string
 	tokenURL      string
 	http          *http.Client
@@ -58,12 +60,16 @@ type deviceTokenResponse struct {
 	Interval         int    `json:"interval"`
 }
 
-func LoginDevice(ctx context.Context, clientID string, prompt DevicePrompter) (*StoredToken, error) {
+func (c Client) LoginDevice(ctx context.Context, clientID string, prompt DevicePrompter) (*StoredToken, error) {
+	if c.Clock == nil {
+		c.Clock = clock.New()
+	}
 	client := &deviceFlowClient{
+		clock:         c.Clock,
 		deviceCodeURL: githubDeviceCodeURL,
 		tokenURL:      githubTokenURL,
 		http:          newHTTPClient(),
-		wait:          waitForDevicePoll,
+		wait:          func(ctx context.Context, d time.Duration) error { return clock.Wait(ctx, c.Clock, d) },
 	}
 	return client.login(ctx, clientID, prompt)
 }
@@ -91,7 +97,8 @@ func (c *deviceFlowClient) login(
 		return nil, fmt.Errorf("showing device authorization: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(parent, time.Duration(device.ExpiresIn)*time.Second)
+	expiresAt := c.clock.Now().Add(time.Duration(device.ExpiresIn) * time.Second)
+	ctx, cancel := clock.WithDeadline(parent, c.clock, expiresAt)
 	defer cancel()
 
 	interval := time.Duration(device.Interval) * time.Second
@@ -105,6 +112,10 @@ func (c *deviceFlowClient) login(
 				)
 			}
 			return nil, fmt.Errorf("waiting for device authorization: %w", err)
+		}
+
+		if !c.clock.Now().Before(expiresAt) && parent.Err() == nil {
+			return nil, apperr.New(apperr.CodeAuthExpired, "device code expired, please try again", nil)
 		}
 
 		response, err := c.requestToken(ctx, clientID, device.DeviceCode)
@@ -241,15 +252,4 @@ func storeDeviceToken(ctx context.Context, accessToken string) (*StoredToken, er
 		return nil, fmt.Errorf("saving token: %w", err)
 	}
 	return token, nil
-}
-
-func waitForDevicePoll(ctx context.Context, duration time.Duration) error {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
-		return nil
-	}
 }

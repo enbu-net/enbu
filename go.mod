@@ -3,7 +3,6 @@ module github.com/enbu-net/enbu
 go 1.27.3
 
 require (
- github.com/newmo-oss/ergo v0.1.2
 	charm.land/bubbletea/v2 v2.1.1
 	filippo.io/age v1.3.2
 	filippo.io/hpke v0.4.0
@@ -19,7 +18,9 @@ require (
 	github.com/google/go-github/v93 v93.0.0
 	github.com/google/go-tpm v0.9.8
 	github.com/google/go-tpm-tools v0.4.11
+	github.com/jonboulle/clockwork v0.5.0
 	github.com/minio/minio-go/v7 v7.4.1
+	github.com/newmo-oss/ergo v0.1.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2

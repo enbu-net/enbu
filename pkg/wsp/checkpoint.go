@@ -1,6 +1,7 @@
 package wsp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"github.com/opencontainers/go-digest"
@@ -35,8 +37,9 @@ type checkpointFile struct {
 // Every update is a read-modify-write under an OS file lock, so concurrent
 // processes cannot overwrite each other.
 type Checkpoints struct {
-	path string
-	mu   sync.Mutex
+	path  string
+	clock clock.Clock
+	mu    sync.Mutex
 }
 
 // OpenCheckpoints returns the checkpoint file for a workspace under dir. A
@@ -44,9 +47,9 @@ type Checkpoints struct {
 // name: pointing the same workspace at a different genesis starts a separate
 // history instead of being mistaken for a rollback. Both values are hashed so
 // they cannot escape dir.
-func OpenCheckpoints(dir, workspace string, genesis digest.Digest) *Checkpoints {
+func OpenCheckpoints(dir, workspace string, genesis digest.Digest, c clock.Clock) *Checkpoints {
 	sum := sha256.Sum256([]byte(workspace + "\x00" + string(genesis)))
-	return &Checkpoints{path: filepath.Join(dir, hex.EncodeToString(sum[:])+".json")}
+	return &Checkpoints{clock: c, path: filepath.Join(dir, hex.EncodeToString(sum[:])+".json")}
 }
 
 func (c *Checkpoints) read() (checkpointFile, error) {
@@ -85,7 +88,10 @@ const lockTimeout = 5 * time.Second
 
 // lockFile takes an exclusive OS lock on path+".lock", waiting up to
 // lockTimeout, and returns the function that releases it.
-func lockFile(path string) (func(), error) {
+func lockFile(path string, c clock.Clock) (func(), error) {
+	if c == nil {
+		c = clock.New()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -93,7 +99,8 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(lockTimeout)
+	ctx, cancel := clock.WithTimeout(context.Background(), c, lockTimeout)
+	defer cancel()
 	for {
 		ok, err := tryLock(lock)
 		if err != nil {
@@ -103,11 +110,10 @@ func lockFile(path string) (func(), error) {
 		if ok {
 			return func() { unlock(lock); _ = lock.Close() }, nil
 		}
-		if time.Now().After(deadline) {
+		if err := clock.Wait(ctx, c, 10*time.Millisecond); err != nil {
 			_ = lock.Close()
 			return nil, fmt.Errorf("timed out waiting for the lock %s.lock", path)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -135,7 +141,7 @@ func writeFileAtomic(path string, b []byte) error {
 func (c *Checkpoints) update(fn func(*checkpointFile) (bool, error)) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	release, err := lockFile(c.path)
+	release, err := lockFile(c.path, c.clock)
 	if err != nil {
 		return err
 	}

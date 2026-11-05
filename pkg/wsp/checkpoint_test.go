@@ -2,6 +2,7 @@ package wsp
 
 import (
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,7 +29,7 @@ func stateView(edges map[string][]string) *StateView {
 }
 
 func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
 	if err := cps.CheckStates(testResource, stateView(map[string][]string{"a": nil}).Graph, nil); err != nil {
 		t.Fatalf("nothing accepted yet: %v", err)
 	}
@@ -82,7 +83,7 @@ func controlView(names ...string) *ControlView {
 }
 
 func TestControlCheckpointNeverMovesBack(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
 	if err := cps.AcceptControl(controlView("g1")); err != nil {
 		t.Fatal(err)
 	}
@@ -108,8 +109,8 @@ func TestControlCheckpointNeverMovesBack(t *testing.T) {
 
 func TestCheckpointFilesAreSeparatePerWorkspaceAndGenesis(t *testing.T) {
 	dir := t.TempDir()
-	a := OpenCheckpoints(dir, testWorkspace, d("genesis-a"))
-	b := OpenCheckpoints(dir, testWorkspace, d("genesis-b"))
+	a := OpenCheckpoints(dir, testWorkspace, d("genesis-a"), clock.New())
+	b := OpenCheckpoints(dir, testWorkspace, d("genesis-b"), clock.New())
 	if err := acceptView(a, stateView(map[string][]string{"x": nil})); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +121,7 @@ func TestCheckpointFilesAreSeparatePerWorkspaceAndGenesis(t *testing.T) {
 
 func TestCorruptAndOldCheckpointFiles(t *testing.T) {
 	dir := t.TempDir()
-	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 	if err := os.WriteFile(cps.path, []byte("not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -146,8 +147,8 @@ func TestCorruptAndOldCheckpointFiles(t *testing.T) {
 }
 
 func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"))
-	other := OpenCheckpoints(filepath.Dir(cps.path), testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
+	other := OpenCheckpoints(filepath.Dir(cps.path), testWorkspace, d("genesis"), clock.New())
 	views := []*StateView{
 		stateView(map[string][]string{"r": nil}),
 		stateView(map[string][]string{"r": nil, "a": {"r"}}),
@@ -178,13 +179,13 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 
 func TestAcceptanceEpochPersistsAndAdvancesWithoutChangingHeads(t *testing.T) {
 	dir := t.TempDir()
-	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 	view := stateView(map[string][]string{"head": nil})
 	for _, epoch := range []digest.Digest{d("before-removal"), d("after-readmission")} {
 		if err := cps.AcceptStates(testResource, view.Graph, nil, []digest.Digest{d("head")}, epoch); err != nil {
 			t.Fatal(err)
 		}
-		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"))
+		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 		got, err := fresh.Accepted(testResource)
 		if err != nil || got.Control != epoch || len(got.Heads) != 1 || got.Heads[0] != d("head") {
 			t.Fatalf("acceptance not persisted: %+v %v", got, err)
