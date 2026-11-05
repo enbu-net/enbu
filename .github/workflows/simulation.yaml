@@ -21,6 +21,7 @@ jobs:
       max-parallel: 5
       fail-fast: false
       matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
         platform:
           - target: linux-amd64
             runner: ubuntu-24.04
@@ -32,13 +33,12 @@ jobs:
             runner: windows-2025
           - target: windows-arm64
             runner: windows-11-arm
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       CGO_ENABLED: '0'
       ENBU_SIM_EXHAUSTIVE: '1'
-      ENBU_SIM_SEEDS: '128'
+      ENBU_SIM_SEEDS: '32'
       ENBU_SIM_STEPS: '256'
-      ENBU_SIM_SHARDS: '8'
+      ENBU_SIM_SHARDS: '32'
       ENBU_SIM_SHARD: ${{ matrix.shard }}
       ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
     steps:
@@ -50,7 +50,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Explore and replay
-        run: go test -count=1 -timeout=105m -v ./pkg/merge ./test/simulation
+        run: go test -count=1 -parallel=2 -timeout=105m -v ./pkg/merge ./test/simulation
       - name: Verify oracle mutation sensitivity
         if: matrix.shard == 0
         env:

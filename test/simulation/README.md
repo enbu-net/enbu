@@ -78,10 +78,19 @@ and checks both environments and a fresh write. Same-value sibling resolutions
 must refuse compaction until sync. The separate production environment must
 retain its sentinel throughout, and removal denies access to it too.
 
+`TestConcurrentHistoryRestore` overlaps restoration of an older snapshot with
+edit/delete/import/sync/restore and compaction under four schedules: 40 cases.
+Same-key conflicts retain both candidates; disjoint changes compose. Compaction
+must actually remove a historical revision while the in-flight restore survives.
+The membership/write matrix also covers approval and restoration together. When a
+returning member cannot decrypt a pre-join merge base, readable heads must agree
+or retain their exact differing values as conflicts. An existing member with the
+old key syncs them before all devices are checked for convergence.
+
 `TestTeamMembershipWriteMatrix` overlaps six membership changes (approve a
 joiner, remove another member, remove the writer, promote another member, demote
-the writer, approve the writer's key update) with add/edit/delete/import/sync,
-under four schedules: 120 cases. It verifies the member/admin set, preserved
+the writer, approve the writer's key update) with add/edit/delete/import/sync/restore,
+under four schedules: 144 cases. It verifies the member/admin set, preserved
 unrelated data, removal denial, no resurrection on readmission, and fresh writes
 after readmission. Revocation may set aside a concurrently published old-Control
 branch that no remaining member accepted; readmission must not revive it.
@@ -130,9 +139,11 @@ members against the independent model. Temporary failures do not authorize losin
 unrelated values. Persistent partitions, stale writers, truncated reads, corruption,
 missing objects and invalid signed objects have separate scenarios.
 
-Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows ARM64. Each platform uses eight
-shards, with at most five matrix jobs running simultaneously, each exploring 128 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
-cases. A timeout is failure. Failure artifacts contain synthetic private keys and
+Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows ARM64. Each platform uses 32
+shards, with at most five matrix jobs running simultaneously, each exploring 32 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
+cases. Two independent worlds run in parallel per job; each world still uses
+its own deterministic scheduler and strict replay. The seed partition test
+proves that repartitioning retains the original 1,024 seeds per platform. A timeout is failure. Failure artifacts contain synthetic private keys and
 plaintext so they can recreate the exact fixture; never use real workspace data.
 Oracle failures in long operation sequences are reduced by chunk deletion, and a
 reduced case is kept only when a fresh recording reproduces the same property

@@ -142,13 +142,9 @@ func TestSimulation(t *testing.T) {
 		}
 	}
 	for i := 0; i < seeds; i++ {
-		seed := uint64((i/2)*shards + shard)
-		if i%2 == 1 {
-			h := fnv.New64a()
-			_, _ = h.Write([]byte(os.Getenv("GITHUB_SHA")))
-			seed = ((seed ^ h.Sum64()) & ((1 << 63) - 1)) | (1 << 63)
-		}
+		seed := simulationSeed(i, shards, shard, os.Getenv("GITHUB_SHA"))
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
+			t.Parallel()
 			n := 2 + int(seed%7)
 			scenario := Scenarios[int(seed%uint64(len(Scenarios)))]
 			if scenario == "control-fork" && n < 3 {
@@ -157,6 +153,16 @@ func TestSimulation(t *testing.T) {
 			exercise(t, seed, Plan{Devices: n, Scenario: scenario, Actions: Generate(seed, steps, n)})
 		})
 	}
+}
+
+func simulationSeed(index, shards, shard int, revision string) uint64 {
+	seed := uint64((index/2)*shards + shard)
+	if index%2 == 1 {
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(revision))
+		seed = ((seed ^ h.Sum64()) & ((1 << 63) - 1)) | (1 << 63)
+	}
+	return seed
 }
 func TestScenarios(t *testing.T) {
 	for i, name := range Scenarios {
