@@ -38,7 +38,8 @@ type session struct {
 	acceptNewGenesis bool
 	// founded is set when this session just founded the workspace, which moves
 	// the repository pin to it.
-	founded bool
+	founded      bool
+	foundingRepo *wsp.Root
 	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
 	replaced wsp.Root
 }
@@ -151,14 +152,19 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	// enbu.toml, since a commit can change the workspace ID too.
 	root := wsp.Root{Workspace: s.workspace, Genesis: genesis}
 	type pin struct {
-		trust   *wsp.TrustRoot
-		replace bool
+		trust    *wsp.TrustRoot
+		replace  bool
+		expected *wsp.Root
 	}
-	pins := []pin{{a.trustRoot(s.workspace), s.acceptNewGenesis}}
+	pins := []pin{{trust: a.trustRoot(s.workspace), replace: s.acceptNewGenesis}}
 	if repo := a.repositoryTrustRoot(); repo != nil {
 		// Founding cannot hand trust to anyone else, so it moves the
 		// repository pin to the new workspace.
-		pins = append(pins, pin{repo, s.acceptNewGenesis || s.founded})
+		p := pin{trust: repo, replace: s.acceptNewGenesis || s.founded}
+		if s.founded && !s.acceptNewGenesis {
+			p.expected = s.foundingRepo
+		}
+		pins = append(pins, p)
 	}
 	for _, p := range pins {
 		if p.replace {
@@ -184,7 +190,13 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	// Pin only a genesis that verified, so a typo or an unreachable storage
 	// never becomes the trust root.
 	for _, p := range pins {
-		previous, err := p.trust.Pin(root, p.replace)
+		var previous wsp.Root
+		var err error
+		if p.expected != nil {
+			previous, err = p.trust.PinReplacing(root, *p.expected)
+		} else {
+			previous, err = p.trust.Pin(root, p.replace)
+		}
 		if err != nil {
 			return wspError(err)
 		}
@@ -335,7 +347,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 		if err != nil || !record {
 			return r, err
 		}
-		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents())
+		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents(), s.head.Digest)
 		if err == nil {
 			return r, nil
 		}
@@ -348,7 +360,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 }
 
 func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice) (*resourceRead, error) {
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return nil, err
 	}
@@ -397,7 +409,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 // wrote). A head failing both is not an error, because anyone able to write to
 // storage can publish one; it is set aside and its parents stand in for it, so
 // it neither injects content nor blocks reading.
-func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*wsp.VerifiedState {
+func (s *session) trustedHeads(sv *wsp.StateView, accepted wsp.StateAcceptance) []*wsp.VerifiedState {
 	trusted := func(h *wsp.VerifiedState) bool {
 		// A head below a compaction floor was built on removed history: its
 		// merge base may be gone, so it cannot be merged.
@@ -408,7 +420,7 @@ func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*w
 		// its own removal. A continuously present observer may still take
 		// over a revision it accepted before the author's removal.
 		return wsp.AuthorIsCurrent(s.view, s.head, h) == nil ||
-			slices.Contains(accepted, h.Digest) && s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())
+			slices.Contains(accepted.Heads, h.Digest) && s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())
 	}
 	var heads []*wsp.VerifiedState
 	seen := map[digest.Digest]bool{}
@@ -519,7 +531,7 @@ func (s *session) acceptPublished(ctx context.Context, resource string, st *wsp.
 }
 
 func (s *session) acceptView(resource string, sv *wsp.StateView) error {
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return err
 	}
@@ -528,5 +540,5 @@ func (s *session) acceptView(resource string, sv *wsp.StateView) error {
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests)
+	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests, s.head.Digest)
 }

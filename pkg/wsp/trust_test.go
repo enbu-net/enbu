@@ -97,3 +97,28 @@ func TestTrustRootRejectsAnInvalidRoot(t *testing.T) {
 		t.Fatalf("pinned a root without a workspace: %v", err)
 	}
 }
+
+func TestFoundingReplacementChecksExpectedPinUnderLock(t *testing.T) {
+	trust := OpenTrustRoot(t.TempDir(), testWorkspace, clock.New())
+	old := Root{Workspace: testWorkspace, Genesis: d("old")}
+	newer := Root{Workspace: testWorkspace, Genesis: d("newer")}
+	target := Root{Workspace: testWorkspace, Genesis: d("founding")}
+	if _, err := trust.Pin(old, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trust.Pin(newer, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trust.PinReplacing(target, old); err == nil {
+		t.Fatal("stale authorization replaced newer pin")
+	}
+	if got, err := trust.Pinned(); err != nil || got != newer {
+		t.Fatalf("pin changed: %+v %v", got, err)
+	}
+	if _, err := trust.PinReplacing(target, newer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trust.PinReplacing(target, newer); err != nil {
+		t.Fatalf("committed replacement not idempotent: %v", err)
+	}
+}
