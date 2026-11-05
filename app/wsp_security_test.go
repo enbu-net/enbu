@@ -566,3 +566,44 @@ func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
 		t.Fatal("tampered recovery changed trust root")
 	}
 }
+
+func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
+	a := newAlice(t)
+	cfg := config.NewProjectWithEnvironment("default")
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	published, offline := false, true
+	a.Storage = storagetest.Wrap(storagetest.NewMemory(), storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if err := next.Publish(ctx, o); err != nil {
+				return err
+			}
+			if o.Kind == storage.KindControl {
+				published = true
+			}
+			return nil
+		},
+		Discover: func(ctx context.Context, next storage.Store, k storage.Kind, scope string) ([]digest.Digest, error) {
+			if published && offline {
+				return nil, errors.New("disconnected during verification")
+			}
+			return next.Discover(ctx, k, scope)
+		},
+	})
+	if _, err := a.InitializeRepository(bg); err == nil {
+		t.Fatal("verification unexpectedly succeeded")
+	}
+	genesis := genesisInConfig(t, a)
+	if _, err := os.Stat(a.pendingGenesisPath(genesis)); err != nil {
+		t.Fatalf("recovery removed before trust committed: %v", err)
+	}
+	offline = false
+	result, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatalf("retry new workspace in pinned checkout: %v", err)
+	}
+	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
+		t.Fatal("retry changed workspace or root")
+	}
+}

@@ -228,6 +228,7 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 
 	}
 	path := a.pendingGenesisPath(s.cfg.ControlGenesis)
+	recovery := false
 	if blob, err := os.ReadFile(path); err == nil {
 		if _, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis)); err != nil {
 			return wspError(err)
@@ -235,9 +236,7 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
 			return storageError(err)
 		}
-		// Publication is durable; leftover public recovery bytes are harmless.
-		// A cleanup failure must not turn a successful founding into failure.
-		_ = os.Remove(path)
+		recovery = true
 		pinned, err := a.trustRoot(s.workspace).Pinned()
 		if err != nil {
 			return err
@@ -249,7 +248,16 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 
 	// A genesis the repository trusts but storage lacks is reported by verifyControl
 	// as incompatible storage; trust is never re-rooted silently.
-	return a.verifyControl(ctx, s)
+	if err := a.verifyControl(ctx, s); err != nil {
+		return err
+	}
+	if recovery {
+		// Retain the exact founding bytes until verification and both trust
+		// pins commit. A disconnect before this point must remain retryable.
+		// Afterward leftover public bytes are harmless if cleanup fails.
+		_ = os.Remove(path)
+	}
+	return nil
 }
 
 // identityError turns "this device has no backend for a key" into an error
