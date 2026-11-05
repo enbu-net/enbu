@@ -98,3 +98,19 @@ func TestDoctorReportsTheSoftwareFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestDoctorChecksCredsEvenWithKeyring(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		m := &Manager{Vault: memoryVault{}, Creds: memoryVault{}}
+		if !available {
+			m.Creds = noKeyringVault{}
+		}
+		d := m.Doctor()
+		if !d.KeyringAvailable || d.CredsAvailable != available || d.Fallback != backendKeyring {
+			t.Fatalf("Doctor = %+v", d)
+		}
+		if !available && d.CredsReason == "" {
+			t.Fatal("missing creds failure reason")
+		}
+	}
+}

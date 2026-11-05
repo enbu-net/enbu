@@ -60,6 +60,10 @@ type Metadata struct {
 }
 
 type Diagnosis struct {
+	KeyringAvailable  bool   `json:"keyring_available"`
+	KeyringReason     string `json:"keyring_reason,omitempty"`
+	CredsAvailable    bool   `json:"creds_available"`
+	CredsReason       string `json:"creds_reason,omitempty"`
 	Backend           string `json:"backend"`
 	Device            string `json:"device,omitempty"`
 	Available         bool   `json:"available"`
@@ -647,6 +651,15 @@ func (m *Manager) Doctor() Diagnosis {
 		d = m.Hardware.Probe()
 	}
 	keyringErr := probeVault(m.Vault)
+	d.KeyringAvailable = keyringErr == nil
+	if keyringErr != nil {
+		d.KeyringReason = keyringErr.Error()
+	}
+	credsErr := probeVault(m.Creds)
+	d.CredsAvailable = credsErr == nil
+	if credsErr != nil {
+		d.CredsReason = credsErr.Error()
+	}
 	if keyringErr == nil {
 		d.FallbackAvailable, d.Fallback = true, backendKeyring
 		return d
@@ -655,7 +668,7 @@ func (m *Manager) Doctor() Diagnosis {
 	if m.Creds == nil {
 		return d
 	}
-	if credsErr := probeVault(m.Creds); credsErr != nil {
+	if credsErr != nil {
 		d.FallbackReason += "; systemd-creds unavailable: " + credsErr.Error()
 	} else {
 		d.FallbackAvailable, d.Fallback = true, backendCreds

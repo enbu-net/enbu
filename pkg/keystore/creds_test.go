@@ -24,6 +24,12 @@ name=$(printf '%s\n' "$@" | sed -n 's/^--name=//p')
 case "$2" in
 encrypt) printf 'name=%s\n' "$name"; cat ;;
 decrypt)
+	if [ "$4" = "-" ]; then
+		IFS= read -r header
+		[ "$header" = "name=$name" ] || exit 1
+		cat
+		exit
+	fi
 	[ "$(head -n 1 "$4")" = "name=$name" ] || { echo "name mismatch" >&2; exit 1; }
 	tail -n +2 "$4" ;;
 *) exit 2 ;;
@@ -94,5 +100,15 @@ func TestCredsBackendProbeFailsWithoutSystemdCreds(t *testing.T) {
 	c := &CredsBackend{Dir: t.TempDir(), Command: filepath.Join(t.TempDir(), "missing")}
 	if err := c.Probe(); err == nil {
 		t.Fatal("Probe succeeded without systemd-creds")
+	}
+}
+
+func TestCredsProbeRejectsFailedDecryption(t *testing.T) {
+	c, _ := fakeCreds(t)
+	if err := os.WriteFile(c.Command, []byte("#!/bin/sh\n[ \"$2\" = encrypt ] && { cat; exit; }\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Probe(); err == nil {
+		t.Fatal("Probe succeeded when decryption failed")
 	}
 }

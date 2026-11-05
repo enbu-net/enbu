@@ -36,11 +36,22 @@ func (c *CredsBackend) command() string {
 	return "systemd-creds"
 }
 
-// Probe encrypts a throwaway value, which fails before systemd 256, without
-// the user's credential service, or without a host key.
+// Probe encrypts and decrypts a throwaway value without saving a credential.
+// It fails before systemd 256, without the user's credential service, or
+// without a host key.
 func (c *CredsBackend) Probe() error {
-	_, err := c.run([]byte("probe"), "encrypt", "--name=enbu-probe", "-", "-")
-	return err
+	sealed, err := c.run([]byte("probe"), "encrypt", "--name=enbu-probe", "-", "-")
+	if err != nil {
+		return err
+	}
+	plain, err := c.run(sealed, "decrypt", "--name=enbu-probe", "-", "-")
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(plain, []byte("probe")) {
+		return errors.New("systemd-creds probe did not round-trip")
+	}
+	return nil
 }
 
 func (c *CredsBackend) Store(service, key string, secret []byte) error {
