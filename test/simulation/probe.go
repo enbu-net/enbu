@@ -102,8 +102,12 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 			return fmt.Errorf("unknown probe %s", p.Operation)
 		}
 	}
+	if e := w.Tape.Observe("probe-start", p.Operation, nil); e != nil {
+		return nil, e
+	}
 	store.Arm(p.Fault)
 	result := catchCrash(invoke)
+	hits := store.faultHits
 	if p.Fault.Method == "" && result != nil {
 		return nil, fmt.Errorf("baseline %s: %w", p.Operation, result)
 	}
@@ -119,7 +123,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		w.Restart(0)
 		a = w.Devices[0].App
 	}
-	if p.Fault.Method != "" && counts[p.Fault.Method] < p.Fault.At {
+	if p.Fault.Method != "" && hits == 0 {
 		return nil, fmt.Errorf("unreached fault: %+v calls %v", p, counts)
 	}
 	got, e := a.ListSecrets(ctx, "default")

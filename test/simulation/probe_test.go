@@ -2,8 +2,8 @@ package simulation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/wsp"
 	"os"
 	"sort"
 	"strconv"
@@ -23,18 +23,8 @@ func TestOperationFaultMatrix(t *testing.T) {
 			}
 		}
 		t.Run(op, func(t *testing.T) {
-			w, e := NewWorld(t.TempDir(), NewTape(999, ""), 3)
-			if e != nil {
-				t.Fatal(e)
-			}
-			ctx := wsp.WithSerialHeadReads(context.Background())
-			if e := w.Bootstrap(ctx); e != nil {
-				t.Fatal(e)
-			}
-			counts, e := w.Probe(ctx, Probe{Operation: op})
-			if e != nil {
-				t.Fatal(e)
-			}
+			baseline := exercise(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: op}})
+			counts := countsBetween(t, baseline, "probe-start", "probe-result")
 			methods := make([]string, 0, len(counts))
 			for method := range counts {
 				methods = append(methods, method)
@@ -62,5 +52,48 @@ func TestOperationFaultMatrix(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func countsBetween(t *testing.T, tape *Tape, start, end string) map[string]int {
+	t.Helper()
+	inside := false
+	counts := map[string]int{}
+	for _, entry := range tape.Recording.Entries {
+		if entry.Kind == start {
+			inside = true
+			continue
+		}
+		if inside && entry.Kind == end {
+			break
+		}
+		if inside && entry.Kind == "storage-request" {
+			var request struct{ Method string }
+			if err := json.Unmarshal(entry.Output, &request); err != nil {
+				t.Fatal(err)
+			}
+			counts[request.Method]++
+		}
+	}
+	if len(counts) == 0 {
+		t.Fatal("baseline contains no measured storage calls")
+	}
+	return counts
+}
+func TestWildcardFaultProbeIsReachable(t *testing.T) {
+	exercise(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: "add", Fault: Fault{"*", 1, "before"}}})
+}
+func TestInvalidActionDeviceIsRejectedBeforeBootstrap(t *testing.T) {
+	for _, device := range []int{-1, 2} {
+		tape, err := Prepare(1, "", Plan{Devices: 2, Actions: []Action{{Kind: "read", Device: device}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Execute(context.Background(), tape, t.TempDir()); err == nil {
+			t.Fatalf("invalid device accepted: %d", device)
+		}
+		if len(tape.Recording.Entries) != 1 {
+			t.Fatal("invalid plan reached bootstrap")
+		}
 	}
 }

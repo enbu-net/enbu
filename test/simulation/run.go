@@ -27,6 +27,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	if plan.Devices < 2 || plan.Devices > 8 {
 		return fmt.Errorf("invalid device count %d", plan.Devices)
 	}
+	for index, op := range plan.Actions {
+		if op.Device < 0 || op.Device >= plan.Devices {
+			return fmt.Errorf("action %d: invalid device %d", index, op.Device)
+		}
+	}
 	w, e := NewWorld(root, tape, plan.Devices)
 	if e != nil {
 		return e

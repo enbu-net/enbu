@@ -47,14 +47,8 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 }
 
 func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
-	w, err := NewWorld(t.TempDir(), NewTape(456, ""), 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	counts, err := w.FoundingProbe(context.Background(), Fault{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	baseline := exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{}})
+	counts := countsBetween(t, baseline, "founding-start", "founding-result")
 	methods := make([]string, 0, len(counts))
 	for method := range counts {
 		methods = append(methods, method)

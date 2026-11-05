@@ -40,12 +40,14 @@ type Fault struct {
 type Store struct {
 	mu sync.Mutex
 	storage.Store
-	Actor    *Actor
-	Tape     *Tape
-	Device   int
-	Fault    Fault
-	calls    map[string]int
-	listings map[string][]digest.Digest
+	Actor     *Actor
+	Tape      *Tape
+	Device    int
+	Fault     Fault
+	calls     map[string]int
+	ordinal   int
+	faultHits int
+	listings  map[string][]digest.Digest
 }
 
 func (s *Store) effect(method string, input any, f func(string) (any, error)) error {
@@ -56,9 +58,15 @@ func (s *Store) effect(method string, input any, f func(string) (any, error)) er
 			s.calls = map[string]int{}
 		}
 		s.calls[method]++
+		s.ordinal++
+		occurrence := s.calls[method]
+		if s.Fault.Method == "*" {
+			occurrence = s.ordinal
+		}
 		mode := ""
-		if (s.Fault.Method == method || s.Fault.Method == "*") && (s.Fault.At == 0 || s.Fault.At == s.calls[method]) {
+		if (s.Fault.Method == method || s.Fault.Method == "*") && (s.Fault.At == 0 || s.Fault.At == occurrence) {
 			mode = s.Fault.Mode
+			s.faultHits++
 		}
 		in := struct {
 			Device int
@@ -248,4 +256,4 @@ func (s *Store) Delete(ctx context.Context, k storage.Kind, scope string, r dige
 		return nil, e
 	})
 }
-func (s *Store) Arm(f Fault) { s.Fault = f; s.calls = map[string]int{} }
+func (s *Store) Arm(f Fault) { s.Fault = f; s.calls = map[string]int{}; s.ordinal = 0; s.faultHits = 0 }

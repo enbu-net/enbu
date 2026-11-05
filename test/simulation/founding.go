@@ -12,8 +12,12 @@ import (
 func (w *World) FoundingProbe(ctx context.Context, fault Fault) (map[string]int, error) {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	d := w.Devices[0]
+	if err := w.Tape.Observe("founding-start", fault, nil); err != nil {
+		return nil, err
+	}
 	d.Store.Arm(fault)
 	initial := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx); return err })
+	hits := d.Store.faultHits
 	counts := map[string]int{}
 	for method, n := range d.Store.calls {
 		counts[method] = n
@@ -24,7 +28,7 @@ func (w *World) FoundingProbe(ctx context.Context, fault Fault) (map[string]int,
 	if fault.Method == "" && initial != nil {
 		return nil, fmt.Errorf("baseline founding: %w", initial)
 	}
-	if fault.Method != "" && counts[fault.Method] < fault.At {
+	if fault.Method != "" && hits == 0 {
 		return nil, fmt.Errorf("unreached founding fault: %+v", fault)
 	}
 	before, err := config.LoadProjectFrom(d.App.RepositoryDir)

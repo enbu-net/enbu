@@ -38,6 +38,12 @@ func TestOracleMutationExperiments(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
+			control := exec.Command("go", "test", "-json", "-count=1", "-tags=fixture", "./test/simulation", "-run", "^TestScenarios/"+tc.scenario+"$")
+			control.Dir = root
+			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			if output, err := control.CombinedOutput(); err != nil {
+				t.Fatalf("unmodified control failed; mutant cannot be scored: %v\n%s", err, output)
+			}
 			path := filepath.Join(root, tc.file)
 			b, e := os.ReadFile(path)
 			if e != nil {
@@ -52,7 +58,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			}
 			cmd := exec.Command("go", "test", "-json", "-count=1", "-tags=fixture", "./test/simulation", "-run", "^TestScenarios/"+tc.scenario+"$")
 			cmd.Dir = root
-			cmd.Env = append(os.Environ(), "ENBU_SIM_MUTATION=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			cmd.Env = control.Env
 			out, e := cmd.CombinedOutput()
 			if e == nil {
 				t.Fatal("mutant survived")

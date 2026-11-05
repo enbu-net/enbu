@@ -26,7 +26,7 @@ func integer(t *testing.T, name string, def int) int {
 	}
 	return v
 }
-func exercise(t *testing.T, seed uint64, plan Plan) {
+func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 	t.Helper()
 	tape, e := Prepare(seed, revision(t), plan)
 	if e != nil {
@@ -127,6 +127,7 @@ func exercise(t *testing.T, seed uint64, plan Plan) {
 	if e := Execute(context.Background(), replay, t.TempDir()); e != nil {
 		t.Fatal(e)
 	}
+	return tape
 }
 func TestSimulation(t *testing.T) {
 	seeds := integer(t, "ENBU_SIM_SEEDS", 2)
