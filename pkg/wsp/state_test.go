@@ -73,7 +73,7 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected state: %+v", got)
 	}
 	head, _ := f.view.Head()
-	if err := AuthorIsCurrent(head, got); err != nil {
+	if err := AuthorIsCurrent(f.view, head, got); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -153,7 +153,7 @@ func TestRemovedMemberIsHistoricalButNotCurrent(t *testing.T) {
 		t.Fatalf("a revision written while bob was a member stays valid: %v", err)
 	}
 	head, _ := view.Head()
-	if err := AuthorIsCurrent(head, st); !errors.Is(err, ErrInvalid) {
+	if err := AuthorIsCurrent(view, head, st); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("removed member counted as current: %v", err)
 	}
 }
@@ -352,5 +352,89 @@ func TestLoadStatesCancelsOtherFetchesAfterFailure(t *testing.T) {
 	}
 	if canceled.Load() != headFetches-1 {
 		t.Fatalf("canceled fetches = %d", canceled.Load())
+	}
+}
+
+func TestReadmittedMemberCannotReviveOldState(t *testing.T) {
+	f := newStateFixture(t)
+	blob, rev := signedState(t, f.state(f.bob), f.bob)
+	if _, err := UpdateControl(context.Background(), f.store, f.view, f.alice.signer, func(c *Control) error { c.Principals = []Principal{f.alice.p}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	removed := load(t, f.store, f.genesis)
+	if _, err := UpdateControl(context.Background(), f.store, removed, f.alice.signer, func(c *Control) error { c.Principals = append(c.Principals, f.bob.p); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	view := load(t, f.store, f.genesis)
+	head, _ := view.Head()
+	old, err := VerifyRevision(view, testWorkspace, testResource, rev, blob)
+	if err != nil {
+		t.Fatalf("historical signature must remain verifiable: %v", err)
+	}
+	if err := AuthorIsCurrent(view, head, old); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("readmission revived old state: %v", err)
+	}
+	if view.MembershipUnbroken(head.Digest, f.headHash, f.bob.p.ID) {
+		t.Fatal("removed device retained old checkpoint authority")
+	}
+	if !view.MembershipUnbroken(head.Digest, f.headHash, f.alice.p.ID) {
+		t.Fatal("continuous observer lost takeover authority")
+	}
+	fresh := f.state(f.bob)
+	fresh.Control = head.Digest
+	newBlob, newRev := signedState(t, fresh, f.bob)
+	current, err := VerifyRevision(view, testWorkspace, testResource, newRev, newBlob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := AuthorIsCurrent(view, head, current); err != nil {
+		t.Fatalf("fresh rejoined write rejected: %v", err)
+	}
+}
+
+func TestMembershipContinuityChecksEveryForkBranch(t *testing.T) {
+	id := signing.DeviceID("device")
+	names := []string{"genesis", "join", "continuous", "remove", "rejoin", "merge"}
+	hashes := map[string]digest.Digest{}
+	for _, name := range names {
+		hashes[name] = digest.FromString(name)
+	}
+	view := &ControlView{verified: map[digest.Digest]*Verified{}}
+	add := func(name string, present bool, parents ...string) {
+		c := &Verified{Digest: hashes[name]}
+		if present {
+			c.Principals = []Principal{{ID: id}}
+		}
+		for _, parent := range parents {
+			c.Parents = append(c.Parents, hashes[parent])
+		}
+		view.verified[c.Digest] = c
+	}
+	add("genesis", false)
+	add("join", true, "genesis")
+	add("continuous", true, "join")
+	add("remove", false, "join")
+	add("rejoin", true, "remove")
+	add("merge", true, "continuous", "remove")
+	for _, tc := range []struct {
+		head, from string
+		want       bool
+	}{
+		{"continuous", "join", true},
+		{"rejoin", "join", false},
+		{"merge", "join", false},
+		{"rejoin", "rejoin", true},
+		{"join", "genesis", true},
+		{"merge", "rejoin", false},
+		{"join", "continuous", false},
+		{"missing", "join", false},
+		{"continuous", "missing", false},
+	} {
+		t.Run(tc.head+"/"+tc.from, func(t *testing.T) {
+			head, from := hashes[tc.head], hashes[tc.from]
+			if got := view.MembershipUnbroken(head, from, id); got != tc.want {
+				t.Fatalf("got %t want %t", got, tc.want)
+			}
+		})
 	}
 }

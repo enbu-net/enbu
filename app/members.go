@@ -503,7 +503,7 @@ func (s *session) hasTrustedHead(ctx context.Context, resource string) (bool, er
 	if err != nil {
 		return false, wspError(err)
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return false, err
 	}

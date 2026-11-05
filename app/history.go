@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 	"time"
 
@@ -106,7 +107,7 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	if err != nil {
 		return err
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return err
 	}
@@ -133,7 +134,8 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	}
 	revisions := map[digest.Digest]*wsp.VerifiedState{}
 	var listed []digest.Digest
-	for d := range h.states {
+	// Stable traversal makes external reads and failure locations reproducible.
+	for _, d := range slices.Sorted(maps.Keys(h.states)) {
 		f, ok := known[d]
 		if f.Repeats {
 			// A cached repeat becomes visible if compaction removed the

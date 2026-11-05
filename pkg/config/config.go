@@ -170,7 +170,12 @@ func LocalStatePath(workspaceID string) string {
 
 // LoadLocalState loads per-project state from the XDG data directory.
 func LoadLocalState(workspaceID string) (*LocalConfig, error) {
-	path := LocalStatePath(workspaceID)
+	return LoadLocalStateFrom(DataDir(), workspaceID)
+}
+
+// LoadLocalStateFrom reads local state for one explicitly selected device.
+func LoadLocalStateFrom(dir, workspaceID string) (*LocalConfig, error) {
+	path := filepath.Join(dir, "state", uuidOrHash(workspaceID)+".toml")
 	var cfg LocalConfig
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		if os.IsNotExist(err) {
@@ -183,7 +188,12 @@ func LoadLocalState(workspaceID string) (*LocalConfig, error) {
 
 // SaveLocalState persists per-project state to the XDG data directory.
 func SaveLocalState(workspaceID string, cfg *LocalConfig) error {
-	path := LocalStatePath(workspaceID)
+	return SaveLocalStateTo(DataDir(), workspaceID, cfg)
+}
+
+// SaveLocalStateTo persists local state for one explicitly selected device.
+func SaveLocalStateTo(dir, workspaceID string, cfg *LocalConfig) error {
+	path := filepath.Join(dir, "state", uuidOrHash(workspaceID)+".toml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
@@ -200,16 +210,21 @@ func SaveLocalState(workspaceID string, cfg *LocalConfig) error {
 }
 
 func NewProjectWithEnvironment(name string) *ProjectConfig {
+	return NewProjectWithIDs(name, func() string { return uuid.NewV4().String() })
+}
+
+// NewProjectWithIDs creates a project using an instance-owned identifier source.
+func NewProjectWithIDs(name string, newID func() string) *ProjectConfig {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "default"
 	}
 	envs := map[string]EnvironmentConfig{
-		name: {Output: DefaultOutput(name), Incarnation: uuid.NewV4().String()},
+		name: {Output: DefaultOutput(name), Incarnation: newID()},
 	}
 	return &ProjectConfig{
 		Version:      currentVersion,
-		WorkspaceID:  uuid.NewV4().String(),
+		WorkspaceID:  newID(),
 		DefaultEnv:   name,
 		Environments: envs,
 	}
@@ -232,6 +247,11 @@ func (cfg *ProjectConfig) SetDefault(name string) {
 }
 
 func (cfg *ProjectConfig) AddEnvironment(name string) error {
+	return cfg.AddEnvironmentWithID(name, func() string { return uuid.NewV4().String() })
+}
+
+// AddEnvironmentWithID uses an instance-owned incarnation source.
+func (cfg *ProjectConfig) AddEnvironmentWithID(name string, newID func() string) error {
 	if !ValidEnvironmentName(name) {
 		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
@@ -246,7 +266,7 @@ func (cfg *ProjectConfig) AddEnvironment(name string) error {
 	if _, exists := cfg.Environments[name]; exists {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", name), apperr.Params{"name": name})
 	}
-	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name), Incarnation: uuid.NewV4().String()}
+	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name), Incarnation: newID()}
 	return nil
 }
 

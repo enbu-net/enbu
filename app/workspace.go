@@ -8,10 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -40,7 +38,8 @@ type session struct {
 	acceptNewGenesis bool
 	// founded is set when this session just founded the workspace, which moves
 	// the repository pin to it.
-	founded bool
+	founded      bool
+	foundingRepo *wsp.Root
 	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
 	replaced wsp.Root
 }
@@ -153,14 +152,19 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	// enbu.toml, since a commit can change the workspace ID too.
 	root := wsp.Root{Workspace: s.workspace, Genesis: genesis}
 	type pin struct {
-		trust   *wsp.TrustRoot
-		replace bool
+		trust    *wsp.TrustRoot
+		replace  bool
+		expected *wsp.Root
 	}
-	pins := []pin{{a.trustRoot(s.workspace), s.acceptNewGenesis}}
+	pins := []pin{{trust: a.trustRoot(s.workspace), replace: s.acceptNewGenesis}}
 	if repo := a.repositoryTrustRoot(); repo != nil {
 		// Founding cannot hand trust to anyone else, so it moves the
 		// repository pin to the new workspace.
-		pins = append(pins, pin{repo, s.acceptNewGenesis || s.founded})
+		p := pin{trust: repo, replace: s.acceptNewGenesis || s.founded}
+		if s.founded && !s.acceptNewGenesis {
+			p.expected = s.foundingRepo
+		}
+		pins = append(pins, p)
 	}
 	for _, p := range pins {
 		if p.replace {
@@ -186,7 +190,13 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	// Pin only a genesis that verified, so a typo or an unreachable storage
 	// never becomes the trust root.
 	for _, p := range pins {
-		previous, err := p.trust.Pin(root, p.replace)
+		var previous wsp.Root
+		var err error
+		if p.expected != nil {
+			previous, err = p.trust.PinReplacing(root, *p.expected)
+		} else {
+			previous, err = p.trust.Pin(root, p.replace)
+		}
 		if err != nil {
 			return wspError(err)
 		}
@@ -263,6 +273,17 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 			return nil, wspError(err)
 		}
 		if sv.Graph.Len() == 0 {
+			accepted, err := s.cps.State(resource)
+			if err != nil {
+				return nil, err
+			}
+			if len(accepted) > 0 {
+				if attempt < acceptedRetries {
+					also = append(also, accepted...)
+					continue
+				}
+				return nil, wspError(fmt.Errorf("%w: all previously accepted revisions are missing", wsp.ErrRollback))
+			}
 			return nil, storageError(storage.ErrNotFound)
 		}
 		// Load signed deletion records only when something is missing.
@@ -300,6 +321,11 @@ const acceptedRetries = 2
 // blob is transferred, so only revisions whose content is used cost anything.
 func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[string]string, error) {
 	ciphertext, err := wsp.ReadCiphertext(ctx, s.store, st)
+	// A signed state exists, so a missing blob is lost data, never an empty
+	// environment. Treating it as not-found lets mutations replace its secrets.
+	if errors.Is(err, storage.ErrNotFound) {
+		return nil, wspError(fmt.Errorf("%w: ciphertext for %s is missing: %w", wsp.ErrRollback, st.Digest, err))
+	}
 	if err != nil {
 		return nil, wspError(err)
 	}
@@ -321,7 +347,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 		if err != nil || !record {
 			return r, err
 		}
-		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents())
+		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents(), s.head.Digest)
 		if err == nil {
 			return r, nil
 		}
@@ -334,7 +360,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 }
 
 func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice) (*resourceRead, error) {
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +384,15 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 		var bases []map[string]string
 		for _, b := range sv.Graph.MergeBases(r.parents()) {
 			m, err := s.decrypt(ctx, sv.States[b])
+			var noMatch *agecrypto.NoIdentityMatchError
+			if errors.As(err, &noMatch) {
+				// A new member can read current heads without having the key
+				// for their pre-join base. Requiring agreement against every
+				// head as a possible base preserves all differing values as
+				// conflicts; an empty base could silently lose a deletion.
+				bases = append(bases, maps...)
+				continue
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -374,14 +409,18 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 // wrote). A head failing both is not an error, because anyone able to write to
 // storage can publish one; it is set aside and its parents stand in for it, so
 // it neither injects content nor blocks reading.
-func (s *session) trustedHeads(sv *wsp.StateView, accepted []digest.Digest) []*wsp.VerifiedState {
+func (s *session) trustedHeads(sv *wsp.StateView, accepted wsp.StateAcceptance) []*wsp.VerifiedState {
 	trusted := func(h *wsp.VerifiedState) bool {
 		// A head below a compaction floor was built on removed history: its
 		// merge base may be gone, so it cannot be merged.
 		if !sv.Compacted.AboveFloors(sv.Graph, h.Digest) {
 			return false
 		}
-		return wsp.AuthorIsCurrent(s.head, h) == nil || slices.Contains(accepted, h.Digest)
+		// A returning device cannot carry its old accepted branches across
+		// its own removal. A continuously present observer may still take
+		// over a revision it accepted before the author's removal.
+		return wsp.AuthorIsCurrent(s.view, s.head, h) == nil ||
+			slices.Contains(accepted.Heads, h.Digest) && s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())
 	}
 	var heads []*wsp.VerifiedState
 	seen := map[digest.Digest]bool{}
@@ -445,7 +484,7 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // and the next reader merges them. The revision is returned once it is
 // published, even when the error says members changed meanwhile.
 func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
+	ciphertext, err := s.app.encrypt(bundle.Marshal(secrets), s.head.Recipients())
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +492,7 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 		return nil, err
 	}
 	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
-		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: time.Now().Unix()}
+		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: s.app.now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
 		return nil, err
@@ -492,7 +531,7 @@ func (s *session) acceptPublished(ctx context.Context, resource string, st *wsp.
 }
 
 func (s *session) acceptView(resource string, sv *wsp.StateView) error {
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return err
 	}
@@ -501,5 +540,5 @@ func (s *session) acceptView(resource string, sv *wsp.StateView) error {
 	for i, h := range heads {
 		digests[i] = h.Digest
 	}
-	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests)
+	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests, s.head.Digest)
 }
