@@ -14,7 +14,7 @@ import (
 // StateCase is an explicit cross product, not a randomly sampled coverage claim.
 type StateCase struct{ Operation, State, Role string }
 
-var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade", "resolve-stale", "resolve-empty", "file-pull"}
+var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade", "resolve-stale", "resolve-empty", "file-pull", "initialize"}
 var DataStates = []string{"empty", "populated", "deleted", "missing-environment"}
 var MemberStates = []string{"admin", "member", "pending", "removed"}
 
@@ -66,7 +66,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	}
 	controlOperation := false
 	switch c.Operation {
-	case "members", "requests", "approve", "remove", "admin", "upgrade":
+	case "members", "requests", "approve", "remove", "admin", "upgrade", "initialize":
 		controlOperation = true
 	}
 	if c.Operation == "approve" {
@@ -99,7 +99,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		expected = string(apperr.CodeInvalidArgument)
 	case c.State == "missing-environment" && !controlOperation:
 		expected = string(apperr.CodeEnvironmentMissing)
-	case c.Operation == "members" || c.Operation == "requests":
+	case c.Operation == "members" || c.Operation == "requests" || c.Operation == "initialize":
 		// Control metadata is public, including for pending and removed devices.
 	case c.Role == "pending" || c.Role == "removed":
 		expected = string(apperr.CodeNotMember)
@@ -126,6 +126,8 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	var out any
 	var err error
 	switch c.Operation {
+	case "initialize":
+		out, err = a.InitializeRepository(ctx)
 	case "resolve-stale":
 		err = a.ResolveSecrets(ctx, env, []string{"stale"}, map[string]app.SecretChoice{"BASE": {Value: "must-not-commit"}})
 	case "resolve-empty":
@@ -185,6 +187,11 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 			delete(want, "BASE")
 		case "restore":
 			want["BASE"] = "original"
+		case "initialize":
+			result := out.(*app.InitResult)
+			if result.Pending != (c.Role == "pending" || c.Role == "removed") || result.Founded || result.KeyCreated || result.DeviceID != w.Devices[actor].ID {
+				return fmt.Errorf("reinitialization changed identity or implicit membership: %+v", result)
+			}
 		case "file-pull":
 			if err := w.checkOutput("state-file-pull", filepath.Join(a.RepositoryDir, ".env"), want); err != nil {
 				return err

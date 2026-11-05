@@ -132,6 +132,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "team_migration_test.go",
                     SIM / "generated_team_test.go",
                     SIM / "authority_attack_test.go",
+                    SIM / "refounding_test.go",
                 }
                 mutation |= domain in {
                     "secrets",

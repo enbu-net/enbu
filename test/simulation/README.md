@@ -45,9 +45,9 @@ The catalog test fails when an exported App operation has no driver or inventory
 entry. The table describes tested behaviors, not exhaustive proof over all possible
 states. Generated sequences and fault exploration supplement the fixed assertions.
 
-`TestOperationStateMatrix` enumerates 21 data/history/membership operations × 4 states
+`TestOperationStateMatrix` enumerates 22 data/history/membership operations × 4 states
 (never written, populated, last key deleted, absent environment) × 4 membership
-states (admin, member, pending, removed): 336 named cases. Every case records
+states (admin, member, pending, removed): 352 named cases. Every case records
 and replays, asserts the expected result code, checks the resulting secret map on
 all devices and the exact member/admin set, and checks a second environment was unaffected. This matrix covers
 these dimensions explicitly; environment presence is inapplicable to Control metadata
@@ -302,3 +302,42 @@ detected by this scenario.
 `TestGeneratedTeamGroupsPreservePriorWork` checks 24 seeded generated workloads
 across 3–8 devices with the mixed membership/write/sync group. A bounded smoke
 case runs in ordinary CI; full generated exploration includes these groups too.
+
+
+`refounding` replaces a lost workspace with a genuinely different signed root
+and founder. Sharing the new configuration must block all previously pinned
+devices. A failed explicit root acceptance must leave old trust and accepted data
+usable. Each device independently confirms the new root; former admins still
+need approval and receive ordinary membership, never inherited admin rights.
+Reverting shared configuration to the old root must be rejected. New-root admin
+delegation and fresh writes restore normal teamwork. The state matrix also
+checks reinitialization in all 16 data/member states without identity replacement
+or implicit approval.
+
+
+## Team use-case verification map
+
+Use-case coverage is tracked separately from statement coverage. The following
+finite inventory names executable tests and the properties they check. All rows
+must pass; a successful API call without its behavioral assertions is insufficient.
+
+| Team workflow | Normal operation and collaboration | Failure, attack, and recovery evidence |
+| --- | --- | --- |
+| Found or join a workspace | Bootstrap; pending membership; explicit approval; reinitialization across all four member/data states | `TestFoundingEveryStorageBoundaryRecovers`; `request-signature-attack`; no implicit membership or regenerated root on retry |
+| Daily secret read/add/edit/delete/import/sync/pull | `TestOperationStateMatrix`; concurrent operation pairs; 3–8-device swarm; generated workloads | Operation boundary faults; locked device; unchanged local files on failed pull; strict independent secret model |
+| Resolve concurrent work | `TestThreeWayMergeDAGMatrix`; partial/stale resolution rejection; exact edit/delete candidates | Compound Control/data forks; simultaneous competing resolutions and publication failures; explicit re-resolution and convergence |
+| Add/remove/promote/demote teammates | Membership/write matrix; competing-admin matrix; generated three-actor team groups | Signed authority attacks; re-encryption after removal; removed authors/observers across readmission; exact member/admin oracle |
+| Move or upgrade a device key | Key-update and rejoin-after-upgrade journeys; mixed and all-hybrid recipient sets | Interrupted key approval; unavailable key store; no stale-key resurrection; explicit unlock/readmission recovery |
+| Work offline and catch up | Partition recovery; stale writers; returning swarm observer; migration journey | Rename and reuse an environment name without mixing incarnations; preserved earlier work and local-only dotenv values |
+| Maintain multiple environments | Create/switch/previous/rename/delete/recreate; concurrent environment creation | Membership change covers storage scopes absent from an admin's config; protected config edits; unrelated environment sentinel |
+| Restore, compact, or purge history | Historical diffs and restore races; compaction; environment purge | Late publications, terminal fetch failures, interrupted deletion; signed compaction records; offline checkpoints and restart |
+| Defend against untrusted registry objects | Canonical signature and authority attack fixtures | Foreign resource/workspace, wrong signer/domain, malformed signatures, invalid authority, forged compaction, rollback; valid work resumes afterward |
+| Recover a deliberately re-founded workspace | `refounding`; `TestRefoundingClockMatrix` plus subsequent generated work | Each device explicitly confirms the new root; failed confirmation preserves old trust; no inherited admin rights; old-root rollback denied |
+
+Transport interleavings apply to storage-backed operations. Pure local selection
+and configuration changes instead assert file contents, protected fields, and
+per-device selection; transport faults cannot occur inside those operations.
+Native key-store/hardware, OAuth, shell execution, and GUI/editor event handling
+remain the complementary integration suites listed above, not simulated hardware.
+This inventory is finite and reviewable; it does not assert that every unbounded
+operation sequence or every future use case has been enumerated.
