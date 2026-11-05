@@ -2,8 +2,11 @@
 
 package identity
 
-import "github.com/google/go-tpm/tpm2/transport/windowstpm"
+import (
+	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/google/go-tpm/tpm2/transport/windowstpm"
+)
 
-func platformHardware() HardwareBackend {
-	return &TPMBackend{Device: "Windows TBS", Open: windowstpm.Open, Verifier: newHelloVerifier()}
+func platformHardware(c clock.Clock) HardwareBackend {
+	return &TPMBackend{Clock: c, Device: "Windows TBS", Open: windowstpm.Open, Verifier: newHelloVerifier()}
 }

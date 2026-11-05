@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"log"
 	"os"
 	"os/signal"
@@ -25,7 +26,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	service := app.New()
+	service := app.New(clock.New())
 	command := enbucli.NewWithApp(getVersion(), service)
 	if err := executeCommand(ctx, command); err != nil {
 		os.Exit(apperr.ExitCode(err))

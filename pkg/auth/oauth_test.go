@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -198,7 +199,7 @@ func TestOAuthLoginEndToEnd(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	client := newOAuthClient(broker.URL, httpClient)
+	client := newOAuthClient(broker.URL, httpClient, clock.New())
 	token, err := client.login(context.Background(), func(string) error {
 		mu.Lock()
 		callbackURL := redirectURI
@@ -234,7 +235,7 @@ func TestOAuthLoginReturnsWhenBrowserFails(t *testing.T) {
 			State:        state,
 		})
 	}))
-	client := newOAuthClient(server.URL, httpClient)
+	client := newOAuthClient(server.URL, httpClient, clock.New())
 	_, err := client.login(context.Background(), func(string) error { return io.ErrClosedPipe })
 	if err == nil || err.Error() != "opening browser failed" {
 		t.Fatalf("login error = %v", err)
@@ -259,7 +260,7 @@ func TestOAuthLoginCancellationWhileWaitingForCallback(t *testing.T) {
 		})
 	}))
 	ctx, cancel := context.WithCancel(context.Background())
-	client := newOAuthClient(server.URL, httpClient)
+	client := newOAuthClient(server.URL, httpClient, clock.New())
 	_, err := client.login(ctx, func(string) error {
 		cancel()
 		return nil
@@ -276,7 +277,7 @@ func TestOAuthHTTPStagesHonorTimeouts(t *testing.T) {
 		w.WriteHeader(http.StatusGatewayTimeout)
 	}))
 	httpClient.Timeout = 25 * time.Millisecond
-	client := newOAuthClient(server.URL, httpClient)
+	client := newOAuthClient(server.URL, httpClient, clock.New())
 	started := time.Now()
 	_, err := client.authorize(context.Background(), authorizeRequest{})
 	if err == nil || time.Since(started) > 150*time.Millisecond {
@@ -299,7 +300,7 @@ func TestOAuthErrorsDoNotExposeSecrets(t *testing.T) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = io.WriteString(w, strings.Join(secrets, " "))
 	}))
-	client := newOAuthClient(server.URL, httpClient)
+	client := newOAuthClient(server.URL, httpClient, clock.New())
 	_, err := client.exchange(context.Background(), exchangeRequest{
 		Code: secrets[0], CodeVerifier: secrets[1], RedirectURI: secrets[2],
 	})
@@ -329,7 +330,7 @@ func TestExchangeRetriesOnlyRateLimit(t *testing.T) {
 			Scope:       "repo read:org write:packages read:packages",
 		})
 	}))
-	client := newOAuthClient(server.URL, httpClient)
+	client := newOAuthClient(server.URL, httpClient, clock.New())
 	_, err := client.exchange(context.Background(), exchangeRequest{})
 	if err != nil || calls != 2 {
 		t.Fatalf("exchange err=%v calls=%d", err, calls)
@@ -340,7 +341,7 @@ func TestExchangeRetriesOnlyRateLimit(t *testing.T) {
 		calls++
 		w.WriteHeader(http.StatusBadGateway)
 	}))
-	client = newOAuthClient(badGatewayServer.URL, badGatewayHTTPClient)
+	client = newOAuthClient(badGatewayServer.URL, badGatewayHTTPClient, clock.New())
 	_, err = client.exchange(context.Background(), exchangeRequest{})
 	if err == nil || calls != 1 {
 		t.Fatalf("5xx exchange err=%v calls=%d", err, calls)

@@ -58,12 +58,12 @@ func (a *App) checkpointDir() string {
 }
 
 func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
-	return wsp.OpenCheckpoints(a.checkpointDir(), workspace, digest.Digest(genesis))
+	return wsp.OpenCheckpoints(a.checkpointDir(), workspace, digest.Digest(genesis), a.clock())
 }
 
 // trustRoot is the genesis this device pinned for workspace on first use.
 func (a *App) trustRoot(workspace string) *wsp.TrustRoot {
-	return wsp.OpenTrustRoot(a.checkpointDir(), workspace)
+	return wsp.OpenTrustRoot(a.checkpointDir(), workspace, a.clock())
 }
 
 // repositoryTrustRoot is the workspace and genesis this device pinned for the
@@ -76,7 +76,7 @@ func (a *App) repositoryTrustRoot() *wsp.TrustRoot {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return wsp.OpenRepositoryTrustRoot(a.checkpointDir(), path)
+	return wsp.OpenRepositoryTrustRoot(a.checkpointDir(), path, a.clock())
 }
 
 // wspError classifies verification failures so callers can tell an attack or

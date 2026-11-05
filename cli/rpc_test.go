@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"strings"
 	"testing"
 
@@ -12,7 +13,7 @@ import (
 
 func TestRPCServesDesktopServiceOverStdio(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	cmd := NewWithApp("1.2.3", app.New())
+	cmd := NewWithApp("1.2.3", app.New(clock.New()))
 	var stdout bytes.Buffer
 	cmd.SetIn(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"GetAppVersion"}` + "\n"))
 	cmd.SetOut(&stdout)
@@ -33,7 +34,7 @@ func TestRPCServesDesktopServiceOverStdio(t *testing.T) {
 }
 
 func TestRPCNeedsStdio(t *testing.T) {
-	cmd := NewWithApp("1.2.3", app.New())
+	cmd := NewWithApp("1.2.3", app.New(clock.New()))
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetArgs([]string{"rpc"})
@@ -43,7 +44,7 @@ func TestRPCNeedsStdio(t *testing.T) {
 }
 
 func TestRPCIsHidden(t *testing.T) {
-	cmd := NewWithApp("1.2.3", app.New())
+	cmd := NewWithApp("1.2.3", app.New(clock.New()))
 	rpc, _, err := cmd.Find([]string{"rpc"})
 	if err != nil || rpc.Name() != "rpc" || !rpc.Hidden {
 		t.Errorf("rpc command = %v (%v), want a hidden command", rpc, err)

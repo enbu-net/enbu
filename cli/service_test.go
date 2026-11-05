@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/enbu-net/enbu/pkg/clock"
 	"strings"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 func TestDefaultAppWithInvalidBackendReturnsKeystoreError(t *testing.T) {
 	t.Setenv("ENBU_IDENTITY_BACKEND", "invalid")
 
-	a := app.New()
+	a := app.New(clock.New())
 	_, err := app.LoadIdentities(a.Identities, "owner/repo")
 	if err == nil {
 		t.Fatal("expected keystore initialization error")
