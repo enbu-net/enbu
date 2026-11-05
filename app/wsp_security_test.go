@@ -202,6 +202,21 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
 		t.Fatal(err)
 	}
+	// Re-admitting the same signing key must not revive the old-control
+	// forgery that all remaining members already set aside.
+	if _, err := bob.InitializeRepository(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.ApproveMember(bg, string(bobsID)); err != nil {
+		t.Fatal(err)
+	}
+	got, err = alice.ListSecrets(bg, "default")
+	if err != nil || got["KEY"] != "v1" || got["AFTER"] != "ok" {
+		t.Fatalf("readmission revived stale content: %v %v", got, err)
+	}
+	if err := bob.AddSecret(bg, "default", "READMITTED", "fresh"); err != nil {
+		t.Fatalf("fresh write after readmission: %v", err)
+	}
 }
 
 func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
