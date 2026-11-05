@@ -308,6 +308,9 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		}
 		recovery = true
 		s.founded = !s.acceptNewGenesis && (pinned != root || repoPin != root)
+		if s.founded {
+			s.foundingRepo = &pending.PreviousRepo
+		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
