@@ -52,6 +52,17 @@ schedules (128 record/replay cases). Conflicts must retain both candidates and
 require explicit resolution; disjoint changes must compose. Concurrent additions
 also cover same and different keys under four schedules.
 
+`TestMultiUserSwarmMatrix` runs 3–8 devices × eight scenes × four schedules:
+192 record/replay cases. All writers reach the publication boundary before any
+writer publishes. Scenes cover disjoint additions, mixed disjoint edit/delete/
+import/sync, identical edits, identical deletions, distinct edits, edit versus
+deletion, conflicting two-key imports, and an offline observer returning after
+the other writers finish. Every device must see the exact conflict candidate
+sets, including deletions and every writer's distinct value. After resolution
+or a clean merge, every device restarts and concurrently adds another unique
+key; reverse-order sync must preserve all acknowledged changes on every device.
+Unrelated values and each writer's untouched keys are compared with the model.
+
 `TestTeamMembershipWriteMatrix` overlaps six membership changes (approve a
 joiner, remove another member, remove the writer, promote another member, demote
 the writer, approve the writer's key update) with add/edit/delete/import/sync,
