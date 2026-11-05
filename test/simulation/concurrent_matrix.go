@@ -22,6 +22,10 @@ var ConcurrentOperations = []string{"edit", "delete", "import", "sync"}
 func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	base := map[string]string{"K0": "original", "K1": "original", "UNRELATED": "kept"}
+	if c.Left == "add" && c.Right == "add" {
+		delete(base, "K0")
+		delete(base, "K1")
+	}
 	if _, err := w.Devices[0].App.ImportSecrets(ctx, "default", base, true); err != nil {
 		return err
 	}
@@ -37,6 +41,8 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		ops[i] = func(_ int) error {
 			a := w.Devices[i].App
 			switch kind {
+			case "add":
+				return a.AddSecret(ctx, "default", keys[i], values[i])
 			case "edit":
 				return a.EditSecret(ctx, "default", keys[i], values[i])
 			case "delete":
@@ -96,7 +102,7 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	} else {
 		for i, kind := range kinds {
 			switch kind {
-			case "edit", "import":
+			case "add", "edit", "import":
 				w.Model["default"][keys[i]] = values[i]
 			case "delete":
 				delete(w.Model["default"], keys[i])

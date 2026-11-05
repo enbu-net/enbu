@@ -6,6 +6,8 @@ import (
 )
 
 type Plan struct {
+	AdminRace     string
+	Team          *TeamCase
 	Concurrent    *ConcurrentCase
 	StateCase     *StateCase
 	FoundingFault *Fault
@@ -46,6 +48,16 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}
 	if e := w.Bootstrap(ctx); e != nil {
 		return e
+	}
+	if plan.AdminRace != "" {
+		if err := w.AdminRace(ctx, plan.AdminRace); err != nil {
+			return err
+		}
+	}
+	if plan.Team != nil {
+		if err := w.TeamCase(ctx, *plan.Team); err != nil {
+			return err
+		}
 	}
 	if plan.Concurrent != nil {
 		if err := w.ConcurrentCase(ctx, *plan.Concurrent); err != nil {

@@ -32,3 +32,13 @@ func TestConcurrentOperationMatrix(t *testing.T) {
 		}
 	}
 }
+
+func TestConcurrentAdditions(t *testing.T) {
+	for _, same := range []bool{false, true} {
+		for seed := uint64(0); seed < 4; seed++ {
+			t.Run(fmt.Sprintf("same-%t/seed-%d", same, seed), func(t *testing.T) {
+				exercise(t, seed, Plan{Devices: 3, Concurrent: &ConcurrentCase{Left: "add", Right: "add", SameKey: same}})
+			})
+		}
+	}
+}
