@@ -58,7 +58,7 @@ members against the independent model. Temporary failures do not authorize losin
 unrelated values. Persistent partitions, stale writers, truncated reads, corruption,
 missing objects and invalid signed objects have separate scenarios.
 
-Every generated run is replayed. CI runs all branch pushes and PRs with eight
+Every generated run is replayed. CI runs all branch pushes and PRs on Linux x64, Linux ARM64, macOS ARM64 and Windows x64. Each platform uses eight
 shards, each exploring 128 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
 cases. A timeout is failure. Failure artifacts contain synthetic private keys and
 plaintext so they can recreate the exact fixture; never use real workspace data.
