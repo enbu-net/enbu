@@ -2,26 +2,47 @@ name: Deterministic simulation
 
 on:
   push:
+  schedule:
+    - cron: '0 17 * * *' # 02:00 Asia/Tokyo
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Every branch push is tested once. A newer push supersedes the same ref.
+# Scheduled full exploration must not be cancelled by an incremental push.
 concurrency:
-  group: simulation-${{ github.ref }}
-  cancel-in-progress: true
+  group: simulation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
+  plan:
+    name: Select affected DST
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      mode: ${{ steps.plan.outputs.mode }}
+      tests: ${{ steps.plan.outputs.tests }}
+      mutation: ${{ steps.plan.outputs.mutation }}
+      merge: ${{ steps.plan.outputs.merge }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select affected tests or daily full exploration
+        id: plan
+        run: python3 scripts/dst_plan.py
+
   simulation:
-    name: Simulation (${{ matrix.platform.target }} / ${{ matrix.shard }})
+    name: Simulation (${{ matrix.platform.target }})
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 120
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'full' && 360 || 45 }}
     strategy:
-      max-parallel: 15
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
         platform:
           - target: linux-amd64
             runner: ubuntu-24.04
@@ -36,12 +57,13 @@ jobs:
     env:
       CGO_ENABLED: '0'
       ENBU_SIM_EXPLORE: '1'
-      ENBU_SIM_EXHAUSTIVE: '1'
-      ENBU_SIM_SEEDS: '32'
-      ENBU_SIM_STEPS: '256'
-      ENBU_SIM_SHARDS: '32'
-      ENBU_SIM_SHARD: ${{ matrix.shard }}
+      ENBU_SIM_EXHAUSTIVE: ${{ needs.plan.outputs.mode == 'full' && '1' || '0' }}
+      ENBU_SIM_SEEDS: ${{ needs.plan.outputs.mode == 'full' && '256' || '2' }}
+      ENBU_SIM_STEPS: ${{ needs.plan.outputs.mode == 'full' && '256' || '32' }}
+      ENBU_SIM_SHARDS: '4'
       ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
+      DST_TESTS: ${{ needs.plan.outputs.tests }}
+      DST_TIMEOUT: ${{ needs.plan.outputs.mode == 'full' && '330m' || '30m' }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -50,13 +72,45 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Explore and replay
-        shell: bash
-        run: |
-          mkdir -p .tmp/simulation
-          go test -count=1 -parallel=2 -timeout=105m -coverpkg=./app -coverprofile=.tmp/simulation/coverage.out -v ./pkg/merge ./test/simulation
-      - name: Verify oracle mutation sensitivity
-        if: matrix.shard == 0
+      - name: Test affected merge rules
+        if: needs.plan.outputs.merge == 'true'
+        run: go test -count=1 ./pkg/merge
+      # Actions owns concurrency; lanes have disjoint seeds and artifact paths.
+      - parallel:
+          - name: Explore and replay (lane 0)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: '0'
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-0
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-0/coverage.out -run "$DST_TESTS" -v ./test/simulation
+          - name: Explore and replay (lane 1)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: '1'
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-1
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-1/coverage.out -run "$DST_TESTS" -v ./test/simulation
+          - name: Explore and replay (lane 2)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: '2'
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-2
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-2/coverage.out -run "$DST_TESTS" -v ./test/simulation
+          - name: Explore and replay (lane 3)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: '3'
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-3
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-3/coverage.out -run "$DST_TESTS" -v ./test/simulation
+      - name: Verify affected oracle mutation sensitivity
+        if: needs.plan.outputs.mutation == 'true'
         env:
           ENBU_SIM_MUTATION: '1'
         run: go test -count=1 -timeout=10m ./test/simulation -run '^TestOracleMutationExperiments$'
@@ -64,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: simulation-${{ matrix.platform.target }}-${{ matrix.shard }}
+          name: simulation-${{ matrix.platform.target }}
           path: ${{ github.workspace }}/.tmp/simulation
           if-no-files-found: ignore
           retention-days: 14
@@ -72,12 +126,20 @@ jobs:
   simulation-status:
     name: Simulation
     if: always()
-    needs: [simulation]
+    needs: [plan, simulation]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}
     steps:
-      - name: Require every platform and shard to succeed
+      - name: Require the plan and every selected platform to succeed
         env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SHOULD_RUN: ${{ needs.plan.outputs.run }}
           RESULT: ${{ needs.simulation.result }}
-        run: test "$RESULT" = success
+        run: |
+          test "$PLAN_RESULT" = success
+          if [ "$SHOULD_RUN" = true ]; then
+            test "$RESULT" = success
+          else
+            test "$RESULT" = skipped
+          fi

@@ -183,12 +183,32 @@ members against the independent model. Temporary failures do not authorize losin
 unrelated values. Persistent partitions, stale writers, truncated reads, corruption,
 missing objects and invalid signed objects have separate scenarios.
 
-Every generated run is replayed. CI runs once per branch push, and supports manual dispatch, on Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows ARM64. Each platform uses 32
-shards, with at most fifteen matrix jobs running simultaneously, each exploring 32 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
-cases. Two independent worlds run in parallel per job; each world still uses
-its own deterministic scheduler and strict replay. The seed partition test
-proves that repartitioning retains the original 1,024 seeds per platform. A timeout is failure. Every shard uploads an App coverage profile; failure artifacts contain synthetic private keys and
-plaintext so they can recreate the exact fixture; never use real workspace data.
+Every generated run is replayed. Pushes select affected suites using
+`scripts/dst_plan.py`: secret, history, membership, trust, merge, clock, file and
+identity changes map to their related drivers. A changed simulation test file
+selects its tests directly. Changes to shared or unknown application/protocol
+code conservatively broaden the selection; frontend/provider adapters and docs
+without simulation dependencies do not run DST. The planner prints the changed
+paths and selected tests in the Actions summary. Push exploration uses two seeds
+per lane, 32 actions and representative fault positions.
+
+Full exploration runs daily at **02:00 Asia/Tokyo (17:00 UTC)** and on manual
+dispatch. It uses all tests, exhaustive fault positions, and 1,024 seeds × 256
+actions per platform, half fixed and half derived from the commit SHA.
+Scheduled full runs are not cancelled by incremental pushes.
+
+Both modes use one job each for Linux x64, Linux ARM64, macOS ARM64, Windows x64
+and Windows ARM64. Each job uses GitHub Actions `parallel` for four lanes with
+logical shards 0–3. Go runs with `-parallel=1`; each lane has separate logs,
+recordings and an App coverage profile. Full runs use 256 seeds per lane. The
+seed partition test proves this retains the original 1,024 workloads per
+platform. Each world keeps its own deterministic scheduler and strict replay.
+A timeout is failure. The full job is limited to six hours, with a 330-minute
+Go timeout leaving time for mutation checks and artifact upload. Incremental jobs
+have a 45-minute limit and a 30-minute Go timeout. Failure artifacts contain
+synthetic private keys and plaintext to recreate the fixture; never use real
+workspace data.
+
 Oracle failures in long operation sequences are reduced by chunk deletion, and a
 reduced case is kept only when a fresh recording reproduces the same property
 failure and strict replay reproduces it again. Original recordings are retained. An append-only `.journal` also preserves the executed prefix if a process timeout prevents normal cleanup.
