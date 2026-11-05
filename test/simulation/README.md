@@ -125,8 +125,29 @@ reordering/duplication and both choice types; it runs in the DST CI job too.
 concurrent disjoint writes, conflicting edits, and Control fork with frozen,
 backward-moving, and independently skewed device clocks under four schedules:
 72 record/replay cases. This checks that timestamps do not override causal
-history or membership authority. These profiles use deterministic clock values;
-wall-clock timing never chooses the scheduler's next actor.
+history or membership authority. These profiles use `Runtime.Clock` with a shared manual timer clock and
+per-device wall-clock views. Reading `Now` never advances time; recorded storage
+boundaries advance the timer clock by one millisecond. Clock-contract tests verify
+repeated reads and exact deadline expiry for every profile. Wall-clock timing never
+chooses the scheduler's next actor. Physical file-lock contention remains covered
+by the WSP FakeClock regression rather than simulated process scheduling.
+
+`TestClockProfilesWithCompoundRaces` adds 216 record/replay cases: the three clock
+profiles crossed with both membership changes, all three publication failures,
+all three resolution pairs, and four schedules from the compound fixture. It
+checks Control forks, incomplete re-encryption, simultaneous resolutions, recovery,
+compaction, offline observers, and readmission with the same independent model.
+
+`TestCompactionLatePublicationAndCrashRecovery` adds 96 record/replay cases:
+four late-publication outcomes (valid signed state, invalid junk, temporarily
+missing head, temporarily corrupt head) crossed with six deletion outcomes
+(success, failure before commit, lost reply, cancellation, crash before commit,
+crash after commit) and four schedules. Publication happens after the compactor's
+verified read and before its own listing. Valid or temporarily unreadable objects
+must survive; served invalid objects may be deleted. All devices restart before
+recovery, including an observer whose checkpoint precedes the compaction floor.
+Partially completed deletions must remain readable through signed records, retry
+must succeed, and the observer must be able to publish a fresh change.
 
 ## Exploration controls
 

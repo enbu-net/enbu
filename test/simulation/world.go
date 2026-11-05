@@ -10,6 +10,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/jonboulle/clockwork"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -30,11 +31,12 @@ type World struct {
 	Root      string
 	Model     map[string]map[string]string
 	Clock     string
+	timeline  *clockwork.FakeClock
 	tick, id  uint64
 }
 
 func NewWorld(root string, tape *Tape, n int) (*World, error) {
-	w := &World{Tape: tape, Scheduler: NewScheduler(tape), Root: root, Model: map[string]map[string]string{"default": {}}}
+	w := &World{timeline: clockwork.NewFakeClockAt(time.Unix(1700000000, 0)), Tape: tape, Scheduler: NewScheduler(tape), Root: root, Model: map[string]map[string]string{"default": {}}}
 	memory := storagetest.NewMemory()
 	for i := 0; i < n; i++ {
 		dir := filepath.Join(root, fmt.Sprintf("device-%d", i))
@@ -42,21 +44,9 @@ func NewWorld(root string, tape *Tape, n int) (*World, error) {
 			return nil, e
 		}
 		k := &Keys{Tape: tape, Device: i}
-		s := &Store{Store: memory, Tape: tape, Device: i}
+		s := &Store{Store: memory, Tape: tape, Device: i, advance: func() { w.tick++; w.timeline.Advance(time.Millisecond) }}
 		a := &app.App{Storage: s, Identities: k, RepositoryDir: dir, CheckpointDir: filepath.Join(dir, "checkpoints"), CacheDir: filepath.Join(dir, "cache"), StorageURL: "oci://simulation.invalid/workspace", RepoDetector: simulationRepo{}, TokenProvider: simulationToken{}}
-		a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Now: func() time.Time {
-			w.tick++
-			seconds := int64(1700000000) + int64(w.tick)
-			switch w.Clock {
-			case "frozen":
-				seconds = 1700000000
-			case "backward":
-				seconds = 1700000000 - int64(w.tick)
-			case "skewed":
-				seconds += int64(i-n/2) * 365 * 24 * 60 * 60
-			}
-			return time.Unix(seconds, 0)
-		}, NewID: func() string {
+		a.Runtime = &app.Runtime{LocalStateDir: filepath.Join(dir, "local"), Clock: deviceClock{FakeClock: w.timeline, world: w, device: i, devices: n}, NewID: func() string {
 			w.id++
 			return fmt.Sprintf("%08x-0000-4000-8000-%012x", uint32(tape.Recording.Seed), w.id)
 		}, Encrypt: func(p []byte, r []string) ([]byte, error) {

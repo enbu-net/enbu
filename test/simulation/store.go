@@ -38,7 +38,8 @@ type Fault struct {
 	Mode   string
 }
 type Store struct {
-	mu sync.Mutex
+	mu      sync.Mutex
+	advance func()
 	storage.Store
 	Actor     *Actor
 	Tape      *Tape
@@ -54,6 +55,9 @@ func (s *Store) effect(method string, input any, f func(string) (any, error)) er
 	run := func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.advance != nil {
+			s.advance()
+		}
 		if s.calls == nil {
 			s.calls = map[string]int{}
 		}

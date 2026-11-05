@@ -93,7 +93,7 @@ func (w *World) publishMergeNode(ctx context.Context, actor int, values map[stri
 		return storage.Object{}, err
 	}
 	defer func() { _ = signer.Close() }()
-	state := wsp.State{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: control.Digest, Parents: slices.Clone(parents), Author: signer.Public().DeviceID(), Ciphertext: digest.FromBytes(cipher), CreatedAt: d.App.Runtime.Now().Unix()}
+	state := wsp.State{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: control.Digest, Parents: slices.Clone(parents), Author: signer.Public().DeviceID(), Ciphertext: digest.FromBytes(cipher), CreatedAt: d.App.Runtime.Clock.Now().Unix()}
 	signed, err := wsp.SignState(state, signer)
 	if err != nil {
 		return storage.Object{}, err
