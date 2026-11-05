@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer"}
+var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -607,6 +607,54 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		w.Model["default"]["FROM_B"] = "kept"
 		w.Devices[1].Store.Arm(Fault{})
 		if e := a.SyncSecrets(ctx, "default"); e != nil {
+			return e
+		}
+		return w.Check(ctx, "default")
+
+	case "concurrent-environments":
+		if e := a.CreateEnvironment("alpha"); e != nil {
+			return e
+		}
+		if e := b.CreateEnvironment("beta"); e != nil {
+			return e
+		}
+		if e := a.AddSecret(ctx, "alpha", "ALPHA", "a"); e != nil {
+			return e
+		}
+		if e := b.AddSecret(ctx, "beta", "BETA", "b"); e != nil {
+			return e
+		}
+		// A member update must include scopes absent from this admin's config.
+		if e := a.RemoveMember(ctx, w.Devices[1].ID); e != nil {
+			return e
+		}
+		left, e := config.LoadProjectFrom(a.RepositoryDir)
+		if e != nil {
+			return e
+		}
+		right, e := config.LoadProjectFrom(b.RepositoryDir)
+		if e != nil {
+			return e
+		}
+		left.Environments["beta"] = right.Environments["beta"]
+		if e := config.SaveProjectTo(a.RepositoryDir, left); e != nil {
+			return e
+		}
+		if e := w.Share(0); e != nil {
+			return e
+		}
+		if _, e := b.InitializeRepository(ctx); e != nil {
+			return e
+		}
+		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {
+			return e
+		}
+		w.Model["alpha"] = map[string]string{"ALPHA": "a"}
+		w.Model["beta"] = map[string]string{"BETA": "b"}
+		if e := w.Check(ctx, "alpha"); e != nil {
+			return e
+		}
+		if e := w.Check(ctx, "beta"); e != nil {
 			return e
 		}
 		return w.Check(ctx, "default")
