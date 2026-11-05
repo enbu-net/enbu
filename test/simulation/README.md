@@ -59,12 +59,12 @@ unrelated values. Persistent partitions, stale writers, truncated reads, corrupt
 missing objects and invalid signed objects have separate scenarios.
 
 Every generated run is replayed. CI runs all branch pushes and PRs with eight
-shards, each exploring 128 seeds × 256 actions, plus fixed and exhaustive fault
+shards, each exploring 128 seeds × 256 actions (half fixed, half derived from the commit SHA), plus fixed and exhaustive fault
 cases. A timeout is failure. Failure artifacts contain synthetic private keys and
 plaintext so they can recreate the exact fixture; never use real workspace data.
 Oracle failures in long operation sequences are reduced by chunk deletion, and a
 reduced case is kept only when a fresh recording reproduces the same property
-failure and strict replay reproduces it again. Original recordings are retained.
+failure and strict replay reproduces it again. Original recordings are retained. An append-only `.journal` also preserves the executed prefix if a process timeout prevents normal cleanup.
 
 ## Complementary integration evidence
 

@@ -101,6 +101,15 @@ func (w *World) Bootstrap(ctx context.Context) error {
 		}
 		d.ID = r.DeviceID
 		if i > 0 {
+			if !r.Pending {
+				return fmt.Errorf("unapproved device did not remain pending")
+			}
+			if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
+				return fmt.Errorf("pending device could read: %v", err)
+			}
+			if err := requireCode(d.App.AddSecret(ctx, "default", "UNAPPROVED", "x"), apperr.CodeNotMember); err != nil {
+				return err
+			}
 			e := w.Devices[0].App.ApproveMember(ctx, d.ID)
 			if e := w.Observe("approve", i, nil, e); e != nil {
 				return e

@@ -2,13 +2,17 @@ package simulation
 
 import (
 	"context"
+	"errors"
+	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -164,6 +168,40 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := a.RemoveMember(ctx, w.Devices[1].ID); e != nil {
 			return e
 		}
+		// Authorization rejection alone is insufficient: the removed key must
+		// also fail to decrypt the current ciphertext directly from storage.
+		cfg, err := config.LoadProjectFrom(a.RepositoryDir)
+		if err != nil {
+			return err
+		}
+		view, err := wsp.LoadControl(ctx, w.Devices[0].Store, cfg.WorkspaceID, digest.Digest(cfg.ControlGenesis), nil)
+		if err != nil {
+			return err
+		}
+		states, err := wsp.LoadStates(ctx, w.Devices[0].Store, view, cfg.WorkspaceID, cfg.Resource("default"))
+		if err != nil {
+			return err
+		}
+		id, err := w.Devices[1].Keys.Load(cfg.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = id.Close() }()
+		if len(states.Heads) == 0 {
+			return fmt.Errorf("removal left no current encrypted state")
+		}
+		for _, head := range states.Heads {
+			blob, err := wsp.ReadCiphertext(ctx, w.Devices[0].Store, head)
+			if err != nil {
+				return err
+			}
+			_, err = age.Decrypt(blob, id)
+			var noMatch *agecrypto.NoIdentityMatchError
+			if !errors.As(err, &noMatch) {
+				return fmt.Errorf("removed key could decrypt current ciphertext: %v", err)
+			}
+		}
+
 		if _, e := b.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeNotMember) != nil {
 			return fmt.Errorf("removed device read: %v", e)
 		}
