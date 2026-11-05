@@ -13,6 +13,7 @@ import (
 
 type Action struct {
 	Kind        string
+	Parallel    *ConcurrentCase
 	Device      int
 	Key, Value  string
 	Environment string
@@ -25,11 +26,24 @@ func Generate(seed uint64, steps, devices int) []Action {
 	kinds := []string{"add", "edit", "delete", "import", "read", "sync", "restart", "pull", "history", "invalid", "create-env", "switch-env", "rename-env", "delete-env", "compact", "members", "rejoin", "role"}
 	for i := 0; i < steps; i++ {
 		out = append(out, Action{Kind: kinds[r.IntN(len(kinds))], Device: r.IntN(devices), Key: fmt.Sprintf("K_%d", r.IntN(12)), Value: fmt.Sprintf("v_%d_%d", i, r.Uint64()), Environment: fmt.Sprintf("env_%d", r.IntN(3)), Admin: r.IntN(2) == 0})
+		if i%16 == 7 {
+			left := r.IntN(devices)
+			right := (left + 1 + r.IntN(devices-1)) % devices
+			out[len(out)-1].Kind = "parallel"
+			out[len(out)-1].Parallel = &ConcurrentCase{Left: ConcurrentOperations[r.IntN(len(ConcurrentOperations))], Right: ConcurrentOperations[r.IntN(len(ConcurrentOperations))], SameKey: r.IntN(2) == 0, Devices: []int{left, right}}
+			if devices >= 3 && r.IntN(2) == 0 {
+				left = 1 + r.IntN(devices-1)
+				right = 1 + (left-1+1+r.IntN(devices-2))%(devices-1)
+				out[len(out)-1].Parallel.Devices = []int{left, right}
+				out[len(out)-1].Parallel.Compact = true
+			}
+		}
 	}
 	return out
 }
 
-// Workload maintains a separate sequential specification. Errors never become
+// Workload maintains a separate specification, with explicitly generated
+// concurrent groups checked by the independent merge oracle. Errors never become
 // acceptable just because the application returned them.
 func (w *World) Workload(ctx context.Context, actions []Action) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
@@ -69,6 +83,16 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 		var out any
 		var e error
 		switch op.Kind {
+		case "parallel":
+			if op.Parallel == nil {
+				return fmt.Errorf("parallel group has no operations")
+			}
+			e = w.ConcurrentCase(ctx, *op.Parallel)
+			if e == nil {
+				// A clean merged read can still have sibling heads. Seal the
+				// group before later sequential operations such as compaction.
+				e = w.Devices[0].App.SyncSecrets(ctx, "default")
+			}
 		case "add":
 			e = a.AddSecret(ctx, env, op.Key, op.Value)
 			if exists {

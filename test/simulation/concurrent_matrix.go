@@ -13,6 +13,8 @@ import (
 type ConcurrentCase struct {
 	Left, Right string
 	SameKey     bool
+	Devices     []int
+	Compact     bool
 }
 
 var ConcurrentOperations = []string{"edit", "delete", "import", "sync"}
@@ -21,12 +23,20 @@ var ConcurrentOperations = []string{"edit", "delete", "import", "sync"}
 // keys must compose; different changes to the same key must remain a conflict.
 func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
+	devices := c.Devices
+	if len(devices) == 0 {
+		devices = []int{0, 1}
+	}
+	if len(devices) != 2 || devices[0] == devices[1] || devices[0] < 0 || devices[1] < 0 || devices[0] >= len(w.Devices) || devices[1] >= len(w.Devices) {
+		return fmt.Errorf("invalid concurrent devices %v", devices)
+	}
 	if c.Right == "compact" {
-		if err := w.Devices[0].App.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
+		if err := w.Devices[0].App.SetAdmin(ctx, w.Devices[devices[1]].ID, true); err != nil {
 			return err
 		}
 	}
-	base := map[string]string{"K0": "original", "K1": "original", "UNRELATED": "kept"}
+	base := clone(w.Model["default"])
+	base["K0"], base["K1"], base["UNRELATED"] = "original", "original", "kept"
 	if c.Left == "add" && c.Right == "add" {
 		delete(base, "K0")
 		delete(base, "K1")
@@ -42,6 +52,14 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		return err
 	}
 	w.Model["default"] = clone(base)
+	if c.Compact {
+		if devices[0] == 0 || devices[1] == 0 {
+			return fmt.Errorf("compactor must be a distinct actor")
+		}
+		if err := w.Devices[0].App.SyncSecrets(ctx, "default"); err != nil {
+			return err
+		}
+	}
 	kinds := []string{c.Left, c.Right}
 	keys := []string{"K0", "K1"}
 	if c.SameKey {
@@ -53,8 +71,8 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		if kind == "restore" {
 			keys[i], values[i] = "K0", "historical"
 		}
-		ops[i] = func(_ int) error {
-			a := w.Devices[i].App
+		ops[i] = func(actor int) error {
+			a := w.Devices[actor].App
 			switch kind {
 			case "add":
 				return a.AddSecret(ctx, "default", keys[i], values[i])
@@ -81,7 +99,17 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		}
 	}
 	conflict := c.SameKey && c.Left != "sync" && c.Right != "sync" && (c.Left != "delete" || c.Right != "delete") && (c.Left != "restore" || c.Right != "restore")
-	results, err := w.runBatch(ctx, "publish", ops)
+	if c.Compact {
+		devices = append(append([]int(nil), devices...), 0)
+		ops = append(ops, func(actor int) error {
+			result, err := w.Devices[actor].App.CompactHistory(ctx, "default", 1)
+			if err == nil && result.Removed == 0 {
+				return fmt.Errorf("generated compaction removed no revision")
+			}
+			return err
+		})
+	}
+	results, err := w.runDeviceBatch(ctx, "publish", devices, ops)
 	if err != nil {
 		return err
 	}
