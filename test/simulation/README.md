@@ -73,6 +73,19 @@ delete, compaction, membership remove/rejoin, role changes and restarts. After
 every action, all live environments are compared on every device. Rejoining after
 a hybrid key update has a dedicated regression case.
 
+`TestThreeWayMergeDAGMatrix` builds real encrypted, signed revisions and checks
+659 DAG cases: 64 ordinary three-way merges, 64 unequal branch lengths,
+16 unrelated roots, 256 criss-cross merges with two merge bases, 256 three-head
+merges, plus late resolution, missing-base recovery and independent simultaneous
+key conflicts. The finite value domain distinguishes absence, empty strings,
+and two distinct values. Expected outcomes come from enumerating values that
+satisfy the merge specification, independently of the merge package and DAG.
+The test checks the actual merge bases, exact conflict candidates, explicit value
+or deletion resolution, convergence on every device, and parent links of the
+published merge revision. Partial and stale resolutions must be refused.
+`pkg/merge` additionally enumerates all 64 single-key three-way states with head
+reordering/duplication and both choice types; it runs in the DST CI job too.
+
 ## Exploration controls
 
 - `ENBU_SIM_SEEDS`, `ENBU_SIM_STEPS`: generated sequences per shard and sequence length.

@@ -21,7 +21,7 @@ tasks:
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -count=1 -timeout=55m ./test/simulation
+      - go test -count=1 -timeout=55m ./pkg/merge ./test/simulation
 
   cli/test:
     desc: Run all CLI tests
