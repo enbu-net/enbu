@@ -153,6 +153,9 @@ func (a *App) ociCredential(registry string) auth.CredentialFunc {
 		if host != "ghcr.io" {
 			return auth.EmptyCredential, nil
 		}
+		if a.TokenProvider == nil {
+			return auth.EmptyCredential, apperr.New(apperr.CodeNotAuthenticated, "GitHub credentials unavailable", nil)
+		}
 		token, username, err := a.TokenProvider.LoadToken()
 		if err != nil {
 			return auth.EmptyCredential, apperr.Wrap(apperr.CodeNotAuthenticated, "ghcr.io storage uses enbu's GitHub login; run 'enbu auth login'", err, nil)
