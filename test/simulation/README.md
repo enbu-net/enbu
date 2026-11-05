@@ -191,3 +191,9 @@ failures and arbitrary Go data races are not modeled by the virtual scheduler.
 A simulated stop aborts application control flow at a storage boundary and recreates the App from preserved files and synthetic identities. Deferred handle releases still run; interruption within a filesystem syscall and loss of volatile OS buffers are outside this model. Restart scenarios preserve files and identities while replacing App instances;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
+
+Six isolated mutation experiments check that the oracles detect lost updates,
+missed conflicts, unauthorized membership changes, missed rollback, deletion of
+a valid late publication, and deletion of a temporarily unreachable publication.
+Every experiment first requires the unmodified behavioral test to pass; compiler
+failures do not count as detected bugs.
