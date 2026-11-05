@@ -43,6 +43,10 @@ workflows:
     '.github/workflows/s3-smoke.yaml':
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-go@v7.0.0'
+    '.github/workflows/simulation.yaml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/setup-go@v7.0.0'
+        - 'actions/upload-artifact@v7.0.2'
     '.github/workflows/tobari.yaml':
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'

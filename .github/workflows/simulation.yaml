@@ -1,0 +1,50 @@
+name: Deterministic simulation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulation:
+    name: Simulation (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      CGO_ENABLED: '0'
+      ENBU_SIM_EXHAUSTIVE: '1'
+      ENBU_SIM_SEEDS: '128'
+      ENBU_SIM_STEPS: '256'
+      ENBU_SIM_SHARDS: '8'
+      ENBU_SIM_SHARD: ${{ matrix.shard }}
+      ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Explore and replay
+        run: go test -count=1 -timeout=55m -v ./test/simulation
+      - name: Verify oracle mutation sensitivity
+        if: matrix.shard == 0
+        env:
+          ENBU_SIM_MUTATION: '1'
+        run: go test -count=1 -timeout=10m ./test/simulation -run '^TestOracleMutationExperiments$'
+      - name: Upload failure recordings
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: simulation-${{ matrix.shard }}
+          path: ${{ github.workspace }}/.tmp/simulation
+          if-no-files-found: ignore
+          retention-days: 14

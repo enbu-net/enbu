@@ -14,6 +14,14 @@ tasks:
       - gui/test
       - vscode/test
       - scripts/test
+      - simulation/test
+
+  simulation/test:
+    desc: Run deterministic simulations and strict replays
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=55m ./test/simulation
 
   cli/test:
     desc: Run all CLI tests
