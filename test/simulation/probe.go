@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"os"
+	"path/filepath"
 	"reflect"
 )
 
@@ -16,7 +18,7 @@ type Probe struct {
 	Fault     Fault
 }
 
-var ProbeOperations = []string{"add", "edit", "delete", "import", "sync", "pull", "history", "diff", "restore", "compact", "purge", "approve", "remove", "admin", "upgrade"}
+var ProbeOperations = []string{"add", "edit", "delete", "import", "sync", "pull", "pull-file", "history", "diff", "restore", "compact", "purge", "approve", "remove", "admin", "upgrade"}
 
 func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 	ctx = wsp.WithSerialHeadReads(ctx)
@@ -59,6 +61,13 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 			return nil, e
 		}
 	}
+	filePath := filepath.Join(a.RepositoryDir, ".env")
+	originalFile := []byte("BASE=old\nLOCAL_ONLY=mine\n")
+	if p.Operation == "pull-file" {
+		if err := os.WriteFile(filePath, originalFile, 0600); err != nil {
+			return nil, err
+		}
+	}
 	invoke := func() error {
 		switch p.Operation {
 		case "add":
@@ -75,6 +84,9 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		case "pull":
 			_, e := a.PullSecretsData(ctx, "default")
 			return e
+		case "pull-file":
+			_, err := a.PullSecretsToFileWith(ctx, "default", false)
+			return err
 		case "history":
 			_, e := a.ListHistory(ctx, "default")
 			return e
@@ -119,6 +131,24 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		return nil, e
 	}
 	store.Arm(Fault{})
+	if p.Operation == "pull-file" {
+		if result == nil {
+			if err := w.checkOutput("successful-pull", filePath, map[string]string{"BASE": "latest", "LOCAL_ONLY": "mine"}); err != nil {
+				return nil, err
+			}
+		} else {
+			data, err := os.ReadFile(filePath)
+			if err != nil {
+				return nil, err
+			}
+			if string(data) != string(originalFile) {
+				return nil, fmt.Errorf("failed pull modified the original output")
+			}
+			if err := w.Tape.Observe("failed-pull-output", nil, data); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if result == ErrCrash {
 		w.Restart(0)
 		a = w.Devices[0].App
@@ -176,7 +206,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 				retry = true
 			}
 		}
-	case "compact", "pull", "history", "diff", "sync":
+	case "compact", "pull", "pull-file", "history", "diff", "sync":
 		retry = result != nil
 	}
 	if result == nil && retry {
@@ -204,6 +234,11 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 	}
 	if e := w.Check(ctx, "default"); e != nil {
 		return nil, e
+	}
+	if p.Operation == "pull-file" {
+		if err := w.checkOutput("recovered-pull", filePath, map[string]string{"BASE": "latest", "LOCAL_ONLY": "mine"}); err != nil {
+			return nil, err
+		}
 	}
 	return counts, nil
 }
