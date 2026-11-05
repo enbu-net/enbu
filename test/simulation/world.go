@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"time"
 )
 
@@ -133,11 +134,32 @@ func (w *World) Check(ctx context.Context, env string) error {
 			e = nil
 			got = map[string]string{}
 		}
-		if e := w.Observe("check", []any{i, env}, got, e); e != nil {
+		if e := w.Observe("check", []any{i, env, want}, got, e); e != nil {
 			return e
 		}
 		if !reflect.DeepEqual(got, want) {
-			return &Violation{Kind: "model", Detail: fmt.Errorf("reference mismatch device %d env %s: got %v want %v", i, env, got, want)}
+			kind := "model/" + env
+			all := map[string]bool{}
+			for key := range want {
+				all[key] = true
+			}
+			for key := range got {
+				all[key] = true
+			}
+			ordered := make([]string, 0, len(all))
+			for key := range all {
+				ordered = append(ordered, key)
+			}
+			sort.Strings(ordered)
+			for _, key := range ordered {
+				gv, gok := got[key]
+				wv, wok := want[key]
+				if gok != wok || gv != wv {
+					kind += "/" + key
+					break
+				}
+			}
+			return &Violation{Kind: kind, Detail: fmt.Errorf("reference mismatch device %d env %s: got %v want %v", i, env, got, want)}
 		}
 	}
 	return nil

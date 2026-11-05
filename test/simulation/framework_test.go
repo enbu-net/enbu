@@ -103,7 +103,9 @@ func TestOracleDetectsLostWrite(t *testing.T) {
 	}
 	// A deliberately lost acknowledged update must fail independently of merge.
 	w.Model["default"]["LOST"] = "acknowledged"
-	if e := w.Check(context.Background(), "default"); e == nil {
-		t.Fatal("oracle accepted a lost update")
+	err := w.Check(context.Background(), "default")
+	var violation *Violation
+	if !errors.As(err, &violation) || violation.Kind != "model/default/LOST" {
+		t.Fatalf("oracle did not identify the lost-key property: %v", err)
 	}
 }

@@ -126,6 +126,9 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 	if e != nil {
 		return nil, e
 	}
+	if err := w.Tape.Observe("probe-state", []any{before, after}, got); err != nil {
+		return nil, err
+	}
 	if !reflect.DeepEqual(got, before) && !reflect.DeepEqual(got, after) {
 		return nil, fmt.Errorf("partial or lost acknowledged state after %+v: %v", p, got)
 	}

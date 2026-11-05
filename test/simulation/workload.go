@@ -94,11 +94,11 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			return fmt.Errorf("unknown action %q", op.Kind)
 		}
 		code := ErrorCode(e)
-		if te := w.Tape.Observe("workload", []any{step, op}, []any{out, code}); te != nil {
+		if te := w.Tape.Observe("workload", []any{step, op, expected}, []any{out, code}); te != nil {
 			return te
 		}
 		if code != expected {
-			return &Violation{Kind: "result", Detail: fmt.Errorf("step %d %s: code %q want %q: %v", step, op.Kind, code, expected, e)}
+			return &Violation{Kind: "result/" + op.Kind + "/" + op.Key, Detail: fmt.Errorf("step %d %s: code %q want %q: %v", step, op.Kind, code, expected, e)}
 		}
 		if e := w.Check(ctx, "default"); e != nil {
 			return fmt.Errorf("after step %d %s: %w", step, op.Kind, e)

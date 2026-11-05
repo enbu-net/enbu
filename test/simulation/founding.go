@@ -44,7 +44,7 @@ func (w *World) FoundingProbe(ctx context.Context, fault Fault) (map[string]int,
 	if before.ControlGenesis != "" && result.ControlGenesis != before.ControlGenesis {
 		return nil, fmt.Errorf("founding recovery replaced the genesis")
 	}
-	if err := w.Tape.Observe("founding-recovery", nil, result); err != nil {
+	if err := w.Tape.Observe("founding-recovery", []string{before.WorkspaceID, before.ControlGenesis}, result); err != nil {
 		return nil, err
 	}
 	if err := d.App.AddSecret(ctx, "default", "AFTER", "kept"); err != nil {
