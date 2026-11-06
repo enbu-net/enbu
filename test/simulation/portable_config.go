@@ -67,6 +67,9 @@ func (w *World) PortableConfig(ctx context.Context) error {
 	if err := rejected(func() error { return a.RenameEnvironment("staging", "PROD") }, apperr.CodeEnvironmentExists); err != nil {
 		return err
 	}
+	if err := rejected(func() error { return a.RenameEnvironment("prod", "prod") }, apperr.CodeEnvironmentExists); err != nil {
+		return err
+	}
 	cfg, err := config.LoadProjectFrom(a.RepositoryDir)
 	if err != nil {
 		return err
@@ -95,13 +98,14 @@ func (w *World) PortableConfig(ctx context.Context) error {
 		}
 		outside := filepath.Join(w.Root, fmt.Sprintf("outside-%d.env", i))
 		local := filepath.Join(d.App.RepositoryDir, ".env")
+		neighbor := filepath.Join(d.App.RepositoryDir, ".env.PROD")
 		preserved := []byte("LOCAL_ONLY=personal\n")
-		for _, path := range []string{outside, local} {
+		for _, path := range []string{outside, local, neighbor} {
 			if err := os.WriteFile(path, preserved, 0o600); err != nil {
 				return err
 			}
 		}
-		for _, output := range []string{filepath.ToSlash(outside), "../escape.env", `..\escape.env`, "C:/escape.env", ".env:private", " .env ", "dir/../../escape.env"} {
+		for _, output := range []string{filepath.ToSlash(outside), "../escape.env", `..\escape.env`, "C:/escape.env", ".env:private", " .env ", "dir/../../escape.env", ".env.PROD", "./.ENV.prod", "dir/../.env.PROD"} {
 			env := cfg.Environments["default"]
 			env.Output = output
 			cfg.Environments["default"] = env
@@ -125,7 +129,7 @@ func (w *World) PortableConfig(ctx context.Context) error {
 						return fmt.Errorf("unsafe output configuration reached storage")
 					}
 				}
-				for _, path := range []string{outside, local} {
+				for _, path := range []string{outside, local, neighbor} {
 					got, err := os.ReadFile(path)
 					if err != nil || string(got) != string(preserved) {
 						return fmt.Errorf("unsafe config modified a local file: %v", err)
