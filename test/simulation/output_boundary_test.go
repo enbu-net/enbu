@@ -7,7 +7,7 @@ import (
 
 func TestOutputBoundaryClocks(t *testing.T) {
 	exploration(t)
-	for _, kind := range []string{"public", "hardlink", "canceled-hardlink"} {
+	for _, kind := range []string{"public", "hardlink", "canceled-hardlink", "removed-hardlink", "upgraded-preserve-hardlink", "upgraded-replace-hardlink"} {
 		for _, devices := range []int{2, 3, 8} {
 			for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 				t.Run(fmt.Sprintf("%s/devices-%d/%s", kind, devices, profile), func(t *testing.T) {
@@ -16,5 +16,13 @@ func TestOutputBoundaryClocks(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestOutputBoundaryMembershipSmoke(t *testing.T) {
+	for _, kind := range []string{"removed-hardlink", "upgraded-preserve-hardlink", "upgraded-replace-hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			exercise(t, 101, Plan{Devices: 3, Scenario: "output-boundary-" + kind})
+		})
 	}
 }
