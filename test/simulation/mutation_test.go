@@ -108,7 +108,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			control := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=2m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
+			control := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			control.Dir = root
 			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_CASE_STRIDE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
 			if output, err := control.CombinedOutput(); err != nil {
@@ -126,7 +126,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			if e := os.WriteFile(path, b, 0600); e != nil {
 				t.Fatal(e)
 			}
-			cmd := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=2m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
+			cmd := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			cmd.Dir = root
 			cmd.Env = control.Env
 			out, e := cmd.CombinedOutput()

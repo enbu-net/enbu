@@ -240,7 +240,7 @@ Thirty-one isolated mutation experiments check that the oracles detect lost upda
 missed conflicts, unauthorized membership changes, missed rollback, deletion of
 a valid late publication, deletion of a temporarily unreachable publication, a wrong observer acceptance
 epoch, revival of a revoked author, omitted signature verification, unchecked parent-admin authority, unauthorized compaction records, and unsafe fork resolution.
-Each Actions lane runs its assigned mutation experiments after exploration, with a 15-minute mutation timeout. Experiments are assigned exactly once across the four lanes. Every experiment resets exploration sharding and sampling for its unmodified control and mutant, so both execute the complete intended scenario; compiler failures do not count as detected bugs. Child test processes have a two-minute deadlock guard and are cancelled with the parent test.
+Each Actions lane runs its assigned mutation experiments after exploration, with a 15-minute mutation timeout. Experiments are assigned exactly once across the four lanes. Every experiment resets exploration sharding and sampling for its unmodified control and mutant, so both execute the complete intended scenario; compiler failures do not count as detected bugs. Child test processes have a five-minute deadlock guard and are cancelled with the parent test.
 
 
 `TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval` adds 128 record/replay
