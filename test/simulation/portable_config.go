@@ -87,6 +87,31 @@ func (w *World) PortableConfig(ctx context.Context) error {
 	if err := w.Share(0); err != nil {
 		return err
 	}
+	original, err := a.ReadConfig()
+	if err != nil {
+		return err
+	}
+	env := cfg.Environments["PROD"]
+	env.Output = ".ENV.blocked"
+	cfg.Environments["PROD"] = env
+	data, err := config.MarshalProject(cfg)
+	if err != nil {
+		return err
+	}
+	if err := a.WriteConfig(string(data)); err != nil {
+		return err
+	}
+	for _, run := range []func() error{
+		func() error { return a.CreateEnvironment("blocked") },
+		func() error { return a.RenameEnvironment("staging", "blocked") },
+	} {
+		if err := rejected(run, apperr.CodeInvalidArgument); err != nil {
+			return fmt.Errorf("output collision during environment change: %w", err)
+		}
+	}
+	if err := a.WriteConfig(original); err != nil {
+		return err
+	}
 	for i, d := range w.Devices {
 		original, err := d.App.ReadConfig()
 		if err != nil {

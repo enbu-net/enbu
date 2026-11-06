@@ -71,6 +71,7 @@ var mutationCases = []struct{ name, file, old, new, scenario string }{
 	{"case-sensitive-environment-collision", "pkg/config/config.go", "existing != except && strings.EqualFold(existing, name)", "existing != except && existing == name", "TestScenarios/portable-config"},
 	{"trailing-dot-environment", "pkg/config/config.go", " || strings.HasSuffix(name, \".\")", "", "TestScenarios/portable-config"},
 	{"colliding-environment-outputs", "pkg/config/config.go", "if strings.EqualFold(previous, clean) {", "if strings.EqualFold(previous, clean) && false {", "TestScenarios/portable-config"},
+	{"skip-project-save-validation", "app/app.go", "if err := config.ValidateProjectOutputs(cfg); err != nil {", "if err := config.ValidateProjectOutputs(cfg); err != nil && false {", "TestScenarios/portable-config"},
 	{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
 	{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
 	{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},
