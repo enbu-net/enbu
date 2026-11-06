@@ -469,7 +469,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {
+	if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
