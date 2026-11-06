@@ -247,3 +247,42 @@ def test_contention_helper_and_secret_changes_select_progress_matrix():
     for path in ["test/simulation/contention.go", "app/secrets.go"]:
         plan = dst_plan.select([path])
         assert selected(plan, "TestContentionClocks")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "pkg/storage/stream_cancellation_test.go",
+        "pkg/wsp/state_test.go",
+        "pkg/identity/partial_loss_test.go",
+        "app/secrets_test.go",
+    ],
+)
+def test_native_test_only_changes_do_not_repeat_dst(path):
+    plan = dst_plan.select([path])
+    assert not plan["run"]
+    assert not plan["mutation"]
+    assert not plan["merge"]
+    assert plan["tests"] == "^$"
+
+
+def test_native_test_changes_do_not_hide_implementation_changes_or_full_runs():
+    paths = ["pkg/storage/stream_cancellation_test.go", "app/secrets.go"]
+    plan = dst_plan.select(paths)
+    assert plan["run"] and plan["mutation"]
+    assert selected(plan, "TestContentionClocks")
+    plan = dst_plan.select([paths[0]], full=True)
+    assert plan["run"] and plan["mutation"] and plan["merge"]
+    assert selected(plan, "TestOperationFaultMatrix")
+
+
+@pytest.mark.parametrize("helper", ["partition_test.go", "simulation_test.go"])
+def test_shared_simulation_test_helpers_select_every_matrix(helper):
+    plan = dst_plan.select(["test/simulation/" + helper])
+    assert plan["run"] and plan["mutation"]
+    for name in [
+        "TestContentionClocks",
+        "TestPartialKeyRecoveryClocks",
+        "TestThreeWayMergeDAGMatrix",
+    ]:
+        assert selected(plan, name)

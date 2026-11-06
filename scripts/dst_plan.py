@@ -75,7 +75,9 @@ def select(paths: list[str], full: bool = False) -> dict:
             )
             if source.endswith(".md"):
                 continue
-            if source in SCENARIO_SOURCES or source == "scenarios.go":
+            if source in {"partition_test.go", "simulation_test.go"}:
+                broad = True
+            elif source in SCENARIO_SOURCES or source == "scenarios.go":
                 files.add(SIM / "simulation_test.go")
             elif candidate.is_file():
                 files.add(candidate)
@@ -101,6 +103,9 @@ def select(paths: list[str], full: bool = False) -> dict:
                 SIM / "restart_test.go",
                 SIM / "generated_groups_test.go",
             }
+        elif path.endswith("_test.go") and path.startswith(("app/", "pkg/")):
+            # Dependency tests are run by native CI, not compiled into DST.
+            continue
         elif path.endswith(".go") and path.startswith(("app/", "pkg/")):
             parts = Path(path).parts
             stem = Path(path).stem.removesuffix("_test")

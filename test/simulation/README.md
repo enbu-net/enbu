@@ -24,6 +24,8 @@ The scheduler permits one actor to run between external boundaries; internal
 speculative head reads are explicitly made sequential for this context. Ordinary
 production head prefetch remains parallel.
 
+Named clock/device journeys and the scenario catalog use a stable test-name hash to assign one Actions lane per case. Previously these newer matrices repeated on all four lanes, and both Windows targets hit the 30-minute test timeout. A local unpartitioned-versus-four-lane audit retained the same 437 passing named cases, assigned 110/108/113/106, with no omissions or duplicates. Existing index-partitioned matrices and the 1,024-seed partition remain unchanged. Native dependency `_test.go` changes run in normal CI without repeating DST; implementation changes retain their affected-domain rules, and changes to shared simulation test helpers widen selection to all matrices.
+
 ## Operation coverage
 
 | Application operations | Scenarios, rejection, concurrency, faults and recovery |

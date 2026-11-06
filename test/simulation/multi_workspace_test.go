@@ -11,6 +11,7 @@ func TestMultipleWorkspaceClocks(t *testing.T) {
 		for _, scenario := range []string{"multiple-workspaces", "shared-storage-workspaces"} {
 			for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 				t.Run(fmt.Sprintf("%s/devices-%d/%s", scenario, devices, profile), func(t *testing.T) {
+					shardCase(t)
 					exercise(t, 47, Plan{Devices: devices, Clock: profile, Scenario: scenario})
 				})
 			}

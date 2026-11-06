@@ -166,7 +166,7 @@ func simulationSeed(index, shards, shard int, revision string) uint64 {
 }
 func TestScenarios(t *testing.T) {
 	for i, name := range Scenarios {
-		t.Run(name, func(t *testing.T) { exercise(t, uint64(10000+i), Plan{Devices: 3, Scenario: name}) })
+		t.Run(name, func(t *testing.T) { shardCase(t); exercise(t, uint64(10000+i), Plan{Devices: 3, Scenario: name}) })
 	}
 }
 func TestReplay(t *testing.T) {
