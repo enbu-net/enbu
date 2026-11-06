@@ -286,5 +286,102 @@ func (w *World) GitWorktrees(ctx context.Context) error {
 			return err
 		}
 	}
+	// Rebase an independently changed default and a new environment onto the
+	// merged configuration. Rewriting Git history cannot rewrite secret lineage.
+	if err := git(checkout, "switch", "-c", "rebased-config", "baseline"); err != nil {
+		return err
+	}
+	if err := process.CreateEnvironment("qa"); err != nil {
+		return err
+	}
+	if err := process.AddSecret(ctx, "qa", "TOKEN", "qa-before-rebase"); err != nil {
+		return err
+	}
+	w.Model["qa"] = map[string]string{"TOKEN": "qa-before-rebase"}
+	branchConfig, err := config.LoadProjectFrom(checkout)
+	if err != nil {
+		return err
+	}
+	branchConfig.SetDefault("qa")
+	if err := config.SaveProjectTo(checkout, branchConfig); err != nil {
+		return err
+	}
+	if err := commit(checkout, "add qa independently"); err != nil {
+		return err
+	}
+	if output, err := fixtureGit(ctx, checkout, "rebase", "main"); err == nil {
+		return fmt.Errorf("independent default changes rebased without conflict: %s", output)
+	}
+	conflicted, err = os.ReadFile(filepath.Join(checkout, "enbu.toml"))
+	if err != nil || !strings.Contains(string(conflicted), "<<<<<<<") {
+		return fmt.Errorf("rebase did not leave the expected config conflict: %v", err)
+	}
+	start = len(w.Tape.Recording.Entries)
+	if err := process.AddSecret(ctx, "default", "MUST_NOT_PUBLISH", "rebase-conflict"); err == nil {
+		return fmt.Errorf("unresolved rebase permitted a secret write")
+	}
+	for _, entry := range w.Tape.Recording.Entries[start:] {
+		if entry.Kind == "storage-request" {
+			return fmt.Errorf("unresolved rebase reached storage")
+		}
+	}
+	resolved, err := config.LoadProjectFrom(dir)
+	if err != nil {
+		return err
+	}
+	resolved.Environments["qa"] = branchConfig.Environments["qa"]
+	if err := config.SaveProjectTo(checkout, resolved); err != nil {
+		return err
+	}
+	if err := git(checkout, "add", "--", "enbu.toml"); err != nil {
+		return err
+	}
+	if err := git(checkout, "-c", "core.editor=true", "rebase", "--continue"); err != nil {
+		return err
+	}
+	if err := git(dir, "merge", "--ff-only", "rebased-config"); err != nil {
+		return err
+	}
+	// Cherry-pick a legitimate new environment over a divergent main commit.
+	if err := git(checkout, "switch", "-c", "cherry-source"); err != nil {
+		return err
+	}
+	if err := process.CreateEnvironment("cherry"); err != nil {
+		return err
+	}
+	if err := process.AddSecret(ctx, "cherry", "TOKEN", "cherry-before-pick"); err != nil {
+		return err
+	}
+	w.Model["cherry"] = map[string]string{"TOKEN": "cherry-before-pick"}
+	if err := commit(checkout, "add cherry-picked environment"); err != nil {
+		return err
+	}
+	if err := git(dir, "commit", "--allow-empty", "-m", "diverge before cherry-pick"); err != nil {
+		return err
+	}
+	if err := git(dir, "cherry-pick", "cherry-source"); err != nil {
+		return err
+	}
+	if err := w.Share(0); err != nil {
+		return err
+	}
+	// A cleanly applied malicious commit still has no authority to change pins.
+	if err := git(dir, "cherry-pick", "untrusted-config"); err != nil {
+		return err
+	}
+	if _, err := primary.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeTrustRootChanged) != nil {
+		return fmt.Errorf("cherry-picked root bypassed trust pin: %v", err)
+	}
+	if err := git(dir, "revert", "--no-edit", "HEAD"); err != nil {
+		return err
+	}
+	for _, env := range []string{"default", "production", "staging", "preview", "qa", "cherry"} {
+		if err := w.Check(ctx, env); err != nil {
+			return err
+		}
+		if err := read(process, env, w.Model[env]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
