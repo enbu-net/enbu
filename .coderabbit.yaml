@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+inheritance: true
+reviews:
+  auto_review:
+    enabled: true
+    # Stacked PRs target another feature branch before they target main.
+    base_branches:
+      - ".*"
