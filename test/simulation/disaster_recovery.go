@@ -176,7 +176,7 @@ func (w *World) restoreRecoveryStore(ctx context.Context, backup []storage.Objec
 // freshness without it. Keep this boundary distinct from a failed recovery.
 func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) error {
 	switch mode {
-	case "witness", "all-stale", "retired-key":
+	case "witness", "all-stale", "retired-key", "compacted", "compacted-no-record":
 	default:
 		return fmt.Errorf("unknown disaster recovery mode %q", mode)
 	}
@@ -243,6 +243,32 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
+	compacted := mode == "compacted" || mode == "compacted-no-record"
+	if compacted {
+		for _, env := range []string{"default", "staging"} {
+			result, err := a.CompactHistory(ctx, env, 1)
+			if err != nil {
+				return err
+			}
+			if result == nil || result.Removed == 0 || result.Kept != 1 {
+				return fmt.Errorf("recovery fixture did not actually compact %s: %+v", env, result)
+			}
+			cfg, err := config.LoadProjectFrom(a.RepositoryDir)
+			if err != nil {
+				return err
+			}
+			scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource(env))
+			for _, kind := range []storage.Kind{storage.KindState, storage.KindCompaction} {
+				refs, err := w.Devices[0].Store.Discover(ctx, kind, scope)
+				if err != nil {
+					return err
+				}
+				if len(refs) != 1 {
+					return fmt.Errorf("compacted recovery %s/%s has %d objects, want one", env, kind, len(refs))
+				}
+			}
+		}
+	}
 	currentDevices := make([]recoveryDevice, len(w.Devices))
 	for i, d := range w.Devices {
 		if err := d.App.SwitchEnvironment("default"); err != nil {
@@ -267,9 +293,23 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
-	if mode != "retired-key" {
+	if mode != "retired-key" && !compacted {
 		if err := w.restoreRecoveryStore(ctx, oldStore); err != nil {
 			return err
+		}
+	}
+	if mode == "compacted-no-record" {
+		records := 0
+		for _, object := range currentStore {
+			if object.Kind == storage.KindCompaction {
+				if err := w.Devices[0].Store.Delete(ctx, object.Kind, object.Scope, object.Rev); err != nil {
+					return err
+				}
+				records++
+			}
+		}
+		if records != 2 {
+			return fmt.Errorf("expected one compaction record per environment, got %d", records)
 		}
 	}
 	for i, d := range w.Devices {
@@ -283,7 +323,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 		for _, env := range []string{"default", "staging"} {
 			start := len(w.Tape.Recording.Entries)
 			got, err := d.App.ListSecrets(ctx, env)
-			if mode == "witness" && i == 0 {
+			if mode == "compacted-no-record" || mode == "witness" && i == 0 {
 				if err := requireCode(err, apperr.CodeRollback); err != nil {
 					return fmt.Errorf("retained witness accepted a rolled-back store: %w", err)
 				}
@@ -297,7 +337,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 				}
 			} else {
 				want := w.Model[env]
-				if mode != "retired-key" {
+				if mode != "retired-key" && !compacted {
 					want = oldModels[env]
 				}
 				if err != nil || !reflect.DeepEqual(got, want) {
