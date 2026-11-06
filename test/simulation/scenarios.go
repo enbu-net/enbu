@@ -438,6 +438,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			}
 			w.Devices[0].Store.Arm(Fault{})
 			w.Restart(0)
+			a = w.Devices[0].App
 			if e := w.Check(ctx, "default"); e != nil {
 				return e
 			}

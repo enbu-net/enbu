@@ -27,6 +27,7 @@ tasks:
     desc: Run deterministic simulations and strict replays
     env:
       ENBU_SIM_EXPLORE: '1'
+      ENBU_SIM_ARTIFACTS: '{{.ROOT_DIR}}/.tmp/simulation'
       CGO_ENABLED: '0'
     cmds:
       - go test -count=1 -timeout=55m ./pkg/merge ./test/simulation

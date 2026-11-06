@@ -3,7 +3,7 @@ package simulation
 import (
 	"bytes"
 	"encoding/json"
-"fmt"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,35 +48,35 @@ func TestMutationTargetsMatchLFAndCRLF(t *testing.T) {
 }
 
 var mutationCases = []struct{ name, file, old, new, scenario string }{
-		{"lost-update", "app/secrets.go", "secrets[key] = value", "delete(secrets,key)", "TestScenarios/concurrent-keys"},
-		{"missed-conflict", "app/secrets.go", "func conflictError(cs []merge.Conflict) error {", "func conflictError(cs []merge.Conflict) error { return nil;", "TestScenarios/conflicting-edits"},
-		{"privilege-escalation", "app/members.go", "if p, _ := s.head.Principal(s.self()); !p.Admin {", "if p, _ := s.head.Principal(s.self()); !p.Admin && false {", "TestScenarios/membership"},
-		{"missed-rollback", "app/workspace.go", "return nil, wspError(fmt.Errorf(\"%w: all previously accepted revisions are missing\", wsp.ErrRollback))", "return nil,storageError(storage.ErrNotFound)", "TestScenarios/adversarial-storage"},
-		{"delete-late-valid-state", "app/compact.go", "return err != nil && !errors.Is(err, wsp.ErrRollback), nil", "return true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
-		{"delete-temporarily-unreachable-state", "app/compact.go", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn false, nil", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
-		{"wrong-observer-acceptance-epoch", "app/workspace.go", "s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())", "s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())", "TestAcceptanceEpochSmoke"},
-		{"revive-revoked-author", "pkg/wsp/state.go", "if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "if false && !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "TestAcceptanceEpochSmoke"},
-		{"skip-state-signature-verification", "pkg/wsp/state.go", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil && false {", "TestScenarios/forged-state-signature"},
-		{"control-parent-admin-check", "pkg/wsp/control.go", "if !ok || !author.Admin {\n\t\t\treturn nil, invalid(\"control author", "if !ok {\n\t\t\treturn nil, invalid(\"control author", "TestAuthorityAttackSmoke/member-promotes-self"},
-		{"compaction-admin-check", "pkg/wsp/compaction.go", "if !ok || !author.Admin {", "if !ok {", "TestAuthorityAttackSmoke/member-excuses-rollback"},
-		{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c); err != nil {", "if err := checkResolution(parents, c); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
-		{"control-work-limit", "pkg/wsp/chain.go", "if len(revs) > maxControls {", "if len(revs) > maxControls && false {", "TestScenarios/metadata-control-count"},
-		{"skip-head-recheck", "app/secrets.go", "if !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "if false && !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "TestScenarios/contention-edit-exhausted"},
-		{"premature-retry-exhaustion", "app/secrets.go", "const maxRetries = 3", "const maxRetries = 1", "TestScenarios/contention-edit-yield"},
-		{"unbounded-retries", "app/secrets.go", "attempt < attempts", "true", "TestScenarios/contention-edit-exhausted"},
-		{"discard-pull-context", "app/secrets.go", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) { ctx = context.Background();", "TestActualContextCancellationRecovery/pull-file/blob-context-before"},
-		{"permissive-wire-decoder", "pkg/wsp/codec.go", "func decodeCanonical(data []byte, v any) error {", "func decodeCanonical(data []byte, v any) error { if err := cbor.Unmarshal(data, v); err != nil { return invalid(\"decode: %v\", err) }; return nil;", "TestScenarios/wire-format-warm"},
-		{"unsafe-output-overwrite", "app/secrets.go", "if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {", "if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {", "TestScenarios/output-boundary-hardlink"},
-		{"skip-config-read-validation", "pkg/config/config.go", "if err := ValidateProjectOutputs(&cfg); err != nil {", "if err := ValidateProjectOutputs(&cfg); err != nil && false {", "TestScenarios/portable-config"},
-		{"case-sensitive-environment-collision", "pkg/config/config.go", "existing != except && strings.EqualFold(existing, name)", "existing != except && existing == name", "TestScenarios/portable-config"},
-		{"trailing-dot-environment", "pkg/config/config.go", " || strings.HasSuffix(name, \".\")", "", "TestScenarios/portable-config"},
-		{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
-		{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
-		{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},
-		{"join-request-work-limit", "pkg/wsp/join.go", "if len(revs) > maxJoinRequestRefs {", "if len(revs) > maxJoinRequestRefs && false {", "TestScenarios/request-flood"},
-		{"request-conflict-display-cap", "app/members.go", "out = append(out, p)", "out = append(out, p); if len(out) >= maxJoinRequests { break }", "TestScenarios/hidden-request-conflict"},
-		{"join-request-signature", "pkg/wsp/join.go", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil {", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil && false {", "TestScenarios/request-signature-attack"},
-	}
+	{"lost-update", "app/secrets.go", "secrets[key] = value", "delete(secrets,key)", "TestScenarios/concurrent-keys"},
+	{"missed-conflict", "app/secrets.go", "func conflictError(cs []merge.Conflict) error {", "func conflictError(cs []merge.Conflict) error { return nil;", "TestScenarios/conflicting-edits"},
+	{"privilege-escalation", "app/members.go", "if p, _ := s.head.Principal(s.self()); !p.Admin {", "if p, _ := s.head.Principal(s.self()); !p.Admin && false {", "TestScenarios/membership"},
+	{"missed-rollback", "app/workspace.go", "return nil, wspError(fmt.Errorf(\"%w: all previously accepted revisions are missing\", wsp.ErrRollback))", "return nil,storageError(storage.ErrNotFound)", "TestScenarios/adversarial-storage"},
+	{"delete-late-valid-state", "app/compact.go", "return err != nil && !errors.Is(err, wsp.ErrRollback), nil", "return true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
+	{"delete-temporarily-unreachable-state", "app/compact.go", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn false, nil", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
+	{"wrong-observer-acceptance-epoch", "app/workspace.go", "s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())", "s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())", "TestAcceptanceEpochSmoke"},
+	{"revive-revoked-author", "pkg/wsp/state.go", "if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "if false && !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {", "TestAcceptanceEpochSmoke"},
+	{"skip-state-signature-verification", "pkg/wsp/state.go", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil && false {", "TestScenarios/forged-state-signature"},
+	{"control-parent-admin-check", "pkg/wsp/control.go", "if !ok || !author.Admin {\n\t\t\treturn nil, invalid(\"control author", "if !ok {\n\t\t\treturn nil, invalid(\"control author", "TestAuthorityAttackSmoke/member-promotes-self"},
+	{"compaction-admin-check", "pkg/wsp/compaction.go", "if !ok || !author.Admin {", "if !ok {", "TestAuthorityAttackSmoke/member-excuses-rollback"},
+	{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c); err != nil {", "if err := checkResolution(parents, c); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
+	{"control-work-limit", "pkg/wsp/chain.go", "if len(revs) > maxControls {", "if len(revs) > maxControls && false {", "TestScenarios/metadata-control-count"},
+	{"skip-head-recheck", "app/secrets.go", "if !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "if false && !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "TestScenarios/contention-edit-exhausted"},
+	{"premature-retry-exhaustion", "app/secrets.go", "const maxRetries = 3", "const maxRetries = 1", "TestScenarios/contention-edit-yield"},
+	{"unbounded-retries", "app/secrets.go", "attempt < attempts", "true", "TestScenarios/contention-edit-exhausted"},
+	{"discard-pull-context", "app/secrets.go", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) { ctx = context.Background();", "TestActualContextCancellationRecovery/pull-file/blob-context-before"},
+	{"permissive-wire-decoder", "pkg/wsp/codec.go", "func decodeCanonical(data []byte, v any) error {", "func decodeCanonical(data []byte, v any) error { if err := cbor.Unmarshal(data, v); err != nil { return invalid(\"decode: %v\", err) }; return nil;", "TestScenarios/wire-format-warm"},
+	{"unsafe-output-overwrite", "app/secrets.go", "if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {", "if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {", "TestScenarios/output-boundary-hardlink"},
+	{"skip-config-read-validation", "pkg/config/config.go", "if err := ValidateProjectOutputs(&cfg); err != nil {", "if err := ValidateProjectOutputs(&cfg); err != nil && false {", "TestScenarios/portable-config"},
+	{"case-sensitive-environment-collision", "pkg/config/config.go", "existing != except && strings.EqualFold(existing, name)", "existing != except && existing == name", "TestScenarios/portable-config"},
+	{"trailing-dot-environment", "pkg/config/config.go", " || strings.HasSuffix(name, \".\")", "", "TestScenarios/portable-config"},
+	{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
+	{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
+	{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},
+	{"join-request-work-limit", "pkg/wsp/join.go", "if len(revs) > maxJoinRequestRefs {", "if len(revs) > maxJoinRequestRefs && false {", "TestScenarios/request-flood"},
+	{"request-conflict-display-cap", "app/members.go", "out = append(out, p)", "out = append(out, p); if len(out) >= maxJoinRequests { break }", "TestScenarios/hidden-request-conflict"},
+	{"join-request-signature", "pkg/wsp/join.go", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil {", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil && false {", "TestScenarios/request-signature-attack"},
+}
 
 // Mutation experiments edit only disposable copies. A compile error is not a
 // killed mutant: the intended behavioral test must report an actual failure.

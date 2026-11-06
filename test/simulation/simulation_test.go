@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -216,9 +218,50 @@ func revision(t *testing.T) string {
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatal(err)
+		t.Logf("revision unavailable: %v", err)
+		return "unknown"
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func TestSimulationSmokeWithoutGitMetadata(t *testing.T) {
+	t.Setenv("GITHUB_SHA", "")
+	t.Setenv("PATH", t.TempDir())
+	tape := exercise(t, 107, Plan{Devices: 2, Scenario: "concurrent-keys"})
+	if tape.Recording.Revision != "unknown" {
+		t.Fatal("source-only execution did not retain placeholder revision metadata")
+	}
+}
+
+func TestSimulationSmokeJournalPreservesEveryRecordedEntry(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ENBU_SIM_ARTIFACTS", dir)
+	t.Setenv("ENBU_SIM_SAVE_ALL", "1")
+	tape := exercise(t, 109, Plan{Devices: 2, Scenario: "file-output"})
+	paths, err := filepath.Glob(filepath.Join(dir, "*.journal"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("journal not retained: paths=%v err=%v", paths, err)
+	}
+	file, err := os.Open(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	decoder := json.NewDecoder(file)
+	var header Recording
+	if err := decoder.Decode(&header); err != nil || header.Seed != 109 {
+		t.Fatalf("journal header missing: %v", err)
+	}
+	for index, want := range tape.Recording.Entries {
+		var got Entry
+		if err := decoder.Decode(&got); err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("journal lost or changed entry %d: %v", index, err)
+		}
+	}
+	var extra Entry
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		t.Fatalf("journal has unrecorded data: %v", err)
+	}
 }
 
 // exploration is opt-in so ordinary unit/scenario coverage retains bounded

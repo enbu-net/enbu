@@ -215,7 +215,7 @@ workspace data.
 
 Oracle failures in long operation sequences are reduced by chunk deletion, and a
 reduced case is kept only when a fresh recording reproduces the same property
-failure and strict replay reproduces it again. Original recordings are retained. An append-only `.journal` also preserves the executed prefix if a process timeout prevents normal cleanup.
+failure and strict replay reproduces it again. Original recordings are retained. An append-only `.journal` preserves the executed prefix if a process timeout prevents normal cleanup. `task simulation/test` sets `ENBU_SIM_ARTIFACTS` to `.tmp/simulation`; set that variable explicitly for direct `go test` runs to enable journaling, or choose another artifact directory. Without it, a timeout cannot retain the prefix.
 
 ## Complementary integration evidence
 

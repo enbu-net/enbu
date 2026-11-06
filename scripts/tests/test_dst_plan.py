@@ -316,3 +316,19 @@ def test_config_changes_select_portable_team_configuration():
         "pkg/config/config.go",
     ]:
         assert selected(dst_plan.select([path]), "TestPortableConfigClocks")
+
+
+@pytest.mark.parametrize("path", ["pkg/apperr/error.go", "pkg/new_dependency/new.go"])
+def test_unclassified_dependencies_select_all_simulations(path):
+    plan = dst_plan.select([path])
+    assert plan["run"] and plan["mutation"]
+    for source in dst_plan.SIM.glob("*_test.go"):
+        for name in dst_plan.names(source) - {"TestOracleMutationExperiments"}:
+            assert selected(plan, name)
+
+
+@pytest.mark.parametrize(
+    "path", ["app/secrets.go", "test/simulation/output_boundary.go"]
+)
+def test_incremental_plans_execute_configured_generated_seeds(path):
+    assert selected(dst_plan.select([path]), "TestSimulation")

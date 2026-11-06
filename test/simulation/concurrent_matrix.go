@@ -124,10 +124,8 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 	if err != nil {
 		return err
 	}
-	for _, result := range results {
-		if result != nil && (!conflict || ErrorCode(result) != string(apperr.CodeSecretConflict)) {
-			return fmt.Errorf("concurrent %+v: %w", c, result)
-		}
+	if err := validateConcurrentResults(c, conflict, results); err != nil {
+		return err
 	}
 	if conflict {
 		for _, d := range w.Devices {
@@ -175,4 +173,24 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		return err
 	}
 	return w.Check(ctx, "default")
+}
+
+func validateConcurrentResults(c ConcurrentCase, conflict bool, results []error) error {
+	want := 2
+	if c.Compact {
+		want++
+	}
+	if len(results) != want {
+		return fmt.Errorf("concurrent result count %d, want %d", len(results), want)
+	}
+	for index, result := range results {
+		if c.Compact && index == len(results)-1 && ErrorCode(result) == string(apperr.CodeConflict) {
+			// Sibling heads can stop compaction without a conflicting secret value.
+			continue
+		}
+		if result != nil && (!conflict || ErrorCode(result) != string(apperr.CodeSecretConflict)) {
+			return fmt.Errorf("concurrent %+v: %w", c, result)
+		}
+	}
+	return nil
 }

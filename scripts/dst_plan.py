@@ -149,6 +149,9 @@ def select(paths: list[str], full: bool = False) -> dict:
             }:
                 broad = True
                 mutation = True
+            elif parts[1] not in {"auth", "provider", "keystore", "process", "export"}:
+                # Unknown application dependencies must not silently skip DST.
+                broad = mutation = True
             if domain:
                 files |= {
                     SIM / "team_incident_test.go",
@@ -187,7 +190,11 @@ def select(paths: list[str], full: bool = False) -> dict:
     # Mutation runs separately so it cannot contend with parallel exploration.
     tests.discard("TestOracleMutationExperiments")
     if files:
-        tests |= {"TestSimulationSmoke", "TestEveryAppOperationHasSimulationDriver"}
+        tests |= {
+            "TestSimulation",
+            "TestSimulationSmoke",
+            "TestEveryAppOperationHasSimulationDriver",
+        }
     return {
         "run": bool(tests or mutation or merge),
         "mode": "full" if full else "incremental",
