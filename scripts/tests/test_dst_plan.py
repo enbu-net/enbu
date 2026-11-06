@@ -241,3 +241,9 @@ def test_metadata_flood_helper_selects_its_clock_matrix():
     plan = dst_plan.select(["test/simulation/metadata_flood.go"])
     assert selected(plan, "TestMetadataFloodClocks")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+def test_contention_helper_and_secret_changes_select_progress_matrix():
+    for path in ["test/simulation/contention.go", "app/secrets.go"]:
+        plan = dst_plan.select([path])
+        assert selected(plan, "TestContentionClocks")
