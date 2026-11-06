@@ -29,6 +29,26 @@ type recoveryDevice struct {
 	keys  map[string]*keyMaterial
 }
 
+func requireReadOnlyStorage(entries []Entry) error {
+	for _, entry := range entries {
+		if entry.Kind != "storage-request" {
+			continue
+		}
+		var request struct{ Method string }
+		if err := json.Unmarshal(entry.Output, &request); err != nil {
+			return err
+		}
+		switch request.Method {
+		case "discover", "scopes", "head", "blob":
+		case "publish", "delete":
+			return fmt.Errorf("recovery probe changed remote storage")
+		default:
+			return fmt.Errorf("unknown recorded storage request %q", request.Method)
+		}
+	}
+	return nil
+}
+
 func copyRecoveryKeys(src map[string]*keyMaterial) map[string]*keyMaterial {
 	out := make(map[string]*keyMaterial, len(src))
 	for name, material := range src {
@@ -284,17 +304,8 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 					return fmt.Errorf("restored reader %d/%s returned an unexpected snapshot: %v", i, env, err)
 				}
 			}
-			for _, entry := range w.Tape.Recording.Entries[start:] {
-				if entry.Kind != "storage-request" {
-					continue
-				}
-				var request struct{ Method string }
-				if err := json.Unmarshal(entry.Input, &request); err != nil {
-					return err
-				}
-				if request.Method == "publish" || request.Method == "delete" {
-					return fmt.Errorf("recovery probe changed remote storage")
-				}
+			if err := requireReadOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
+				return err
 			}
 		}
 	}
