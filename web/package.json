@@ -33,8 +33,8 @@
   "devDependencies": {
     "@inlang/paraglide-js": "2.29.3",
     "@inlang/plugin-message-format": "4.5.7",
-    "@pandacss/dev": "2.4.0",
-    "@pandacss/preset-base": "2.4.0",
+    "@pandacss/dev": "2.5.0",
+    "@pandacss/preset-base": "2.5.0",
     "@park-ui/cli": "1.0.1",
     "@tanstack/router-devtools": "1.167.2",
     "@tanstack/router-plugin": "1.168.48",
