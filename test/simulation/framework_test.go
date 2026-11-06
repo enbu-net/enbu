@@ -93,6 +93,33 @@ func TestAmbiguousPublishIsDurable(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestActualCancellationStopsLaterEffects(t *testing.T) {
+	for _, mode := range []string{"context-before", "context-after"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			base := storagetest.NewMemory()
+			s := &Store{Store: base, Tape: NewTape(0, ""), cancel: cancel}
+			s.Arm(Fault{"publish", 1, mode})
+			first := storagetest.Object(storage.KindControl, "", "first")
+			if err := s.Publish(ctx, first); !errors.Is(err, context.Canceled) || !errors.Is(ctx.Err(), context.Canceled) {
+				t.Fatalf("operation context was not canceled: result=%v context=%v", err, ctx.Err())
+			}
+			_, err := base.FetchHead(t.Context(), first.Kind, first.Scope, first.Rev)
+			if mode == "context-before" && !errors.Is(err, storage.ErrNotFound) || mode == "context-after" && err != nil {
+				t.Fatalf("wrong durable side of cancellation: %v", err)
+			}
+			second := storagetest.Object(storage.KindControl, "", "second")
+			if err := s.Publish(ctx, second); !errors.Is(err, context.Canceled) {
+				t.Fatalf("subsequent call ignored cancellation: %v", err)
+			}
+			if _, err := base.FetchHead(t.Context(), second.Kind, second.Scope, second.Rev); !errors.Is(err, storage.ErrNotFound) {
+				t.Fatalf("subsequent call had a durable effect: %v", err)
+			}
+		})
+	}
+}
 func TestOracleDetectsLostWrite(t *testing.T) {
 	w, e := NewWorld(t.TempDir(), NewTape(0, ""), 2)
 	if e != nil {

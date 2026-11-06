@@ -2,12 +2,14 @@ package simulation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 )
 
 // Probe explores a failure at one exact external call of a public operation.
@@ -118,8 +120,23 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		return nil, e
 	}
 	store.Arm(p.Fault)
+	parent := ctx
+	var cancel context.CancelFunc
+	if strings.HasPrefix(p.Fault.Mode, "context-") {
+		ctx, cancel = context.WithCancel(ctx)
+		store.cancel = cancel
+	}
 	result := catchCrash(invoke)
 	hits := store.faultHits
+	if cancel != nil {
+		canceled := errors.Is(ctx.Err(), context.Canceled)
+		cancel()
+		store.cancel = nil
+		ctx = parent // Recovery is a new request, not the canceled operation.
+		if hits > 0 && (!canceled || !errors.Is(result, context.Canceled)) {
+			return nil, fmt.Errorf("operation did not preserve actual cancellation: canceled=%t, result=%v", canceled, result)
+		}
+	}
 	if p.Fault.Method == "" && result != nil {
 		return nil, fmt.Errorf("baseline %s: %w", p.Operation, result)
 	}

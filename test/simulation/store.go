@@ -49,6 +49,7 @@ type Store struct {
 	ordinal   int
 	faultHits int
 	listings  map[string][]digest.Digest
+	cancel    context.CancelFunc
 }
 
 func (s *Store) effect(method string, input any, f func(string) (any, error)) error {
@@ -81,7 +82,21 @@ func (s *Store) effect(method string, input any, f func(string) (any, error)) er
 		if e := s.Tape.Observe("storage-request", nil, in); e != nil {
 			return e
 		}
+		if mode == "context-before" || mode == "context-after" {
+			if s.cancel == nil {
+				return fmt.Errorf("context cancellation fault has no operation cancel function")
+			}
+			if mode == "context-before" {
+				s.cancel()
+			}
+		}
 		out, e := f(mode)
+		if mode == "context-after" {
+			s.cancel()
+			if e == nil {
+				e = context.Canceled
+			}
+		}
 		code := ""
 		switch {
 		case e == nil:

@@ -234,7 +234,7 @@ checkpoints and fresh writes survive without reusing them;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
 
-Twenty-two isolated mutation experiments check that the oracles detect lost updates,
+Twenty-three isolated mutation experiments check that the oracles detect lost updates,
 missed conflicts, unauthorized membership changes, missed rollback, deletion of
 a valid late publication, deletion of a temporarily unreachable publication, a wrong observer acceptance
 epoch, revival of a revoked author, omitted signature verification, unchecked parent-admin authority, unauthorized compaction records, and unsafe fork resolution.
@@ -395,7 +395,7 @@ native/unit coverage is not counted as deterministic team-workflow coverage.
 | Registry/bucket permission changes | Generic storage faults and App role checks exist; pull-only credentials, ACL changes, token revocation, and capability-specific errors are not a complete team matrix. |
 | Real provider semantics | OCI/S3 fixtures are complementary tests; pagination, throttling, eventual listings, interrupted multipart transfer, and remote deletion behavior are not fully crossed with team workflows. |
 | Local filesystem failures | Corrupt files/caches and failed-output preservation are checked; syscall-level short writes, ENOSPC, permission changes, fsync/rename failure, symlinks, and OS-specific path behavior are not fully scheduled. |
-| Actual cancellation and process termination | Boundary errors/stops are simulated; cancellation while waiting on locks/HTTP, RPC disconnect during publication, and killing a process inside a local write remain partial. |
+| Actual cancellation and process termination | The operation fault matrix now calls a real operation CancelFunc before each selected storage call and after durable publication/deletion; recovery uses a fresh request context. It asserts both the canceled context and preserved errors.Is cancellation cause, with strict replay, independent before/after-state checks, safe retry, and team convergence. Bounded ordinary regressions cover edit, approval, removal, upgrade, compaction, purge, and history-dependent file pull. Native OCI/S3 HTTP tests block nine API requests before a response, cancel only after server entry, verify request disconnection and preserved cancellation cause, then require the same client to complete a new listing. Upload bodies are drained before waiting so HTTP/1 disconnect observation is valid. Cancellation while waiting on locks, streaming response bodies, RPC disconnect, and process termination inside local writes remain partial. |
 | CLI child-process execution and secret masking | CLI native tests cover injection, precedence, masking, and exit status; these are not yet coupled to DST team changes and cancellation. |
 | Frontend stale views and repeated submissions | App conflict/seen-head checks and adapter tests exist; actual UI edit/save, workspace switching, double submission, and reconnect sequences are not a complete DST journey. |
 | Scale and protocol limits | Worlds contain 2–8 simulated devices; more participants, high revision counts, payload/key/entry limits, maximum head/parent counts, and paginated compaction need additional end-to-end boundaries. |

@@ -42,9 +42,9 @@ func TestOperationFaultMatrix(t *testing.T) {
 						occurrences = append(occurrences, i)
 					}
 				}
-				modes := []string{"before", "cancel", "crash-before"}
+				modes := []string{"before", "cancel", "context-before", "crash-before"}
 				if method == "publish" || method == "delete" {
-					modes = append(modes, "after", "crash-after")
+					modes = append(modes, "after", "context-after", "crash-after")
 				}
 				for _, at := range occurrences {
 					for _, mode := range modes {
@@ -83,6 +83,32 @@ func countsBetween(t *testing.T, tape *Tape, start, end string) map[string]int {
 }
 func TestWildcardFaultProbeIsReachable(t *testing.T) {
 	exercise(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: "add", Fault: Fault{"*", 1, "before"}}})
+}
+
+func TestActualContextCancellationRecovery(t *testing.T) {
+	for _, op := range []string{"edit", "approve", "remove", "upgrade", "compact", "purge", "pull-file"} {
+		t.Run(op, func(t *testing.T) {
+			baseline := exercise(t, 79, Plan{Devices: 3, Probe: &Probe{Operation: op}})
+			counts := countsBetween(t, baseline, "probe-start", "probe-result")
+			methods := []string{"publish", "delete"}
+			if op == "pull-file" {
+				methods = []string{"blob", "discover"}
+			}
+			for _, method := range methods {
+				if counts[method] == 0 {
+					continue
+				}
+				for _, mode := range []string{"context-before", "context-after"} {
+					if op == "pull-file" && mode == "context-after" {
+						continue // Lost replies are modeled at durable-write boundaries.
+					}
+					t.Run(method+"-"+mode, func(t *testing.T) {
+						exercise(t, 79, Plan{Devices: 3, Probe: &Probe{op, Fault{method, counts[method], mode}}})
+					})
+				}
+			}
+		})
+	}
 }
 func TestInvalidActionDeviceIsRejectedBeforeBootstrap(t *testing.T) {
 	for _, device := range []int{-1, 2} {
