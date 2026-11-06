@@ -77,6 +77,9 @@ func (a *App) loadProject() (*config.ProjectConfig, error) {
 }
 
 func (a *App) saveProject(cfg *config.ProjectConfig) error {
+	if err := config.ValidateProjectOutputs(cfg); err != nil {
+		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
+	}
 	return config.SaveProjectTo(a.RepositoryDir, cfg)
 }
 
