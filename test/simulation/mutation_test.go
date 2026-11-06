@@ -20,6 +20,57 @@ func mutationSource(data []byte, old, replacement string) ([]byte, error) {
 	return bytes.Replace(data, []byte(old), []byte(replacement), 1), nil
 }
 
+// Keep recordings outside the disposable source tree, including when a child
+// fails before the experiment can score its behavioral assertion.
+func mutationArtifacts(name, phase string) (string, error) {
+	root := os.Getenv("ENBU_SIM_ARTIFACTS")
+	if root == "" {
+		root = filepath.Join(os.TempDir(), "enbu-simulation-failures")
+	}
+	return filepath.Abs(filepath.Join(root, "mutations", name, phase))
+}
+
+func TestMutationArtifactsSurviveSourceCleanup(t *testing.T) {
+	if os.Getenv("ENBU_SIM_ARTIFACT_CHILD") == "1" {
+		dir := os.Getenv("ENBU_SIM_ARTIFACTS")
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "recording.json"), []byte("recorded"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	for _, phase := range []string{"control", "mutant"} {
+		t.Run(phase, func(t *testing.T) {
+			artifacts := t.TempDir()
+			t.Setenv("ENBU_SIM_ARTIFACTS", artifacts)
+			dir, err := mutationArtifacts("example", phase)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source := t.TempDir()
+			executable, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			child := exec.CommandContext(t.Context(), executable, "-test.run=^TestMutationArtifactsSurviveSourceCleanup$")
+			child.Dir = source
+			child.Env = append(os.Environ(), "ENBU_SIM_ARTIFACT_CHILD=1", "ENBU_SIM_ARTIFACTS="+dir)
+			if out, err := child.CombinedOutput(); err != nil {
+				t.Fatalf("child: %v\n%s", err, out)
+			}
+			if err := os.RemoveAll(source); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(artifacts, "mutations", "example", phase, "recording.json"))
+			if err != nil || string(raw) != "recorded" {
+				t.Fatalf("recording lost after source cleanup: %q, %v", raw, err)
+			}
+		})
+	}
+}
+
 func TestMutationTargetsMatchLFAndCRLF(t *testing.T) {
 	for _, tc := range mutationCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -109,9 +160,17 @@ func TestOracleMutationExperiments(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
+			controlArtifacts, err := mutationArtifacts(tc.name, "control")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mutantArtifacts, err := mutationArtifacts(tc.name, "mutant")
+			if err != nil {
+				t.Fatal(err)
+			}
 			control := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			control.Dir = root
-			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_CASE_STRIDE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_CASE_STRIDE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+controlArtifacts)
 			if output, err := control.CombinedOutput(); err != nil {
 				t.Fatalf("unmodified control failed; mutant cannot be scored: %v\n%s", err, output)
 			}
@@ -129,7 +188,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			}
 			cmd := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			cmd.Dir = root
-			cmd.Env = control.Env
+			cmd.Env = append(append([]string(nil), control.Env...), "ENBU_SIM_ARTIFACTS="+mutantArtifacts)
 			out, e := cmd.CombinedOutput()
 			if e == nil {
 				t.Fatalf("mutant survived:\n%s", out)
