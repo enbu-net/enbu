@@ -84,6 +84,9 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 		return nil, err
 	}
 	for _, p := range pending {
+		if len(requests) >= maxJoinRequests {
+			break
+		}
 		requests = append(requests, JoinRequestInfo{DeviceID: string(p.DeviceID()), Fingerprint: p.DeviceID().Fingerprint(), Recipient: p.Recipient,
 			Algorithm: string(p.Signing.Alg), RequestedAt: time.Unix(p.CreatedAt, 0).UTC(), KeyUpdate: p.Replaces != ""})
 	}
@@ -101,8 +104,9 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 
 // pendingRequests lists the verified requests of devices that are not members,
 // and the key updates of members whose recipient is still the one the update
-// replaces, with identical requests of one device merged. At most maxJoinRequests
-// are returned; wsp.ListJoinRequests bounds work before verification and filtering.
+// replaces, with identical requests of one device merged. The protocol loader
+// bounds work. Keep the complete verified set here: approval must detect a
+// conflicting recipient even when that request lies beyond the UI display cap.
 func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, error) {
 	all, err := wsp.ListJoinRequests(ctx, s.store, s.workspace)
 	if err != nil {
@@ -129,9 +133,6 @@ func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, er
 		}
 		seen[k] = true
 		out = append(out, p)
-		if len(out) >= maxJoinRequests {
-			break
-		}
 	}
 	return out, nil
 }
