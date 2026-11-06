@@ -52,6 +52,7 @@ var mutationCases = []struct{ name, file, old, new, scenario string }{
 	{"missed-conflict", "app/secrets.go", "func conflictError(cs []merge.Conflict) error {", "func conflictError(cs []merge.Conflict) error { return nil;", "TestScenarios/conflicting-edits"},
 	{"privilege-escalation", "app/members.go", "if p, _ := s.head.Principal(s.self()); !p.Admin {", "if p, _ := s.head.Principal(s.self()); !p.Admin && false {", "TestScenarios/membership"},
 	{"missed-rollback", "app/workspace.go", "return nil, wspError(fmt.Errorf(\"%w: all previously accepted revisions are missing\", wsp.ErrRollback))", "return nil,storageError(storage.ErrNotFound)", "TestScenarios/adversarial-storage"},
+	{"restored-store-misses-witness", "pkg/wsp/checkpoint.go", "return f, nil", "return checkpointFile{Version: checkpointVersion}, nil", "TestDisasterRecoverySmoke/witness"},
 	{"delete-late-valid-state", "app/compact.go", "return err != nil && !errors.Is(err, wsp.ErrRollback), nil", "return true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
 	{"delete-temporarily-unreachable-state", "app/compact.go", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn false, nil", "case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):\n\t\treturn true, nil", "TestCompactionLatePublicationAndCrashRecovery"},
 	{"wrong-observer-acceptance-epoch", "app/workspace.go", "s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())", "s.view.MembershipUnbroken(s.head.Digest, h.Control, s.self())", "TestAcceptanceEpochSmoke"},
