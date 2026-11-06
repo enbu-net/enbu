@@ -195,10 +195,11 @@ def test_scenario_helpers_select_scenarios_without_unrelated_matrices(path):
 @pytest.mark.parametrize(
     "path", ["app/secrets.go", "app/members.go", "pkg/wsp/checkpoint.go"]
 )
-def test_shared_user_and_lost_device_journeys_are_selected(path):
+def test_shared_user_and_workspace_journeys_are_selected(path):
     plan = dst_plan.select([path])
     assert selected(plan, "TestSameUserProcessClocks")
     assert selected(plan, "TestLostDeviceReplacementClocks")
+    assert selected(plan, "TestMultipleWorkspaceClocks")
 
 
 def test_shared_concurrent_fixture_selects_restore_and_local_process_users():
@@ -206,3 +207,9 @@ def test_shared_concurrent_fixture_selects_restore_and_local_process_users():
     assert selected(plan, "TestConcurrentHistoryRestore")
     assert selected(plan, "TestSameUserProcessClocks")
     assert selected(plan, "TestScenarios")
+
+
+def test_multi_workspace_helper_selects_its_clock_matrix():
+    plan = dst_plan.select(["test/simulation/multi_workspace.go"])
+    assert selected(plan, "TestMultipleWorkspaceClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
