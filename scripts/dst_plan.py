@@ -171,6 +171,8 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "contention_test.go",
                     SIM / "multi_workspace_test.go",
                     SIM / "git_worktrees_test.go",
+                    SIM / "disaster_recovery_test.go",
+                    SIM / "history_snapshot_test.go",
                 }
                 mutation |= domain in {
                     "secrets",
@@ -187,7 +189,7 @@ def select(paths: list[str], full: bool = False) -> dict:
     tests = set().union(*(names(path) for path in files))
     if scenarios:
         tests.add("TestScenarios")
-    # Mutation runs separately so it cannot contend with parallel exploration.
+    # Each native lane runs mutations after its exploration command.
     tests.discard("TestOracleMutationExperiments")
     if files:
         tests |= {

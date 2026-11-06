@@ -10,6 +10,39 @@ def selected(plan, name):
     return bool(re.fullmatch(plan["tests"], name))
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/history.go",
+        "app/history_index.go",
+        "app/members.go",
+        "app/upgrade.go",
+        "pkg/wsp/checkpoint.go",
+        "pkg/wsp/state.go",
+        "pkg/clock/clock.go",
+        "pkg/identity/manager.go",
+    ],
+)
+def test_team_history_and_recovery_follow_related_dependencies(path):
+    plan = dst_plan.select([path])
+    for name in (
+        "TestHistorySnapshotSmoke",
+        "TestHistorySnapshotClocks",
+        "TestDisasterRecoverySmoke",
+        "TestDisasterRecoveryClocks",
+        "TestRecoveryProbeRejectsRecordedStorageWrites",
+    ):
+        assert selected(plan, name), (path, name)
+
+
+def test_history_snapshot_driver_selects_its_family_without_unrelated_matrices():
+    plan = dst_plan.select(["test/simulation/history_snapshot.go"])
+    assert selected(plan, "TestHistorySnapshotSmoke")
+    assert selected(plan, "TestHistorySnapshotClocks")
+    assert selected(plan, "TestSimulation")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
 def test_full_run_discovers_all_tests_and_enables_security_checks():
     plan = dst_plan.select([], full=True)
     assert plan["run"] and plan["mutation"] and plan["merge"]
