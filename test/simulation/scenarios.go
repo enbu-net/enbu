@@ -35,6 +35,13 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return e
 	}
 	w.Model["default"]["BASE"] = "original"
+	if strings.HasPrefix(name, "history-snapshot-") {
+		parts := strings.Split(strings.TrimPrefix(name, "history-snapshot-"), "-")
+		if len(parts) != 3 || parts[2] != "warm" && parts[2] != "cold" {
+			return fmt.Errorf("invalid history snapshot scenario %q", name)
+		}
+		return w.HistorySnapshot(ctx, parts[0], parts[1], parts[2] == "cold")
+	}
 	if strings.HasPrefix(name, "disaster-") {
 		mode := strings.TrimPrefix(name, "disaster-")
 		cold := strings.HasSuffix(mode, "-cold")
