@@ -34,6 +34,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 		{"unbounded-retries", "app/secrets.go", "attempt < attempts", "true", "TestScenarios/contention-edit-exhausted"},
 		{"discard-pull-context", "app/secrets.go", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) { ctx = context.Background();", "TestActualContextCancellationRecovery/pull-file/blob-context-before"},
 		{"permissive-wire-decoder", "pkg/wsp/codec.go", "func decodeCanonical(data []byte, v any) error {", "func decodeCanonical(data []byte, v any) error { if err := cbor.Unmarshal(data, v); err != nil { return invalid(\"decode: %v\", err) }; return nil;", "TestScenarios/wire-format-warm"},
+		{"unsafe-output-overwrite", "app/secrets.go", "if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {", "if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {", "TestScenarios/output-boundary-hardlink"},
 		{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
 		{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
 		{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},

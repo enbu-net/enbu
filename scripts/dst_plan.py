@@ -48,7 +48,7 @@ DOMAINS = {
     },
     "merge": {"merge_matrix", "concurrent_matrix", "swarm", "generated_groups"},
     "clock": {"clock", "compound", "compaction_race", "history_race"},
-    "files": {"workload", "state_matrix"},
+    "files": {"workload", "state_matrix", "output_boundary"},
     "identity": {"identity", "team_matrix", "compound", "workload"},
 }
 
@@ -163,6 +163,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "request_flood_test.go",
                     SIM / "metadata_flood_test.go",
                     SIM / "wire_attack_test.go",
+                    SIM / "output_boundary_test.go",
                     SIM / "contention_test.go",
                     SIM / "multi_workspace_test.go",
                     SIM / "git_worktrees_test.go",

@@ -296,3 +296,13 @@ def test_wire_attack_helper_and_protocol_changes_select_wire_matrix():
     ]:
         plan = dst_plan.select([path])
         assert selected(plan, "TestSignedWireAttackClocks")
+
+
+def test_output_changes_select_team_filesystem_boundaries():
+    for path in [
+        "test/simulation/output_boundary.go",
+        "app/output.go",
+        "app/secrets.go",
+        "app/environments.go",
+    ]:
+        assert selected(dst_plan.select([path]), "TestOutputBoundaryClocks")
