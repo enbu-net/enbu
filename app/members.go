@@ -15,8 +15,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
-// maxJoinRequests bounds how many request refs are read, so someone able to
-// write to storage cannot make listing unbounded.
+// maxJoinRequests caps the number of distinct pending requests displayed.
+// The protocol loader separately bounds listed refs and fetched bytes.
 var maxJoinRequests = 256
 
 type MemberInfo struct {
@@ -101,12 +101,12 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 
 // pendingRequests lists the verified requests of devices that are not members,
 // and the key updates of members whose recipient is still the one the update
-// replaces, with identical requests of one device merged. At most maxJoinRequests are
-// read, so someone able to write to storage cannot make the list unbounded.
+// replaces, with identical requests of one device merged. At most maxJoinRequests
+// are returned; wsp.ListJoinRequests bounds work before verification and filtering.
 func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, error) {
 	all, err := wsp.ListJoinRequests(ctx, s.store, s.workspace)
 	if err != nil {
-		return nil, storageError(err)
+		return nil, wspError(err)
 	}
 	type key struct {
 		device    signing.DeviceID

@@ -100,6 +100,14 @@ type PendingRequest struct {
 	Rev digest.Digest
 }
 
+// maxJoinRequestRefs and maxJoinRequestBytes bound work on an untrusted listing,
+// including malformed and foreign requests. They match the Control DAG budgets;
+// the App's smaller display cap cannot bound fetching or signature verification.
+const (
+	maxJoinRequestRefs  = 10000
+	maxJoinRequestBytes = 32 << 20
+)
+
 // ListJoinRequests returns the verified requests storage shows, sorted by
 // revision. Several requests from one device are all returned: storage listing
 // order says nothing about which is newest, so the admin chooses. Damaged or
@@ -109,6 +117,10 @@ func ListJoinRequests(ctx context.Context, store storage.Store, workspace string
 	if err != nil {
 		return nil, err
 	}
+	if len(revs) > maxJoinRequestRefs {
+		return nil, invalid("too many join requests")
+	}
+	total := 0
 	var out []PendingRequest
 	for _, rev := range revs {
 		blob, err := store.FetchHead(ctx, storage.KindRequest, "", rev)
@@ -117,6 +129,10 @@ func ListJoinRequests(ctx context.Context, store storage.Store, workspace string
 		}
 		if err != nil {
 			return nil, err
+		}
+		total += len(blob)
+		if total > maxJoinRequestBytes {
+			return nil, invalid("join requests exceed the read budget")
 		}
 		r, err := VerifyJoinRequest(workspace, blob)
 		if err != nil {
