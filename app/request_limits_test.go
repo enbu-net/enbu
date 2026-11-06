@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -71,4 +72,42 @@ func TestRequestFloodPreservesMembershipAndAllowsRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	mustRead(t, bob, "DURING_FLOOD", "kept")
+}
+
+func TestApprovalChecksConflictsBeyondTheDisplayCap(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	pending := requestJoin(t, bob)
+	ws := mustWorkspace(t, alice)
+	other := newDevice(t, alice)
+	recipient, _, _, err := other.Identities.Create(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = recipient.Close() }()
+	signer, err := bob.Identities.LoadSigner(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = signer.Close() }()
+	blob, err := wsp.NewJoinRequest(ws, recipient.Recipient().String(), time.Unix(1700000000, 0), signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wsp.PublishJoinRequest(bg, alice.Storage, blob); err != nil {
+		t.Fatal(err)
+	}
+	previous := maxJoinRequests
+	maxJoinRequests = 1
+	t.Cleanup(func() { maxJoinRequests = previous })
+	displayed, err := alice.ListJoinRequests(bg)
+	if err != nil || len(displayed) != 1 {
+		t.Fatalf("display limit = %d, %v", len(displayed), err)
+	}
+	if err := alice.ApproveMember(bg, pending.DeviceID); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("approval picked one recipient because the other was not displayed: %v", err)
+	}
+	if _, err := bob.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
+		t.Fatalf("ambiguous device became a member: %v", err)
+	}
 }
