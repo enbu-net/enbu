@@ -28,6 +28,10 @@ func TestOracleMutationExperiments(t *testing.T) {
 		{"control-parent-admin-check", "pkg/wsp/control.go", "if !ok || !author.Admin {\n\t\t\treturn nil, invalid(\"control author", "if !ok {\n\t\t\treturn nil, invalid(\"control author", "TestAuthorityAttackSmoke/member-promotes-self"},
 		{"compaction-admin-check", "pkg/wsp/compaction.go", "if !ok || !author.Admin {", "if !ok {", "TestAuthorityAttackSmoke/member-excuses-rollback"},
 		{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c); err != nil {", "if err := checkResolution(parents, c); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
+		{"control-work-limit", "pkg/wsp/chain.go", "if len(revs) > maxControls {", "if len(revs) > maxControls && false {", "TestScenarios/metadata-control-count"},
+		{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
+		{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
+		{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},
 		{"join-request-work-limit", "pkg/wsp/join.go", "if len(revs) > maxJoinRequestRefs {", "if len(revs) > maxJoinRequestRefs && false {", "TestScenarios/request-flood"},
 		{"request-conflict-display-cap", "app/members.go", "out = append(out, p)", "out = append(out, p); if len(out) >= maxJoinRequests { break }", "TestScenarios/hidden-request-conflict"},
 		{"join-request-signature", "pkg/wsp/join.go", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil {", "if err := signing.Verify(r.Signing, signing.DomainJoin, s.Body, s.Signature); err != nil && false {", "TestScenarios/request-signature-attack"},
@@ -72,7 +76,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			cmd.Env = control.Env
 			out, e := cmd.CombinedOutput()
 			if e == nil {
-				t.Fatal("mutant survived")
+				t.Fatalf("mutant survived:\n%s", out)
 			}
 			killed := false
 			for _, line := range bytes.Split(out, []byte("\n")) {

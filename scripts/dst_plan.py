@@ -156,6 +156,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "device_replacement_test.go",
                     SIM / "partial_keys_test.go",
                     SIM / "request_flood_test.go",
+                    SIM / "metadata_flood_test.go",
                     SIM / "multi_workspace_test.go",
                     SIM / "git_worktrees_test.go",
                 }

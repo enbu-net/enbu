@@ -201,6 +201,7 @@ def test_shared_user_and_workspace_journeys_are_selected(path):
     assert selected(plan, "TestLostDeviceReplacementClocks")
     assert selected(plan, "TestPartialKeyRecoveryClocks")
     assert selected(plan, "TestRequestFloodClocks")
+    assert selected(plan, "TestMetadataFloodClocks")
     assert selected(plan, "TestMultipleWorkspaceClocks")
     assert selected(plan, "TestGitWorktreeClocks")
 
@@ -233,4 +234,10 @@ def test_git_worktree_helper_selects_its_clock_matrix():
 def test_request_flood_helper_selects_its_clock_matrix():
     plan = dst_plan.select(["test/simulation/request_flood.go"])
     assert selected(plan, "TestRequestFloodClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+def test_metadata_flood_helper_selects_its_clock_matrix():
+    plan = dst_plan.select(["test/simulation/metadata_flood.go"])
+    assert selected(plan, "TestMetadataFloodClocks")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
