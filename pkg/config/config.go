@@ -107,6 +107,7 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 	}
 	sort.Strings(names)
 	seen := make(map[string]bool, len(names))
+	outputs := make([]string, 0, len(names))
 	for _, name := range names {
 		if !ValidEnvironmentName(name) || seen[strings.ToLower(name)] {
 			return fmt.Errorf("invalid or ambiguous environment name %q", name)
@@ -120,12 +121,18 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			return fmt.Errorf("environment %q output must use a portable relative path", name)
 		}
 		if output == "" {
-			continue
+			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
 		if filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("environment %q output must stay within the repository", name)
 		}
+		for _, previous := range outputs {
+			if strings.EqualFold(previous, clean) {
+				return fmt.Errorf("environment %q output collides with another environment", name)
+			}
+		}
+		outputs = append(outputs, clean)
 	}
 	return nil
 }
