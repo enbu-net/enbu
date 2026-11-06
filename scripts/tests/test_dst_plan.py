@@ -65,6 +65,29 @@ def test_larger_team_driver_selects_its_family_without_unrelated_matrices():
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/secrets.go",
+        "app/members.go",
+        "pkg/wsp/state.go",
+        "pkg/wsp/checkpoint.go",
+        "pkg/clock/clock.go",
+    ],
+)
+def test_observer_equivocation_follows_related_dependencies(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestObserverEquivocationClocks")
+    assert selected(plan, "TestObserverEquivocationSmoke")
+
+
+def test_observer_equivocation_helper_selects_its_family():
+    plan = dst_plan.select(["test/simulation/observer_equivocation.go"])
+    assert selected(plan, "TestObserverEquivocationClocks")
+    assert selected(plan, "TestObserverEquivocationSmoke")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
 def test_full_run_discovers_all_tests_and_enables_security_checks():
     plan = dst_plan.select([], full=True)
     assert plan["run"] and plan["mutation"] and plan["merge"]

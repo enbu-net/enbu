@@ -35,6 +35,13 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return e
 	}
 	w.Model["default"]["BASE"] = "original"
+	if strings.HasPrefix(name, "observer-state-") {
+		parts := strings.Split(strings.TrimPrefix(name, "observer-state-"), "-")
+		if len(parts) != 2 || parts[0] != "conflict" && parts[0] != "disjoint" || parts[1] != "warm" && parts[1] != "cold" {
+			return fmt.Errorf("invalid observer state scenario %q", name)
+		}
+		return w.ObserverStateEquivocation(ctx, parts[0] == "conflict", parts[1] == "cold")
+	}
 	if strings.HasPrefix(name, "history-snapshot-") {
 		parts := strings.Split(strings.TrimPrefix(name, "history-snapshot-"), "-")
 		if len(parts) != 3 || parts[2] != "warm" && parts[2] != "cold" {
