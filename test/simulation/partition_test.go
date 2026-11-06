@@ -176,3 +176,33 @@ func TestSeedPartitionPreservesWorkload(t *testing.T) {
 		t.Fatal("repartitioning changed the explored workloads")
 	}
 }
+
+func TestMutationPartitionCoversAllExperiments(t *testing.T) {
+	counts := make([]int, 4)
+	seen := make(map[string]bool)
+	for _, experiment := range mutationCases {
+		if seen[experiment.name] {
+			t.Fatalf("duplicate mutation name %q", experiment.name)
+		}
+		seen[experiment.name] = true
+		owners := 0
+		for lane := range 4 {
+			selected, err := caseOnLane("TestOracleMutationExperiments/"+experiment.name, 4, lane)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if selected {
+				owners++
+				counts[lane]++
+			}
+		}
+		if owners != 1 {
+			t.Fatalf("mutation %s has %d owners", experiment.name, owners)
+		}
+	}
+	for lane, count := range counts {
+		if count == 0 || count > (len(mutationCases)+1)/2 {
+			t.Fatalf("unbalanced mutation lane %d: %d", lane, count)
+		}
+	}
+}
