@@ -403,7 +403,6 @@ native/unit coverage is not counted as deterministic team-workflow coverage.
 | Permanent device loss and partial key recovery | New replacement journey retains a stolen-key attacker; loss of only signing/encryption/pending/retained keys and interrupted native key promotion need further cases. |
 | Human approval and fingerprint handling | App requires explicit approval; wrong-device selection, fingerprint confirmation/cancellation, and stale approval screens need adapter/UI evidence. |
 | Long-lived service workspace selection | Local selections and separate devices are checked; a desktop/RPC service changing workspace while older requests remain in flight needs dedicated coverage. |
-
 | First-contact trust and compromised invitations | Pinned-root replacement is tested; first use of an attacker-supplied repository, wrong out-of-band root, and independent fingerprint confirmation require an explicit onboarding threat journey. TOFU alone cannot authenticate an unverified first root. |
 | Mixed client/protocol versions | Strict replay uses one build. Unknown signed object versions, unsupported recipient algorithms, rolling client upgrades, and older clients encountering newer compaction records require explicit acceptance/rejection contracts and complementary client fixtures. |
 | Secret disclosure through outputs and diagnostics | Map and dotenv round-trips are checked; logs, errors, process arguments, RPC replies, editor messages, crash artifacts, and deleted local outputs need canary-secret assertions across success and failure paths. |
