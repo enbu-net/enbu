@@ -84,6 +84,9 @@ func ParseProject(content string) (*ProjectConfig, error) {
 	if cfg.Version != currentVersion {
 		return nil, fmt.Errorf("enbu.toml: unsupported version %q (run 'enbu init' to recreate)", cfg.Version)
 	}
+	if err := ValidateProjectOutputs(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
@@ -98,8 +101,24 @@ func DecodeProject(content string) (*ProjectConfig, error) {
 }
 
 func ValidateProjectOutputs(cfg *ProjectConfig) error {
-	for name, env := range cfg.Environments {
+	names := make([]string, 0, len(cfg.Environments))
+	for name := range cfg.Environments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		if !ValidEnvironmentName(name) || seen[strings.ToLower(name)] {
+			return fmt.Errorf("invalid or ambiguous environment name %q", name)
+		}
+		seen[strings.ToLower(name)] = true
+		env := cfg.Environments[name]
 		output := strings.TrimSpace(env.Output)
+		// Shared configuration must mean the same relative path on every OS.
+		// Backslashes, drive prefixes and NTFS alternate streams are not portable.
+		if output != env.Output || strings.ContainsAny(output, "\\:") {
+			return fmt.Errorf("environment %q output must use a portable relative path", name)
+		}
 		if output == "" {
 			continue
 		}
@@ -263,7 +282,7 @@ func (cfg *ProjectConfig) AddEnvironmentWithID(name string, newID func() string)
 		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default")}
 		cfg.DefaultEnv = "default"
 	}
-	if _, exists := cfg.Environments[name]; exists {
+	if cfg.hasEnvironmentFold(name, "") {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", name), apperr.Params{"name": name})
 	}
 	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name), Incarnation: newID()}
@@ -289,7 +308,7 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 	if !exists {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", oldName), apperr.Params{"name": oldName})
 	}
-	if _, exists := cfg.Environments[newName]; exists {
+	if oldName == newName || cfg.hasEnvironmentFold(newName, oldName) {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", newName), apperr.Params{"name": newName})
 	}
 	delete(cfg.Environments, oldName)
@@ -324,6 +343,15 @@ func (cfg *ProjectConfig) Resource(env string) string {
 func (cfg *ProjectConfig) HasEnvironment(name string) bool {
 	_, exists := cfg.Environments[name]
 	return exists
+}
+
+func (cfg *ProjectConfig) hasEnvironmentFold(name, except string) bool {
+	for existing := range cfg.Environments {
+		if existing != except && strings.EqualFold(existing, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (cfg *ProjectConfig) Environment(name string) (EnvironmentConfig, error) {
@@ -369,7 +397,7 @@ func DefaultOutput(name string) string {
 }
 
 func ValidEnvironmentName(name string) bool {
-	if name == "" || len(name) > 100 {
+	if name == "" || len(name) > 100 || strings.HasSuffix(name, ".") {
 		return false
 	}
 	for _, r := range name {
