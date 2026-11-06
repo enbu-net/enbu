@@ -35,7 +35,9 @@ func TestServeCancellationInterruptsOpenInput(t *testing.T) {
 		}
 	case <-watchdog.Done():
 		_ = w.Close()
-		<-done
+		if err := <-done; err != nil {
+			t.Logf("Serve stopped only after closing input: %v", err)
+		}
 		t.Fatal("cancellation did not interrupt the open input stream")
 	}
 }
