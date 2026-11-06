@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
+var Scenarios = []string{"environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "request-flood", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -39,6 +39,8 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return w.PartialKeys(ctx, strings.TrimPrefix(name, "partial-key-"))
 	}
 	switch name {
+	case "request-flood":
+		return w.RequestFlood(ctx)
 	case "git-worktrees":
 		return w.GitWorktrees(ctx)
 	case "multiple-workspaces":
