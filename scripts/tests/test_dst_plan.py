@@ -199,6 +199,7 @@ def test_shared_user_and_workspace_journeys_are_selected(path):
     plan = dst_plan.select([path])
     assert selected(plan, "TestSameUserProcessClocks")
     assert selected(plan, "TestLostDeviceReplacementClocks")
+    assert selected(plan, "TestPartialKeyRecoveryClocks")
     assert selected(plan, "TestMultipleWorkspaceClocks")
 
 
@@ -212,4 +213,10 @@ def test_shared_concurrent_fixture_selects_restore_and_local_process_users():
 def test_multi_workspace_helper_selects_its_clock_matrix():
     plan = dst_plan.select(["test/simulation/multi_workspace.go"])
     assert selected(plan, "TestMultipleWorkspaceClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+def test_partial_key_helper_selects_recovery_matrix():
+    plan = dst_plan.select(["test/simulation/partial_keys.go"])
+    assert selected(plan, "TestPartialKeyRecoveryClocks")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
