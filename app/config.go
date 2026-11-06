@@ -35,9 +35,6 @@ func (a *App) WriteConfig(content string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := config.ValidateProjectOutputs(cfg); err != nil {
-		return err
-	}
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
 		path = filepath.Join(a.RepositoryDir, "enbu.toml")
