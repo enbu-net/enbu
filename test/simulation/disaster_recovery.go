@@ -176,7 +176,7 @@ func (w *World) restoreRecoveryStore(ctx context.Context, backup []storage.Objec
 // freshness without it. Keep this boundary distinct from a failed recovery.
 func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) error {
 	switch mode {
-	case "witness", "all-stale", "retired-key", "compacted", "compacted-no-record":
+	case "witness", "all-stale", "retired-key", "compacted", "compacted-no-record", "compacted-old-data":
 	default:
 		return fmt.Errorf("unknown disaster recovery mode %q", mode)
 	}
@@ -243,7 +243,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
-	compacted := mode == "compacted" || mode == "compacted-no-record"
+	compacted := mode == "compacted" || mode == "compacted-no-record" || mode == "compacted-old-data"
 	if compacted {
 		for _, env := range []string{"default", "staging"} {
 			result, err := a.CompactHistory(ctx, env, 1)
@@ -286,7 +286,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 	}
 	for i := range w.Devices {
 		backup := oldDevices[i]
-		if mode == "witness" && i == 0 {
+		if mode == "compacted-old-data" || mode == "witness" && i == 0 {
 			backup = currentDevices[i]
 		}
 		if err := w.restoreRecoveryDevice(i, backup, cold); err != nil {
@@ -295,6 +295,26 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 	}
 	if mode != "retired-key" && !compacted {
 		if err := w.restoreRecoveryStore(ctx, oldStore); err != nil {
+			return err
+		}
+	}
+	if mode == "compacted-old-data" {
+		// The restored store keeps the latest signed Control and compaction logs,
+		// but its ciphertext and State DAG come from an older backup. The current
+		// trusted checkpoints must still reject this mixture: a signed compaction
+		// can excuse missing ancestors only while its retained floor is present.
+		var mixed []storage.Object
+		for _, object := range currentStore {
+			if object.Kind != storage.KindState {
+				mixed = append(mixed, object)
+			}
+		}
+		for _, object := range oldStore {
+			if object.Kind == storage.KindState {
+				mixed = append(mixed, object)
+			}
+		}
+		if err := w.restoreRecoveryStore(ctx, mixed); err != nil {
 			return err
 		}
 	}
@@ -314,7 +334,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 	}
 	for i, d := range w.Devices {
 		selection := "default"
-		if i%2 == 1 {
+		if i%2 == 1 && mode != "compacted-old-data" {
 			selection = "staging"
 		}
 		if current, err := d.App.CurrentEnvironment(); err != nil || current != selection {
@@ -323,9 +343,12 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 		for _, env := range []string{"default", "staging"} {
 			start := len(w.Tape.Recording.Entries)
 			got, err := d.App.ListSecrets(ctx, env)
-			if mode == "compacted-no-record" || mode == "witness" && i == 0 {
+			if mode == "compacted-no-record" || mode == "compacted-old-data" || mode == "witness" && i == 0 {
 				if err := requireCode(err, apperr.CodeRollback); err != nil {
 					return fmt.Errorf("retained witness accepted a rolled-back store: %w", err)
+				}
+				if got != nil {
+					return fmt.Errorf("rollback rejection exposed partial secrets")
 				}
 				if err := requireCode(d.App.AddSecret(ctx, env, "MUST_NOT_WRITE", "recovery-canary"), apperr.CodeRollback); err != nil {
 					return err
