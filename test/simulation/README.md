@@ -388,7 +388,7 @@ native/unit coverage is not counted as deterministic team-workflow coverage.
 | Area | Current evidence and remaining gap |
 | --- | --- |
 | Same person using multiple clients/processes | New shared-identity App interleavings; actual CLI/GUI/RPC/extension concurrency and filesystem scheduling remain partial. |
-| Multiple workspaces under one user | Synthetic key namespace unit checks exist; no complete simultaneous-workspace journey across keys, trust pins, caches, and personal selection. |
+| Multiple workspaces under one user | Two workspaces share a user identity namespace, checkpoints, cache and personal state: simultaneous writes, independent environment selection, isolated removal/key upgrade, restart, and foreign-config rejection are checked with 2/3/8 people and four clocks. Cross-workspace cancellation and partial local recovery remain open. |
 | Git branches, worktrees, and configuration merges | Config sharing and stale checkout migration are modeled; actual Git merge conflicts and branch checkout sequences are not. |
 | Checkout move, clone, and backup recovery | New lost-key checkout restoration and path-bound founding tests cover parts; arbitrary repository relocation and partial metadata restoration are not fully modeled. |
 | OAuth/session lifecycle during collaboration | Native auth tests cover denial/expiry; expiry, logout, account changes, and reauthentication overlapping team publication are not a DST journey. |
@@ -403,6 +403,13 @@ native/unit coverage is not counted as deterministic team-workflow coverage.
 | Permanent device loss and partial key recovery | New replacement journey retains a stolen-key attacker; loss of only signing/encryption/pending/retained keys and interrupted native key promotion need further cases. |
 | Human approval and fingerprint handling | App requires explicit approval; wrong-device selection, fingerprint confirmation/cancellation, and stale approval screens need adapter/UI evidence. |
 | Long-lived service workspace selection | Local selections and separate devices are checked; a desktop/RPC service changing workspace while older requests remain in flight needs dedicated coverage. |
+
+| First-contact trust and compromised invitations | Pinned-root replacement is tested; first use of an attacker-supplied repository, wrong out-of-band root, and independent fingerprint confirmation require an explicit onboarding threat journey. TOFU alone cannot authenticate an unverified first root. |
+| Mixed client/protocol versions | Strict replay uses one build. Unknown signed object versions, unsupported recipient algorithms, rolling client upgrades, and older clients encountering newer compaction records require explicit acceptance/rejection contracts and complementary client fixtures. |
+| Secret disclosure through outputs and diagnostics | Map and dotenv round-trips are checked; logs, errors, process arguments, RPC replies, editor messages, crash artifacts, and deleted local outputs need canary-secret assertions across success and failure paths. |
+| Adversarial resource exhaustion | Finite DAG shapes are explored; oversized/deep objects, excessive joins or heads, and repeated invalid signatures need bounded-work and cancellation assertions so one hostile writer cannot indefinitely starve legitimate teammates. |
+| Naming, encoding, and platform ambiguity | Secret Unicode/CRLF values are tested; case-folded environment names, Unicode normalization, reserved filenames, path traversal, and ambiguous configuration encodings need cross-platform lifecycle coverage. |
+| Transport destination and credential boundaries | Generic storage faults do not verify TLS, redirects, DNS/destination changes, proxy handling, or credentials scoped to a registry/bucket. Provider integration tests must assert rejection and non-disclosure while team operations are in flight. |
 
 These are open gaps, not rows marked covered by being declared outside the
 in-memory harness. Transport faults are inapplicable only to operations with no
