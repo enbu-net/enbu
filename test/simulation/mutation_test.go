@@ -33,6 +33,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 		{"premature-retry-exhaustion", "app/secrets.go", "const maxRetries = 3", "const maxRetries = 1", "TestScenarios/contention-edit-yield"},
 		{"unbounded-retries", "app/secrets.go", "attempt < attempts", "true", "TestScenarios/contention-edit-exhausted"},
 		{"discard-pull-context", "app/secrets.go", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) {", "func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace bool) (written *WrittenFile, err error) { ctx = context.Background();", "TestActualContextCancellationRecovery/pull-file/blob-context-before"},
+		{"permissive-wire-decoder", "pkg/wsp/codec.go", "func decodeCanonical(data []byte, v any) error {", "func decodeCanonical(data []byte, v any) error { if err := cbor.Unmarshal(data, v); err != nil { return invalid(\"decode: %v\", err) }; return nil;", "TestScenarios/wire-format-warm"},
 		{"control-rejected-ref-dedup", "pkg/wsp/chain.go", "if tried[rev] {", "if tried[rev] && false {", "TestScenarios/metadata-control-duplicate"},
 		{"state-work-limit", "pkg/wsp/state.go", "if len(revs) > maxRevisions {", "if len(revs) > maxRevisions && false {", "TestScenarios/metadata-state-count"},
 		{"compaction-work-limit", "pkg/wsp/compaction.go", "if len(revs) > maxCompactions {", "if len(revs) > maxCompactions && false {", "TestScenarios/metadata-compaction-count"},
@@ -59,7 +60,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			}
 			control := exec.Command("go", "test", "-json", "-count=1", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			control.Dir = root
-			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
+			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_CASE_STRIDE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+filepath.Join(root, "failures"))
 			if output, err := control.CombinedOutput(); err != nil {
 				t.Fatalf("unmodified control failed; mutant cannot be scored: %v\n%s", err, output)
 			}

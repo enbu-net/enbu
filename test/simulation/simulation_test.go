@@ -28,6 +28,7 @@ func integer(t *testing.T, name string, def int) int {
 }
 func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 	t.Helper()
+	sampleCase(t)
 	tape, e := Prepare(seed, revision(t), plan)
 	if e != nil {
 		t.Fatal(e)

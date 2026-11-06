@@ -58,6 +58,7 @@ jobs:
       CGO_ENABLED: '0'
       ENBU_SIM_EXPLORE: '1'
       ENBU_SIM_EXHAUSTIVE: ${{ needs.plan.outputs.mode == 'full' && '1' || '0' }}
+      ENBU_SIM_CASE_STRIDE: ${{ needs.plan.outputs.mode == 'full' && '1' || '8' }}
       ENBU_SIM_SEEDS: ${{ needs.plan.outputs.mode == 'full' && '256' || '2' }}
       ENBU_SIM_STEPS: ${{ needs.plan.outputs.mode == 'full' && '256' || '32' }}
       ENBU_SIM_SHARDS: '4'
@@ -113,6 +114,7 @@ jobs:
         if: needs.plan.outputs.mutation == 'true'
         env:
           ENBU_SIM_MUTATION: '1'
+          ENBU_SIM_CASE_STRIDE: '1'
         run: go test -count=1 -timeout=10m ./test/simulation -run '^TestOracleMutationExperiments$'
       - name: Upload coverage and failure recordings
         if: always()
