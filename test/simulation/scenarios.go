@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-var Scenarios = []string{"contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
+var Scenarios = []string{"wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -40,6 +40,9 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 	}
 	if strings.HasPrefix(name, "contention-") {
 		return w.Contention(ctx, strings.TrimPrefix(name, "contention-"))
+	}
+	if strings.HasPrefix(name, "wire-format-") {
+		return w.WireAttacks(ctx, name == "wire-format-cold")
 	}
 	if strings.HasPrefix(name, "partial-key-") {
 		return w.PartialKeys(ctx, strings.TrimPrefix(name, "partial-key-"))

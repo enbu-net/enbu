@@ -286,3 +286,13 @@ def test_shared_simulation_test_helpers_select_every_matrix(helper):
         "TestThreeWayMergeDAGMatrix",
     ]:
         assert selected(plan, name)
+
+
+def test_wire_attack_helper_and_protocol_changes_select_wire_matrix():
+    for path in [
+        "test/simulation/wire_attack.go",
+        "pkg/wsp/control.go",
+        "pkg/wsp/codec.go",
+    ]:
+        plan = dst_plan.select([path])
+        assert selected(plan, "TestSignedWireAttackClocks")
