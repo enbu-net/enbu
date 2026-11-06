@@ -418,6 +418,10 @@ func (s *Service) SelectRepository(path string) (RepoInfo, error) {
 		)
 	}
 	s.repoMu.Lock()
+	if err := s.context().Err(); err != nil {
+		s.repoMu.Unlock()
+		return RepoInfo{}, err
+	}
 	cfg, err := config.LoadGUI()
 	if err != nil {
 		cfg = &config.GUIConfig{}
@@ -465,6 +469,9 @@ func (s *Service) ListRepositories() ([]RepoInfo, error) {
 func (s *Service) RemoveRepository(path string) error {
 	s.repoMu.Lock()
 	defer s.repoMu.Unlock()
+	if err := s.context().Err(); err != nil {
+		return err
+	}
 	cfg, err := config.LoadGUI()
 	if err != nil {
 		return err
@@ -894,6 +901,11 @@ func withRepoResult[T any](s *Service, fn func() (T, error)) (T, error) {
 func withRepoPathResult[T any](s *Service, path string, fn func() (T, error)) (T, error) {
 	s.repoMu.Lock()
 	defer s.repoMu.Unlock()
+	// A queued call can outlive the RPC connection while waiting for this lock.
+	if err := s.context().Err(); err != nil {
+		var zero T
+		return zero, err
+	}
 	s.app.SetRepositoryDir(path)
 	return fn()
 }
