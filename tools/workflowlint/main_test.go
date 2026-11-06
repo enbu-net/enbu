@@ -31,7 +31,6 @@ func TestNormalizeRejectsMalformedParallelGroups(t *testing.T) {
 		"parallel: [{run: echo ok}]\n        run: echo invalid",
 		"parallel: [{parallel: [{run: echo nested}]}]",
 		"parallel: [{background: true, run: echo invalid}]",
-		"parallel: [" + strings.Repeat("{run: echo x},", 10) + "{run: echo x}]",
 	} {
 		t.Run(group, func(t *testing.T) {
 			_, err := normalize([]byte("jobs:\n  test:\n    steps:\n      - " + group + "\n"))
@@ -39,6 +38,22 @@ func TestNormalizeRejectsMalformedParallelGroups(t *testing.T) {
 				t.Fatal("invalid group accepted")
 			}
 		})
+	}
+}
+
+func TestParallelGroupCanQueueMoreThanTenChildren(t *testing.T) {
+	input := "jobs:\n  test:\n    steps:\n      - parallel: [" + strings.Repeat("{run: echo x},", 14) + "{run: echo x}]\n"
+	data, err := normalize([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	steps := field(field(field(doc.Content[0], "jobs"), "test"), "steps")
+	if len(steps.Content) != 15 {
+		t.Fatalf("queued parallel group lost children: %s", data)
 	}
 }
 func TestNormalizeLeavesOrdinaryWorkflowsUnchanged(t *testing.T) {

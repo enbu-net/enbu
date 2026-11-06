@@ -82,8 +82,8 @@ func normalize(data []byte) ([]byte, error) {
 					flattened = append(flattened, step)
 					continue
 				}
-				if len(step.Content) != 2 || parallel.Kind != yaml.SequenceNode || len(parallel.Content) < 1 || len(parallel.Content) > 10 {
-					return nil, fmt.Errorf("line %d: parallel must be a standalone group of 1..10 steps", step.Line)
+				if len(step.Content) != 2 || parallel.Kind != yaml.SequenceNode || len(parallel.Content) < 1 {
+					return nil, fmt.Errorf("line %d: parallel must be a standalone nonempty group", step.Line)
 				}
 				for _, child := range parallel.Content {
 					if child.Kind != yaml.MappingNode || field(child, "parallel") != nil || field(child, "background") != nil || field(child, "wait") != nil || field(child, "wait-all") != nil || field(child, "cancel") != nil {
