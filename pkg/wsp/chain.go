@@ -89,68 +89,60 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 	if err != nil {
 		return nil, err
 	}
+	if len(revs) > maxControls {
+		return nil, invalid("control DAG is too large")
+	}
 	genesisBlob, err := store.FetchHead(ctx, storage.KindControl, "", genesis)
 	if err != nil {
 		return nil, fmt.Errorf("reading genesis control: %w", err)
+	}
+	if len(genesisBlob) > maxControlBytes {
+		return nil, invalid("control DAG is too large")
 	}
 	root, err := VerifyGenesis(workspace, genesisBlob, genesis)
 	if err != nil {
 		return nil, err
 	}
 	view := &ControlView{Workspace: workspace, Genesis: genesis, verified: map[digest.Digest]*Verified{genesis: root}}
-
 	pending := map[digest.Digest]pendingControl{}
 	total := len(genesisBlob)
-	load := func(rev digest.Digest) error {
-		if _, done := view.verified[rev]; done {
-			return nil
+	tried := map[digest.Digest]bool{genesis: true}
+	queue := append([]digest.Digest(nil), revs...)
+	sortDigests(queue)
+	// Traverse once in a stable order. Rejected/missing refs consume the work
+	// budget too, and must not be fetched again through another parent edge.
+	for len(queue) > 0 {
+		rev := queue[0]
+		queue = queue[1:]
+		if tried[rev] {
+			continue
 		}
-		if _, ok := pending[rev]; ok {
-			return nil
+		if len(tried) >= maxControls {
+			return nil, invalid("control DAG is too large")
 		}
-		if len(pending) >= maxControls || total > maxControlBytes {
-			return invalid("control DAG is too large")
-		}
+		tried[rev] = true
 		blob, err := store.FetchHead(ctx, storage.KindControl, "", rev)
 		switch {
 		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
-			return nil // listed but unavailable or damaged: it carries no authority
+			continue // listed but damaged/unavailable: it carries no authority
 		case err != nil:
-			return err
+			return nil, err
+		}
+		if len(blob) > maxControlBytes-total {
+			return nil, invalid("control DAG is too large")
 		}
 		total += len(blob)
 		s, err := DecodeSigned(blob)
 		if err != nil {
-			return nil
+			continue
 		}
 		c, err := decodeControl(s.Body)
 		if err != nil || c.Workspace != workspace {
-			return nil
+			continue
 		}
 		pending[rev] = pendingControl{blob: blob, c: c}
-		return nil
-	}
-	for _, rev := range revs {
-		if err := load(rev); err != nil {
-			return nil, err
-		}
-	}
-	// Parents the listing did not show can still be fetched by digest.
-	for again := true; again; {
-		again = false
-		for _, p := range pending {
-			for _, parent := range p.c.Parents {
-				if _, ok := pending[parent]; !ok {
-					if _, done := view.verified[parent]; !done {
-						before := len(pending)
-						if err := load(parent); err != nil {
-							return nil, err
-						}
-						again = again || len(pending) != before
-					}
-				}
-			}
-		}
+		// Parents omitted by discovery can still be fetched by their digest.
+		queue = append(queue, c.Parents...)
 	}
 	// Accept Controls whose parents are all accepted, until nothing changes.
 	for progress := true; progress; {
