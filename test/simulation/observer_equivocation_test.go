@@ -2,6 +2,8 @@ package simulation
 
 import (
 	"fmt"
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"testing"
 )
 
@@ -27,5 +29,39 @@ func TestObserverEquivocationClocks(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestMetadataOnlyProbeRejectsRecordedPayloadReads(t *testing.T) {
+	tape := NewTape(353, "metadata-only-probe")
+	store := &Store{Store: storagetest.NewMemory(), Tape: tape}
+	object := storagetest.Object(storage.KindState, storage.StateScope("fixture", "default"), "head", "payload")
+	if err := store.Publish(t.Context(), object); err != nil {
+		t.Fatal(err)
+	}
+	start := len(tape.Recording.Entries)
+	if _, err := store.Discover(t.Context(), object.Kind, object.Scope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FetchHead(t.Context(), object.Kind, object.Scope, object.Rev); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireMetadataOnlyStorage(tape.Recording.Entries[start:]); err != nil {
+		t.Fatalf("metadata-only requests rejected: %v", err)
+	}
+	start = len(tape.Recording.Entries)
+	reader, err := store.OpenBlob(t.Context(), object.Kind, object.Scope, object.Rev, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	entries := tape.Recording.Entries[start:]
+	if err := requireReadOnlyStorage(entries); err != nil {
+		t.Fatalf("fixture did not produce a valid read-only recording: %v", err)
+	}
+	if err := requireMetadataOnlyStorage(entries); err == nil {
+		t.Fatal("an actual recorded payload read bypassed the metadata-only oracle")
 	}
 }

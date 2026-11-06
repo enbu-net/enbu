@@ -2,6 +2,7 @@ package simulation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -16,6 +17,28 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
 )
+
+// Rollback checks precede ciphertext access. A later checkpoint recheck can
+// still reject the operation after decryption, so checking its error alone is
+// insufficient to enforce this ordering.
+func requireMetadataOnlyStorage(entries []Entry) error {
+	if err := requireReadOnlyStorage(entries); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Kind != "storage-request" {
+			continue
+		}
+		var request struct{ Method string }
+		if err := json.Unmarshal(entry.Output, &request); err != nil {
+			return err
+		}
+		if request.Method == "blob" {
+			return fmt.Errorf("rollback probe fetched ciphertext before rejecting the view")
+		}
+	}
+	return nil
+}
 
 // hideObserverStates changes only one reader's network view. Hidden immutable
 // objects remain in shared storage, but are absent from listing and direct
@@ -209,7 +232,7 @@ func (w *World) ObserverStateEquivocation(ctx context.Context, conflict, cold bo
 		if err := requireCode(w.Devices[i].App.SyncSecrets(ctx, "default"), apperr.CodeRollback); err != nil {
 			return err
 		}
-		return requireReadOnlyStorage(w.Tape.Recording.Entries[start:])
+		return requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:])
 	}
 	for i := range w.Devices {
 		hidden := leftRef
