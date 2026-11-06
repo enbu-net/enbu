@@ -35,7 +35,8 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 	}, &plan); e != nil {
 		return e
 	}
-	if plan.Devices < 2 || plan.Devices > 8 {
+	// Bound untrusted replay plans while permitting larger-team stress cases.
+	if plan.Devices < 2 || plan.Devices > 32 {
 		return fmt.Errorf("invalid device count %d", plan.Devices)
 	}
 	switch plan.Clock {

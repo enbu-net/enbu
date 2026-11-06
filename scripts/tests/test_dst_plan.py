@@ -43,6 +43,28 @@ def test_history_snapshot_driver_selects_its_family_without_unrelated_matrices()
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/secrets.go",
+        "app/members.go",
+        "pkg/wsp/state.go",
+        "pkg/wsp/checkpoint.go",
+        "pkg/clock/clock.go",
+    ],
+)
+def test_larger_teams_follow_related_dependencies(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestLargerTeamClocks")
+    assert selected(plan, "TestLargerTeamSmoke")
+
+
+def test_larger_team_driver_selects_its_family_without_unrelated_matrices():
+    plan = dst_plan.select(["test/simulation/larger_team_test.go"])
+    assert selected(plan, "TestLargerTeamClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
 def test_full_run_discovers_all_tests_and_enables_security_checks():
     plan = dst_plan.select([], full=True)
     assert plan["run"] and plan["mutation"] and plan["merge"]
