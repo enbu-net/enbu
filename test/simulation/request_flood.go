@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -134,4 +135,128 @@ func (w *World) RequestFlood(ctx context.Context) error {
 	expected := clone(w.Model["default"])
 	expected["LOCAL_ONLY"] = "personal"
 	return w.checkOutput("request-flood-recovery", path, expected)
+}
+
+// HiddenRequestConflict puts the target's second valid request just outside the
+// display window. Discovery order is not authority and need not be sorted.
+func (w *World) HiddenRequestConflict(ctx context.Context) error {
+	target := len(w.Devices) - 1
+	admin := w.Devices[0].App
+	if err := admin.RemoveMember(ctx, w.Devices[target].ID); err != nil {
+		return err
+	}
+	cfg, err := config.LoadProjectFrom(admin.RepositoryDir)
+	if err != nil {
+		return err
+	}
+	signer, err := w.Devices[target].Keys.LoadSigner(cfg.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = signer.Close() }()
+	current, err := w.Devices[target].Keys.Info(cfg.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	firstBlob, err := wsp.NewJoinRequest(cfg.WorkspaceID, current.Recipient, w.Devices[target].App.Runtime.Clock.Now(), signer)
+	if err != nil {
+		return err
+	}
+	first, err := wsp.PublishJoinRequest(ctx, w.Devices[0].Store, firstBlob)
+	if err != nil {
+		return err
+	}
+	ordered := []digest.Digest{first}
+	spammer := &Keys{Tape: w.Tape, Device: len(w.Devices)}
+	spamSigner, _, _, err := spammer.CreateSigner(cfg.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = spamSigner.Close() }()
+	// These are genuine, distinct, self-signed requests of another non-member.
+	// They fill the display window without adding another request of the target.
+	for i := 0; i < 255; i++ {
+		id, info, _, err := spammer.Create(fmt.Sprintf("%s/filler-%d", cfg.WorkspaceID, i))
+		if err != nil {
+			return err
+		}
+		_ = id.Close()
+		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, info.Recipient, w.Devices[target].App.Runtime.Clock.Now(), spamSigner)
+		if err != nil {
+			return err
+		}
+		rev, err := wsp.PublishJoinRequest(ctx, w.Devices[0].Store, blob)
+		if err != nil {
+			return err
+		}
+		ordered = append(ordered, rev)
+	}
+	alternate, info, _, err := spammer.Create(cfg.WorkspaceID + "/target-alternate")
+	if err != nil {
+		return err
+	}
+	_ = alternate.Close()
+	secondBlob, err := wsp.NewJoinRequest(cfg.WorkspaceID, info.Recipient, w.Devices[target].App.Runtime.Clock.Now(), signer)
+	if err != nil {
+		return err
+	}
+	second, err := wsp.PublishJoinRequest(ctx, w.Devices[0].Store, secondBlob)
+	if err != nil {
+		return err
+	}
+	ordered = append(ordered, second)
+	base := w.Devices[0].Store.Store
+	reordered := storagetest.Wrap(base, storagetest.Hooks{Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+		if kind == storage.KindRequest {
+			return append([]digest.Digest(nil), ordered...), nil
+		}
+		return next.Discover(ctx, kind, scope)
+	}})
+	for _, d := range w.Devices {
+		d.Store.Store = reordered
+	}
+	before, err := admin.ListMembers(ctx)
+	if err != nil {
+		return err
+	}
+	visible, err := admin.ListJoinRequests(ctx)
+	if err != nil || len(visible) != 256 {
+		return fmt.Errorf("request display window = %d: %v", len(visible), err)
+	}
+	for _, request := range visible {
+		if request.DeviceID == w.Devices[target].ID && request.Recipient == info.Recipient {
+			return fmt.Errorf("conflicting request fixture was not hidden")
+		}
+	}
+	if err := requireCode(admin.ApproveMember(ctx, w.Devices[target].ID), apperr.CodeInvalidArgument); err != nil {
+		return fmt.Errorf("approval ignored undisplayed conflict: %w", err)
+	}
+	after, err := admin.ListMembers(ctx)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		return fmt.Errorf("ambiguous approval changed membership: %v", err)
+	}
+	if _, err := w.Devices[target].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
+		return fmt.Errorf("hidden conflict implicitly admitted device: %v", err)
+	}
+	if err := admin.EditSecret(ctx, "default", "BASE", "teammate-during-conflict"); err != nil {
+		return err
+	}
+	w.Model["default"]["BASE"] = "teammate-during-conflict"
+	// Resolve explicitly by removing the conflicting request and the filler
+	// objects, not by picking whichever request a registry lists first.
+	for _, d := range w.Devices {
+		d.Store.Store = base
+	}
+	for _, rev := range ordered[1:] {
+		if err := w.Devices[0].Store.Delete(ctx, storage.KindRequest, "", rev); err != nil {
+			return err
+		}
+	}
+	if err := admin.ApproveMember(ctx, w.Devices[target].ID); err != nil {
+		return err
+	}
+	for i := range w.Devices {
+		w.Restart(i)
+	}
+	return w.Check(ctx, "default")
 }

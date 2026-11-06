@@ -234,7 +234,7 @@ checkpoints and fresh writes survive without reusing them;
 separate process replay proves recording independence. Native race tests and E2E
 remain required. No claim of enumerating the entire state space is made.
 
-Thirteen isolated mutation experiments check that the oracles detect lost updates,
+Fifteen isolated mutation experiments check that the oracles detect lost updates,
 missed conflicts, unauthorized membership changes, missed rollback, deletion of
 a valid late publication, deletion of a temporarily unreachable publication, a wrong observer acceptance
 epoch, revival of a revoked author, omitted signature verification, unchecked parent-admin authority, unauthorized compaction records, and unsafe fork resolution.
@@ -406,7 +406,7 @@ native/unit coverage is not counted as deterministic team-workflow coverage.
 | First-contact trust and compromised invitations | Pinned-root replacement is tested; first use of an attacker-supplied repository, wrong out-of-band root, and independent fingerprint confirmation require an explicit onboarding threat journey. TOFU alone cannot authenticate an unverified first root. |
 | Mixed client/protocol versions | Strict replay uses one build. Unknown signed object versions, unsupported recipient algorithms, rolling client upgrades, and older clients encountering newer compaction records require explicit acceptance/rejection contracts and complementary client fixtures. |
 | Secret disclosure through outputs and diagnostics | Map and dotenv round-trips are checked; logs, errors, process arguments, RPC replies, editor messages, crash artifacts, and deleted local outputs need canary-secret assertions across success and failure paths. |
-| Adversarial resource exhaustion | A request-flood journey checks that 10,001 untrusted request refs are rejected before fetching, membership stays unchanged, secret work continues, and explicit readmission resumes after cleanup (2/3/8 people × four clocks). Protocol regressions bound aggregate invalid request bytes and permit exact count/byte boundaries. Discovery response allocation, oversized/deep Control/state objects, head floods, and repeated-invalid-signature scheduling remain partial. |
+| Adversarial resource exhaustion | A request-flood journey checks that 10,001 untrusted request refs are rejected before fetching, membership stays unchanged, secret work continues, and explicit readmission resumes after cleanup (2/3/8 people × four clocks). A second journey puts a genuine conflicting recipient request at position 257 and requires approval to reject it despite the 256-entry display cap; both journeys run across 2/3/8 people and four clocks (24 cases). Protocol regressions bound aggregate invalid request bytes and permit exact count/byte boundaries. Discovery response allocation, oversized/deep Control/state objects, head floods, and repeated-invalid-signature scheduling remain partial. |
 | Naming, encoding, and platform ambiguity | Secret Unicode/CRLF values are tested; case-folded environment names, Unicode normalization, reserved filenames, path traversal, and ambiguous configuration encodings need cross-platform lifecycle coverage. |
 | Transport destination and credential boundaries | Generic storage faults do not verify TLS, redirects, DNS/destination changes, proxy handling, or credentials scoped to a registry/bucket. Provider integration tests must assert rejection and non-disclosure while team operations are in flight. |
 
