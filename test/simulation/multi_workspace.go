@@ -8,17 +8,20 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
-// MultipleWorkspaces gives each person two repositories and storage locations,
+// MultipleWorkspaces gives each person two repositories,
 // sharing their durable identity namespace, cache, checkpoints and personal state.
-func (w *World) MultipleWorkspaces(ctx context.Context) error {
+func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	other, err := NewWorld(filepath.Join(w.Root, "second-workspace"), w.Tape, len(w.Devices))
 	if err != nil {
 		return err
 	}
+	joinedStorage := false
 	other.Clock = w.Clock
 	other.timeline = w.timeline
 	// IDs and physical time belong to the simulation, not the workspace. Resetting
@@ -33,13 +36,60 @@ func (w *World) MultipleWorkspaces(ctx context.Context) error {
 		d.App.Runtime.Clock = person.App.Runtime.Clock
 		d.App.Runtime.NewID = person.App.Runtime.NewID
 		d.App.StorageURL = "oci://simulation.invalid/second-workspace"
+		if joinedStorage {
+			d.Store.Store = person.Store.Store
+			d.App.StorageURL = person.App.StorageURL
+		}
 		d.Store.advance = person.Store.advance
 	}
 	for i := range other.Devices {
 		bindPerson(i)
 	}
+	if sharedStorage {
+		// A storage location is founded once. A second init must not overwrite
+		// it or adopt a root supplied by the untrusted backend.
+		collision, err := NewWorld(filepath.Join(w.Root, "occupied-storage"), w.Tape, 1)
+		if err != nil {
+			return err
+		}
+		d := collision.Devices[0]
+		d.Store.Store = w.Devices[0].Store.Store
+		d.Store.advance = w.Devices[0].Store.advance
+		d.App.Runtime.Clock = w.Devices[0].App.Runtime.Clock
+		d.App.Runtime.NewID = w.Devices[0].App.Runtime.NewID
+		if _, err := d.App.InitializeRepository(ctx); requireCode(err, apperr.CodeIncompatibleStorage) != nil {
+			return fmt.Errorf("second workspace founded in occupied storage: %v", err)
+		}
+		if err := w.Check(ctx, "default"); err != nil {
+			return err
+		}
+	}
 	if err := other.Bootstrap(ctx); err != nil {
 		return err
+	}
+	if sharedStorage {
+		// Simulate a backend/attacker mixing independently founded locations.
+		// Bootstrap has no state blobs yet; copy both unscoped namespaces before
+		// all subsequent real operations share one object store.
+		for _, kind := range []storage.Kind{storage.KindControl, storage.KindRequest} {
+			revs, err := other.Devices[0].Store.Discover(ctx, kind, "")
+			if err != nil {
+				return err
+			}
+			for _, rev := range revs {
+				head, err := other.Devices[0].Store.FetchHead(ctx, kind, "", rev)
+				if err != nil {
+					return err
+				}
+				if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: kind, Rev: rev, Head: head}); err != nil {
+					return err
+				}
+			}
+		}
+		joinedStorage = true
+		for i := range other.Devices {
+			bindPerson(i)
+		}
 	}
 	firstConfig, err := config.LoadProjectFrom(w.Devices[0].App.RepositoryDir)
 	if err != nil {
@@ -113,6 +163,66 @@ func (w *World) MultipleWorkspaces(ctx context.Context) error {
 	if err := checkBoth(); err != nil {
 		return err
 	}
+	// Relocate genuine signed ciphertext into the other workspace's scope in
+	// both directions. A valid signature from a foreign principal is insufficient.
+	for _, pair := range [][2]*World{{w, other}, {other, w}} {
+		source, target := pair[0], pair[1]
+		src, err := config.LoadProjectFrom(source.Devices[0].App.RepositoryDir)
+		if err != nil {
+			return err
+		}
+		dst, err := config.LoadProjectFrom(target.Devices[0].App.RepositoryDir)
+		if err != nil {
+			return err
+		}
+		view, err := wsp.LoadControl(ctx, source.Devices[0].Store, src.WorkspaceID, digest.Digest(src.ControlGenesis), nil)
+		if err != nil {
+			return err
+		}
+		states, err := wsp.LoadStates(ctx, source.Devices[0].Store, view, src.WorkspaceID, src.Resource("default"))
+		if err != nil {
+			return err
+		}
+		if len(states.Heads) == 0 {
+			return fmt.Errorf("foreign replay fixture has no source heads")
+		}
+		for _, head := range states.Heads {
+			body, err := source.Devices[0].Store.FetchHead(ctx, storage.KindState, storage.StateScope(src.WorkspaceID, src.Resource("default")), head.Digest)
+			if err != nil {
+				return err
+			}
+			cipher, err := wsp.ReadCiphertext(ctx, source.Devices[0].Store, head)
+			if err != nil {
+				return err
+			}
+			if err := target.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(dst.WorkspaceID, dst.Resource("default")), Rev: head.Digest, Head: body, Blobs: [][]byte{cipher}}); err != nil {
+				return err
+			}
+		}
+	}
+	if err := checkBoth(); err != nil {
+		return err
+	}
+	// Compaction may reclaim the replayed junk but must not delete even one
+	// revision from the neighboring workspace, including its historical states.
+	neighborScope := storage.StateScope(secondConfig.WorkspaceID, secondConfig.Resource("default"))
+	beforeRevs, err := other.Devices[0].Store.Discover(ctx, storage.KindState, neighborScope)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Devices[0].App.CompactHistory(ctx, "default", 1); err != nil {
+		return err
+	}
+	afterRevs, err := other.Devices[0].Store.Discover(ctx, storage.KindState, neighborScope)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(beforeRevs, afterRevs) {
+		return fmt.Errorf("compaction deleted neighboring workspace revisions")
+	}
+	if err := checkBoth(); err != nil {
+		return err
+	}
 	// Removing a person from one project must not remove them from another.
 	if err := w.Devices[0].App.RemoveMember(ctx, w.Devices[1].ID); err != nil {
 		return err
@@ -125,6 +235,18 @@ func (w *World) MultipleWorkspaces(ctx context.Context) error {
 	}
 	if _, err := w.Devices[1].App.InitializeRepository(ctx); err != nil {
 		return err
+	}
+	requests, err := other.Devices[0].App.ListJoinRequests(ctx)
+	if err != nil {
+		return err
+	}
+	for _, request := range requests {
+		if request.DeviceID == w.Devices[1].ID {
+			return fmt.Errorf("join request crossed workspace boundary")
+		}
+	}
+	if err := requireCode(other.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID), apperr.CodeInvalidArgument); err != nil {
+		return fmt.Errorf("foreign request approved: %w", err)
 	}
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {
 		return err
