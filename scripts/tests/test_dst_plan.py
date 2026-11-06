@@ -306,3 +306,13 @@ def test_output_changes_select_team_filesystem_boundaries():
         "app/environments.go",
     ]:
         assert selected(dst_plan.select([path]), "TestOutputBoundaryClocks")
+
+
+def test_config_changes_select_portable_team_configuration():
+    for path in [
+        "test/simulation/portable_config.go",
+        "app/config.go",
+        "app/environments.go",
+        "pkg/config/config.go",
+    ]:
+        assert selected(dst_plan.select([path]), "TestPortableConfigClocks")
