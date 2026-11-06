@@ -42,12 +42,47 @@ func TestParseProjectRejectsUnsafeEnvironmentConfiguration(t *testing.T) {
 		"[env.prod]\noutput = '.env:private'\n",
 		"[env.prod]\noutput = '.env.prod'\n[env.PROD]\noutput = '.env.PROD'\n",
 		"[env.'prod.']\noutput = '.env.prod.'\n",
+		"[env.prod]\noutput = ' .env'\n",
+		"[env.prod]\noutput = '.env '\n",
+		"[env.prod]\noutput = 'shared.env'\n[env.staging]\noutput = 'SHARED.env'\n",
+		"[env.prod]\n[env.staging]\noutput = './.ENV.prod'\n",
+		"[env.prod]\noutput = 'dir/../shared.env'\n[env.staging]\noutput = 'shared.env'\n",
+		"[env.prod]\noutput = 'secrets/Σ.env'\n[env.staging]\noutput = 'secrets/ς.env'\n",
+		"[env.K]\n[env.'K']\n",
 	} {
 		t.Run(content, func(t *testing.T) {
 			if _, err := ParseProject("version = 'v1alpha2'\n" + content); err == nil {
 				t.Fatal("hand-edited unsafe configuration was accepted")
 			}
 		})
+	}
+}
+
+func TestSameNameRenamePreservesConfiguration(t *testing.T) {
+	cfg := NewProjectWithEnvironment("prod")
+	before, err := MarshalProject(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.RenameEnvironment("prod", "prod"); !apperr.Is(err, apperr.CodeEnvironmentExists) {
+		t.Fatalf("same-name rename accepted: %v", err)
+	}
+	after, err := MarshalProject(cfg)
+	if err != nil || string(before) != string(after) {
+		t.Fatalf("rejected rename changed configuration: %v", err)
+	}
+}
+
+func TestReservedEnvironmentNameHasPrefixedOutput(t *testing.T) {
+	cfg, err := ParseProject("version = 'v1alpha2'\n[env.CON]\n[env.NUL]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"CON", "NUL"} {
+		env, err := cfg.Environment(name)
+		if err != nil || env.Output != ".env."+name {
+			t.Fatalf("reserved environment name lacks safe output prefix: %v", err)
+		}
 	}
 }
 
