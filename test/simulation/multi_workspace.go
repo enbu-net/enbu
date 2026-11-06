@@ -2,13 +2,16 @@ package simulation
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
@@ -162,6 +165,67 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 	other.Model["default"]["SIMULTANEOUS"] = "second"
 	if err := checkBoth(); err != nil {
 		return err
+	}
+	// Each person's two applications share local security directories, but not
+	// operation cancellation. Interrupt either writer at a known durable boundary
+	// while its other workspace acknowledges a real team update.
+	for direction, pair := range [][2]*World{{w, other}, {other, w}} {
+		writer, neighbor := pair[0], pair[1]
+		for _, committed := range []bool{false, true} {
+			key := fmt.Sprintf("CANCEL_%d_%t", direction, committed)
+			callCtx, cancel := context.WithCancel(ctx)
+			store := writer.Devices[0].Store
+			base := store.Store
+			fired := false
+			var neighborErr error
+			store.Store = storagetest.Wrap(base, storagetest.Hooks{Publish: func(c context.Context, next storage.Store, object storage.Object) error {
+				if object.Kind != storage.KindState || fired {
+					return next.Publish(c, object)
+				}
+				fired = true
+				if committed {
+					if err := next.Publish(c, object); err != nil {
+						return err
+					}
+				}
+				cancel()
+				neighborErr = neighbor.Devices[0].App.AddSecret(ctx, "default", key, "neighbor-acknowledged")
+				return c.Err()
+			}})
+			err := writer.Devices[0].App.AddSecret(callCtx, "default", key, "writer-uncertain")
+			store.Store = base
+			cancel()
+			if !fired || !errors.Is(err, context.Canceled) || neighborErr != nil {
+				return fmt.Errorf("cross-workspace cancellation: fired=%t writer=%v neighbor=%v", fired, err, neighborErr)
+			}
+			neighbor.Model["default"][key] = "neighbor-acknowledged"
+			if committed {
+				writer.Model["default"][key] = "writer-uncertain"
+			}
+			if err := checkBoth(); err != nil {
+				return err
+			}
+			// Cold-cache recovery must agree with the warm-cache observers while
+			// retaining trust pins, checkpoints and per-workspace key slots.
+			if err := os.RemoveAll(writer.Devices[0].App.CacheDir); err != nil {
+				return err
+			}
+			w.Restart(0)
+			other.Restart(0)
+			bindPerson(0)
+			if err := checkBoth(); err != nil {
+				return err
+			}
+			if !committed {
+				if err := writer.Devices[0].App.AddSecret(ctx, "default", key, "writer-retried"); err != nil {
+					return err
+				}
+				writer.Model["default"][key] = "writer-retried"
+			}
+			if err := checkBoth(); err != nil {
+				return err
+			}
+		}
 	}
 	// Relocate genuine signed ciphertext into the other workspace's scope in
 	// both directions. A valid signature from a foreign principal is insufficient.
