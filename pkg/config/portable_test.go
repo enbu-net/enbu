@@ -37,6 +37,10 @@ func TestParseProjectRejectsUnsafeEnvironmentConfiguration(t *testing.T) {
 	for _, content := range []string{
 		"[env.prod]\noutput = '../outside.env'\n",
 		"[env.prod]\noutput = '/outside.env'\n",
+		"[env.prod]\noutput = '/'\n",
+		"[env.prod]\noutput = '//server/share/env'\n",
+		"[env.prod]\noutput = '/./outside.env'\n",
+
 		"[env.prod]\noutput = '..\\outside.env'\n",
 		"[env.prod]\noutput = 'C:/outside.env'\n",
 		"[env.prod]\noutput = '.env:private'\n",
