@@ -225,14 +225,25 @@ func (s local) Discover(ctx context.Context, kind Kind, scope string) ([]digest.
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	entries, err := f.ReadDir(-1)
-	if err != nil {
-		return nil, err
-	}
 	var revs []digest.Digest
-	for _, entry := range entries {
-		if rev, ok := revFromName(prefix, entry.Name()); ok {
-			revs = append(revs, rev)
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		entries, err := f.ReadDir(128)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return nil, err
+		}
+		for _, entry := range entries {
+			if rev, ok := revFromName(prefix, entry.Name()); ok {
+				revs = append(revs, rev)
+				if kind == KindRequest && len(revs) > MaxRequestRefs {
+					return nil, ErrDiscoveryLimit
+				}
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			break
 		}
 	}
 	sort.Slice(revs, func(i, j int) bool { return strings.Compare(string(revs[i]), string(revs[j])) < 0 })

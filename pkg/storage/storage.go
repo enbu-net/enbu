@@ -27,13 +27,17 @@ const (
 	// MaxBlobs bounds the blobs one object can attach.
 	MaxBlobs    = 8
 	scopeHexLen = 32
+	// MaxRequestRefs bounds request discovery before all pages are accumulated.
+	// Duplicate refs consume the budget too: a hostile listing may repeat them.
+	MaxRequestRefs = 10000
 )
 
 var (
-	ErrNotFound    = errors.New("storage object not found")
-	ErrCorrupt     = errors.New("storage object does not match its name")
-	ErrTooLarge    = fmt.Errorf("payload exceeds %d bytes", MaxPayloadBytes)
-	ErrUnsupported = errors.New("storage operation not supported by this backend")
+	ErrNotFound       = errors.New("storage object not found")
+	ErrCorrupt        = errors.New("storage object does not match its name")
+	ErrTooLarge       = fmt.Errorf("payload exceeds %d bytes", MaxPayloadBytes)
+	ErrUnsupported    = errors.New("storage operation not supported by this backend")
+	ErrDiscoveryLimit = errors.New("request discovery exceeds the reference budget")
 )
 
 // Kind separates the object namespaces of one storage location.
@@ -99,7 +103,8 @@ type Store interface {
 	// digest its head names, because only the protocol on top knows it.
 	OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error)
 	// Discover lists the revisions it can currently see. The list may be stale
-	// but never names an object that does not exist.
+	// but never names an object that does not exist. Request discovery stops at
+	// MaxRequestRefs and returns ErrDiscoveryLimit without a partial list.
 	Discover(ctx context.Context, kind Kind, scope string) ([]digest.Digest, error)
 	// Scopes lists the state scopes that hold at least one revision it can
 	// currently see, sorted. Like Discover it may be stale.
