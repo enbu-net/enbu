@@ -31,7 +31,7 @@ Named clock/device journeys and the scenario catalog use a stable test-name hash
 | Application operations | Scenarios, rejection, concurrency, faults and recovery |
 | --- | --- |
 | `InitializeRepository` | Bootstrap, founding faults at every external-call occurrence, lost-reply and digest-mismatch tests; founder and joiner paths; retry exact signed Control. |
-| `CreateIdentity`, `IdentityInfo`, `DiagnoseIdentity`, `LoadWorkspaceIdentities` | public-surface; synthetic software identities. OS/hardware failure and diagnostic detail stay in identity E2E. |
+| `CreateIdentity`, `IdentityInfo`, `DiagnoseIdentity`, `Diagnose`, `LoadWorkspaceIdentities` | public-surface; synthetic software identities. Healthy workspace diagnosis must succeed without storage writes and replay its report; OS/hardware failure stays in identity E2E. |
 | `DefaultStorageURL`, `SetRepositoryDir`, `WorkspaceID` | public-surface; fixture repository; shared workspace identifiers and per-device paths. |
 | `ListSecrets`, `AddSecret`, `EditSecret`, `DeleteSecret`, `ImportSecrets`, `SyncSecrets`, `PullSecretsData`, `PullSecrets` | Generated independent reference model; duplicate/missing keys, overwrite, invalid operations; concurrent-keys, stale-writer, write/read-faults; operation fault matrix. |
 | `ListConflicts`, `ResolveSecrets` | conflicting-edits; same-key edits stop reads, stale resolution rejected, explicit resolution converges. Existing app conflict tests cover edit/delete and criss-cross merges. |

@@ -40,6 +40,8 @@ type session struct {
 	// the repository pin to it.
 	founded      bool
 	foundingRepo *wsp.Root
+	// diagnostic verifies the existing trust state without pinning or accepting it.
+	diagnostic bool
 	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
 	replaced wsp.Root
 }
@@ -186,6 +188,13 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	}
 	if err != nil {
 		return wspError(err)
+	}
+	if s.diagnostic {
+		s.view, s.head = view, nil
+		if !view.Forked() {
+			s.head = view.Heads[0]
+		}
+		return nil
 	}
 	// Pin only a genesis that verified, so a typo or an unreachable storage
 	// never becomes the trust root.

@@ -518,7 +518,18 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if _, e := a.IdentityInfo(); e != nil {
 			return e
 		}
-		a.DiagnoseIdentity()
+		a.DiagnoseIdentity(ctx)
+		start := len(w.Tape.Recording.Entries)
+		report := a.Diagnose(ctx)
+		if !report.Healthy {
+			return fmt.Errorf("healthy workspace failed diagnosis: %+v", report.Checks)
+		}
+		if err := requireReadOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
+			return fmt.Errorf("diagnosis mutated storage: %w", err)
+		}
+		if err := w.Observe("diagnose", nil, report, nil); err != nil {
+			return err
+		}
 		ids, e := a.LoadWorkspaceIdentities()
 		if e != nil {
 			return e

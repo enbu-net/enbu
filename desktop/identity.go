@@ -30,7 +30,7 @@ type IdentityDiagnosis struct {
 // DiagnoseIdentity probes the hardware and the software key storage, as `enbu doctor`
 // does. It needs no repository.
 func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
-	d := s.app.DiagnoseIdentity()
+	d := s.app.DiagnoseIdentity(s.context())
 	slog.Info("DiagnoseIdentity", "backend", d.Backend, "available", d.Available, "reason", d.Reason,
 		"fallback_available", d.FallbackAvailable, "fallback_reason", d.FallbackReason)
 	return IdentityDiagnosis{

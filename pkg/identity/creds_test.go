@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -88,7 +89,7 @@ func TestDoctorReportsTheSoftwareFallback(t *testing.T) {
 		{"no systemd-creds", &Manager{Vault: noKeyringVault{}}, false, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			d := tt.m.Doctor()
+			d := tt.m.Doctor(context.Background())
 			if d.FallbackAvailable != tt.available || d.Fallback != tt.fallback {
 				t.Fatalf("Doctor = %+v", d)
 			}
@@ -96,5 +97,43 @@ func TestDoctorReportsTheSoftwareFallback(t *testing.T) {
 				t.Fatal("no reason given")
 			}
 		})
+	}
+}
+
+func TestDoctorChecksCredsEvenWithKeyring(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		m := &Manager{Vault: memoryVault{}, Creds: memoryVault{}}
+		if !available {
+			m.Creds = noKeyringVault{}
+		}
+		d := m.Doctor(context.Background())
+		if !d.KeyringAvailable || d.CredsAvailable != available || d.Fallback != backendKeyring {
+			t.Fatalf("Doctor = %+v", d)
+		}
+		if !available && d.CredsReason == "" {
+			t.Fatal("missing creds failure reason")
+		}
+	}
+}
+
+type contextProbeVault struct {
+	memoryVault
+	got context.Context
+}
+
+func (v *contextProbeVault) Probe(ctx context.Context) error { v.got = ctx; return nil }
+func TestDoctorPassesContextToCredentials(t *testing.T) {
+	creds := &contextProbeVault{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := &Manager{Vault: memoryVault{}, Creds: creds}
+	d := m.Doctor(ctx)
+	if !d.CredsAvailable || creds.got != ctx {
+		t.Fatal("credentials probe lost the caller context")
+	}
+	cancel()
+	d = m.Doctor(ctx)
+	if d.CredsAvailable || d.KeyringAvailable {
+		t.Fatal("cancelled diagnosis probed an available backend")
 	}
 }

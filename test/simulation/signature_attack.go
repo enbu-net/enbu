@@ -55,7 +55,9 @@ func (w *World) StateSignatureAttack(ctx context.Context) error {
 		case "wrong-signer", "wrong-domain":
 			who, domain := 1, signing.DomainControl
 			if mode == "wrong-signer" {
-				who, domain = 2, signing.DomainState
+				// The forged author is device 1. Full generated plans also
+				// include two-device worlds, where device 0 is the other signer.
+				who, domain = (1+1)%len(w.Devices), signing.DomainState
 			}
 			signer, err := w.Devices[who].Keys.LoadSigner(cfg.WorkspaceID)
 			if err != nil {

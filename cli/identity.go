@@ -64,15 +64,23 @@ func newIdentityCommand(a *app.App) *cobra.Command {
 }
 
 func newDoctorCommand(a *app.App) *cobra.Command {
-	return &cobra.Command{Use: "doctor", Short: "Probe hardware, OS keyring and systemd-creds without authentication or persistent keys", Args: appArgs(cobra.NoArgs),
+	return &cobra.Command{Use: "doctor", Short: "Diagnose identity backends, configuration, authentication, storage and workspace integrity", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			d := a.DiagnoseIdentity()
+			d := a.Diagnose(cmd.Context())
 			if jsonEnabled(cmd) {
 				return writeJSON(cmd, d)
 			}
 			cmd.Printf("Hardware: %s\nDevice: %s\nAvailable: %t\n", d.Backend, d.Device, d.Available)
 			if d.Reason != "" {
 				cmd.Printf("Reason: %s\n", d.Reason)
+			}
+			cmd.Printf("OS keyring available: %t\n", d.KeyringAvailable)
+			if d.KeyringReason != "" {
+				cmd.Printf("OS keyring reason: %s\n", d.KeyringReason)
+			}
+			cmd.Printf("systemd-creds available: %t\n", d.CredsAvailable)
+			if d.CredsReason != "" {
+				cmd.Printf("systemd-creds reason: %s\n", d.CredsReason)
 			}
 			cmd.Printf("Software fallback available: %t\n", d.FallbackAvailable)
 			if d.Fallback != "" {
@@ -81,6 +89,18 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 			if d.FallbackReason != "" {
 				cmd.Printf("Fallback: %s\n", d.FallbackReason)
 			}
+			for _, check := range d.Checks {
+				name := check.Name
+				if check.Environment != "" {
+					name += " [" + check.Environment + "]"
+				}
+				cmd.Printf("%s: %s — %s", name, check.Status, check.Message)
+				if check.Code != "" {
+					cmd.Printf(" (%s)", check.Code)
+				}
+				cmd.Println()
+			}
+			cmd.Printf("Healthy: %t\n", d.Healthy)
 			return nil
 		}}
 }

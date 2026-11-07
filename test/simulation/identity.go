@@ -1,6 +1,7 @@
 package simulation
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	agecrypto "filippo.io/age"
@@ -90,7 +91,9 @@ func (k *Keys) Info(ws string) (identity.PublicInfo, error) {
 	defer func() { _ = id.Close() }()
 	return keyInfo(id), nil
 }
-func (*Keys) Doctor() identity.Diagnosis { return identity.Diagnosis{FallbackAvailable: true} }
+func (*Keys) Doctor(context.Context) identity.Diagnosis {
+	return identity.Diagnosis{FallbackAvailable: true}
+}
 func (k *Keys) LoadSigner(ws string) (signing.Signer, error) {
 	if len(k.state(ws).signing) == 0 {
 		return nil, fs.ErrNotExist
