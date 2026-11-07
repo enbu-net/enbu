@@ -36,6 +36,7 @@ func TestLargerTeamClocks(t *testing.T) {
 			scenes = append(scenes, "disaster-"+mode+"-"+cache)
 		}
 	}
+	index := 0
 	for _, devices := range []int{9, 16, 32} {
 		for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 			name := profile
@@ -44,7 +45,7 @@ func TestLargerTeamClocks(t *testing.T) {
 			}
 			for _, scene := range scenes {
 				t.Run(fmt.Sprintf("devices-%d/%s/%s", devices, name, scene), func(t *testing.T) {
-					shardCase(t)
+					indexedCase(t, index)
 					plan := Plan{Devices: devices, Clock: profile, Scenario: scene}
 					if strings.HasPrefix(scene, "swarm-") {
 						plan.Scenario = ""
@@ -52,6 +53,7 @@ func TestLargerTeamClocks(t *testing.T) {
 					}
 					exercise(t, 269, plan)
 				})
+				index++
 			}
 		}
 	}

@@ -313,11 +313,21 @@ seeds 256 and 440; DST selection includes the corpus when the workload or corpus
 changes. With the former generated-team helper, seed 256 again fails with a
 secret conflict; the corrected helper seals each continuing observer's ancestry.
 The full run reached its 330-minute limit after multiple failures and long
-minimizations; passing these minimized cases does not establish that all original
-256-operation workloads or the full nightly configuration now pass. Remaining
-original workloads and a new full run must be checked independently. CI lanes
+minimizations. Local verification also re-executes and strictly replays all 52
+distinct original 256-operation plans retained by that run, including the plans
+active when its timeout fired. Both the 51 unique minimized plans with race
+detection and all 52 original plans pass. This does not establish that the full
+nightly configuration now passes; a new full run is still required. CI lanes
 stop after recording and minimizing their first failure; successful runs retain
 the complete configured search.
+
+The larger-team matrix partitions its ordered cases by lane and sample phase.
+Its actor-count blocks remain balanced across lanes, including incremental
+samples, while full mode still executes all 252 worlds. Name hashing formerly
+clustered 18 worlds on one lane and only four on another at commit 03f29f6;
+Windows timed out while processing the overloaded lane. Partition tests verify
+coverage and per-actor-count balance and prevent a second name-based sampling
+pass from silently discarding index-selected cases.
 
 
 `refounding` replaces a lost workspace with a genuinely different signed root

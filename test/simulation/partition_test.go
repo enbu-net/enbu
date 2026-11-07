@@ -124,6 +124,103 @@ func shardCase(t *testing.T) {
 	}
 }
 
+// Consecutive groups of equally expensive worlds must not cluster on one lane.
+// In particular, each actor-count block in the large-team matrix costs much
+// more than the preceding one on Windows' durable filesystem operations.
+func indexedCaseOwner(index, lanes, stride int) (lane, phase int, err error) {
+	if index < 0 || lanes < 1 || stride < 1 {
+		return 0, 0, fmt.Errorf("invalid indexed simulation partition")
+	}
+	return index % lanes, (index / lanes) % stride, nil
+}
+
+func indexedCase(t *testing.T, index int) {
+	t.Helper()
+	lanes := integer(t, "ENBU_SIM_SHARDS", 1)
+	lane := 0
+	if raw := os.Getenv("ENBU_SIM_SHARD"); raw != "" {
+		var err error
+		lane, err = strconv.Atoi(raw)
+		if err != nil || lane < 0 || lane >= lanes {
+			t.Fatal("invalid simulation lane")
+		}
+	} else if lanes > 1 {
+		t.Fatal("ENBU_SIM_SHARD is required with multiple lanes")
+	}
+	stride := integer(t, "ENBU_SIM_CASE_STRIDE", 1)
+	owner, phase, err := indexedCaseOwner(index, lanes, stride)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(revision(t)))
+	if owner != lane || phase != int(h.Sum64()%uint64(stride)) {
+		t.Skip("case assigned to another simulation lane or sample")
+	}
+	// The index has selected the sample already; exercise must not re-sample
+	// the same world using its name and accidentally omit it from every phase.
+	t.Setenv("ENBU_SIM_CASE_STRIDE", "1")
+}
+
+func TestLargeTeamPartitionsAreCompleteAndBalanced(t *testing.T) {
+	for _, stride := range []int{1, 8} {
+		counts := make([][3]int, 4*stride)
+		for index := range 252 {
+			lane, phase, err := indexedCaseOwner(index, 4, stride)
+			if err != nil {
+				t.Fatal(err)
+			}
+			counts[phase*4+lane][index/84]++
+		}
+		for phase := range stride {
+			for actors := range 3 {
+				for lane := range 4 {
+					if counts[phase*4+lane][actors] != counts[phase*4][actors] {
+						t.Fatalf("unbalanced actors=%d phase=%d: %v", actors, phase, counts)
+					}
+				}
+			}
+		}
+	}
+	for _, invalid := range [][3]int{{-1, 4, 8}, {0, 0, 8}, {0, 4, 0}} {
+		if _, _, err := indexedCaseOwner(invalid[0], invalid[1], invalid[2]); err == nil {
+			t.Fatalf("invalid indexed partition accepted: %v", invalid)
+		}
+	}
+}
+
+func TestIndexedCaseDoesNotResampleByName(t *testing.T) {
+	const revision = "indexed-partition"
+	t.Setenv("GITHUB_SHA", revision)
+	t.Setenv("ENBU_SIM_SHARDS", "4")
+	t.Setenv("ENBU_SIM_SHARD", "0")
+	t.Setenv("ENBU_SIM_CASE_STRIDE", "8")
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(revision))
+	phase := int(h.Sum64() % 8)
+	for i := range 100 {
+		name := fmt.Sprint(i)
+		selected, err := caseInSample(t.Name()+"/"+name, 8, phase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected {
+			continue
+		}
+		executed := false
+		t.Run(name, func(t *testing.T) {
+			indexedCase(t, phase*4)
+			sampleCase(t)
+			executed = true
+		})
+		if !executed {
+			t.Fatal("index-selected case was omitted by name sampling")
+		}
+		return
+	}
+	t.Fatal("could not find a case outside the name sample")
+}
+
 func TestNamedCasePartitionIsCompleteAndDisjoint(t *testing.T) {
 	for _, lanes := range []int{1, 4, 15, 32} {
 		counts := make([]int, lanes)
