@@ -191,12 +191,17 @@ func (s s3) Discover(ctx context.Context, kind Kind, scope string) ([]digest.Dig
 	var revs []digest.Digest
 	listCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + prefix, Recursive: true}) {
+	// Iterate synchronously so stopping at the budget cannot prefetch another
+	// page through the channel-based listing API.
+	for entry := range s.client.ListObjectsIter(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + prefix, Recursive: true}) {
 		if entry.Err != nil {
 			return nil, s3Error(entry.Err)
 		}
 		if rev, ok := revFromName(prefix, strings.TrimPrefix(entry.Key, base)); ok {
 			revs = append(revs, rev)
+			if kind == KindRequest && len(revs) > MaxRequestRefs {
+				return nil, ErrDiscoveryLimit
+			}
 		}
 	}
 	sort.Slice(revs, func(i, j int) bool { return revs[i] < revs[j] })
