@@ -2,6 +2,7 @@ package identity
 
 import (
 	"bytes"
+	"context"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
@@ -61,6 +62,10 @@ type Metadata struct {
 }
 
 type Diagnosis struct {
+	KeyringAvailable  bool   `json:"keyring_available"`
+	KeyringReason     string `json:"keyring_reason,omitempty"`
+	CredsAvailable    bool   `json:"creds_available"`
+	CredsReason       string `json:"creds_reason,omitempty"`
 	Backend           string `json:"backend"`
 	Device            string `json:"device,omitempty"`
 	Available         bool   `json:"available"`
@@ -127,14 +132,14 @@ func (m *Manager) vault(backend string) Vault {
 // softwareVault picks where a new software key goes: the OS keyring, or
 // systemd-creds when the keyring is unavailable.
 func (m *Manager) softwareVault() (string, Vault, error) {
-	err := probeVault(m.Vault)
+	err := probeVault(context.Background(), m.Vault)
 	if err == nil {
 		return backendKeyring, m.Vault, nil
 	}
 	if m.Creds == nil {
 		return "", nil, unavailable("OS keyring unavailable", err)
 	}
-	credsErr := probeVault(m.Creds)
+	credsErr := probeVault(context.Background(), m.Creds)
 	if credsErr == nil {
 		return backendCreds, m.Creds, nil
 	}
@@ -149,9 +154,15 @@ func softwareName(backend string) string {
 	return "OS keyring"
 }
 
-func probeVault(v Vault) error {
+func probeVault(ctx context.Context, v Vault) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if v == nil {
 		return errors.New("not configured")
+	}
+	if probe, ok := v.(interface{ Probe(context.Context) error }); ok {
+		return probe.Probe(ctx)
 	}
 	if probe, ok := v.(interface{ Probe() error }); ok {
 		return probe.Probe()
@@ -642,12 +653,21 @@ func (m *Manager) Info(workspaceID string) (PublicInfo, error) {
 
 // Doctor probes capabilities and software key storage without creating a
 // durable key.
-func (m *Manager) Doctor() Diagnosis {
+func (m *Manager) Doctor(ctx context.Context) Diagnosis {
 	d := Diagnosis{Reason: "hardware backend unavailable"}
 	if m.Hardware != nil {
 		d = m.Hardware.Probe()
 	}
-	keyringErr := probeVault(m.Vault)
+	keyringErr := probeVault(ctx, m.Vault)
+	d.KeyringAvailable = keyringErr == nil
+	if keyringErr != nil {
+		d.KeyringReason = keyringErr.Error()
+	}
+	credsErr := probeVault(ctx, m.Creds)
+	d.CredsAvailable = credsErr == nil
+	if credsErr != nil {
+		d.CredsReason = credsErr.Error()
+	}
 	if keyringErr == nil {
 		d.FallbackAvailable, d.Fallback = true, backendKeyring
 		return d
@@ -656,7 +676,7 @@ func (m *Manager) Doctor() Diagnosis {
 	if m.Creds == nil {
 		return d
 	}
-	if credsErr := probeVault(m.Creds); credsErr != nil {
+	if credsErr != nil {
 		d.FallbackReason += "; systemd-creds unavailable: " + credsErr.Error()
 	} else {
 		d.FallbackAvailable, d.Fallback = true, backendCreds

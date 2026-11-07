@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -49,6 +50,6 @@ func (s *mockKeyStore) Info(workspaceID string) (identity.PublicInfo, error) {
 	defer func() { _ = id.Close() }()
 	return identity.PublicInfo{Backend: "keyring", Algorithm: "X25519", Recipient: id.Recipient().String()}, nil
 }
-func (s *mockKeyStore) Doctor() identity.Diagnosis {
+func (s *mockKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{FallbackAvailable: true}
 }

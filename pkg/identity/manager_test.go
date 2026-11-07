@@ -2,6 +2,7 @@ package identity
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/json"
@@ -191,7 +192,7 @@ func TestBackendSelectionAndDoctor(t *testing.T) {
 	if _, err := m.Load("o/r"); err == nil {
 		t.Fatal("hardware mode loaded keyring identity")
 	}
-	d := m.Doctor()
+	d := m.Doctor(context.Background())
 	if d.Available || !d.FallbackAvailable {
 		t.Fatalf("doctor: %+v", d)
 	}

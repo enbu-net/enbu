@@ -283,6 +283,16 @@ export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise k
 export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
+`enbu doctor` also checks workspace configuration, GHCR token validity (when
+applicable), storage read access, Control signatures and trust pins, device
+membership, and every environment's retained history and ciphertext integrity.
+It tests current-secret decryption and reports merge conflicts without printing
+secret names or values or advancing trust/checkpoints. All retained ciphertext
+is downloaded; write access is not tested. Outside a workspace, workspace checks
+are skipped. `--json` includes `healthy` and per-item `checks` with
+`ok`, `fail`, `warn`, or `skip` status. A completed diagnosis exits 0 even
+when checks fail; inspect `healthy` and `checks`.
+
 Fallback is allowed only when hardware is unavailable before creation begins.
 Creation errors and saved-key load errors never silently replace the key.
 `init` registers the saved recipient and reuses it after a registration failure.
