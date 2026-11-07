@@ -304,6 +304,21 @@ detected by this scenario.
 across 3–8 devices with the mixed membership/write/sync group. A bounded smoke
 case runs in ordinary CI; full generated exploration includes these groups too.
 
+`testdata/nightly-regressions.json` retains 51 unique minimized plans from all
+five platforms' artifacts in full run 42316127227. It contains seeds and
+operations, not private keys or recorded application results.
+`TestGeneratedTeamGroupNightlyRegressions` checks these plans against the model
+and then strictly replays fresh recordings. Ordinary CI retains representative
+seeds 256 and 440; DST selection includes the corpus when the workload or corpus
+changes. With the former generated-team helper, seed 256 again fails with a
+secret conflict; the corrected helper seals each continuing observer's ancestry.
+The full run reached its 330-minute limit after multiple failures and long
+minimizations; passing these minimized cases does not establish that all original
+256-operation workloads or the full nightly configuration now pass. Remaining
+original workloads and a new full run must be checked independently. CI lanes
+stop after recording and minimizing their first failure; successful runs retain
+the complete configured search.
+
 
 `refounding` replaces a lost workspace with a genuinely different signed root
 and founder. Sharing the new configuration must block all previously pinned

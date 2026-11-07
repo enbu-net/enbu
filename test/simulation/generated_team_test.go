@@ -1,11 +1,65 @@
 package simulation
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"testing"
 )
+
+type nightlyRegression struct {
+	Name string
+	Seed uint64
+	Plan Plan
+}
+
+func nightlyRegressions(t *testing.T) []nightlyRegression {
+	t.Helper()
+	data, err := os.ReadFile("testdata/nightly-regressions.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []nightlyRegression
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) == 0 {
+		t.Fatal("nightly regression corpus is empty")
+	}
+	return cases
+}
+
+// These plans come from full run 42316127227, without recorded private keys or
+// old boundary outputs. Every run checks the model and creates a fresh strict
+// replay, so changing the implementation cannot turn old outputs into an oracle.
+func TestGeneratedTeamGroupNightlyRegressions(t *testing.T) {
+	exploration(t)
+	for _, regression := range nightlyRegressions(t) {
+		t.Run(regression.Name, func(t *testing.T) {
+			shardCase(t)
+			exercise(t, regression.Seed, regression.Plan)
+		})
+	}
+}
+
+func TestGeneratedTeamGroupNightlyRegressionSmoke(t *testing.T) {
+	seen := map[uint64]bool{}
+	for _, regression := range nightlyRegressions(t) {
+		// Keep representative disjoint and edit/delete failures in ordinary CI.
+		if regression.Seed != 256 && regression.Seed != 440 {
+			continue
+		}
+		seen[regression.Seed] = true
+		t.Run(regression.Name, func(t *testing.T) {
+			shardCase(t)
+			exercise(t, regression.Seed, regression.Plan)
+		})
+	}
+	if !seen[256] || !seen[440] {
+		t.Fatal("nightly smoke regressions are missing from the corpus")
+	}
+}
 
 func TestGeneratedTeamGroupsPreservePriorWork(t *testing.T) {
 	exploration(t)

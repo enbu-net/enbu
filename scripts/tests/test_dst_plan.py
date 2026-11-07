@@ -303,6 +303,14 @@ def test_workload_changes_select_generated_exploration(path):
     plan = dst_plan.select([path])
     assert selected(plan, "TestSimulation")
     assert selected(plan, "TestGeneratedTeamGroupsPreservePriorWork")
+    assert selected(plan, "TestGeneratedTeamGroupNightlyRegressions")
+    assert selected(plan, "TestGeneratedTeamGroupNightlyRegressionSmoke")
+
+
+def test_nightly_corpus_changes_select_its_regressions():
+    plan = dst_plan.select(["test/simulation/testdata/nightly-regressions.json"])
+    assert selected(plan, "TestGeneratedTeamGroupNightlyRegressions")
+    assert selected(plan, "TestGeneratedTeamGroupNightlyRegressionSmoke")
 
 
 @pytest.mark.parametrize(
