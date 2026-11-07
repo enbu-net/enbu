@@ -3,12 +3,16 @@
 package keystore
 
 import (
+	"context"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/jonboulle/clockwork"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeCreds is a systemd-creds that "encrypts" by writing the name and the
@@ -44,7 +48,7 @@ esac
 
 func TestCredsBackendRoundTrip(t *testing.T) {
 	c, log := fakeCreds(t)
-	if err := c.Probe(); err != nil {
+	if err := c.Probe(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(c.Dir, 0o755); err != nil {
@@ -98,7 +102,7 @@ func TestCredsBackendRoundTrip(t *testing.T) {
 
 func TestCredsBackendProbeFailsWithoutSystemdCreds(t *testing.T) {
 	c := &CredsBackend{Dir: t.TempDir(), Command: filepath.Join(t.TempDir(), "missing")}
-	if err := c.Probe(); err == nil {
+	if err := c.Probe(context.Background()); err == nil {
 		t.Fatal("Probe succeeded without systemd-creds")
 	}
 }
@@ -108,7 +112,61 @@ func TestCredsProbeRejectsFailedDecryption(t *testing.T) {
 	if err := os.WriteFile(c.Command, []byte("#!/bin/sh\n[ \"$2\" = encrypt ] && { cat; exit; }\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.Probe(); err == nil {
+	if err := c.Probe(context.Background()); err == nil {
 		t.Fatal("Probe succeeded when decryption failed")
+	}
+}
+
+func TestCredsProbeHonorsCallerCancellation(t *testing.T) {
+	for _, phase := range []string{"encrypt", "decrypt"} {
+		t.Run(phase, func(t *testing.T) {
+			c, _ := fakeCreds(t)
+			marker := filepath.Join(t.TempDir(), "started")
+			script := "#!/bin/sh\nif [ \"$2\" = " + phase + " ]; then\n echo started > '" + marker + "'\n exec sleep 60\nfi\ncat\n"
+			if err := os.WriteFile(c.Command, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { done <- c.Probe(ctx) }()
+			deadline := time.After(5 * time.Second)
+			for {
+				if _, err := os.Stat(marker); err == nil {
+					break
+				}
+				select {
+				case err := <-done:
+					t.Fatalf("probe ended before %s: %v", phase, err)
+				case <-deadline:
+					t.Fatal("probe never reached subprocess")
+				case <-time.After(5 * time.Millisecond):
+				}
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("lost cancellation: %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancelled probe kept running")
+			}
+		})
+	}
+}
+
+func TestCredsProbePreservesCallerDeadline(t *testing.T) {
+	c, log := fakeCreds(t)
+	fake := clockwork.NewFakeClock()
+	ctx, cancel := clock.WithTimeout(context.Background(), fake, time.Second)
+	defer cancel()
+	fake.Advance(time.Second)
+	<-ctx.Done()
+	if err := c.Probe(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline cause: %v", err)
+	}
+	if _, err := os.Stat(log); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expired probe launched a subprocess: %v", err)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"uuid"
 
 	enbuauth "github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
@@ -19,6 +20,9 @@ import (
 )
 
 type App struct {
+	// Runtime supplies per-instance external dependencies. Nil uses production defaults.
+	Runtime *Runtime
+
 	Storage       storage.Store
 	StorageURL    string
 	InitStorage   *config.StorageConfig
@@ -63,7 +67,7 @@ func (a *App) loadProject() (*config.ProjectConfig, error) {
 	}
 	if _, perr := uuid.Parse(cfg.WorkspaceID); perr == nil {
 		// A broken local state must not silently send commands to the team default.
-		local, err := config.LoadLocalState(cfg.WorkspaceID)
+		local, err := a.loadLocalState(cfg.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +85,7 @@ func (a *App) loadLocal() (*config.LocalConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return config.LoadLocalState(id)
+	return a.loadLocalState(id)
 }
 func (a *App) WorkspaceID() (id string, err error) {
 	defer apperr.NormalizeInto(&err)
@@ -212,11 +216,12 @@ func (a *App) emitStepProgress(op, step, status string) {
 	}
 }
 
-func New() *App {
+func New(c clock.Clock) *App {
 	gitClient := gitprovider.NewCLIClient()
 	return &App{
 		TokenProvider: &defaultTokenProvider{},
-		Identities:    identity.New(),
+		Runtime:       &Runtime{Clock: c},
+		Identities:    identity.New(c),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
 		Git:           gitClient,
 	}

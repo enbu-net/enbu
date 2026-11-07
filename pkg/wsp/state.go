@@ -131,10 +131,14 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 
 // AuthorIsCurrent reports whether the author of st is still a principal of the
 // current Control. A revision may only be the head of a resource, and so be read
-// as the current value, while its author is.
-func AuthorIsCurrent(head *Verified, st *VerifiedState) error {
+// as the current value, while its author has remained a member. Rejoining
+// must not revive an unaccepted revision signed before removal.
+func AuthorIsCurrent(view *ControlView, head *Verified, st *VerifiedState) error {
 	if _, ok := head.Principal(st.Author); !ok {
 		return invalid("state author %s is no longer a principal of the workspace", st.Author)
+	}
+	if !view.MembershipUnbroken(head.Digest, st.Control, st.Author) {
+		return invalid("state author %s was removed after the control it names", st.Author)
 	}
 	return nil
 }
@@ -279,12 +283,35 @@ type fetchedHead struct {
 	err  error
 }
 
+type serialHeadReadsKey struct{}
+
+// WithSerialHeadReads disables speculative parallel fetches for a caller that
+// schedules external effects itself. Verification and error handling are identical.
+func WithSerialHeadReads(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serialHeadReadsKey{}, true)
+}
+
+func terminalHeadError(err error) bool {
+	return err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt)
+}
+
 // prefetchHeads fetches one bounded batch. Terminal failures cancel the other
 // requests; the caller verifies and releases this batch before fetching more.
 func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs []digest.Digest) (map[digest.Digest]fetchedHead, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	out := make(map[digest.Digest]fetchedHead, len(revs))
+	if serial, _ := ctx.Value(serialHeadReadsKey{}).(bool); serial {
+		for _, rev := range revs {
+			head, err := store.FetchHead(ctx, storage.KindState, scope, rev)
+			out[rev] = fetchedHead{head, err}
+			if terminalHeadError(err) {
+				return nil, err
+			}
+		}
+		return out, ctx.Err()
+	}
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var failure error
@@ -299,7 +326,7 @@ func prefetchHeads(ctx context.Context, store storage.Store, scope string, revs 
 			mu.Lock()
 			defer mu.Unlock()
 			out[rev] = fetchedHead{head, err}
-			if err != nil && !errors.Is(err, storage.ErrNotFound) && !errors.Is(err, storage.ErrCorrupt) && failure == nil {
+			if terminalHeadError(err) && failure == nil {
 				failure = err
 				cancel()
 			}

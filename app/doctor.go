@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	githubprovider "github.com/enbu-net/enbu/pkg/provider/github"
@@ -47,6 +48,7 @@ func (r *DoctorReport) add(name, env, status, message string, err error) {
 // Diagnose checks all configured environments without publishing data,
 // creating keys, promoting keys, or advancing trust pins and checkpoints.
 // Successful execution produces a report even when individual checks fail.
+// The caller controls the overall budget: retained histories have no fixed size.
 func (a *App) Diagnose(ctx context.Context) DoctorReport {
 	return a.diagnose(ctx, func(ctx context.Context, token string) error {
 		_, err := githubprovider.NewClient(token).GetUser(ctx)
@@ -55,14 +57,12 @@ func (a *App) Diagnose(ctx context.Context) DoctorReport {
 }
 
 func (a *App) diagnose(ctx context.Context, validateToken func(context.Context, string) error) DoctorReport {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
 	r := DoctorReport{Healthy: true, Checks: []DiagnosticCheck{}}
 	if a.Identities != nil {
-		r.Diagnosis = a.DiagnoseIdentity()
-	}
-	if !r.Available && !r.FallbackAvailable {
-		r.add("identity_backend", "", "warn", "No backend is available for creating a new identity.", nil)
+		r.Diagnosis = a.DiagnoseIdentity(ctx)
+		if !r.Available && !r.FallbackAvailable {
+			r.add("identity_backend", "", "warn", "No backend is available for creating a new identity.", nil)
+		}
 	}
 	cfg, err := a.loadProject()
 	if err != nil {
@@ -156,7 +156,7 @@ func (a *App) diagnoseAuth(ctx context.Context, cfg *config.ProjectConfig, r *Do
 		r.add("github_auth", "", "fail", "GitHub credentials are unavailable; run enbu auth login.", apperr.New(apperr.CodeNotAuthenticated, "GitHub credentials unavailable", nil))
 		return
 	}
-	authCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	authCtx, cancel := clock.WithTimeout(ctx, a.clock(), 10*time.Second)
 	defer cancel()
 	if err := validate(authCtx, token); err != nil {
 		r.add("github_auth", "", "fail", "GitHub could not validate the saved token; check connectivity or sign in again.", err)
@@ -176,7 +176,8 @@ func (a *App) diagnoseDevice(s *session, r *DoctorReport) {
 		return
 	}
 	s.signer = signer
-	if _, ok := s.head.Principal(s.self()); !ok {
+	principal, ok := s.head.Principal(s.self())
+	if !ok {
 		r.add("membership", "", "fail", "This device is not an approved member.", apperr.New(apperr.CodeNotMember, "device is not approved", nil))
 		return
 	}
@@ -186,7 +187,15 @@ func (a *App) diagnoseDevice(s *session, r *DoctorReport) {
 		r.add("encryption_key", "", "fail", "The saved encryption identity cannot be loaded.", err)
 		return
 	}
-	r.add("encryption_key", "", "ok", "The saved encryption identity can be loaded.", nil)
+	for _, id := range s.ids {
+		if key, ok := id.(identity.Identity); ok && key.Recipient().String() == principal.Recipient {
+			r.add("encryption_key", "", "ok", "A saved encryption identity matches this device's approved recipient.", nil)
+			return
+		}
+	}
+	CloseIdentities(s.ids)
+	s.ids = nil
+	r.add("encryption_key", "", "fail", "No saved encryption identity matches this device's approved recipient.", apperr.New(apperr.CodeNotInitialized, "approved encryption identity is unavailable", nil))
 }
 
 func (s *session) diagnoseEnvironment(ctx context.Context, name string, r *DoctorReport) {

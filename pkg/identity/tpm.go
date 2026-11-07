@@ -8,12 +8,14 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 )
 
 // TPMBackend shares all commands across platforms; only Open differs.
 type TPMBackend struct {
+	Clock  clock.Clock
 	Open   func() (transport.TPMCloser, error)
 	Device string
 	// Verifier, when set, gives new keys an authValue only a verified user

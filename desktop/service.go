@@ -18,6 +18,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
@@ -44,6 +45,7 @@ type ConflictRetry struct {
 }
 
 type Service struct {
+	clock      clock.Clock
 	app        *app.App
 	ctx        context.Context
 	pickDir    DirectoryPicker
@@ -66,11 +68,17 @@ type oauthSession struct {
 
 func NewService(a *app.App) *Service {
 	s := &Service{
-		app:       a,
-		openURL:   auth.OpenBrowser,
-		git:       a.Git,
-		sessions:  make(map[string]*oauthSession),
-		authLogin: auth.Login,
+		clock:    clock.New(),
+		app:      a,
+		openURL:  auth.OpenBrowser,
+		git:      a.Git,
+		sessions: make(map[string]*oauthSession),
+	}
+	if a.Runtime != nil && a.Runtime.Clock != nil {
+		s.clock = a.Runtime.Clock
+	}
+	s.authLogin = func(ctx context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
+		return (auth.Client{Clock: s.clock}).Login(ctx, open)
 	}
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()
@@ -276,8 +284,8 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	if err != nil {
 		return OAuthStart{}, err
 	}
-	expiresAt := time.Now().Add(10 * time.Minute)
-	loginCtx, cancel := context.WithDeadline(s.context(), expiresAt)
+	expiresAt := s.clock.Now().Add(10 * time.Minute)
+	loginCtx, cancel := clock.WithDeadline(s.context(), s.clock, expiresAt)
 	opened := make(chan struct{}, 1)
 	finished := make(chan struct{})
 	s.authMu.Lock()
@@ -348,7 +356,8 @@ func (s *Service) GetOAuthLoginStatus(sessionID string) (OAuthStatus, error) {
 		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
 		return OAuthStatus{State: "expired", Error: &payload}, nil
 	}
-	if time.Now().After(session.expiresAt) && session.status.State == "pending" {
+	if !s.clock.Now().Before(session.expiresAt) && session.status.State == "pending" {
+		session.cancel()
 		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
 		session.status = OAuthStatus{State: "expired", Error: &payload}
 	}
@@ -370,8 +379,13 @@ func (s *Service) CancelOAuthLogin(sessionID string) error {
 func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
-	if session, ok := s.sessions[sessionID]; ok {
-		session.status = status
+	if session, ok := s.sessions[sessionID]; ok && session.status.State == "pending" {
+		if !s.clock.Now().Before(session.expiresAt) {
+			payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
+			session.status = OAuthStatus{State: "expired", Error: &payload}
+		} else {
+			session.status = status
+		}
 	}
 }
 

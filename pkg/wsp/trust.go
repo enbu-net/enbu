@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -46,27 +47,28 @@ func (e *TrustRootChangedError) Error() string {
 // first use). Checkpoints are kept per genesis, so without the pin a new
 // genesis would simply start an empty history.
 type TrustRoot struct {
-	path string
+	path  string
+	clock clock.Clock
 }
 
 // OpenTrustRoot returns the pin of workspace under dir: the genesis this device
 // trusts for that workspace ID, wherever its enbu.toml is.
-func OpenTrustRoot(dir, workspace string) *TrustRoot {
-	return openTrustRoot(dir, "trust-", workspace)
+func OpenTrustRoot(dir, workspace string, c clock.Clock) *TrustRoot {
+	return openTrustRoot(dir, "trust-", workspace, c)
 }
 
 // OpenRepositoryTrustRoot returns the pin of the enbu.toml at configPath: the
 // workspace and genesis this repository checkout uses. Both fields live in
 // enbu.toml, so the workspace pin alone would let a commit that changes the
 // workspace ID as well start over with no pin at all.
-func OpenRepositoryTrustRoot(dir, configPath string) *TrustRoot {
-	return openTrustRoot(dir, "repo-", configPath)
+func OpenRepositoryTrustRoot(dir, configPath string, c clock.Clock) *TrustRoot {
+	return openTrustRoot(dir, "repo-", configPath, c)
 }
 
 // openTrustRoot hashes key so it cannot escape dir.
-func openTrustRoot(dir, prefix, key string) *TrustRoot {
+func openTrustRoot(dir, prefix, key string, c clock.Clock) *TrustRoot {
 	sum := sha256.Sum256([]byte(key))
-	return &TrustRoot{path: filepath.Join(dir, prefix+hex.EncodeToString(sum[:])+".json")}
+	return &TrustRoot{clock: c, path: filepath.Join(dir, prefix+hex.EncodeToString(sum[:])+".json")}
 }
 
 // Pinned returns the pinned root, or a zero Root when none is pinned yet.
@@ -102,23 +104,36 @@ func (t *TrustRoot) Check(root Root) error {
 // a person confirms that the workspace was really re-founded. It returns the
 // root pinned before, or a zero Root.
 func (t *TrustRoot) Pin(root Root, replace bool) (Root, error) {
+	return t.pin(root, replace, nil)
+}
+
+// PinReplacing atomically replaces only the root authorized by a local founding
+// record. Repeating a replacement that already committed remains idempotent.
+func (t *TrustRoot) PinReplacing(root, expected Root) (Root, error) {
+	return t.pin(root, true, &expected)
+}
+
+func (t *TrustRoot) pin(root Root, replace bool, expected *Root) (Root, error) {
 	if root.Workspace == "" {
 		return Root{}, invalid("trust root has no workspace")
 	}
 	if err := validDigest(root.Genesis); err != nil {
 		return Root{}, invalid("trusted genesis digest: %v", err)
 	}
-	release, err := lockFile(t.path)
+	release, err := lockFile(t.path, t.clock)
 	if err != nil {
 		return Root{}, err
 	}
 	defer release()
 	pinned, err := t.Pinned()
-	if err != nil && !replace {
+	if err != nil && (!replace || expected != nil) {
 		return Root{}, err
 	}
 	if pinned == root {
 		return pinned, nil
+	}
+	if expected != nil && pinned != *expected {
+		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}
 	}
 	if pinned != (Root{}) && !replace {
 		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}

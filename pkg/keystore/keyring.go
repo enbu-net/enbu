@@ -5,10 +5,11 @@ import (
 	"io/fs"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/zalando/go-keyring"
 )
 
-type KeyringBackend struct{}
+type KeyringBackend struct{ Clock clock.Clock }
 
 // Probe checks access without writing a key or waiting indefinitely for a
 // locked or missing Secret Service.
@@ -24,10 +25,16 @@ func (k *KeyringBackend) probe() error {
 		}
 		ch <- result{err}
 	}()
+	c := k.Clock
+	if c == nil {
+		c = clock.New()
+	}
+	timer := c.NewTimer(3 * time.Second)
+	defer timer.Stop()
 	select {
 	case r := <-ch:
 		return r.err
-	case <-time.After(3 * time.Second):
+	case <-timer.Chan():
 		return errors.New("keyring unavailable: timed out")
 	}
 }

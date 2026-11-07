@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"slices"
 	"testing"
@@ -22,7 +23,7 @@ func TestTPMNativeLifecycle(t *testing.T) {
 	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
 		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a TPM 2.0 device")
 	}
-	b := platformHardware()
+	b := platformHardware(clock.New())
 	if d := b.Probe(); !d.Available {
 		t.Fatalf("native hardware unavailable: %+v", d)
 	}
@@ -55,9 +56,9 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
 		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a TPM 2.0 device")
 	}
-	native, ok := platformHardware().(*TPMBackend)
+	native, ok := platformHardware(clock.New()).(*TPMBackend)
 	if !ok {
-		t.Fatalf("platform hardware is %T, want a TPM", platformHardware())
+		t.Fatalf("platform hardware is %T, want a TPM", platformHardware(clock.New()))
 	}
 	if native.Device != "/dev/tpmrm0" && native.Device != "/dev/tpm0" && native.Device != "Windows TBS" {
 		t.Fatalf("device = %q, want the host TPM", native.Device)
@@ -156,9 +157,9 @@ func TestTPMNativeAttestation(t *testing.T) {
 	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
 		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a TPM 2.0 device")
 	}
-	b, ok := platformHardware().(*TPMBackend)
+	b, ok := platformHardware(clock.New()).(*TPMBackend)
 	if !ok {
-		t.Fatalf("platform hardware is %T, want a TPM", platformHardware())
+		t.Fatalf("platform hardware is %T, want a TPM", platformHardware(clock.New()))
 	}
 	id, md, err := b.Create()
 	if err != nil {

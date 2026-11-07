@@ -6,6 +6,7 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/spf13/cobra"
 )
@@ -42,9 +43,10 @@ func newAuthCommand(a *app.App) *cobra.Command {
 }
 
 func newAuthLoginCommand() *cobra.Command {
+	client := auth.Client{Clock: clock.New()}
 	return newAuthLoginCommandWithDeps(authLoginDeps{
-		browserLogin: auth.Login,
-		deviceLogin:  auth.LoginDevice,
+		browserLogin: client.Login,
+		deviceLogin:  client.LoginDevice,
 		openBrowser:  auth.OpenBrowser,
 	})
 }

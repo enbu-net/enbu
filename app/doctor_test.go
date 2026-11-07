@@ -10,6 +10,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/jonboulle/clockwork"
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -274,5 +280,127 @@ func TestDoctorGHCRWithoutTokenProviderDoesNotPanic(t *testing.T) {
 	credential := a.ociCredential("ghcr.io")
 	if _, err := credential(bg, "ghcr.io"); !apperr.Is(err, apperr.CodeNotAuthenticated) {
 		t.Fatalf("%v", err)
+	}
+}
+
+func TestDoctorWithoutIdentityStoreDoesNotInventBackendFailure(t *testing.T) {
+	a := &App{RepositoryDir: t.TempDir()}
+	r := a.Diagnose(bg)
+	doctorCheck(t, r, "config", "", "skip")
+	for _, c := range r.Checks {
+		if c.Name == "identity_backend" {
+			t.Fatal("unconfigured identity store reported as an unavailable backend")
+		}
+	}
+}
+
+func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
+	for _, limited := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unlimited", true: "caller-deadline"}[limited], func(t *testing.T) {
+			a := newAlice(t)
+			fake := clockwork.NewFakeClock()
+			ctx := bg
+			var cancel context.CancelFunc
+			if limited {
+				ctx, cancel = clock.WithTimeout(bg, fake, 2*time.Hour)
+				defer cancel()
+			}
+			checks := 0
+			a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenBlob: func(got context.Context, store storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+				checks++
+				deadline, ok := got.Deadline()
+				want, wantOK := ctx.Deadline()
+				if ok != wantOK || !deadline.Equal(want) {
+					t.Fatalf("diagnosis replaced caller budget: got %v/%t want %v/%t", deadline, ok, want, wantOK)
+				}
+				if limited {
+					fake.Advance(2 * time.Hour)
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return store.OpenBlob(got, kind, scope, rev, index)
+			}})
+			r := a.Diagnose(ctx)
+			if checks == 0 {
+				t.Fatal("no ciphertext checked")
+			}
+			if limited {
+				doctorCheck(t, r, "history", "default", "fail")
+				if r.Healthy {
+					t.Fatal("incomplete diagnosis reported healthy")
+				}
+			} else if !r.Healthy {
+				t.Fatalf("%+v", r)
+			}
+		})
+	}
+}
+
+type doctorKeys struct {
+	IdentityStore
+	active, retained identity.Identity
+}
+
+func (s doctorKeys) Load(string) (identity.Identity, error) { return s.active, nil }
+func (s doctorKeys) LoadRetained(string) ([]identity.Identity, error) {
+	if s.retained == nil {
+		return nil, nil
+	}
+	return []identity.Identity{s.retained}, nil
+}
+
+func TestDoctorChecksApprovedEncryptionRecipientWithoutHistory(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		t.Run(map[bool]string{false: "mismatch", true: "approved-retained-key"}[retained], func(t *testing.T) {
+			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+			cfg, err := a.loadProject()
+			if err != nil {
+				t.Fatal(err)
+			}
+			approved, err := a.Identities.Load(cfg.WorkspaceID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			other := identity.FromX25519(mustKeyPair(t).Identity)
+			keys := doctorKeys{IdentityStore: a.Identities, active: other}
+			if retained {
+				keys.retained = approved
+			} else {
+				defer func() { _ = approved.Close() }()
+			}
+			a.Identities = keys
+			r := a.Diagnose(bg)
+			doctorCheck(t, r, "membership", "", "ok")
+			doctorCheck(t, r, "history", "default", "skip")
+			status := "fail"
+			if retained {
+				status = "ok"
+			}
+			doctorCheck(t, r, "encryption_key", "", status)
+			if r.Healthy != retained {
+				t.Fatalf("mismatched recipient health: %+v", r)
+			}
+		})
+	}
+}
+
+type doctorContextKeys struct {
+	IdentityStore
+	got context.Context
+}
+
+func (s *doctorContextKeys) Doctor(ctx context.Context) identity.Diagnosis {
+	s.got = ctx
+	return identity.Diagnosis{FallbackAvailable: true}
+}
+func TestDoctorPassesContextToIdentityProbe(t *testing.T) {
+	a := newAlice(t)
+	keys := &doctorContextKeys{IdentityStore: a.Identities}
+	a.Identities = keys
+	ctx, cancel := context.WithCancel(bg)
+	cancel()
+	a.Diagnose(ctx)
+	if keys.got != ctx || !errors.Is(keys.got.Err(), context.Canceled) {
+		t.Fatal("identity probe lost caller cancellation")
 	}
 }

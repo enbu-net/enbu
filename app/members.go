@@ -15,8 +15,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
-// maxJoinRequests bounds how many request refs are read, so someone able to
-// write to storage cannot make listing unbounded.
+// maxJoinRequests caps the number of distinct pending requests displayed.
+// The protocol loader separately bounds listed refs and fetched bytes.
 var maxJoinRequests = 256
 
 type MemberInfo struct {
@@ -84,6 +84,9 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 		return nil, err
 	}
 	for _, p := range pending {
+		if len(requests) >= maxJoinRequests {
+			break
+		}
 		requests = append(requests, JoinRequestInfo{DeviceID: string(p.DeviceID()), Fingerprint: p.DeviceID().Fingerprint(), Recipient: p.Recipient,
 			Algorithm: string(p.Signing.Alg), RequestedAt: time.Unix(p.CreatedAt, 0).UTC(), KeyUpdate: p.Replaces != ""})
 	}
@@ -101,12 +104,13 @@ func (a *App) ListJoinRequests(ctx context.Context) (requests []JoinRequestInfo,
 
 // pendingRequests lists the verified requests of devices that are not members,
 // and the key updates of members whose recipient is still the one the update
-// replaces, with identical requests of one device merged. At most maxJoinRequests are
-// read, so someone able to write to storage cannot make the list unbounded.
+// replaces, with identical requests of one device merged. The protocol loader
+// bounds work. Keep the complete verified set here: approval must detect a
+// conflicting recipient even when that request lies beyond the UI display cap.
 func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, error) {
 	all, err := wsp.ListJoinRequests(ctx, s.store, s.workspace)
 	if err != nil {
-		return nil, storageError(err)
+		return nil, wspError(err)
 	}
 	type key struct {
 		device    signing.DeviceID
@@ -129,9 +133,6 @@ func (s *session) pendingRequests(ctx context.Context) ([]wsp.PendingRequest, er
 		}
 		seen[k] = true
 		out = append(out, p)
-		if len(out) >= maxJoinRequests {
-			break
-		}
 	}
 	return out, nil
 }
@@ -503,7 +504,7 @@ func (s *session) hasTrustedHead(ctx context.Context, resource string) (bool, er
 	if err != nil {
 		return false, wspError(err)
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return false, err
 	}

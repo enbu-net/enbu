@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
@@ -56,7 +56,7 @@ func setupLogger() *os.File {
 	}
 	dir = filepath.Join(dir, "enbu")
 	_ = os.MkdirAll(dir, 0o700)
-	name := filepath.Join(dir, fmt.Sprintf("enbu-%s.log", time.Now().Format("20060102-150405")))
+	name := filepath.Join(dir, fmt.Sprintf("enbu-%s.log", clock.New().Now().Format("20060102-150405")))
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil
@@ -132,7 +132,7 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	core := desktop.NewService(app.New())
+	core := desktop.NewService(app.New(clock.New()))
 	core.AppVersion = Version
 	core.Start(ctx)
 

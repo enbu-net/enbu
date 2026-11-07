@@ -5,6 +5,8 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/jonboulle/clockwork"
 	"sync"
 	"time"
 )
@@ -42,25 +44,25 @@ type tpmAuth struct {
 	credential []byte
 	value      []byte // the authValue derived from the secret
 	at         time.Time
-	now        func() time.Time
+	clock      clock.Clock
 	// expiry wipes the value when its TTL ends, even if nothing asks for it
 	// again; gen tells it whether the value it was armed for is still there.
-	expiry *time.Timer
+	expiry clockwork.Timer
 	gen    uint64
 }
 
-func (a *tpmAuth) clock() time.Time {
-	if a.now != nil {
-		return a.now()
+func (a *tpmAuth) timeSource() clock.Clock {
+	if a.clock != nil {
+		return a.clock
 	}
-	return time.Now()
+	return clock.New()
 }
 
 func (a *tpmAuth) cached(credential []byte) []byte {
 	if a.value == nil {
 		return nil
 	}
-	if a.clock().Sub(a.at) > authTTL {
+	if a.timeSource().Now().Sub(a.at) >= authTTL {
 		clear(a.value)
 		a.credential, a.value = nil, nil
 		return nil
@@ -78,13 +80,13 @@ func (a *tpmAuth) store(credential, secret []byte) ([]byte, error) {
 		return nil, err
 	}
 	clear(a.value)
-	a.credential, a.value, a.at = credential, value, a.clock()
+	a.credential, a.value, a.at = credential, value, a.timeSource().Now()
 	a.gen++
 	gen := a.gen
 	if a.expiry != nil {
 		a.expiry.Stop()
 	}
-	a.expiry = time.AfterFunc(authTTL, func() { a.expire(gen) })
+	a.expiry = a.timeSource().AfterFunc(authTTL, func() { a.expire(gen) })
 	return value, nil
 }
 
@@ -140,6 +142,7 @@ func (b *TPMBackend) enrollAuth() (credential, value []byte, err error) {
 	a := &b.auth
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.clock = b.Clock
 	if v := a.cached(nil); v != nil {
 		return a.credential, bytes.Clone(v), nil
 	}
@@ -171,6 +174,7 @@ func (b *TPMBackend) authFor(credential []byte) ([]byte, error) {
 	a := &b.auth
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.clock = b.Clock
 	if v := a.cached(credential); v != nil {
 		return bytes.Clone(v), nil
 	}

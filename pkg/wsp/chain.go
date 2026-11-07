@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -32,10 +33,11 @@ func (e *ForkError) Is(target error) bool { return target == ErrControlFork }
 
 // ControlView is the verified Control DAG as storage currently shows it.
 type ControlView struct {
-	Workspace string
-	Genesis   digest.Digest
-	Heads     []*Verified // sorted by digest
-	verified  map[digest.Digest]*Verified
+	Workspace  string
+	Genesis    digest.Digest
+	Heads      []*Verified // sorted by digest
+	verified   map[digest.Digest]*Verified
+	membership sync.Map // immutable view: membershipQuery -> bool
 }
 
 // Get returns a verified Control of the DAG by digest.
@@ -325,4 +327,74 @@ func publishChild(ctx context.Context, store storage.Store, view *ControlView, p
 		return nil, &ForkError{Heads: after.Heads}
 	}
 	return v, nil
+}
+
+// MembershipUnbroken checks that id was never removed between from and head.
+// Absence before a device first joins is not removal. This also lets a device
+// judge whether its own accepted-state checkpoint predates a revocation.
+// Fork branches are checked until they meet the ancestors of from.
+type membershipQuery struct {
+	head, from digest.Digest
+	id         signing.DeviceID
+}
+
+func (v *ControlView) MembershipUnbroken(head, from digest.Digest, id signing.DeviceID) bool {
+	key := membershipQuery{head: head, from: from, id: id}
+	if cached, ok := v.membership.Load(key); ok {
+		return cached.(bool)
+	}
+	result := v.membershipUnbroken(head, from, id)
+	v.membership.Store(key, result)
+	return result
+}
+
+// Signed states commonly share a Control epoch. Memoizing its decision avoids
+// re-walking the same immutable history for every candidate revision.
+func (v *ControlView) membershipUnbroken(head, from digest.Digest, id signing.DeviceID) bool {
+	older := map[digest.Digest]bool{}
+	queue := []digest.Digest{from}
+	for len(queue) > 0 {
+		d := queue[0]
+		queue = queue[1:]
+		if older[d] {
+			continue
+		}
+		c, ok := v.Get(d)
+		if !ok {
+			return false
+		}
+		older[d] = true
+		queue = append(queue, c.Parents...)
+	}
+	seen := map[digest.Digest]bool{}
+	reached := false
+	queue = []digest.Digest{head}
+	for len(queue) > 0 {
+		d := queue[0]
+		queue = queue[1:]
+		if d == from {
+			reached = true
+		}
+		if seen[d] || older[d] {
+			continue
+		}
+		seen[d] = true
+		c, ok := v.Get(d)
+		if !ok {
+			return false
+		}
+		if _, present := c.Principal(id); !present {
+			for _, p := range c.Parents {
+				parent, ok := v.Get(p)
+				if !ok {
+					return false
+				}
+				if _, wasPresent := parent.Principal(id); wasPresent {
+					return false
+				}
+			}
+		}
+		queue = append(queue, c.Parents...)
+	}
+	return reached
 }

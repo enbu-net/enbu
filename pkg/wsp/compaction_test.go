@@ -3,6 +3,7 @@ package wsp
 import (
 	"context"
 	"errors"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -126,9 +127,9 @@ func TestAboveFloors(t *testing.T) {
 }
 
 func TestCheckpointExcusesCompactedHeads(t *testing.T) {
-	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"))
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, digest.FromString("genesis"), clock.New())
 	g, ids := graphOf(map[string][]string{"old": nil})
-	if err := cps.AcceptStates(testResource, g, nil, []digest.Digest{ids["old"]}); err != nil {
+	if err := cps.AcceptStates(testResource, g, nil, []digest.Digest{ids["old"]}, d("control")); err != nil {
 		t.Fatal(err)
 	}
 	later, lids := graphOf(map[string][]string{"head": {"old"}})
@@ -139,7 +140,7 @@ func TestCheckpointExcusesCompactedHeads(t *testing.T) {
 	if err := cps.CheckStates(testResource, later, excused); err != nil {
 		t.Fatal(err)
 	}
-	if err := cps.AcceptStates(testResource, later, excused, []digest.Digest{lids["head"]}); err != nil {
+	if err := cps.AcceptStates(testResource, later, excused, []digest.Digest{lids["head"]}, d("control")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := cps.State(testResource); len(got) != 1 || got[0] != lids["head"] {

@@ -2,7 +2,7 @@ package apptest
 
 import (
 	"context"
-	"time"
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -51,7 +51,7 @@ func Control(ctx context.Context, store storage.Store, repoDir string, ids KeySt
 
 // JoinRequest makes this device ask to join the workspace, as `enbu init` does
 // for a device that is not a member. It returns the device id.
-func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, ids KeyStore) (string, error) {
+func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, ids KeyStore, c clock.Clock) (string, error) {
 	id, _, _, err := ids.Create(workspaceID)
 	if err != nil {
 		return "", err
@@ -62,7 +62,7 @@ func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, i
 		return "", err
 	}
 	defer func() { _ = signer.Close() }()
-	request, err := wsp.NewJoinRequest(workspaceID, id.Recipient().String(), time.Now(), signer)
+	request, err := wsp.NewJoinRequest(workspaceID, id.Recipient().String(), c.Now(), signer)
 	if err != nil {
 		return "", err
 	}

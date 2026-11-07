@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"strings"
 	"testing"
@@ -30,7 +31,7 @@ func TestIdentityCommandsWithoutAuthentication(t *testing.T) {
 
 type doctorKeyStore struct{ staticKeyStore }
 
-func (*doctorKeyStore) Doctor() identity.Diagnosis {
+func (*doctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{
 		Backend: "tpm", Reason: "no TPM",
 		KeyringAvailable:  true,

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -54,7 +55,9 @@ func (a *App) IdentityInfo() (info identity.PublicInfo, err error) {
 	return info, nil
 }
 
-func (a *App) DiagnoseIdentity() identity.Diagnosis { return a.Identities.Doctor() }
+func (a *App) DiagnoseIdentity(ctx context.Context) identity.Diagnosis {
+	return a.Identities.Doctor(ctx)
+}
 
 func (a *App) LoadWorkspaceIdentities() (ids []agecrypto.Identity, err error) {
 	defer apperr.NormalizeInto(&err)

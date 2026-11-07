@@ -254,13 +254,19 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			}
 			secrets, parents = maps.Clone(cur.secrets), cur.parents()
 		}
-		if err := change(secrets); err != nil {
-			if err == errNoChange && len(parents) <= 1 {
-				a.emitStepProgress(op, "pull_secrets", "done")
-				return nil
-			}
-			if err != errNoChange {
-				return err
+		// A membership change after Publish may restart this call. If one
+		// of our revisions is already in the trusted result, its mutation has
+		// committed; applying it again would turn a successful add into a
+		// duplicate error or overwrite a later writer's work.
+		if !publishedInRead(cur, published) {
+			if err := change(secrets); err != nil {
+				if err == errNoChange && len(parents) <= 1 {
+					a.emitStepProgress(op, "pull_secrets", "done")
+					return nil
+				}
+				if err != errNoChange {
+					return err
+				}
 			}
 		}
 		// Look once more just before publishing: heads that appeared during the
@@ -271,7 +277,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			if err != nil {
 				return err
 			}
-			accepted, err := s.cps.State(resource)
+			accepted, err := s.cps.Accepted(resource)
 			if err != nil {
 				return err
 			}
@@ -317,6 +323,21 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		return nil
 	}
 	return apperr.New(apperr.CodeConflict, fmt.Sprintf("secrets changed by other users while saving; failed after %d attempts", attempts), nil)
+}
+
+func publishedInRead(read *resourceRead, published []digest.Digest) bool {
+	if read == nil {
+		return false
+	}
+	for _, head := range read.heads {
+		ancestors := read.view.Graph.Ancestors(head.Digest)
+		for _, revision := range published {
+			if ancestors[revision] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sameHeads(a, b []*wsp.VerifiedState) bool {
@@ -471,12 +492,15 @@ func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, erro
 	if err != nil {
 		return nil, err
 	}
-	accepted, err := s.cps.State(resource)
+	accepted, err := s.cps.Accepted(resource)
 	if err != nil {
 		return nil, err
 	}
 	keys := map[string]bool{}
-	for _, st := range historyStates(sv, s.trustedHeads(sv, accepted)) {
+	history := historyStates(sv, s.trustedHeads(sv, accepted))
+	// Decryption can fetch a blob: map order must not decide external effects.
+	for _, revision := range slices.Sorted(maps.Keys(history)) {
+		st := history[revision]
 		secrets, err := s.decrypt(ctx, st)
 		var noMatch *agecrypto.NoIdentityMatchError
 		if errors.As(err, &noMatch) {

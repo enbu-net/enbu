@@ -290,12 +290,18 @@ func (s ociStore) Discover(ctx context.Context, kind Kind, scope string) ([]dige
 		for _, tag := range tags {
 			if rev, ok := revFromName(prefix, tag); ok && !strings.ContainsAny(tag, "/") {
 				revs = append(revs, rev)
+				if kind == KindRequest && len(revs) > MaxRequestRefs {
+					return ErrDiscoveryLimit
+				}
 			}
 		}
 		return nil
 	})
 	if errors.Is(err, errdef.ErrNotFound) || repositoryUnknown(err) {
 		return nil, nil // nothing was ever published here
+	}
+	if err != nil {
+		return nil, remoteError(err)
 	}
 	sort.Slice(revs, func(i, j int) bool { return revs[i] < revs[j] })
 	return revs, remoteError(err)

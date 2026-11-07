@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
@@ -198,6 +201,21 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	// Alice writes on top of what she trusts, and keeps working.
 	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
 		t.Fatal(err)
+	}
+	// Re-admitting the same signing key must not revive the old-control
+	// forgery that all remaining members already set aside.
+	if _, err := bob.InitializeRepository(bg); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.ApproveMember(bg, string(bobsID)); err != nil {
+		t.Fatal(err)
+	}
+	got, err = alice.ListSecrets(bg, "default")
+	if err != nil || got["KEY"] != "v1" || got["AFTER"] != "ok" {
+		t.Fatalf("readmission revived stale content: %v %v", got, err)
+	}
+	if err := bob.AddSecret(bg, "default", "READMITTED", "fresh"); err != nil {
+		t.Fatalf("fresh write after readmission: %v", err)
 	}
 }
 
@@ -401,7 +419,7 @@ func TestFounderRecordsTheGenesisBeforePublishingIt(t *testing.T) {
 	}
 }
 
-func TestFailedPublishLeavesNoGenesisBehind(t *testing.T) {
+func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 	fail := true
 	a := foundingApp(t, func(context.Context, []byte) error {
 		if fail {
@@ -412,8 +430,12 @@ func TestFailedPublishLeavesNoGenesisBehind(t *testing.T) {
 	if _, err := a.InitializeRepository(bg); err == nil {
 		t.Fatal("init succeeded although the control could not be published")
 	}
-	if g := genesisInConfig(t, a); g != "" {
-		t.Fatalf("control_genesis %q was left for a control that does not exist", g)
+	g := genesisInConfig(t, a)
+	if g == "" {
+		t.Fatal("failed publication lost the trusted genesis")
+	}
+	if _, err := os.Stat(pendingGenesisForTest(t, a, g)); err != nil {
+		t.Fatalf("pending genesis: %v", err)
 	}
 	fail = false
 	if _, err := a.InitializeRepository(bg); err != nil {
@@ -500,5 +522,155 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 	}
 	if !moved || s.head.Height != 1 || read.heads[0].Control != s.head.Digest {
 		t.Fatalf("moved=%v head=%d state written under %s: it still used the old member list", moved, s.head.Height, read.heads[0].Control)
+	}
+}
+
+func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires Unix directory permission enforcement")
+	}
+	var a *App
+	var pending string
+	a = foundingApp(t, func(_ context.Context, blob []byte) error {
+		pending = pendingGenesisForTest(t, a, string(digest.FromBytes(blob)))
+		return os.Chmod(filepath.Dir(pending), 0500)
+	})
+	t.Cleanup(func() {
+		if pending != "" {
+			_ = os.Chmod(filepath.Dir(pending), 0700)
+		}
+	})
+	first, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Founded {
+		t.Fatal("initial founding not reported")
+	}
+	if _, err := os.Stat(pending); err != nil {
+		t.Fatalf("expected cleanup to fail: %v", err)
+	}
+	again, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Founded {
+		t.Fatal("leftover recovery bytes reported a new founding")
+	}
+	if again.ControlGenesis != first.ControlGenesis {
+		t.Fatal("retry changed genesis")
+	}
+}
+func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
+	calls := 0
+	a := foundingApp(t, func(context.Context, []byte) error { calls++; return errors.New("offline") })
+	if _, err := a.InitializeRepository(bg); err == nil {
+		t.Fatal("initial publication did not fail")
+	}
+	genesis := genesisInConfig(t, a)
+	if err := os.WriteFile(pendingGenesisForTest(t, a, genesis), []byte("different genesis bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("tampered recovery: %v", err)
+	}
+	if calls != 1 {
+		t.Fatal("tampered recovery bytes reached storage")
+	}
+	if genesisInConfig(t, a) != genesis {
+		t.Fatal("tampered recovery changed trust root")
+	}
+}
+
+func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
+	a := newAlice(t)
+	cfg := config.NewProjectWithEnvironment("default")
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	published, offline := false, true
+	a.Storage = storagetest.Wrap(storagetest.NewMemory(), storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if err := next.Publish(ctx, o); err != nil {
+				return err
+			}
+			if o.Kind == storage.KindControl {
+				published = true
+			}
+			return nil
+		},
+		Discover: func(ctx context.Context, next storage.Store, k storage.Kind, scope string) ([]digest.Digest, error) {
+			if published && offline {
+				return nil, errors.New("disconnected during verification")
+			}
+			return next.Discover(ctx, k, scope)
+		},
+	})
+	if _, err := a.InitializeRepository(bg); err == nil {
+		t.Fatal("verification unexpectedly succeeded")
+	}
+	genesis := genesisInConfig(t, a)
+	if _, err := os.Stat(pendingGenesisForTest(t, a, genesis)); err != nil {
+		t.Fatalf("recovery removed before trust committed: %v", err)
+	}
+	offline = false
+	result, err := a.InitializeRepository(bg)
+	if err != nil {
+		t.Fatalf("retry new workspace in pinned checkout: %v", err)
+	}
+	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
+		t.Fatal("retry changed workspace or root")
+	}
+}
+
+func pendingGenesisForTest(t *testing.T, a *App, genesis string) string {
+	t.Helper()
+	ws, err := a.WorkspaceID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := a.pendingGenesisPath(ws, genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
+	target := newAlice(t)
+	previous, err := target.repositoryTrustRoot().Pinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	offline := true
+	source := &App{RepositoryDir: t.TempDir(), CheckpointDir: target.CheckpointDir, Identities: target.Identities, TokenProvider: target.TokenProvider, RepoDetector: target.RepoDetector}
+	source.Storage = storagetest.Wrap(storagetest.NewMemory(), storagetest.Hooks{Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+		calls++
+		if offline {
+			return errors.New("offline")
+		}
+		return next.Publish(ctx, o)
+	}})
+	if _, err := source.InitializeRepository(bg); err == nil {
+		t.Fatal("expected interrupted founding")
+	}
+	cfg, err := config.LoadProjectFrom(source.RepositoryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveProjectTo(target.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	target.Storage = source.Storage
+	offline = false
+	if _, err := target.InitializeRepository(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+		t.Fatalf("foreign pending founding accepted: %v", err)
+	}
+	pinned, err := target.repositoryTrustRoot().Pinned()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pinned != previous || calls != 1 {
+		t.Fatalf("foreign recovery changed trust or published: %+v calls %d", pinned, calls)
 	}
 }

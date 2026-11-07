@@ -9,6 +9,7 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/app/apptest"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/spf13/cobra"
 )
@@ -43,7 +44,7 @@ func newJoiner(t *testing.T, founder *app.App) *app.App {
 // requestJoin leaves a join request the way `enbu init` does for a new device.
 func requestJoin(t *testing.T, b *app.App) (deviceID, fingerprint string) {
 	t.Helper()
-	id, err := apptest.JoinRequest(context.Background(), b.Storage, testWorkspaceID, b.Identities)
+	id, err := apptest.JoinRequest(context.Background(), b.Storage, testWorkspaceID, b.Identities, clock.New())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -67,6 +66,7 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 			removed = append(removed, d)
 		}
 	}
+	slices.Sort(removed)
 	scope := storage.StateScope(s.workspace, resource)
 	// Revisions that failed to verify carry no authority and need no record,
 	// but they take space and count against the listing too.
@@ -179,7 +179,7 @@ func (s *session) publishCompaction(ctx context.Context, resource string, floor 
 	for start := 0; start < len(removed); start += wsp.MaxCompactionRemoved {
 		end := min(start+wsp.MaxCompactionRemoved, len(removed))
 		c := wsp.Compaction{Workspace: s.workspace, Resource: resource, Floor: floor, Removed: removed[start:end],
-			Control: s.head.Digest, Author: s.self(), CreatedAt: time.Now().Unix()}
+			Control: s.head.Digest, Author: s.self(), CreatedAt: s.app.now().Unix()}
 		blob, err := wsp.SignCompaction(c, s.signer)
 		if err != nil {
 			return err

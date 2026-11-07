@@ -2,6 +2,7 @@ package identity
 
 import (
 	"bytes"
+	"context"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
@@ -17,6 +18,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"filippo.io/age"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/keystore"
 )
@@ -130,14 +132,14 @@ func (m *Manager) vault(backend string) Vault {
 // softwareVault picks where a new software key goes: the OS keyring, or
 // systemd-creds when the keyring is unavailable.
 func (m *Manager) softwareVault() (string, Vault, error) {
-	err := probeVault(m.Vault)
+	err := probeVault(context.Background(), m.Vault)
 	if err == nil {
 		return backendKeyring, m.Vault, nil
 	}
 	if m.Creds == nil {
 		return "", nil, unavailable("OS keyring unavailable", err)
 	}
-	credsErr := probeVault(m.Creds)
+	credsErr := probeVault(context.Background(), m.Creds)
 	if credsErr == nil {
 		return backendCreds, m.Creds, nil
 	}
@@ -152,9 +154,15 @@ func softwareName(backend string) string {
 	return "OS keyring"
 }
 
-func probeVault(v Vault) error {
+func probeVault(ctx context.Context, v Vault) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if v == nil {
 		return errors.New("not configured")
+	}
+	if probe, ok := v.(interface{ Probe(context.Context) error }); ok {
+		return probe.Probe(ctx)
 	}
 	if probe, ok := v.(interface{ Probe() error }); ok {
 		return probe.Probe()
@@ -166,11 +174,11 @@ func probeVault(v Vault) error {
 // or paired with an ML-KEM-768 seed.
 func hardwareAlgorithm(alg string) bool { return alg == algP256 || alg == algMLKEMP256 }
 
-func New() *Manager {
+func New(c clock.Clock) *Manager {
 	m := &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
-		Vault: &keystore.KeyringBackend{}, Hardware: platformHardware(), Classical: os.Getenv(classicalFlag) == "1"}
+		Vault: &keystore.KeyringBackend{Clock: c}, Hardware: platformHardware(c), Classical: os.Getenv(classicalFlag) == "1"}
 	if runtime.GOOS == "linux" {
-		m.Creds = &keystore.CredsBackend{Dir: filepath.Join(config.DataDir(), "credentials")}
+		m.Creds = &keystore.CredsBackend{Clock: c, Dir: filepath.Join(config.DataDir(), "credentials")}
 	}
 	return m
 }
@@ -645,17 +653,17 @@ func (m *Manager) Info(workspaceID string) (PublicInfo, error) {
 
 // Doctor probes capabilities and software key storage without creating a
 // durable key.
-func (m *Manager) Doctor() Diagnosis {
+func (m *Manager) Doctor(ctx context.Context) Diagnosis {
 	d := Diagnosis{Reason: "hardware backend unavailable"}
 	if m.Hardware != nil {
 		d = m.Hardware.Probe()
 	}
-	keyringErr := probeVault(m.Vault)
+	keyringErr := probeVault(ctx, m.Vault)
 	d.KeyringAvailable = keyringErr == nil
 	if keyringErr != nil {
 		d.KeyringReason = keyringErr.Error()
 	}
-	credsErr := probeVault(m.Creds)
+	credsErr := probeVault(ctx, m.Creds)
 	d.CredsAvailable = credsErr == nil
 	if credsErr != nil {
 		d.CredsReason = credsErr.Error()

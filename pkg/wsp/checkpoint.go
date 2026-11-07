@@ -1,6 +1,7 @@
 package wsp
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/fsutil"
 
 	"github.com/opencontainers/go-digest"
@@ -19,12 +21,12 @@ import (
 
 // checkpointVersion is the on-disk format. Files of an older format held a
 // single digest per object and are not carried over: they start empty.
-const checkpointVersion = 2
+const checkpointVersion = 3
 
 type checkpointFile struct {
 	Version int                        `json:"version"`
 	Control []digest.Digest            `json:"control,omitempty"`
-	States  map[string][]digest.Digest `json:"states,omitempty"`
+	States  map[string]StateAcceptance `json:"states,omitempty"`
 }
 
 // Checkpoints persists the heads a client has accepted, locally only, so
@@ -35,8 +37,9 @@ type checkpointFile struct {
 // Every update is a read-modify-write under an OS file lock, so concurrent
 // processes cannot overwrite each other.
 type Checkpoints struct {
-	path string
-	mu   sync.Mutex
+	path  string
+	clock clock.Clock
+	mu    sync.Mutex
 }
 
 // OpenCheckpoints returns the checkpoint file for a workspace under dir. A
@@ -44,9 +47,9 @@ type Checkpoints struct {
 // name: pointing the same workspace at a different genesis starts a separate
 // history instead of being mistaken for a rollback. Both values are hashed so
 // they cannot escape dir.
-func OpenCheckpoints(dir, workspace string, genesis digest.Digest) *Checkpoints {
+func OpenCheckpoints(dir, workspace string, genesis digest.Digest, c clock.Clock) *Checkpoints {
 	sum := sha256.Sum256([]byte(workspace + "\x00" + string(genesis)))
-	return &Checkpoints{path: filepath.Join(dir, hex.EncodeToString(sum[:])+".json")}
+	return &Checkpoints{clock: c, path: filepath.Join(dir, hex.EncodeToString(sum[:])+".json")}
 }
 
 func (c *Checkpoints) read() (checkpointFile, error) {
@@ -85,7 +88,10 @@ const lockTimeout = 5 * time.Second
 
 // lockFile takes an exclusive OS lock on path+".lock", waiting up to
 // lockTimeout, and returns the function that releases it.
-func lockFile(path string) (func(), error) {
+func lockFile(path string, c clock.Clock) (func(), error) {
+	if c == nil {
+		c = clock.New()
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -93,7 +99,8 @@ func lockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(lockTimeout)
+	ctx, cancel := clock.WithTimeout(context.Background(), c, lockTimeout)
+	defer cancel()
 	for {
 		ok, err := tryLock(lock)
 		if err != nil {
@@ -103,11 +110,10 @@ func lockFile(path string) (func(), error) {
 		if ok {
 			return func() { unlock(lock); _ = lock.Close() }, nil
 		}
-		if time.Now().After(deadline) {
+		if err := clock.Wait(ctx, c, 10*time.Millisecond); err != nil {
 			_ = lock.Close()
 			return nil, fmt.Errorf("timed out waiting for the lock %s.lock", path)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -135,7 +141,7 @@ func writeFileAtomic(path string, b []byte) error {
 func (c *Checkpoints) update(fn func(*checkpointFile) (bool, error)) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	release, err := lockFile(c.path)
+	release, err := lockFile(c.path, c.clock)
 	if err != nil {
 		return err
 	}
@@ -159,8 +165,21 @@ func (c *Checkpoints) Control() ([]digest.Digest, error) {
 	return f.Control, err
 }
 
+// StateAcceptance binds accepted heads to the Control epoch in which this
+// observer read them. Revocation checks must start at acceptance, not authorship.
+type StateAcceptance struct {
+	Heads   []digest.Digest `json:"heads"`
+	Control digest.Digest   `json:"control"`
+}
+
 // State returns the accepted heads of resource, or nil if none.
 func (c *Checkpoints) State(resource string) ([]digest.Digest, error) {
+	state, err := c.Accepted(resource)
+	return state.Heads, err
+}
+
+// Accepted reads heads and their acceptance epoch from the same file snapshot.
+func (c *Checkpoints) Accepted(resource string) (StateAcceptance, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f, err := c.read()
@@ -232,20 +251,20 @@ func shownOrExcused(g *Graph, excused func(digest.Digest) bool) func(digest.Dige
 // author has been removed. Accepted heads a compaction removed (excused) are
 // dropped. The check runs again under the lock, so a view that
 // became stale while the caller was working is rejected rather than silently dropped.
-func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest) error {
+func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest, control digest.Digest) error {
 	heads = append([]digest.Digest(nil), heads...)
 	sortDigests(heads)
 	return c.update(func(f *checkpointFile) (bool, error) {
-		if d, gone := missingFrom(f.States[resource], shownOrExcused(g, excused)); gone {
+		if d, gone := missingFrom(f.States[resource].Heads, shownOrExcused(g, excused)); gone {
 			return false, fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
 		}
-		if sameDigests(f.States[resource], heads) {
+		if sameDigests(f.States[resource].Heads, heads) && f.States[resource].Control == control {
 			return false, nil
 		}
 		if f.States == nil {
-			f.States = map[string][]digest.Digest{}
+			f.States = map[string]StateAcceptance{}
 		}
-		f.States[resource] = heads
+		f.States[resource] = StateAcceptance{Heads: heads, Control: control}
 		return true, nil
 	})
 }

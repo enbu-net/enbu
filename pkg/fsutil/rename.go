@@ -3,6 +3,8 @@
 package fsutil
 
 import (
+	"context"
+	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"time"
@@ -28,7 +30,8 @@ const (
 // sync is best effort: the rename has happened by then, and reporting it as
 // failed would make callers retry or roll back a change that is in place.
 func Rename(oldpath, newpath string) error {
-	if err := retry(func() error { return os.Rename(oldpath, newpath) }, transientRenameError, time.Sleep); err != nil {
+	c := clock.New()
+	if err := retry(func() error { return os.Rename(oldpath, newpath) }, transientRenameError, func(d time.Duration) { _ = clock.Wait(context.Background(), c, d) }); err != nil {
 		return err
 	}
 	_ = syncRenamed(oldpath, newpath)
