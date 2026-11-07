@@ -53,8 +53,14 @@ func (w *World) GeneratedTeamGroup(ctx context.Context, key, value string) error
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[target].ID); err != nil {
 		return err
 	}
-	if err := w.Devices[0].App.SyncSecrets(ctx, "default"); err != nil {
-		return err
+	// An observer may retain a branch it accepted before the author's
+	// removal, while the founder correctly set it aside. Equal plaintext
+	// does not imply equal heads. Seal every observer's accepted ancestry
+	// before the next generated group changes these values again.
+	for i, device := range w.Devices {
+		if err := device.App.SyncSecrets(ctx, "default"); err != nil {
+			return fmt.Errorf("seal continuing observer %d: %w", i, err)
+		}
 	}
 	return w.Check(ctx, "default")
 }

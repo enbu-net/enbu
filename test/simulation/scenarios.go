@@ -35,6 +35,13 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return e
 	}
 	w.Model["default"]["BASE"] = "original"
+	if strings.HasPrefix(name, "retained-observer-") {
+		parts := strings.Split(strings.TrimPrefix(name, "retained-observer-"), "-")
+		if len(parts) != 2 || parts[0] != "value" && parts[0] != "delete" || parts[1] != "warm" && parts[1] != "cold" {
+			return fmt.Errorf("invalid retained observer scenario %q", name)
+		}
+		return w.RetainedObserver(ctx, parts[1] == "cold", parts[0] == "delete")
+	}
 	if name == "observer-control-cold" || name == "observer-control-warm" {
 		return w.ObserverControlEquivocation(ctx, name == "observer-control-cold")
 	}

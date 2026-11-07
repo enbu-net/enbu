@@ -13,6 +13,44 @@ def selected(plan, name):
 @pytest.mark.parametrize(
     "path",
     [
+        "app/app.go",
+        "app/members.go",
+        "pkg/auth/token.go",
+        "pkg/storage/oci.go",
+        "pkg/clock/clock.go",
+        "test/simulation/session_http_test.go",
+    ],
+)
+def test_native_session_team_follows_credentials_and_team_dependencies(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestNativeSessionTeamSmoke")
+    assert selected(plan, "TestNativeSessionTeamClocks")
+
+
+def test_auth_changes_do_not_select_unrelated_merge_matrix():
+    plan = dst_plan.select(["pkg/auth/token.go"])
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/members.go",
+        "pkg/wsp/state.go",
+        "pkg/wsp/checkpoint.go",
+        "pkg/clock/clock.go",
+        "test/simulation/retained_observer.go",
+    ],
+)
+def test_retained_observer_follows_authority_and_checkpoint_changes(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestRetainedObserverSmoke")
+    assert selected(plan, "TestRetainedObserverClocks")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
         "app/history.go",
         "app/history_index.go",
         "app/members.go",

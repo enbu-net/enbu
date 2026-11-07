@@ -151,7 +151,9 @@ def select(paths: list[str], full: bool = False) -> dict:
             }:
                 broad = True
                 mutation = True
-            elif parts[1] not in {"auth", "provider", "keystore", "process", "export"}:
+            elif parts[1] == "auth":
+                files.add(SIM / "session_http_test.go")
+            elif parts[1] not in {"provider", "keystore", "process", "export"}:
                 # Unknown application dependencies must not silently skip DST.
                 broad = mutation = True
             if domain:
@@ -179,6 +181,8 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "observer_equivocation_test.go",
                     SIM / "observer_control_test.go",
                     SIM / "first_contact_test.go",
+                    SIM / "session_http_test.go",
+                    SIM / "retained_observer_test.go",
                 }
                 mutation |= domain in {
                     "secrets",
