@@ -134,7 +134,8 @@ jobs:
 
   simulation-status:
     name: Simulation
-    if: always()
+    # An always() job can keep a superseded push holding workflow concurrency.
+    if: ${{ !cancelled() }}
     needs: [plan, simulation]
     runs-on: ubuntu-26.04
     timeout-minutes: 5

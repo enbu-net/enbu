@@ -368,7 +368,8 @@ jobs:
 
   status-check:
     name: Check
-    if: always()
+    # Aggregate failures, but let cancelled workflows finish immediately.
+    if: ${{ !cancelled() }}
     needs: [core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
