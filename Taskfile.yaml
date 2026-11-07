@@ -39,7 +39,7 @@ tasks:
     cmds:
       - docker compose up -d --wait
       - defer: docker compose down
-      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
+      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
       - go test -v -shuffle=on -race -tags=fixture,scenario ./...
 
   cli/test/coverage:
@@ -56,7 +56,7 @@ tasks:
     cmds:
       - docker compose up -d --wait
       - defer: docker compose down
-      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
+      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
       - uv run --project scripts python scripts/tobari.py scenario
 
   cli/test/coverage/e2e:
@@ -110,7 +110,7 @@ tasks:
       - docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
       - docker compose -p enbu-e2e -f test/e2e/compose.yaml up -d --wait
       - defer: docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
-      - curl --fail --silent --show-error --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5001/v2/
+      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5001/v2/
       - aqua exec -- atago list test/e2e
       - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts test/e2e
 
@@ -133,8 +133,8 @@ tasks:
       - docker compose -p enbu-storage -f test/storage/compose.yaml down --volumes --remove-orphans
       - docker compose -p enbu-storage -f test/storage/compose.yaml up -d --wait
       - defer: docker compose -p enbu-storage -f test/storage/compose.yaml down --volumes --remove-orphans
-      - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:5002/v2/
-      - curl --fail --silent --show-error --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:9002/health
+      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:5002/v2/
+      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 1 --retry-connrefused --retry-max-time 50 http://localhost:9002/health
       - go test -v -race -count=1 -tags=storagee2e ./pkg/storage -run TestRemoteStorage
       - go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e -run TestStorageBackendLifecycles
 
@@ -147,7 +147,7 @@ tasks:
       - docker compose -p enbu-aws -f test/aws/compose.yaml up -d --wait
       - defer: docker compose -p enbu-aws -f test/aws/compose.yaml down --volumes --remove-orphans
       - >-
-        curl --fail --silent --show-error --retry 50 --retry-delay 1
+        curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 1
         --retry-connrefused --retry-max-time 50
         -H 'Content-Type: application/x-amz-json-1.1'
         -H 'X-Amz-Target: secretsmanager.ListSecrets'
