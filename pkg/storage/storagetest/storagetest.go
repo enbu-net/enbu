@@ -129,6 +129,9 @@ func (m *Memory) Discover(ctx context.Context, kind storage.Kind, scope string) 
 	for _, o := range m.objs {
 		if o.Kind == kind && o.Scope == scope {
 			revs = append(revs, o.Rev)
+			if kind == storage.KindRequest && len(revs) > storage.MaxRequestRefs {
+				return nil, storage.ErrDiscoveryLimit
+			}
 		}
 	}
 	sort.Slice(revs, func(i, j int) bool { return revs[i] < revs[j] })
