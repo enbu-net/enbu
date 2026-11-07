@@ -30,7 +30,9 @@ describe("resolveBinary", () => {
 
 // A stand-in for `enbu rpc --stdio`: answers initialize, echoes GetAppVersion,
 // and exits on "Exit".
-const fake = `#!/usr/bin/env node
+// Use the test runner's actual Node binary; PATH can contain slow package-manager
+// shims that bootstrap another runtime before the RPC fixture can start.
+const fake = `#!${process.execPath}
 if (process.argv.slice(2).join(" ") !== "rpc --stdio") process.exit(2);
 const { protocol, crash } = JSON.parse(process.env.FAKE_ENBU ?? "{}");
 if (crash) process.exit(4);
@@ -70,6 +72,26 @@ describe.skipIf(process.platform === "win32")("startSidecar", () => {
     }
     await new Promise((resolve) => sidecar.process.once("exit", resolve));
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("completes the handshake without a node executable on PATH", async () => {
+    vi.stubEnv("PATH", "");
+    try {
+      const sidecar = await startSidecar({
+        binary,
+        cwd: dir,
+        handlers,
+        log: () => {},
+        onExit: () => {},
+      });
+      try {
+        await expect(sidecar.client.request("GetAppVersion")).resolves.toBe("9.9.9");
+      } finally {
+        sidecar.dispose();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("reports when enbu exits on its own", async () => {

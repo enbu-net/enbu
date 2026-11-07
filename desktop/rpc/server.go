@@ -190,10 +190,15 @@ func NewServer(core *desktop.Service) *Server {
 }
 
 // Serve reads requests from r and writes responses to w until r ends, then
-// waits for the calls in flight. Cancelling ctx cancels the calls in flight.
+// waits for the calls in flight. Cancelling ctx cancels those calls and closes
+// r when it implements io.Closer, interrupting a blocked transport read.
 func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if closer, ok := r.(io.Closer); ok {
+		stop := context.AfterFunc(ctx, func() { _ = closer.Close() })
+		defer stop()
+	}
 
 	s.enc = json.NewEncoder(w)
 	s.core.Start(ctx)
@@ -218,7 +223,9 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 			continue
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
+			if ctx.Err() != nil {
+				readErr = ctx.Err()
+			} else if !errors.Is(err, io.EOF) {
 				readErr = err
 			}
 			break
