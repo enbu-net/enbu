@@ -16,6 +16,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 const currentVersion = "v1alpha2"
@@ -143,17 +144,48 @@ func SaveProject(cfg *ProjectConfig) error {
 	return SaveProjectTo("", cfg)
 }
 
+// SaveProjectTo honors an explicit destination. Only an implicit destination
+// searches ancestors, so a fresh explicit workspace cannot overwrite a parent.
 func SaveProjectTo(dir string, cfg *ProjectConfig) error {
-	path, err := findProjectConfigFrom(dir)
-	if err != nil {
-		path = filepath.Join(baseDir(dir), "enbu.toml")
+	path := filepath.Join(baseDir(dir), "enbu.toml")
+	if dir == "" {
+		if found, err := findProjectConfigFrom(""); err == nil {
+			path = found
+		}
 	}
 
 	content, err := MarshalProject(cfg)
 	if err != nil {
 		return fmt.Errorf("encoding enbu.toml: %w", err)
 	}
-	return os.WriteFile(path, content, 0o644)
+	// A failed write must leave the shared workspace definition intact. Keep
+	// existing regular-file permissions; new configurations remain private.
+	mode := os.FileMode(0o600)
+	previous, statErr := os.Lstat(path)
+	if statErr == nil {
+		if previous.Mode().IsRegular() {
+			mode = previous.Mode().Perm()
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if err = preserveProjectOwner(tmp, previous); err == nil {
+		err = tmp.Chmod(mode)
+	}
+	if err == nil {
+		if _, err = tmp.Write(content); err == nil {
+			err = tmp.Sync()
+		}
+	}
+	if err = errors.Join(err, tmp.Close()); err != nil {
+		return err
+	}
+	return fsutil.Rename(tmp.Name(), path)
 }
 
 // MarshalProject emits the compact, canonical enbu.toml layout. Encoding the
