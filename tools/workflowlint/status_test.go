@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -88,5 +90,34 @@ func TestCIStatusRejectsEveryNonSuccessDependency(t *testing.T) {
 				t.Fatalf("actual status script: %v, output %s", err, out)
 			}
 		})
+	}
+}
+
+func TestSimulationTimeoutLeavesRoomForMutationAndArtifacts(t *testing.T) {
+	job := statusJob(t, "simulation.yaml", "simulation")
+	// Read both full/incremental values from the workflow so a timeout change
+	// cannot leave Go running until Actions kills the job before artifact upload.
+	values := func(expression string, pattern string) []int {
+		t.Helper()
+		m := regexp.MustCompile(pattern).FindStringSubmatch(expression)
+		if len(m) != 3 {
+			t.Fatalf("unsupported timeout expression %q", expression)
+		}
+		out := make([]int, 2)
+		for i := range out {
+			n, err := strconv.Atoi(m[i+1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			out[i] = n
+		}
+		return out
+	}
+	jobs := values(field(job, "timeout-minutes").Value, `&& (\d+) \|\| (\d+)`)
+	tests := values(field(field(job, "env"), "DST_TIMEOUT").Value, `&& '(\d+)m' \|\| '(\d+)m'`)
+	for i := range jobs {
+		if jobs[i] < tests[i]+20 {
+			t.Fatalf("job budget %dm cannot contain %dm exploration, 15m mutations, and setup/upload", jobs[i], tests[i])
+		}
 	}
 }

@@ -39,7 +39,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: ${{ needs.plan.outputs.mode == 'full' && 360 || 45 }}
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'full' && 360 || 80 }}
     strategy:
       fail-fast: false
       matrix:
@@ -65,7 +65,11 @@ jobs:
       ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
       DST_TESTS: ${{ needs.plan.outputs.tests }}
       DST_MUTATION: ${{ needs.plan.outputs.mutation }}
-      DST_TIMEOUT: ${{ needs.plan.outputs.mode == 'full' && '330m' || '30m' }}
+      # Native Windows FlushFileBuffers makes the sampled 32-device matrix take
+      # about 12 minutes by itself. The previous 30m lane budget expired while
+      # later membership cases were still progressing (run 42360724179).
+      # Keep every sampled case and allow time for mutations and artifact upload.
+      DST_TIMEOUT: ${{ needs.plan.outputs.mode == 'full' && '330m' || '55m' }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
