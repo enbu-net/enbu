@@ -16,6 +16,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 const currentVersion = "v1alpha2"
@@ -151,7 +152,30 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	if err != nil {
 		return fmt.Errorf("encoding enbu.toml: %w", err)
 	}
-	return os.WriteFile(path, content, 0o644)
+	// A failed write must leave the shared workspace definition intact. Keep
+	// existing regular-file permissions; new configurations remain private.
+	mode := os.FileMode(0o600)
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode().IsRegular() {
+			mode = info.Mode().Perm()
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if err = tmp.Chmod(mode); err == nil {
+		if _, err = tmp.Write(content); err == nil {
+			err = tmp.Sync()
+		}
+	}
+	if err = errors.Join(err, tmp.Close()); err != nil {
+		return err
+	}
+	return fsutil.Rename(tmp.Name(), path)
 }
 
 // MarshalProject emits the compact, canonical enbu.toml layout. Encoding the
