@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -47,6 +48,6 @@ func (s *staticKeyStore) Info(workspaceID string) (identity.PublicInfo, error) {
 	defer func() { _ = id.Close() }()
 	return identity.PublicInfo{Backend: "keyring", Algorithm: "X25519", Recipient: id.Recipient().String()}, nil
 }
-func (s *staticKeyStore) Doctor() identity.Diagnosis {
+func (s *staticKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{FallbackAvailable: true}
 }
