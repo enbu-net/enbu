@@ -75,6 +75,8 @@ def select(paths: list[str], full: bool = False) -> dict:
             )
             if source.endswith(".md"):
                 continue
+            if source == "observer_equivocation.go":
+                files.add(SIM / "observer_control_test.go")
             if source in {"partition_test.go", "simulation_test.go"}:
                 broad = True
             elif source in SCENARIO_SOURCES or source == "scenarios.go":
@@ -175,6 +177,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                     SIM / "history_snapshot_test.go",
                     SIM / "larger_team_test.go",
                     SIM / "observer_equivocation_test.go",
+                    SIM / "observer_control_test.go",
                 }
                 mutation |= domain in {
                     "secrets",

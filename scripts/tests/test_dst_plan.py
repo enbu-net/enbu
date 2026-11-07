@@ -79,12 +79,23 @@ def test_observer_equivocation_follows_related_dependencies(path):
     plan = dst_plan.select([path])
     assert selected(plan, "TestObserverEquivocationClocks")
     assert selected(plan, "TestObserverEquivocationSmoke")
+    assert selected(plan, "TestObserverControlEquivocationSmoke")
+    assert selected(plan, "TestObserverControlEquivocationClocks")
 
 
 def test_observer_equivocation_helper_selects_its_family():
     plan = dst_plan.select(["test/simulation/observer_equivocation.go"])
     assert selected(plan, "TestObserverEquivocationClocks")
     assert selected(plan, "TestObserverEquivocationSmoke")
+    assert selected(plan, "TestObserverControlEquivocationSmoke")
+    assert selected(plan, "TestObserverControlEquivocationClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+def test_observer_control_helper_selects_its_family():
+    plan = dst_plan.select(["test/simulation/observer_control.go"])
+    assert selected(plan, "TestObserverControlEquivocationSmoke")
+    assert selected(plan, "TestObserverControlEquivocationClocks")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
 
 

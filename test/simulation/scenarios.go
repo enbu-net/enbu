@@ -35,6 +35,9 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return e
 	}
 	w.Model["default"]["BASE"] = "original"
+	if name == "observer-control-cold" || name == "observer-control-warm" {
+		return w.ObserverControlEquivocation(ctx, name == "observer-control-cold")
+	}
 	if strings.HasPrefix(name, "observer-state-") {
 		parts := strings.Split(strings.TrimPrefix(name, "observer-state-"), "-")
 		if len(parts) != 2 || parts[0] != "conflict" && parts[0] != "disjoint" || parts[1] != "warm" && parts[1] != "cold" {

@@ -40,12 +40,12 @@ func requireMetadataOnlyStorage(entries []Entry) error {
 	return nil
 }
 
-// hideObserverStates changes only one reader's network view. Hidden immutable
+// hideObserverRevisions changes only one reader's network view. Hidden immutable
 // objects remain in shared storage, but are absent from listing and direct
 // header/blob fetches for that reader. The captured policy is immutable.
-func hideObserverStates(base storage.Store, scope string, hidden []digest.Digest) storage.Store {
+func hideObserverRevisions(base storage.Store, kind storage.Kind, scope string, hidden []digest.Digest) storage.Store {
 	hides := func(k storage.Kind, resource string, rev digest.Digest) bool {
-		return k == storage.KindState && resource == scope && slices.Contains(hidden, rev)
+		return k == kind && resource == scope && slices.Contains(hidden, rev)
 	}
 	return storagetest.Wrap(base, storagetest.Hooks{
 		Discover: func(ctx context.Context, next storage.Store, k storage.Kind, resource string) ([]digest.Digest, error) {
@@ -99,7 +99,7 @@ func (w *World) ObserverStateEquivocation(ctx context.Context, conflict, cold bo
 		if len(hidden) == 0 {
 			w.Devices[i].Store.Store = backends[i]
 		} else {
-			w.Devices[i].Store.Store = hideObserverStates(backends[i], scope, slices.Clone(hidden))
+			w.Devices[i].Store.Store = hideObserverRevisions(backends[i], storage.KindState, scope, slices.Clone(hidden))
 		}
 		return nil
 	}
