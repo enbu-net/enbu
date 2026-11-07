@@ -173,7 +173,10 @@ func TestOracleMutationExperiments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			control := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
+			// Windows needs just over five minutes for the complete compaction
+			// control matrix (run 42365186731). Keep all control cases and leave
+			// headroom; a timeout still cannot count as killing the mutant.
+			control := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=10m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			control.Dir = root
 			control.Env = append(os.Environ(), "GITHUB_SHA="+revision(t), "ENBU_SIM_MUTATION=0", "ENBU_SIM_EXPLORE=1", "ENBU_SIM_CASE_STRIDE=1", "ENBU_SIM_SHARDS=1", "ENBU_SIM_SHARD=0", "ENBU_SIM_ARTIFACTS="+controlArtifacts)
 			if output, err := control.CombinedOutput(); err != nil {
@@ -191,7 +194,7 @@ func TestOracleMutationExperiments(t *testing.T) {
 			if e := os.WriteFile(path, b, 0600); e != nil {
 				t.Fatal(e)
 			}
-			cmd := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=5m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
+			cmd := exec.CommandContext(t.Context(), "go", "test", "-json", "-p=1", "-count=1", "-timeout=10m", "-tags=fixture", "./test/simulation", "-run", "^"+tc.scenario+"$")
 			cmd.Dir = root
 			cmd.Env = append(append([]string(nil), control.Env...), "ENBU_SIM_ARTIFACTS="+mutantArtifacts)
 			out, e := cmd.CombinedOutput()
