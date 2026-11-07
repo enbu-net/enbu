@@ -464,6 +464,11 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	if err != nil {
 		return nil, err
 	}
+	// Optional history failures may preserve local variables, but cancellation
+	// ends this request before any local output is replaced (including --replace).
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.WriteFile(outputPath, dotenv, 0o600); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", result.Output, err)
 	}
@@ -573,6 +578,9 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 			// variable is the safe side: it is reported as kept, not lost.
 			ever, err := everStored()
 			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					return nil, nil, nil, err
+				}
 				ever = nil
 			}
 			if previous == nil {
