@@ -71,7 +71,13 @@ func (g *GHCRPackages) do(ctx context.Context, method, path string, out any) (in
 	if client == nil {
 		client = http.DefaultClient
 	}
-	resp, err := client.Do(req)
+	// The Packages API is the authority for both the target version and its
+	// deletion. Redirects can forward its token to another port or plaintext
+	// endpoint, or acknowledge deletion at a different destination. Preserve
+	// the caller's transport without changing its shared redirect policy.
+	apiClient := *client
+	apiClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := apiClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
