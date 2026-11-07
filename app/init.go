@@ -123,7 +123,7 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		// Never choose a request by its untrusted listing order or timestamp.
 		requests, err := wsp.ListJoinRequests(ctx, store, cfg.WorkspaceID)
 		if err != nil {
-			return nil, storageError(err)
+			return nil, wspError(err)
 		}
 		for _, request := range requests {
 			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
