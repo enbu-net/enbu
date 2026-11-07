@@ -41,7 +41,7 @@ func TestDataDirIsAlwaysAbsolute(t *testing.T) {
 		{"darwin", "darwin", nil, home, "/home/kota/Library/Application Support/enbu"},
 		{"windows", "windows", map[string]string{"LOCALAPPDATA": "/local"}, home, "/local/enbu"},
 		{"windows without LOCALAPPDATA", "windows", nil, home, "/home/kota/AppData/Local/enbu"},
-		{"no home", "linux", nil, func() string { return abs(t, unresolvedHome) }, "/nonexistent/.local/share/enbu"},
+		{"no home", "linux", nil, func() string { return abs(t, unresolvedHome) }, filepath.Join(unresolvedHome, ".local", "share", "enbu")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
