@@ -260,3 +260,57 @@ func TestPrebuiltFrontendRequiresBothFlagAndExpectedArtifacts(t *testing.T) {
 		})
 	}
 }
+
+func TestWindowsCompositeSetupIsSerialAndUnixSetupRunsOnce(t *testing.T) {
+	root := readYAML(t, "../../.github/workflows/ci.yaml")
+	jobs := field(root, "jobs")
+	for _, jobName := range []string{"core-native", "identity-e2e", "desktop"} {
+		job := field(jobs, jobName)
+		for _, osName := range []string{"Windows", "Linux", "macOS"} {
+			counts := map[string]int{}
+			selected := func(step *yaml.Node) bool {
+				condition := field(step, "if")
+				if condition == nil {
+					return true
+				}
+				switch condition.Value {
+				case "runner.os == 'Windows'":
+					return osName == "Windows"
+				case "runner.os != 'Windows'":
+					return osName != "Windows"
+				case "runner.os == 'Linux'":
+					return osName == "Linux"
+				case "runner.os != 'Linux'":
+					return osName != "Linux"
+				default:
+					t.Fatalf("unsupported setup guard %s", condition.Value)
+					return false
+				}
+			}
+			collect := func(step *yaml.Node, parallel bool) {
+				uses := field(step, "uses")
+				if uses == nil || !strings.HasPrefix(uses.Value, "$/.github/actions/") || !selected(step) {
+					return
+				}
+				if parallel && osName == "Windows" {
+					t.Fatalf("%s races the Windows runner event file", jobName)
+				}
+				counts[uses.Value]++
+			}
+			for _, step := range field(job, "steps").Content {
+				if group := field(step, "parallel"); group != nil {
+					for _, child := range group.Content {
+						collect(child, true)
+					}
+				} else {
+					collect(step, false)
+				}
+			}
+			for _, name := range []string{"setup-go", "setup-tools"} {
+				if counts["$/.github/actions/"+name] != 1 {
+					t.Fatalf("%s %s does not prepare %s exactly once: %v", jobName, osName, name, counts)
+				}
+			}
+		}
+	}
+}
