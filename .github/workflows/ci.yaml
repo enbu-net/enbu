@@ -38,6 +38,7 @@ jobs:
           path: |
             web/dist
             web/dist-vscode
+            web/src/routeTree.gen.ts
           if-no-files-found: error
           retention-days: 1
 

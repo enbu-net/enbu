@@ -165,6 +165,16 @@ func TestFullDSTRunnerGroupsCoverEveryLogicalLaneOnce(t *testing.T) {
 func TestSharedFrontendPrecedesParallelReadersAndAllCIResultsAreRequired(t *testing.T) {
 	root := readYAML(t, "../../.github/workflows/ci.yaml")
 	jobs := field(root, "jobs")
+	producer := field(jobs, "frontend")
+	sharedRoutes := false
+	for _, step := range field(producer, "steps").Content {
+		if uses := field(step, "uses"); uses != nil && strings.HasPrefix(uses.Value, "actions/upload-artifact@") {
+			sharedRoutes = strings.Contains(field(field(step, "with"), "path").Value, "web/src/routeTree.gen.ts")
+		}
+	}
+	if !sharedRoutes {
+		t.Fatal("prebuilt GUI readers lack the generated router types")
+	}
 	for _, name := range []string{"check", "test", "desktop", "scenario"} {
 		job := field(jobs, name)
 		if needs := field(job, "needs"); needs == nil || len(needs.Content) != 1 || needs.Content[0].Value != "frontend" {
