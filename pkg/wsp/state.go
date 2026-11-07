@@ -185,7 +185,12 @@ func StateResource(blob []byte) (workspace, resource string, err error) {
 	return s.Workspace, s.Resource, nil
 }
 
-var maxRevisions = 20000
+var (
+	maxRevisions = 20000
+	// Bound aggregate metadata bytes, including invalid objects. One parallel
+	// prefetch batch can already be in flight; no later batch is started.
+	maxStateBytes = 32 << 20
+)
 
 // LoadStates reads the head of every revision of a resource that storage lists,
 // plus any ancestors the listing missed, and verifies each against the Control
@@ -208,6 +213,7 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 	tried := map[digest.Digest]bool{}
 	// also names revisions the caller knows exist, such as one it just published
 	// that a stale listing may not show yet.
+	totalBytes := 0
 	queue := append(append([]digest.Digest(nil), revs...), also...)
 	for len(queue) > 0 {
 		batch := make([]digest.Digest, 0, headFetches)
@@ -234,6 +240,10 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 				sv.Skipped++
 				continue
 			}
+			if len(f.head) > maxStateBytes-totalBytes {
+				return nil, invalid("resource metadata exceeds the read budget")
+			}
+			totalBytes += len(f.head)
 			st, err := VerifyRevision(view, workspace, resource, rev, f.head)
 			if err != nil {
 				if errors.Is(err, ErrRollback) {
