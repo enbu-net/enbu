@@ -3,6 +3,7 @@ package wsp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/age"
@@ -104,7 +105,7 @@ type PendingRequest struct {
 // including malformed and foreign requests. They match the Control DAG budgets;
 // the App's smaller display cap cannot bound fetching or signature verification.
 const (
-	maxJoinRequestRefs  = 10000
+	maxJoinRequestRefs  = storage.MaxRequestRefs
 	maxJoinRequestBytes = 32 << 20
 )
 
@@ -114,6 +115,9 @@ const (
 // foreign objects are skipped.
 func ListJoinRequests(ctx context.Context, store storage.Store, workspace string) ([]PendingRequest, error) {
 	revs, err := store.Discover(ctx, storage.KindRequest, "")
+	if errors.Is(err, storage.ErrDiscoveryLimit) {
+		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 	if err != nil {
 		return nil, err
 	}
