@@ -58,8 +58,8 @@ importers:
         specifier: 2.29.3
         version: 2.29.3(@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(jiti@2.7.0)(typescript@7.0.2))(typescript@7.0.2)
       '@inlang/plugin-message-format':
-        specifier: 4.5.7
-        version: 4.5.7
+        specifier: 4.6.0
+        version: 4.6.0
       '@pandacss/dev':
         specifier: 2.5.0
         version: 2.5.0(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(postcss@8.5.31)
@@ -376,8 +376,8 @@ packages:
       vite:
         optional: true
 
-  '@inlang/plugin-message-format@4.5.7':
-    resolution: {integrity: sha512-rjRd0ityaVOIvmm1VLGLwnbwZbEHwS6EOyUPdiMhwYZ0JJmIMoLG+BxozHnwMB9QH+R1lqpLYbCZmlTDBtG4zg==}
+  '@inlang/plugin-message-format@4.6.0':
+    resolution: {integrity: sha512-DK2GZvypDygLchnUaFK/RdCIm2baiRlQftOiesGNKDtjNqioqWHnnu0zg6NKNlo3kD42h5xlRCke7zEjBFzZrg==}
 
   '@inlang/recommend-sherlock@0.2.1':
     resolution: {integrity: sha512-ckv8HvHy/iTqaVAEKrr+gnl+p3XFNwe5D2+6w6wJk2ORV2XkcRkKOJ/XsTUJbPSiyi4PI+p+T3bqbmNx/rDUlg==}
@@ -386,8 +386,8 @@ packages:
     resolution: {integrity: sha512-pPlaxyemcFMBcwBx31zbSNWwKORSLc2yv93v0uGCh4QgNh/kBRuLlBxbubmME6UJFsj+5nbao2WDZjz3Fzs+FA==}
     engines: {node: '>=20.0.0'}
 
-  '@inlang/sdk@4.1.1':
-    resolution: {integrity: sha512-eeRnaW6mZPctXd8mwnATWEQgSg0J+EneUsBX2pJEl/7YRfosApCoc5aR4bHKwizLDd0CB3rtfuqteYirG5VSsg==}
+  '@inlang/sdk@4.2.0':
+    resolution: {integrity: sha512-Cmaqvn34wsxiF27318Zw2rg+017HHNJWV5MH8rfyVKVANZNpzlztxzRbFienE/gASMLD8oluYHHolIb/p6Egrw==}
     engines: {node: '>=20.0.0'}
 
   '@internationalized/date@3.12.4':
@@ -3445,9 +3445,9 @@ snapshots:
       typescript: 7.0.2
       vite: '@voidzero-dev/vite-plus-core@1.4.0(@types/node@26.6.5)(jiti@2.7.0)(typescript@7.0.2)'
 
-  '@inlang/plugin-message-format@4.5.7':
+  '@inlang/plugin-message-format@4.6.0':
     dependencies:
-      '@inlang/sdk': 4.1.1
+      '@inlang/sdk': 4.2.0
       '@sinclair/typebox': 0.31.30
 
   '@inlang/recommend-sherlock@0.2.1':
@@ -3461,7 +3461,7 @@ snapshots:
       kysely: 0.28.18
       uuid: 14.0.3
 
-  '@inlang/sdk@4.1.1':
+  '@inlang/sdk@4.2.0':
     dependencies:
       '@lix-js/sdk': 0.20.1
       '@sinclair/typebox': 0.31.30
