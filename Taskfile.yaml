@@ -14,6 +14,23 @@ tasks:
       - gui/test
       - vscode/test
       - scripts/test
+      - simulation/smoke
+
+  simulation/smoke:
+    desc: Run bounded deterministic simulation regressions
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=2m ./test/simulation -run '^TestSimulationSmoke$'
+
+  simulation/test:
+    desc: Run deterministic simulations and strict replays
+    env:
+      ENBU_SIM_EXPLORE: '1'
+      ENBU_SIM_ARTIFACTS: '{{.ROOT_DIR}}/.tmp/simulation'
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=55m ./pkg/merge ./test/simulation
 
   cli/test:
     desc: Run all CLI tests
@@ -30,7 +47,7 @@ tasks:
     deps:
       - gui/build/frontend
     cmds:
-      - go test -v -shuffle=on -race -tags=fixture ./...
+      - go test -v -shuffle=on -race -timeout=55m -tags=fixture ./...
 
   cli/test/scenario:
     desc: Run scenario tests
@@ -40,7 +57,7 @@ tasks:
       - docker compose up -d --wait
       - defer: docker compose down
       - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
-      - go test -v -shuffle=on -race -tags=fixture,scenario ./...
+      - go test -v -shuffle=on -race -timeout=55m -tags=fixture,scenario ./...
 
   cli/test/coverage:
     desc: Collect all Go unit tests with tobari, including desktop

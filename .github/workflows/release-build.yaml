@@ -121,10 +121,10 @@ jobs:
           - os: macos-15-intel
             suffix: darwin_amd64
             package: dmg
-          - os: ubuntu-24.04
+          - os: ubuntu-26.04
             suffix: linux_amd64
             package: tar.gz
-          - os: ubuntu-24.04-arm
+          - os: ubuntu-26.04-arm
             suffix: linux_arm64
             package: tar.gz
     steps:
