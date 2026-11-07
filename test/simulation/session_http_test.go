@@ -48,6 +48,8 @@ type sessionRegistry struct {
 	blobs, manifests            map[string][]byte
 	tokens                      map[string]string
 	armed, committed, triggered bool
+	readOnly                    bool
+	publicationDenial           int
 	entered, release            chan struct{}
 }
 
@@ -62,11 +64,15 @@ func (r *sessionRegistry) stateCount() int {
 	}
 	return n
 }
-func (r *sessionRegistry) deny(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
+func (r *sessionRegistry) deny(w http.ResponseWriter, status int) {
+	code := "DENIED"
+	if status == http.StatusUnauthorized {
+		w.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
+		code = "UNAUTHORIZED"
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = io.WriteString(w, `{"errors":[{"code":"UNAUTHORIZED","message":"synthetic denial: fixture-token-1 private-own-canary"}]}`)
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"errors": []errcode.Error{{Code: code, Message: "synthetic denial: fixture-token-1 private-own-canary"}}})
 }
 func (r *sessionRegistry) putManifest(path string, body []byte) error {
 	var manifest ocispec.Manifest
@@ -90,9 +96,14 @@ func (r *sessionRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	user, token, _ := req.BasicAuth()
 	r.mu.Lock()
 	valid := r.tokens[token] == user && user != ""
+	readOnly := r.readOnly && user == "member-1"
 	r.mu.Unlock()
 	if !valid {
-		r.deny(w)
+		r.deny(w, http.StatusUnauthorized)
+		return
+	}
+	if readOnly && req.Method != http.MethodGet && req.Method != http.MethodHead {
+		r.deny(w, http.StatusForbidden)
 		return
 	}
 	path := strings.TrimPrefix(req.URL.Path, "/v2/team/secrets/")
@@ -123,7 +134,7 @@ func (r *sessionRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		// Deliberately lose authorization after the selected before/after
 		// durability point. A cached HTTP credential must not imply success.
-		r.deny(w)
+		r.deny(w, r.publicationDenial)
 		return
 	}
 	r.mu.Lock()
@@ -205,11 +216,16 @@ func TestNativeSessionTeamSmoke(t *testing.T) {
 	shardCase(t)
 	nativeSessionTeam(t, 3, "frozen", "logout", false)
 }
+
+func TestNativeReadOnlyTeamSmoke(t *testing.T) {
+	shardCase(t)
+	nativeSessionTeam(t, 3, "frozen", "pull-only", false)
+}
 func TestNativeSessionTeamClocks(t *testing.T) {
 	exploration(t)
 	for _, devices := range []int{2, 3, 8} {
 		for _, clock := range []string{"", "frozen", "backward", "skewed"} {
-			for _, mode := range []string{"logout", "revoked", "account-switch"} {
+			for _, mode := range []string{"logout", "revoked", "account-switch", "pull-only"} {
 				for _, committed := range []bool{false, true} {
 					t.Run(fmt.Sprintf("devices-%d/%s/%s/committed-%t", devices, clock, mode, committed), func(t *testing.T) { shardCase(t); nativeSessionTeam(t, devices, clock, mode, committed) })
 				}
@@ -223,7 +239,11 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	sampleCase(t)
 	ctx, stop := context.WithTimeout(wsp.WithSerialHeadReads(t.Context()), 30*time.Second)
 	defer stop()
-	registry := &sessionRegistry{blobs: map[string][]byte{}, manifests: map[string][]byte{}, tokens: map[string]string{}, entered: make(chan struct{}), release: make(chan struct{}), committed: committed}
+	publicationDenial := http.StatusUnauthorized
+	if mode == "pull-only" {
+		publicationDenial = http.StatusForbidden
+	}
+	registry := &sessionRegistry{blobs: map[string][]byte{}, manifests: map[string][]byte{}, tokens: map[string]string{}, entered: make(chan struct{}), release: make(chan struct{}), committed: committed, publicationDenial: publicationDenial}
 	server := httptest.NewServer(registry)
 	defer server.Close()
 	destination, err := url.Parse(server.URL)
@@ -298,7 +318,11 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	world.Model["default"]["PEER_ACK"] = "private-peer-canary"
 	logoutCause := errors.New("synthetic logged-out session: fixture-token-1 private-own-canary")
 	registry.mu.Lock()
-	delete(registry.tokens, "fixture-token-1")
+	if mode == "pull-only" {
+		registry.readOnly = true
+	} else {
+		delete(registry.tokens, "fixture-token-1")
+	}
 	registry.mu.Unlock()
 	switch mode {
 	case "logout":
@@ -328,10 +352,10 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	if mode == "logout" && (!apperr.Is(outcome, apperr.CodeNotAuthenticated) || !errors.Is(outcome, logoutCause)) {
 		t.Fatalf("logout cause was not preserved: %v", outcome)
 	}
-	if mode == "revoked" {
+	if mode == "revoked" || mode == "pull-only" {
 		var denied *errcode.ErrorResponse
-		if !errors.As(outcome, &denied) || denied.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("revoked token cause was not preserved: %v", outcome)
+		if !errors.As(outcome, &denied) || denied.StatusCode != publicationDenial {
+			t.Fatalf("storage permission cause was not preserved: %v", outcome)
 		}
 		var remote errcode.Error
 		if !errors.As(outcome, &remote) || !strings.Contains(remote.Message, "private-own-canary") {
@@ -348,7 +372,31 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	if registry.stateCount() != wantCount {
 		t.Fatalf("unexpected durable State count: got %d want %d", registry.stateCount(), wantCount)
 	}
-	if mode != "account-switch" {
+	if mode == "pull-only" {
+		// Storage write access and workspace membership are independent. The
+		// denied member can still read peers' new acknowledged publications.
+		if err := world.Devices[0].App.AddSecret(ctx, "default", "PEER_DURING_READ_ONLY", "acknowledged-without-writer-access"); err != nil {
+			t.Fatal(err)
+		}
+		world.Model["default"]["PEER_DURING_READ_ONLY"] = "acknowledged-without-writer-access"
+		got, err := writer.App.ListSecrets(ctx, "default")
+		if err != nil || !maps.Equal(got, world.Model["default"]) {
+			t.Fatalf("read-only storage access lost the exact peer snapshot: %v", err)
+		}
+		beforeBlocked := registry.stateCount()
+		for _, call := range []func() error{
+			func() error { return writer.App.AddSecret(ctx, "default", "MUST_NOT_ACK_READ_ONLY", "blocked") },
+			func() error { return writer.App.SyncSecrets(ctx, "default") },
+		} {
+			var denied *errcode.ErrorResponse
+			if err := call(); !errors.As(err, &denied) || denied.StatusCode != http.StatusForbidden {
+				t.Fatalf("read-only member falsely acknowledged a write: %v", err)
+			}
+		}
+		if registry.stateCount() != beforeBlocked {
+			t.Fatal("read-only member published an unauthorized State")
+		}
+	} else if mode != "account-switch" {
 		got, err := writer.App.ListSecrets(ctx, "default")
 		if err == nil || got != nil {
 			t.Fatalf("denied reader exposed a snapshot: %v", err)
@@ -362,11 +410,16 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 			}
 		}
 	}
-	// A different GitHub account with storage access retains the same device
-	// identity. That account does not become a workspace administrator.
-	sessions[1].set("fixture-restored-token", "repository-owner", nil)
+	// Restoring storage access retains the same device identity. A different
+	// GitHub account must not become a workspace administrator either.
+	restoredUser := "repository-owner"
+	if mode == "pull-only" {
+		restoredUser = "member-1"
+	}
+	sessions[1].set("fixture-restored-token", restoredUser, nil)
 	registry.mu.Lock()
-	registry.tokens["fixture-restored-token"] = "repository-owner"
+	registry.tokens["fixture-restored-token"] = restoredUser
+	registry.readOnly = false
 	registry.mu.Unlock()
 	world.timeline.Advance(time.Second)
 	if err := world.Check(ctx, "default"); err != nil {
