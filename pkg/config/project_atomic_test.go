@@ -16,6 +16,62 @@ func atomicProjectFixture(name string) *ProjectConfig {
 	return cfg
 }
 
+func TestSaveProjectToDoesNotReplaceAncestorConfiguration(t *testing.T) {
+	parent := t.TempDir()
+	original, err := MarshalProject(atomicProjectFixture("parent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentPath := filepath.Join(parent, "enbu.toml")
+	if err := os.WriteFile(parentPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveProjectTo(child, atomicProjectFixture("child")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(parentPath)
+	if err != nil || !bytes.Equal(got, original) {
+		t.Fatalf("explicit destination overwrote its ancestor: %v", err)
+	}
+	got, err = os.ReadFile(filepath.Join(child, "enbu.toml"))
+	want, marshalErr := MarshalProject(atomicProjectFixture("child"))
+	if err != nil || marshalErr != nil || !bytes.Equal(got, want) {
+		t.Fatalf("explicit destination did not receive the complete configuration: %v %v", err, marshalErr)
+	}
+}
+
+func TestSaveProjectDiscoversImplicitAncestorDestination(t *testing.T) {
+	parent := t.TempDir()
+	original, err := MarshalProject(atomicProjectFixture("before"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(parent, "enbu.toml")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(child)
+	if err := SaveProject(atomicProjectFixture("after")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	want, marshalErr := MarshalProject(atomicProjectFixture("after"))
+	if err != nil || marshalErr != nil || !bytes.Equal(got, want) {
+		t.Fatalf("implicit destination did not update its discovered ancestor: %v %v", err, marshalErr)
+	}
+	if _, err := os.Stat(filepath.Join(child, "enbu.toml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("implicit destination created a shadow configuration: %v", err)
+	}
+}
+
 func TestSaveProjectPreservesRegularFilePermissions(t *testing.T) {
 	for _, mode := range []os.FileMode{0o600, 0o640, 0o644} {
 		t.Run(mode.String(), func(t *testing.T) {
