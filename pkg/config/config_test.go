@@ -462,10 +462,11 @@ func TestLoadLocalState_Missing(t *testing.T) {
 }
 
 func TestLocalStatePath(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "/tmp/testxdg")
+	data := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", data)
 
 	path := LocalStatePath("MyOrg/MyRepo")
-	want := filepath.Join("/tmp/testxdg/enbu/state", uuidOrHash("MyOrg/MyRepo")+".toml")
+	want := filepath.Join(data, "enbu", "state", uuidOrHash("MyOrg/MyRepo")+".toml")
 	if path != want {
 		t.Errorf("LocalStatePath = %q, want %q", path, want)
 	}

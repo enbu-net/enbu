@@ -125,7 +125,9 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
-		if filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		// A leading slash is rooted on Windows even without a drive letter,
+		// where filepath.IsAbs alone would accept a nonportable configuration.
+		if strings.HasPrefix(output, "/") || filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("environment %q output must stay within the repository", name)
 		}
 		for _, previous := range outputs {
