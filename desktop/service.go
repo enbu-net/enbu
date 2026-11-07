@@ -553,9 +553,6 @@ func (s *Service) WriteConfig(content string) error {
 		if err != nil {
 			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 		}
-		if err := config.ValidateProjectOutputs(cfg); err != nil {
-			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
-		}
 		if err := ensureGitignore(s.app.RepositoryDir, projectGitignoreEntries(cfg)...); err != nil {
 			return fmt.Errorf("updating .gitignore: %w", err)
 		}
