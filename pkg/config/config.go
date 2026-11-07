@@ -125,7 +125,9 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
-		if filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		// A leading slash is rooted on Windows even without a drive letter,
+		// where filepath.IsAbs alone would accept a nonportable configuration.
+		if strings.HasPrefix(output, "/") || filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("environment %q output must stay within the repository", name)
 		}
 		for _, previous := range outputs {
@@ -142,10 +144,14 @@ func SaveProject(cfg *ProjectConfig) error {
 	return SaveProjectTo("", cfg)
 }
 
+// SaveProjectTo honors an explicit destination. Only an implicit destination
+// searches ancestors, so a fresh explicit workspace cannot overwrite a parent.
 func SaveProjectTo(dir string, cfg *ProjectConfig) error {
-	path, err := findProjectConfigFrom(dir)
-	if err != nil {
-		path = filepath.Join(baseDir(dir), "enbu.toml")
+	path := filepath.Join(baseDir(dir), "enbu.toml")
+	if dir == "" {
+		if found, err := findProjectConfigFrom(""); err == nil {
+			path = found
+		}
 	}
 
 	content, err := MarshalProject(cfg)
@@ -155,19 +161,23 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	// A failed write must leave the shared workspace definition intact. Keep
 	// existing regular-file permissions; new configurations remain private.
 	mode := os.FileMode(0o600)
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode().IsRegular() {
-			mode = info.Mode().Perm()
+	previous, statErr := os.Lstat(path)
+	if statErr == nil {
+		if previous.Mode().IsRegular() {
+			mode = previous.Mode().Perm()
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err = tmp.Chmod(mode); err == nil {
+	if err = preserveProjectOwner(tmp, previous); err == nil {
+		err = tmp.Chmod(mode)
+	}
+	if err == nil {
 		if _, err = tmp.Write(content); err == nil {
 			err = tmp.Sync()
 		}
