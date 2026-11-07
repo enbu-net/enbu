@@ -50,18 +50,8 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - uses: actions/cache@v6.1.0
+      - uses: $/.github/actions/setup-tools
         if: github.event_name == 'workflow_dispatch'
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
-
-      - uses: aquaproj/aqua-installer@v4.1.1
-        if: github.event_name == 'workflow_dispatch'
-        with:
-          aqua_version: v2.66.0
 
       - name: Tag HEAD with the next version
         id: tag

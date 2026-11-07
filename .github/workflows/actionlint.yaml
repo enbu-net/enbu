@@ -21,9 +21,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: $/.github/actions/setup-go
       - name: Validate workflows independently of CI
         # Validate the native parallel container, then lint each contained step.
         # Upstream actionlint v1.7.12 does not parse the new group syntax yet.
