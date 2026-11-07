@@ -78,6 +78,8 @@ jobs:
         if: needs.plan.outputs.merge == 'true'
         run: go test -count=1 ./pkg/merge
       # Actions owns concurrency; lanes have disjoint seeds and artifact paths.
+      # Retain and shrink the first failure instead of exhausting the nightly
+      # timeout minimizing more failures from an already failing exploration.
       - parallel:
           - name: Explore and replay (lane 0)
             shell: bash
@@ -86,7 +88,7 @@ jobs:
               ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-0
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-0/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-0/coverage.out -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
@@ -97,7 +99,7 @@ jobs:
               ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-1
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-1/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-1/coverage.out -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
@@ -108,7 +110,7 @@ jobs:
               ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-2
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-2/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-2/coverage.out -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
@@ -119,7 +121,7 @@ jobs:
               ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-3
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-3/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-3/coverage.out -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi

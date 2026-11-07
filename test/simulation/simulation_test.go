@@ -147,7 +147,8 @@ func TestSimulation(t *testing.T) {
 	for i := 0; i < seeds; i++ {
 		seed := simulationSeed(i, shards, shard, os.Getenv("GITHUB_SHA"))
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
-			t.Parallel()
+			// CI lanes own parallelism. Keeping seeds serial also lets -failfast
+			// stop before another expensive run and minimization is started.
 			n := 2 + int(seed%7)
 			scenario := Scenarios[int(seed%uint64(len(Scenarios)))]
 			if (scenario == "control-fork" || scenario == "team-incident") && n < 3 {

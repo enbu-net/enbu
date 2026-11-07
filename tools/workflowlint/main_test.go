@@ -95,6 +95,9 @@ func TestDSTHasOneJobPerPlatformAndFourDisjointLanes(t *testing.T) {
 		}
 		seen[shard] = true
 		run := field(lane, "run").Value
+		if !strings.Contains(run, "go test -failfast -count=1") {
+			t.Fatal("lane must preserve the first failure without minimizing later failing seeds")
+		}
 		if !strings.Contains(run, "-parallel=1") || !strings.Contains(run, "-run \"$DST_TESTS\"") {
 			t.Fatal("lane bypasses selection or nested parallelism limit")
 		}
