@@ -31,7 +31,7 @@
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "@inlang/paraglide-js": "2.29.3",
+    "@inlang/paraglide-js": "3.1.0",
     "@inlang/plugin-message-format": "4.6.0",
     "@pandacss/dev": "2.5.0",
     "@pandacss/preset-base": "2.5.0",
