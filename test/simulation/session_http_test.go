@@ -70,6 +70,10 @@ func (r *sessionRegistry) deny(w http.ResponseWriter, status int) {
 		w.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
 		code = "UNAUTHORIZED"
 	}
+	if status == http.StatusTooManyRequests {
+		w.Header().Set("Retry-After", "0")
+		code = "TOOMANYREQUESTS"
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]any{"errors": []errcode.Error{{Code: code, Message: "synthetic denial: fixture-token-1 private-own-canary"}}})
@@ -132,8 +136,8 @@ func (r *sessionRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		case <-req.Context().Done():
 			return
 		}
-		// Deliberately lose authorization after the selected before/after
-		// durability point. A cached HTTP credential must not imply success.
+		// Deny the response at the selected before/after durability point.
+		// Cached credentials and an uploaded body must not imply success.
 		r.deny(w, r.publicationDenial)
 		return
 	}
@@ -221,11 +225,23 @@ func TestNativeReadOnlyTeamSmoke(t *testing.T) {
 	shardCase(t)
 	nativeSessionTeam(t, 3, "frozen", "pull-only", false)
 }
+
+func TestNativeTransientTeamSmoke(t *testing.T) {
+	for _, mode := range []string{"throttled", "unavailable"} {
+		for _, committed := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/committed-%t", mode, committed), func(t *testing.T) {
+				shardCase(t)
+				nativeSessionTeam(t, 3, "frozen", mode, committed)
+			})
+		}
+	}
+}
+
 func TestNativeSessionTeamClocks(t *testing.T) {
 	exploration(t)
 	for _, devices := range []int{2, 3, 8} {
 		for _, clock := range []string{"", "frozen", "backward", "skewed"} {
-			for _, mode := range []string{"logout", "revoked", "account-switch", "pull-only"} {
+			for _, mode := range []string{"logout", "revoked", "account-switch", "pull-only", "throttled", "unavailable"} {
 				for _, committed := range []bool{false, true} {
 					t.Run(fmt.Sprintf("devices-%d/%s/%s/committed-%t", devices, clock, mode, committed), func(t *testing.T) { shardCase(t); nativeSessionTeam(t, devices, clock, mode, committed) })
 				}
@@ -239,9 +255,15 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	sampleCase(t)
 	ctx, stop := context.WithTimeout(wsp.WithSerialHeadReads(t.Context()), 30*time.Second)
 	defer stop()
+	transient := mode == "throttled" || mode == "unavailable"
 	publicationDenial := http.StatusUnauthorized
-	if mode == "pull-only" {
+	switch mode {
+	case "pull-only":
 		publicationDenial = http.StatusForbidden
+	case "throttled":
+		publicationDenial = http.StatusTooManyRequests
+	case "unavailable":
+		publicationDenial = http.StatusServiceUnavailable
 	}
 	registry := &sessionRegistry{blobs: map[string][]byte{}, manifests: map[string][]byte{}, tokens: map[string]string{}, entered: make(chan struct{}), release: make(chan struct{}), committed: committed, publicationDenial: publicationDenial}
 	server := httptest.NewServer(registry)
@@ -320,7 +342,7 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	registry.mu.Lock()
 	if mode == "pull-only" {
 		registry.readOnly = true
-	} else {
+	} else if !transient {
 		delete(registry.tokens, "fixture-token-1")
 	}
 	registry.mu.Unlock()
@@ -346,13 +368,13 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 		if outcome != nil {
 			t.Fatalf("fresh account credentials did not complete the same write: %v", outcome)
 		}
-	} else if outcome == nil {
+	} else if outcome == nil && !transient {
 		t.Fatal("denied publication was acknowledged")
 	}
 	if mode == "logout" && (!apperr.Is(outcome, apperr.CodeNotAuthenticated) || !errors.Is(outcome, logoutCause)) {
 		t.Fatalf("logout cause was not preserved: %v", outcome)
 	}
-	if mode == "revoked" || mode == "pull-only" {
+	if mode == "revoked" || mode == "pull-only" || (transient && outcome != nil) {
 		var denied *errcode.ErrorResponse
 		if !errors.As(outcome, &denied) || denied.StatusCode != publicationDenial {
 			t.Fatalf("storage permission cause was not preserved: %v", outcome)
@@ -362,11 +384,14 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 			t.Fatal("hostile provider error did not reach the internal cause")
 		}
 	}
-	if committed || mode == "account-switch" {
+	// A transport may retry a transient response. Success still requires one
+	// exact durable State; an error permits only the selected durability point.
+	acknowledged := mode == "account-switch" || (transient && outcome == nil)
+	if committed || acknowledged {
 		world.Model["default"]["OWN"] = "private-own-canary"
 	}
 	wantCount := before + 1
-	if committed || mode == "account-switch" {
+	if committed || acknowledged {
 		wantCount++
 	}
 	if registry.stateCount() != wantCount {
@@ -396,6 +421,11 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 		if registry.stateCount() != beforeBlocked {
 			t.Fatal("read-only member published an unauthorized State")
 		}
+	} else if transient {
+		got, err := writer.App.ListSecrets(ctx, "default")
+		if err != nil || !maps.Equal(got, world.Model["default"]) {
+			t.Fatalf("transient publication failure lost the exact peer snapshot: %v", err)
+		}
 	} else if mode != "account-switch" {
 		got, err := writer.App.ListSecrets(ctx, "default")
 		if err == nil || got != nil {
@@ -416,9 +446,13 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	if mode == "pull-only" {
 		restoredUser = "member-1"
 	}
-	sessions[1].set("fixture-restored-token", restoredUser, nil)
+	if !transient {
+		sessions[1].set("fixture-restored-token", restoredUser, nil)
+	}
 	registry.mu.Lock()
-	registry.tokens["fixture-restored-token"] = restoredUser
+	if !transient {
+		registry.tokens["fixture-restored-token"] = restoredUser
+	}
 	registry.readOnly = false
 	registry.mu.Unlock()
 	world.timeline.Advance(time.Second)

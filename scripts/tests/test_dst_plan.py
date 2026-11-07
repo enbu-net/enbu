@@ -26,6 +26,7 @@ def test_native_session_team_follows_credentials_and_team_dependencies(path):
     assert selected(plan, "TestNativeSessionTeamSmoke")
     assert selected(plan, "TestNativeSessionTeamClocks")
     assert selected(plan, "TestNativeReadOnlyTeamSmoke")
+    assert selected(plan, "TestNativeTransientTeamSmoke")
 
 
 def test_auth_changes_do_not_select_unrelated_merge_matrix():
