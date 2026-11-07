@@ -60,7 +60,11 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 		}
 		return tape.Finish()
 	}
-	if plan.Scenario == "first-member" {
+	if plan.Scenario == "first-contact-cold" || plan.Scenario == "first-contact-warm" {
+		if err := w.FirstContact(ctx, plan.Scenario == "first-contact-cold"); err != nil {
+			return err
+		}
+	} else if plan.Scenario == "first-member" {
 		if err := w.FirstMember(ctx); err != nil {
 			return err
 		}
@@ -122,7 +126,7 @@ func Execute(ctx context.Context, tape *Tape, root string) error {
 			return e
 		}
 	}
-	if plan.Scenario != "" && plan.Scenario != "first-member" {
+	if plan.Scenario != "" && plan.Scenario != "first-member" && plan.Scenario != "first-contact-cold" && plan.Scenario != "first-contact-warm" {
 		if e := w.Scenario(ctx, plan.Scenario); e != nil {
 			return fmt.Errorf("scenario %s: %w", plan.Scenario, e)
 		}

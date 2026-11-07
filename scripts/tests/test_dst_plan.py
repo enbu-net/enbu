@@ -421,3 +421,26 @@ def test_unclassified_dependencies_select_all_simulations(path):
 )
 def test_incremental_plans_execute_configured_generated_seeds(path):
     assert selected(dst_plan.select([path]), "TestSimulation")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/init.go",
+        "app/members.go",
+        "pkg/wsp/trust.go",
+        "pkg/wsp/state.go",
+        "pkg/clock/clock.go",
+    ],
+)
+def test_first_contact_follows_related_dependencies(path):
+    plan = dst_plan.select([path])
+    assert selected(plan, "TestFirstContactSmoke")
+    assert selected(plan, "TestFirstContactClocks")
+
+
+def test_first_contact_helper_selects_its_family():
+    plan = dst_plan.select(["test/simulation/first_contact.go"])
+    assert selected(plan, "TestFirstContactSmoke")
+    assert selected(plan, "TestFirstContactClocks")
+    assert not selected(plan, "TestThreeWayMergeDAGMatrix")

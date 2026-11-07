@@ -99,6 +99,7 @@ func TestMutationTargetsMatchLFAndCRLF(t *testing.T) {
 }
 
 var mutationCases = []struct{ name, file, old, new, scenario string }{
+	{"contact-fetches-before-root-check", "pkg/wsp/trust.go", "if pinned != (Root{}) && pinned != root {", "if false && pinned != (Root{}) && pinned != root {", "TestFirstContactSmoke"},
 	{"control-view-forgets-checkpoint-witness", "pkg/wsp/checkpoint.go", "return f, nil", "f.Control = nil\n\treturn f, nil", "TestObserverControlEquivocationSmoke"},
 	{"decrypt-before-checkpoint-check", "app/workspace.go", "err = s.cps.CheckStates(resource, sv.Graph, sv.Compacted.Excuses)", "err = nil", "TestObserverEquivocationSmoke/disjoint"},
 	{"reader-view-excuses-missing-head", "pkg/wsp/checkpoint.go", "return func(d digest.Digest) bool { return g.Has(d) || excused != nil && excused(d) }", "return func(d digest.Digest) bool { return true }", "TestObserverEquivocationSmoke/disjoint"},
