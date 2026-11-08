@@ -35,8 +35,8 @@ export function HomePage() {
   }
   // A workspace stored outside GHCR needs no GitHub sign-in.
   if (!status?.authenticated && !status?.workspace_configured) return <SignIn />;
-  if (!repo.selected || !repo.repo) return <RepositorySelect />;
-  const step = setupStep(repo.repo);
+  if (!repo.path) return <RepositorySelect />;
+  const step = setupStep(repo);
   if (step) return <RepositorySetup key={step} step={step} />;
-  return <Dashboard key={repo.repo.path} repo={repo.repo} />;
+  return <Dashboard key={repo.path} repo={repo} />;
 }

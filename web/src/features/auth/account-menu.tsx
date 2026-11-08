@@ -13,7 +13,7 @@ export function AccountMenu() {
 
   useEffect(() => {
     backend
-      .appVersion()
+      .GetAppVersion()
       .then(setAppVersion)
       .catch(() => {});
   }, []);
@@ -114,7 +114,7 @@ export function AccountMenu() {
                 fontWeight="semibold"
                 onClick={async () => {
                   try {
-                    await backend.logout();
+                    await backend.Logout();
                   } catch (err) {
                     console.error("logging out failed", err);
                   }

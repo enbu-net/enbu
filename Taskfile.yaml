@@ -253,7 +253,7 @@ tasks:
       - tools/wails3
     dir: desktop/wails
     cmds:
-      - ../../.tmp/bin/wails3{{exeExt}} generate bindings -silent -ts -d ../../web/src/bindings .
+      - ../../.tmp/bin/wails3{{exeExt}} generate bindings -silent -ts -names -d ../../web/src/bindings .
 
   tools/wails3:
     internal: true

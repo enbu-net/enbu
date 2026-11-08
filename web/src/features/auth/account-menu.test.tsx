@@ -30,7 +30,7 @@ describe("AccountMenu", () => {
   it("signs out and reloads the session even when the backend fails", async () => {
     const refresh = vi.fn(async () => {});
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.mocked(backend).logout.mockRejectedValueOnce(new Error("keyring locked"));
+    vi.mocked(backend).Logout.mockRejectedValueOnce(new Error("keyring locked"));
     await openMenu({
       status: { authenticated: true, workspace_configured: false, username: "octo" },
       refresh,
@@ -39,7 +39,7 @@ describe("AccountMenu", () => {
     await act(async () => queryButton("Log out", document.body)?.click());
     await settle();
 
-    expect(backend.logout).toHaveBeenCalledTimes(1);
+    expect(backend.Logout).toHaveBeenCalledTimes(1);
     expect(refresh).toHaveBeenCalledWith({ force: true });
     log.mockRestore();
   });

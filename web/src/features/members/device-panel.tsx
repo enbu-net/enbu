@@ -5,7 +5,7 @@ import { Button, Heading, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Diagnosis, PublicInfo } from "../../lib/types";
+import type { IdentityDiagnosis, PublicInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -14,13 +14,13 @@ import { m } from "../../paraglide/messages";
  */
 export function DevicePanel({ repoPath }: { repoPath: string }) {
   const [info, setInfo] = useState<PublicInfo | null>(null);
-  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [diagnosis, setDiagnosis] = useState<IdentityDiagnosis | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setInfo(await backend.identity());
+      setInfo(await backend.GetIdentity());
     } catch (err) {
       setError(toDisplayError(err));
     }
@@ -86,7 +86,7 @@ export function DevicePanel({ repoPath }: { repoPath: string }) {
           size="sm"
           variant="ghost"
           disabled={busy}
-          onClick={() => void run(async () => setDiagnosis(await backend.diagnoseIdentity()))}
+          onClick={() => void run(async () => setDiagnosis(await backend.DiagnoseIdentity()))}
         >
           <Cpu size={14} aria-hidden="true" />
           {m.device_diagnose()}

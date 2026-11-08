@@ -14,7 +14,7 @@ const mocked = vi.mocked(backend);
 
 describe("DevicePanel", () => {
   it("shows this device's keys", async () => {
-    mocked.identity.mockResolvedValueOnce({
+    mocked.GetIdentity.mockResolvedValueOnce({
       backend: "tpm",
       algorithm: "MLKEM768-P256",
       recipient: "age1tagpq1example",
@@ -29,7 +29,7 @@ describe("DevicePanel", () => {
   });
 
   it("checks the hardware on request", async () => {
-    mocked.diagnoseIdentity.mockResolvedValueOnce({
+    mocked.DiagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
       fallback_available: true,
@@ -44,7 +44,7 @@ describe("DevicePanel", () => {
   });
 
   it("says when systemd-creds holds keys instead of the OS keyring", async () => {
-    mocked.diagnoseIdentity.mockResolvedValueOnce({
+    mocked.DiagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
       fallback_available: true,

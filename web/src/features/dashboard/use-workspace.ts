@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ConflictSet, Environment, SecretsResponse } from "../../lib/types";
+import type { ConflictSet, EnvInfo, SecretsResponse } from "../../lib/types";
 
-export function resolveWorkspaceEnvironment(requested: string, environments: Environment[]) {
+export function resolveWorkspaceEnvironment(requested: string, environments: EnvInfo[]) {
   if (requested && environments.some((environment) => environment.name === requested)) {
     return requested;
   }
@@ -13,7 +13,7 @@ export function resolveWorkspaceEnvironment(requested: string, environments: Env
 }
 
 export type Workspace = {
-  environments: Environment[];
+  environments: EnvInfo[];
   currentEnvironment: string;
   secrets: SecretsResponse | null;
   /** Set while concurrent edits stop reading until someone chooses a value. */
@@ -27,7 +27,7 @@ export type Workspace = {
 
 /** The environments and secrets of the selected repository. */
 export function useWorkspace(repoPath: string): Workspace {
-  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environments, setEnvironments] = useState<EnvInfo[]>([]);
   const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
   const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
   const [loading, setLoading] = useState(false);
@@ -49,16 +49,16 @@ export function useWorkspace(repoPath: string): Workspace {
     setLoading(true);
     setError(null);
     try {
-      const envs = await backend.listEnvironments();
+      const envs = await backend.ListEnvironments();
       const nextEnv = resolveWorkspaceEnvironment(env ?? currentRef.current, envs);
       let nextSecrets: SecretsResponse;
       let nextConflicts: ConflictSet | null = null;
       try {
-        nextSecrets = await backend.listSecrets(nextEnv);
+        nextSecrets = await backend.ListSecrets(nextEnv);
       } catch (err) {
         if (toDisplayError(err).code !== "secret_conflict") throw err;
         nextSecrets = { environment: nextEnv, secrets: [] };
-        nextConflicts = await backend.listConflicts(nextEnv);
+        nextConflicts = await backend.ListConflicts(nextEnv);
       }
       if (id !== request.current) return;
       setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));

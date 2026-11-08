@@ -37,10 +37,10 @@ async function connect() {
 describe("SignIn", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mocked.startOAuthLogin.mockReset();
-    mocked.oauthStatus.mockReset();
-    mocked.cancelOAuthLogin.mockClear();
-    mocked.startOAuthLogin.mockResolvedValue({
+    mocked.StartOAuthLogin.mockReset();
+    mocked.GetOAuthLoginStatus.mockReset();
+    mocked.CancelOAuthLogin.mockClear();
+    mocked.StartOAuthLogin.mockResolvedValue({
       session_id: "session",
       expires_at: new Date(Date.now() + 60_000).toISOString(),
       user_code: "ABCD-1234",
@@ -67,20 +67,20 @@ describe("SignIn", () => {
   it("reloads the session once the browser finishes signing in", async () => {
     const refresh = vi.fn(async () => {});
     const reloadRepo = vi.fn(async () => {});
-    mocked.oauthStatus.mockResolvedValue({ state: "success", username: "octo" });
+    mocked.GetOAuthLoginStatus.mockResolvedValue({ state: "success", username: "octo" });
     renderSignIn({ refresh, reloadRepo });
 
     await connect();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
 
-    expect(mocked.oauthStatus).toHaveBeenCalledWith("session");
+    expect(mocked.GetOAuthLoginStatus).toHaveBeenCalledWith("session");
     expect(refresh).toHaveBeenCalledWith({ force: true, invalidate: true });
     expect(reloadRepo).toHaveBeenCalledTimes(1);
     expect(queryButton("Connect with GitHub")).toBeTruthy();
   });
 
   it("shows a terminal error when OAuth status polling rejects", async () => {
-    mocked.oauthStatus.mockRejectedValue(new Error("poll failed"));
+    mocked.GetOAuthLoginStatus.mockRejectedValue(new Error("poll failed"));
     renderSignIn();
 
     await connect();
@@ -92,7 +92,7 @@ describe("SignIn", () => {
   });
 
   it("cancels and resets a pending OAuth login", async () => {
-    mocked.oauthStatus.mockResolvedValue({ state: "pending" });
+    mocked.GetOAuthLoginStatus.mockResolvedValue({ state: "pending" });
     renderSignIn();
 
     await connect();
@@ -103,12 +103,12 @@ describe("SignIn", () => {
       await Promise.resolve();
     });
 
-    expect(mocked.cancelOAuthLogin).toHaveBeenCalledWith("session");
+    expect(mocked.CancelOAuthLogin).toHaveBeenCalledWith("session");
     expect(queryButton("Connect with GitHub")).toBeTruthy();
   });
 
   it("shows why sign-in could not start", async () => {
-    mocked.startOAuthLogin.mockRejectedValue(new Error("no network"));
+    mocked.StartOAuthLogin.mockRejectedValue(new Error("no network"));
     renderSignIn();
 
     await connect();
