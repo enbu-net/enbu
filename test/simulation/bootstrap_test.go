@@ -48,8 +48,8 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 
 func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
 	exploration(t)
-	baseline := exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{}})
-	counts := countsBetween(t, baseline, "founding-start", "founding-result")
+	measured := baseline(t, 456, Plan{Devices: 2, FoundingFault: &Fault{}})
+	counts := countsBetween(t, measured, "founding-start", "founding-result")
 	methods := make([]string, 0, len(counts))
 	for method := range counts {
 		methods = append(methods, method)
@@ -62,7 +62,10 @@ func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
 				modes = append(modes, "after", "crash-after")
 			}
 			for _, mode := range modes {
-				t.Run(fmt.Sprintf("%s-%d-%s", method, at, mode), func(t *testing.T) { exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{method, at, mode}}) })
+				t.Run(fmt.Sprintf("%s-%d-%s", method, at, mode), func(t *testing.T) {
+					shardCase(t)
+					exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{method, at, mode}})
+				})
 			}
 		}
 	}

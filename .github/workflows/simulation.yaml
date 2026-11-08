@@ -145,8 +145,10 @@ jobs:
 
   simulation-status:
     name: Simulation
-    # An always() job can keep a superseded push holding workflow concurrency.
-    if: ${{ !cancelled() }}
+    # always(): a cancelled run must fail this check, not skip it, because a
+    # skipped required check counts as passing. The job takes seconds, so a
+    # superseded push holds the concurrency group only briefly.
+    if: always()
     needs: [plan, simulation]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
