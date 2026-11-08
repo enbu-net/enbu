@@ -4,6 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"time"
+
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -11,11 +17,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/jonboulle/clockwork"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sort"
-	"time"
 )
 
 type Device struct {
