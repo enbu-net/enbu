@@ -67,6 +67,8 @@ pkg/auth/                → GitHub Device Flow sign-in, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
+pkg/fsutil/              → atomic file replacement (WriteFileAtomic) and a rename that retries transient Windows failures
+pkg/clock/               → injectable clock for timeouts and timestamps
 pkg/apperr/              → application error type, codes, and normalization helpers
 test/                    → scenario tests (build tag: scenario)
 ```

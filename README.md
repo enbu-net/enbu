@@ -450,7 +450,7 @@ sequenceDiagram
 
     New->>CLI: enbu init (shared enbu.toml)
     CLI->>GHCR: Verify Control from the genesis digest
-    CLI->>GHCR: Write request-{device-id} (no authority)
+    CLI->>GHCR: Publish a join request r-{digest} (no authority)
     CLI-->>New: Waiting for approval, fingerprint a1b2-c3d4-...
 
     New-->>Admin: Fingerprint, over another channel

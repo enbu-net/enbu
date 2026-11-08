@@ -1,6 +1,6 @@
 # 💃 enbu
 
-GitHubだけで完結する `.env` 管理ツール  
+IdentityとStorageを選べる、E2E暗号化の `.env` 管理ツール  
 
 ## なぜ
 
@@ -21,7 +21,7 @@ GitHubだけで完結する `.env` 管理ツール
 
 ## 特徴
 
-- **GitHubだけで完結** ほかのプラットフォームに依存することなく完結
+- **Storageを選べる** OCIレジストリ（GHCR含む）またはS3互換オブジェクトストレージ
 - **E2E暗号化** 復号できるのは各メンバーのローカル秘密鍵のみ  
 - **使いやすいCLI** セットアップを済ませれば `enbu add` と `enbu pull` だけすればいい  
 
@@ -225,10 +225,13 @@ enbu resolve --seen ID API_KEY=sk-new      # 値を指定（--pick KEY=N、--del
 
 デスクトップアプリのシークレット画面でも同じように選べます。
 
+revision は自動では消えません。古いものは管理者が消します（削除できる Storage の場合）:
+
 ```bash
-enbu history list           # シークレットを変えた revision（古い順）
-enbu history diff 3 5       # 2つの revision 間で追加・削除・変更されたキー
-enbu history restore 3      # revision 3 の内容を新しい revision として公開
+enbu history list               # シークレットを変えた revision（古い順）
+enbu history diff 3 5           # 2つの revision 間で追加・削除・変更されたキー
+enbu history restore 3          # revision 3 の内容を新しい revision として公開
+enbu history compact --keep 50  # 管理者: 最新50件より古い revision を削除
 ```
 
 ## Identityの保管
@@ -308,6 +311,11 @@ VS Code拡張などのプロセスからenbuを実行する場合は、任意の
 `enbu pull --json` は `.env` を書き込まず、復号したシークレットを `data.secrets` で返します。
 このレスポンスをログへ記録したり、永続化したりしないでください。
 `enbu auth login --json` は Device Flow のコードを stderr に表示し、stdout には JSON の結果だけを出します。
+
+## テストカバレッジ
+
+Coverage workflow は Go の全ユニットテスト、シナリオ、CLI E2E、Identity E2E の Tobari レポートと React のカバレッジを公開します。
+ローカルでの実行方法とレポートの見方は [テストカバレッジ](docs/testing.md) を参照してください。
 
 ## 仕組み
 
@@ -392,7 +400,7 @@ sequenceDiagram
 
     New->>CLI: enbu init (共有された enbu.toml)
     CLI->>GHCR: genesis digestからControlを検証
-    CLI->>GHCR: request-{device-id} を書き込み（権限なし）
+    CLI->>GHCR: 参加依頼 r-{digest} を公開（権限なし）
     CLI-->>New: 承認待ち、フィンガープリント a1b2-c3d4-...
 
     New-->>Admin: フィンガープリントを別経路で伝える
