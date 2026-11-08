@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -153,7 +154,7 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 					return fmt.Errorf("denied export changed the local snapshot: %v", err)
 				}
 			}
-			if _, err := a.InitializeRepository(ctx); err != nil {
+			if _, err := a.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {

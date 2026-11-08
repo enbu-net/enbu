@@ -102,6 +102,7 @@ type ConflictCandidate struct {
 // Heads, so a value that appeared since is shown to the person rather than
 // swept away by a choice made without seeing it.
 type ConflictSet struct {
+	Environment string `json:"environment"`
 	// ID is a short name for Heads, for a person to repeat back when deciding.
 	ID        string           `json:"id"`
 	Heads     []string         `json:"heads"`
@@ -122,13 +123,13 @@ func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, 
 	}
 	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
-		return &ConflictSet{}, nil
+		return &ConflictSet{Environment: resolved.Name, Heads: []string{}, Conflicts: []SecretConflict{}}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	heads := headNames(read.parents())
-	return &ConflictSet{ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
+	return &ConflictSet{Environment: resolved.Name, ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
 }
 
 func conflictID(heads []string) string {
@@ -147,8 +148,9 @@ func headNames(heads []digest.Digest) []string {
 
 // SecretChoice settles one conflicted key with a value, or by deleting it.
 type SecretChoice struct {
-	Value  string
-	Delete bool
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Delete bool   `json:"delete"`
 }
 
 // ResolveSecrets settles every conflicted key of env and publishes the result
@@ -156,16 +158,19 @@ type SecretChoice struct {
 // a merge revision holds one value per key. seen is ConflictSet.Heads from the
 // listing the choices were made from; if the heads are different now, nothing
 // is published and the person looks again.
-func (a *App) ResolveSecrets(ctx context.Context, env string, seen []string, choices map[string]SecretChoice) (err error) {
+func (a *App) ResolveSecrets(ctx context.Context, env string, seen []string, choices []SecretChoice) (err error) {
 	defer apperr.NormalizeInto(&err)
+	picked := make(map[string]merge.Choice, len(choices))
+	for _, c := range choices {
+		if _, dup := picked[c.Key]; dup {
+			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s was decided twice", c.Key), apperr.Params{"key": c.Key})
+		}
+		picked[c.Key] = merge.Choice{Value: c.Value, Delete: c.Delete}
+	}
 	if len(seen) == 0 {
 		return apperr.New(apperr.CodeInvalidArgument, "resolving needs the heads of the conflicts that were listed", nil)
 	}
 	slices.Sort(seen)
-	picked := make(map[string]merge.Choice, len(choices))
-	for k, c := range choices {
-		picked[k] = merge.Choice{Value: c.Value, Delete: c.Delete}
-	}
 	return a.changeSecretWith(ctx, env, "resolve", picked, seen, func(map[string]string) error { return nil })
 }
 
@@ -418,12 +423,12 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 
 // WrittenFile describes what a pull wrote.
 type WrittenFile struct {
-	Output string   // the file, as configured for the environment
-	Count  int      // secrets written
-	Kept   []string // variables of the previous file that enbu does not store
+	Output string   `json:"output"` // the file, as configured for the environment
+	Count  int      `json:"count"`  // secrets written
+	Kept   []string `json:"kept"`   // variables of the previous file that enbu does not store
 	// Removed are variables an earlier pull wrote that the environment no
 	// longer has; they are not kept, so a deleted secret leaves the file.
-	Removed []string
+	Removed []string `json:"removed"`
 }
 
 // Messages tells the user what the pull kept and removed besides the secrets.

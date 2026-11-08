@@ -99,7 +99,7 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("control fork failed to block device %d: %v", i, err)
 		}
-		if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, map[string]app.SecretChoice{"K": {Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
+		if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, []app.SecretChoice{{Key: "K", Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
 			return err
 		}
 	}
@@ -150,21 +150,21 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 	if err != nil {
 		return err
 	}
-	rightChoice := app.SecretChoice{Value: "left-resolution"}
+	rightChoice := app.SecretChoice{Key: "K", Value: "left-resolution"}
 	switch c.Resolution {
 	case "different":
 		rightChoice.Value = "right-resolution"
 	case "delete":
-		rightChoice = app.SecretChoice{Delete: true}
+		rightChoice = app.SecretChoice{Key: "K", Delete: true}
 	}
 	w.Devices[1].Store.Arm(Fault{Method: "publish", At: 1, Mode: c.Fault})
 	results, err = w.runBatch(ctx, "publish", []func(int) error{
 		func(int) error {
-			return a.ResolveSecrets(ctx, "default", slices.Clone(set.Heads), map[string]app.SecretChoice{"K": {Value: "left-resolution"}})
+			return a.ResolveSecrets(ctx, "default", slices.Clone(set.Heads), []app.SecretChoice{{Key: "K", Value: "left-resolution"}})
 		},
 		func(int) error {
 			return catchCrash(func() error {
-				return b.ResolveSecrets(ctx, "default", slices.Clone(set.Heads), map[string]app.SecretChoice{"K": rightChoice})
+				return b.ResolveSecrets(ctx, "default", slices.Clone(set.Heads), []app.SecretChoice{rightChoice})
 			})
 		},
 	})
@@ -193,7 +193,7 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 		if err != nil {
 			return err
 		}
-		if err := a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"K": {Value: "final-resolution"}}); err != nil {
+		if err := a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "K", Value: "final-resolution"}}); err != nil {
 			return err
 		}
 		w.Model["default"]["K"] = "final-resolution"
@@ -217,7 +217,7 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 	w.Devices[3].Store.Arm(Fault{})
 	w.Restart(3)
 	if c.Control == "remove-writer" {
-		if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := a.ApproveMember(ctx, w.Devices[2].ID); err != nil {

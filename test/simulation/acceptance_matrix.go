@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -163,7 +164,7 @@ func (w *World) AcceptanceCase(ctx context.Context, c AcceptanceCase) error {
 	w.Model["default"] = clone(want)
 	// Re-admitting the author must not revive its old branch. Fresh author
 	// writes must still work.
-	if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+	if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[2].ID); err != nil {

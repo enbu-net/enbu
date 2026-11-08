@@ -36,49 +36,17 @@ import (
 // longer talk to this one.
 const ProtocolVersion = 1
 
-// Methods are the desktop.Service methods a client may call. They are the
-// methods desktop/wails binds for the desktop app, by the same names.
-var Methods = []string{
-	"GetAuthStatus",
-	"StartOAuthLogin",
-	"GetOAuthLoginStatus",
-	"CancelOAuthLogin",
-	"Logout",
-	"BrowseRepository",
-	"SelectRepository",
-	"GetRepoStatus",
-	"Initialize",
-	"SuggestStorage",
-	"ListEnvironments",
-	"CreateEnvironment",
-	"SwitchEnvironment",
-	"RenameEnvironment",
-	"DeleteEnvironment",
-	"PurgeIncarnation",
-	"ListSecrets",
-	"AddSecret",
-	"EditSecret",
-	"DeleteSecret",
-	"PullSecrets",
-	"SyncSecrets",
-	"ListConflicts",
-	"ResolveConflicts",
-	"ImportSecrets",
-	"ListHistory",
-	"DiffHistory",
-	"RestoreHistory",
-	"ListRepositories",
-	"RemoveRepository",
-	"ListMembers",
-	"ListJoinRequests",
-	"ApproveMember",
-	"RemoveMember",
-	"SetAdmin",
-	"GetIdentity",
-	"DiagnoseIdentity",
-	"ReadConfig",
-	"WriteConfig",
-	"GetAppVersion",
+// Methods are the methods a client may call: every exported method of
+// desktop.Service, by its Go name, as the desktop app binds them.
+var Methods = serviceMethods()
+
+func serviceMethods() []string {
+	t := reflect.TypeFor[*desktop.Service]()
+	names := make([]string, t.NumMethod())
+	for i := range names {
+		names[i] = t.Method(i).Name
+	}
+	return names
 }
 
 // Methods handled by the server itself rather than desktop.Service.
@@ -169,7 +137,7 @@ type Server struct {
 }
 
 // NewServer serves core and routes its dialogs, browser and events to the
-// client. It panics when a name in Methods is not a method of desktop.Service.
+// client.
 func NewServer(core *desktop.Service) *Server {
 	s := &Server{
 		core:    core,
@@ -178,11 +146,7 @@ func NewServer(core *desktop.Service) *Server {
 	}
 	value := reflect.ValueOf(core)
 	for _, name := range Methods {
-		m := value.MethodByName(name)
-		if !m.IsValid() {
-			panic("rpc: desktop.Service has no method " + name)
-		}
-		s.methods[name] = m
+		s.methods[name] = value.MethodByName(name)
 	}
 	return s
 }
@@ -199,17 +163,18 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	}
 
 	s.enc = json.NewEncoder(w)
-	s.core.Start(ctx)
-	s.core.SetEventEmitter(func(name string, data any) {
-		s.notify(methodEvent, eventParams{Name: name, Data: data})
-	})
-	s.core.SetDirectoryPicker(func(ctx context.Context) (string, error) {
-		var path string
-		err := s.call(ctx, methodPickDir, nil, &path)
-		return path, err
-	})
-	s.core.SetBrowserOpener(func(url string) error {
-		return s.call(ctx, methodOpenURL, []string{url}, nil)
+	desktop.Attach(ctx, s.core, desktop.Host{
+		PickDirectory: func(ctx context.Context) (string, error) {
+			var path string
+			err := s.call(ctx, methodPickDir, nil, &path)
+			return path, err
+		},
+		OpenURL: func(url string) error {
+			return s.call(ctx, methodOpenURL, []string{url}, nil)
+		},
+		Emit: func(name string, data any) {
+			s.notify(methodEvent, eventParams{Name: name, Data: data})
+		},
 	})
 
 	reader := bufio.NewReaderSize(r, 64<<10)
@@ -250,9 +215,7 @@ func (s *Server) Serve(ctx context.Context, r io.Reader, w io.Writer) error {
 	s.failPending()
 	s.wg.Wait()
 	// Nothing is left to answer; the service must not write to a closed stream.
-	s.core.SetEventEmitter(nil)
-	s.core.SetDirectoryPicker(nil)
-	s.core.SetBrowserOpener(nil)
+	desktop.Attach(ctx, s.core, desktop.Host{})
 	return readErr
 }
 
@@ -291,7 +254,7 @@ func (s *Server) handle(msg message) {
 	// so neither is logged.
 	defer func() {
 		if recover() != nil {
-			s.reply(msg.ID, nil, applicationError(msg.Method, errors.New("method panicked")))
+			s.reply(msg.ID, nil, applicationError(errors.New("method panicked")))
 		}
 	}()
 	if msg.JSONRPC != "2.0" {
@@ -319,7 +282,7 @@ func (s *Server) handle(msg message) {
 	}
 	result, err := invoke(method, args)
 	if err != nil {
-		s.reply(msg.ID, nil, applicationError(msg.Method, err))
+		s.reply(msg.ID, nil, applicationError(err))
 		return
 	}
 	s.reply(msg.ID, result, nil)
@@ -369,10 +332,8 @@ func invoke(method reflect.Value, args []reflect.Value) (any, error) {
 	return result, err
 }
 
-func applicationError(method string, err error) *Error {
-	normalized := apperr.Normalize(err)
-	payload := apperr.PayloadOf(normalized)
-	apperr.Report(context.Background(), "rpc."+method, normalized)
+func applicationError(err error) *Error {
+	payload := desktop.ErrorPayload(err)
 	return &Error{Code: codeApplication, Message: payload.Message, Data: &payload}
 }
 
@@ -388,7 +349,7 @@ func (s *Server) reply(id json.RawMessage, result any, rpcErr *Error) {
 		data, err := json.Marshal(result)
 		if err != nil {
 			slog.Error("rpc result not encodable", "err", err)
-			msg.Error = applicationError("", err)
+			msg.Error = applicationError(err)
 		} else {
 			msg.Result = data
 		}

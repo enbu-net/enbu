@@ -26,7 +26,7 @@ func newFreshApp(t *testing.T, detector RepoDetector) *App {
 // on GHCR beside the repository, and enbu.toml keeps that choice.
 func TestInitializeDefaultsToGHCRBesideTheGitHubRepository(t *testing.T) {
 	a := newFreshApp(t, &staticRepoDetector{owner: "Enbu-Net", repo: "My.App"})
-	result, err := a.InitializeRepository(context.Background())
+	result, err := a.InitializeRepository(context.Background(), InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestInitializeDefaultsToGHCRBesideTheGitHubRepository(t *testing.T) {
 
 	// Once written, the storage is never derived again: another remote does not move it.
 	a.RepoDetector = &staticRepoDetector{owner: "fork", repo: "app"}
-	again, err := a.InitializeRepository(context.Background())
+	again, err := a.InitializeRepository(context.Background(), InitOptions{})
 	if err != nil || again.Storage != want || again.Founded {
 		t.Fatalf("second init: storage %q founded %v %v", again.Storage, again.Founded, err)
 	}
@@ -49,7 +49,7 @@ func TestInitializeDefaultsToGHCRBesideTheGitHubRepository(t *testing.T) {
 
 func TestInitializeWithoutStorageOutsideGitHubFails(t *testing.T) {
 	a := newFreshApp(t, failingRepoDetector{})
-	if _, err := a.InitializeRepository(context.Background()); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := a.InitializeRepository(context.Background(), InitOptions{}); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("init without storage or GitHub remote: %v", err)
 	}
 	if _, err := config.LoadProjectFrom(a.RepositoryDir); !apperr.Is(err, apperr.CodeConfigNotFound) {
@@ -60,7 +60,7 @@ func TestInitializeWithoutStorageOutsideGitHubFails(t *testing.T) {
 func TestInitializeExplicitStorageSkipsTheDefault(t *testing.T) {
 	a := newFreshApp(t, failingRepoDetector{})
 	a.StorageURL = "oci://registry.example.com/team/secrets"
-	result, err := a.InitializeRepository(context.Background())
+	result, err := a.InitializeRepository(context.Background(), InitOptions{})
 	if err != nil || result.Storage != a.StorageURL {
 		t.Fatalf("storage %q %v, want %q", result.Storage, err, a.StorageURL)
 	}
@@ -69,7 +69,7 @@ func TestInitializeExplicitStorageSkipsTheDefault(t *testing.T) {
 // GitHub allows repository names that OCI does not; those need --storage.
 func TestInitializeRejectsAGitHubNameGHCRCannotHold(t *testing.T) {
 	a := newFreshApp(t, &staticRepoDetector{owner: "enbu-net", repo: ".github"})
-	if _, err := a.InitializeRepository(context.Background()); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := a.InitializeRepository(context.Background(), InitOptions{}); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("init with an OCI-invalid repository name: %v", err)
 	}
 	if _, err := config.LoadProjectFrom(a.RepositoryDir); !apperr.Is(err, apperr.CodeConfigNotFound) {

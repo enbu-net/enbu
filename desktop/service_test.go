@@ -42,20 +42,20 @@ func TestValidateRepoPath(t *testing.T) {
 func TestProgressEmitsEvents(t *testing.T) {
 	s := NewService(app.New(clock.New()))
 	// Without an emitter the hooks are no-ops.
-	s.OnStepProgress(app.ProgressStep{Op: "pull"})
+	s.app.Events.OnStepProgress(app.ProgressStep{Op: "pull"})
 
 	type event struct {
 		name string
 		data any
 	}
 	var events []event
-	s.SetEventEmitter(func(name string, data any) {
+	Attach(t.Context(), s, Host{Emit: func(name string, data any) {
 		events = append(events, event{name, data})
-	})
+	}})
 	step := app.ProgressStep{Op: "pull", Step: "decrypt", Status: "done"}
-	s.OnStepProgress(step)
-	s.OnProgress("decrypting")
-	s.OnConflictRetry(2, 5)
+	s.app.Events.OnStepProgress(step)
+	s.app.Events.OnProgress("decrypting")
+	s.app.Events.OnConflictRetry(2, 5)
 	want := []event{
 		{EventProgress, step},
 		{EventProgressMessage, "decrypting"},
@@ -92,7 +92,7 @@ func TestStartOAuthLogin(t *testing.T) {
 	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	s.ctx = context.Background()
-	s.SetBrowserOpener(func(url string) error {
+	s.openURL = (func(url string) error {
 		if url != "https://github.com/login/device" {
 			t.Fatalf("opened url = %q", url)
 		}
@@ -115,9 +115,7 @@ func TestStartOAuthLogin(t *testing.T) {
 	if start.SessionID == "" || start.UserCode != "ABCD-1234" || start.VerificationURI != "https://github.com/login/device" {
 		t.Fatalf("start = %+v", start)
 	}
-	if err := s.CancelOAuthLogin(start.SessionID); err != nil {
-		t.Fatalf("CancelOAuthLogin: %v", err)
-	}
+	s.CancelOAuthLogin(start.SessionID)
 	select {
 	case <-cancelled:
 	case <-time.After(time.Second):
@@ -145,9 +143,8 @@ func TestGetOAuthLoginStatus(t *testing.T) {
 				expiresAt: tt.expiresAt,
 				status:    tt.status,
 			}
-			got, err := s.GetOAuthLoginStatus("session")
-			if err != nil || got.State != tt.want {
-				t.Fatalf("GetOAuthLoginStatus() = %#v, %v; want %q", got, err, tt.want)
+			if got := s.GetOAuthLoginStatus("session"); got.State != tt.want {
+				t.Fatalf("GetOAuthLoginStatus() = %#v; want %q", got, tt.want)
 			}
 		})
 	}
@@ -330,17 +327,15 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	if !info.StorageConfigured || info.HasGit || info.HasRemote {
 		t.Fatalf("%+v", info)
 	}
-	status, err := s.GetAuthStatus()
-	if err != nil || !status.WorkspaceConfigured {
-		t.Fatalf("%+v %v", status, err)
+	if status := s.GetAuthStatus(); !status.WorkspaceConfigured {
+		t.Fatalf("%+v", status)
 	}
 	cfg.Storage = config.StorageConfig{URL: "oci://ghcr.io/example/workspace"}
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	status, err = s.GetAuthStatus()
-	if err != nil || status.WorkspaceConfigured {
-		t.Fatalf("GitHub auth mode bypassed login: %+v %v", status, err)
+	if status := s.GetAuthStatus(); status.WorkspaceConfigured {
+		t.Fatalf("GitHub auth mode bypassed login: %+v", status)
 	}
 }
 

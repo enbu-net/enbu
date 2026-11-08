@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"log/slog"
@@ -95,6 +96,16 @@ func wailsLogger(logger *slog.Logger) *slog.Logger {
 	return slog.New(minLevel{logger.Handler(), slog.LevelInfo})
 }
 
+// marshalError is the cause the frontend receives with a failed call: the
+// AppError payload, never an internal cause.
+func marshalError(err error) []byte {
+	data, err := json.Marshal(desktop.ErrorPayload(err))
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 // window is the part of the main window that activation needs.
 type window interface {
 	Show() application.Window
@@ -134,7 +145,6 @@ func run() error {
 
 	core := desktop.NewService(app.New(clock.New()))
 	core.AppVersion = Version
-	core.Start(ctx)
 
 	var mainWindow *application.WebviewWindow
 	wailsApp := application.New(application.Options{
@@ -143,7 +153,7 @@ func run() error {
 		Icon:        assets.Icon,
 		Logger:      wailsLogger(slog.Default()),
 		Services: []application.Service{
-			application.NewService(&DesktopService{core: core}),
+			application.NewService(core),
 		},
 		MarshalError: marshalError,
 		Assets: application.AssetOptions{
@@ -164,17 +174,19 @@ func run() error {
 		OnShutdown: cancel,
 	})
 
-	core.SetDirectoryPicker(func(context.Context) (string, error) {
-		return wailsApp.Dialog.OpenFile().
-			SetTitle("Select Git repository").
-			CanChooseFiles(false).
-			CanChooseDirectories(true).
-			CanCreateDirectories(true).
-			PromptForSingleSelection()
-	})
-	core.SetBrowserOpener(wailsApp.Browser.OpenURL)
-	core.SetEventEmitter(func(name string, data any) {
-		wailsApp.Event.Emit(name, data)
+	desktop.Attach(ctx, core, desktop.Host{
+		PickDirectory: func(context.Context) (string, error) {
+			return wailsApp.Dialog.OpenFile().
+				SetTitle("Select Git repository").
+				CanChooseFiles(false).
+				CanChooseDirectories(true).
+				CanCreateDirectories(true).
+				PromptForSingleSelection()
+		},
+		OpenURL: wailsApp.Browser.OpenURL,
+		Emit: func(name string, data any) {
+			wailsApp.Event.Emit(name, data)
+		},
 	})
 
 	mainWindow = wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{

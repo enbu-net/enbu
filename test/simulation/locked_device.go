@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
 )
@@ -33,7 +34,7 @@ func (w *World) LockedDevice(ctx context.Context) error {
 		name string
 		run  func() error
 	}{
-		{"init", func() error { _, err := d.App.InitializeRepository(ctx); return err }},
+		{"init", func() error { _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); return err }},
 		{"read", func() error { _, err := d.App.ListSecrets(ctx, "default"); return err }},
 		{"write", func() error { return d.App.EditSecret(ctx, "default", "BASE", "must-not-commit") }},
 		{"pull", func() error { return d.App.PullSecretsToFile(ctx, "default") }},

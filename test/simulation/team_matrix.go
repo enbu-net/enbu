@@ -42,7 +42,7 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		if err := a.RemoveMember(ctx, w.Devices[3].ID); err != nil {
 			return err
 		}
-		if _, err := w.Devices[3].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[3].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 	case "demote-writer":
@@ -207,7 +207,7 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		return fmt.Errorf("team membership: got %v want %v", actual, expected)
 	}
 	if removed >= 0 {
-		if _, err := w.Devices[removed].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[removed].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := a.ApproveMember(ctx, w.Devices[removed].ID); err != nil {

@@ -33,7 +33,7 @@ func (a *App) WriteConfig(content string) (err error) {
 
 	cfg, err := config.ParseProject(content)
 	if err != nil {
-		return err
+		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
@@ -53,6 +53,9 @@ func (a *App) WriteConfig(content string) (err error) {
 		if err := checkProtectedConfig(current, cfg); err != nil {
 			return err
 		}
+	}
+	if err := a.ensureGitignore(cfg); err != nil {
+		return fmt.Errorf("updating .gitignore: %w", err)
 	}
 	return os.WriteFile(path, []byte(content), 0o644)
 }

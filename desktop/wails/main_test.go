@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -65,5 +69,19 @@ func TestWailsLoggerDropsDebugRecords(t *testing.T) {
 	}
 	if !strings.Contains(out, "started") || !strings.Contains(out, "component=wails") {
 		t.Fatalf("info record missing: %s", out)
+	}
+}
+
+func TestMarshalErrorCarriesPayloadWithoutCause(t *testing.T) {
+	var payload apperr.Payload
+	if err := json.Unmarshal(marshalError(fmt.Errorf("wrapped: %w", apperr.New(apperr.CodeEnvironmentMissing, "missing", apperr.Params{"name": "dev"}))), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Code != apperr.CodeEnvironmentMissing || payload.Params["name"] != "dev" {
+		t.Fatalf("payload = %+v", payload)
+	}
+	data := marshalError(errors.New("token=secret"))
+	if bytes.Contains(data, []byte("secret")) {
+		t.Fatalf("payload leaks the cause: %s", data)
 	}
 }

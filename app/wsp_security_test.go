@@ -20,7 +20,7 @@ import (
 func TestJoinApproveAndShareSecrets(t *testing.T) {
 	alice := newAlice(t)
 	bob := newDevice(t, alice)
-	res, err := bob.InitializeRepository(bg)
+	res, err := bob.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	}
 	// Re-admitting the same signing key must not revive the old-control
 	// forgery that all remaining members already set aside.
-	if _, err := bob.InitializeRepository(bg); err != nil {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.ApproveMember(bg, string(bobsID)); err != nil {
@@ -316,7 +316,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 	}
 	// WorkspaceID alone is not enough to join, and a workspace that is already
 	// there is never adopted on faith.
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined without a genesis: %v", err)
 	}
 	// A genesis storage does not hold is not trusted.
@@ -324,7 +324,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined with a wrong genesis: %v", err)
 	}
 }
@@ -334,14 +334,14 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 		alice := newAlice(t)
 		other := &App{Storage: alice.Storage, Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 		prepareApp(t, other, "default")
-		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("a workspace without a trusted genesis was adopted: %v", err)
 		}
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {
 		alice := newAlice(t)
 		other := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
-		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("trust root silently replaced: %v", err)
 		}
 	})
@@ -414,7 +414,7 @@ func TestLostPublishReplyAdoptsTheOwnGenesisOnRetry(t *testing.T) {
 		},
 	})
 	prepareApp(t, a, "default")
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("init succeeded although the publish reply was lost")
 	}
 	revs, err := a.Storage.Discover(bg, storage.KindControl, "")
@@ -425,7 +425,7 @@ func TestLostPublishReplyAdoptsTheOwnGenesisOnRetry(t *testing.T) {
 		t.Fatalf("enbu.toml names %s before the publish was confirmed", g)
 	}
 	lose = false
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -446,14 +446,14 @@ func TestFailedPublishFoundsAgainOnRetry(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("init succeeded although the control could not be published")
 	}
 	if g := genesisInConfig(t, a); g != "" {
 		t.Fatalf("enbu.toml names %s although nothing was published", g)
 	}
 	fail = false
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestFoundingRefusesAnotherDevicesGenesis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("founded over another device's genesis: %v", err)
 	}
 	if after, err := bob.Storage.Discover(bg, storage.KindControl, ""); err != nil || len(after) != len(before) {
@@ -586,7 +586,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 			return next.Discover(ctx, k, scope)
 		},
 	})
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("verification unexpectedly succeeded")
 	}
 	genesis := genesisInConfig(t, a)
@@ -594,7 +594,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 		t.Fatal("the published genesis was not recorded")
 	}
 	offline = false
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatalf("retry new workspace in pinned checkout: %v", err)
 	}

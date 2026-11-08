@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 )
@@ -23,7 +24,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			}
 			d := w.Devices[0]
 			d.Store.Arm(Fault{"publish", 1, mode})
-			if e := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx); return err }); e == nil {
+			if e := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); return err }); e == nil {
 				t.Fatal("fault not returned")
 			}
 			d.Store.Arm(Fault{})
@@ -44,7 +45,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			}
 			w.Restart(0)
 			d = w.Devices[0]
-			r, e := d.App.InitializeRepository(ctx)
+			r, e := d.App.InitializeRepository(ctx, app.InitOptions{})
 			if e != nil {
 				t.Fatal(e)
 			}

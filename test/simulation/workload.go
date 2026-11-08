@@ -180,7 +180,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			if err != nil {
 				return err
 			}
-			e = a.DeleteEnvironment(env)
+			_, e = a.DeleteEnvironment(ctx, env, false)
 			if current == env {
 				expected = string(apperr.CodeInvalidArgument)
 			} else if !present {
@@ -207,7 +207,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 				if err := requireCode(denied, apperr.CodeNotMember); err != nil {
 					return err
 				}
-				_, e = w.Devices[target].App.InitializeRepository(ctx)
+				_, e = w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{})
 			}
 			if e == nil {
 				e = w.Devices[0].App.ApproveMember(ctx, w.Devices[target].ID)

@@ -156,7 +156,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			return e
 		}
 		inc := c.Environments["renamed"].Incarnation
-		if e := a.DeleteEnvironment("renamed"); e != nil {
+		if _, e := a.DeleteEnvironment(ctx, "renamed", false); e != nil {
 			return e
 		}
 		delete(w.Model, "renamed")
@@ -183,7 +183,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := a.SwitchEnvironment("default"); e != nil {
 			return e
 		}
-		if _, e := a.DeleteEnvironmentPurging(ctx, "renamed"); e != nil {
+		if _, e := a.DeleteEnvironment(ctx, "renamed", true); e != nil {
 			return e
 		}
 		delete(w.Model, "renamed")
@@ -282,7 +282,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := requireCode(b.AddSecret(ctx, "default", "UNAUTHORIZED", "value"), apperr.CodeNotMember); e != nil {
 			return e
 		}
-		r, e := b.InitializeRepository(ctx)
+		r, e := b.InitializeRepository(ctx, app.InitOptions{})
 		if e != nil {
 			return e
 		}
@@ -341,10 +341,10 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if _, e := a.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeSecretConflict) != nil {
 			return fmt.Errorf("conflicted read accepted: %v", e)
 		}
-		if e := requireCode(a.ResolveSecrets(ctx, "default", []string{"obsolete"}, map[string]app.SecretChoice{"BASE": {Value: "lost"}}), apperr.CodeConflict); e != nil {
+		if e := requireCode(a.ResolveSecrets(ctx, "default", []string{"obsolete"}, []app.SecretChoice{{Key: "BASE", Value: "lost"}}), apperr.CodeConflict); e != nil {
 			return e
 		}
-		if e := a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"BASE": {Value: "resolved"}}); e != nil {
+		if e := a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "BASE", Value: "resolved"}}); e != nil {
 			return e
 		}
 		w.Model["default"]["BASE"] = "resolved"
@@ -517,14 +517,20 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := requireCode(a.CreateEnvironment("default"), apperr.CodeEnvironmentExists); e != nil {
 			return e
 		}
-		if e := requireCode(a.DeleteEnvironment("default"), apperr.CodeInvalidArgument); e != nil {
-			return e
+		if _, e := a.DeleteEnvironment(ctx, "default", false); requireCode(e, apperr.CodeInvalidArgument) != nil {
+			return fmt.Errorf("deleted the current environment: %v", e)
 		}
 		if e := requireCode(a.ApproveMember(ctx, "bad-id"), apperr.CodeInvalidArgument); e != nil {
 			return e
 		}
 		if _, e := a.ImportSecrets(ctx, "default", map[string]string{"BASE": "overwrite"}, false); requireCode(e, apperr.CodeSecretExists) != nil {
 			return fmt.Errorf("import conflict: %v", e)
+		}
+		if _, e := a.ImportDotenv(ctx, "default", []byte("not a dotenv line"), false); requireCode(e, apperr.CodeInvalidArgument) != nil {
+			return fmt.Errorf("invalid dotenv import: %v", e)
+		}
+		if _, e := a.ImportDotenv(ctx, "default", []byte("BASE=overwrite\n"), false); requireCode(e, apperr.CodeSecretExists) != nil {
+			return fmt.Errorf("dotenv import conflict: %v", e)
 		}
 		return w.Check(ctx, "default")
 	case "local-corruption":
@@ -706,7 +712,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := w.Share(0); e != nil {
 			return e
 		}
-		if _, e := b.InitializeRepository(ctx); e != nil {
+		if _, e := b.InitializeRepository(ctx, app.InitOptions{}); e != nil {
 			return e
 		}
 		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {

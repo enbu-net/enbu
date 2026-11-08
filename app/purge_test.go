@@ -20,14 +20,14 @@ func (noDelete) Delete(context.Context, storage.Kind, string, digest.Digest) err
 func TestDeleteEnvironmentPurgingChecksEverythingBeforeDeleting(t *testing.T) {
 	alice := newAlice(t)
 	// "default" is the current environment, which cannot be deleted.
-	n, err := alice.DeleteEnvironmentPurging(bg, "default")
-	if !apperr.Is(err, apperr.CodeInvalidArgument) || n != 0 {
-		t.Fatalf("deleting the current environment: %d %v", n, err)
+	deleted, err := alice.DeleteEnvironment(bg, "default", true)
+	if !apperr.Is(err, apperr.CodeInvalidArgument) || deleted.Purged != 0 {
+		t.Fatalf("deleting the current environment: %+v %v", deleted, err)
 	}
 	if left := revisionsOf(t, alice, "default"); len(left) == 0 {
 		t.Fatal("secrets were deleted although the environment could not be")
 	}
-	if _, err := alice.DeleteEnvironmentPurging(bg, "missing"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+	if _, err := alice.DeleteEnvironment(bg, "missing", true); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
 		t.Fatalf("deleting an environment that does not exist: %v", err)
 	}
 
@@ -43,7 +43,7 @@ func TestDeleteEnvironmentPurgingChecksEverythingBeforeDeleting(t *testing.T) {
 	}
 	real := alice.Storage
 	alice.Storage = noDelete{real}
-	if _, err := alice.DeleteEnvironmentPurging(bg, "dev"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := alice.DeleteEnvironment(bg, "dev", true); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("a backend that cannot delete: %v", err)
 	}
 	alice.Storage = real
@@ -54,9 +54,9 @@ func TestDeleteEnvironmentPurgingChecksEverythingBeforeDeleting(t *testing.T) {
 		t.Fatal("secrets were deleted although the environment stayed")
 	}
 
-	n, err = alice.DeleteEnvironmentPurging(bg, "dev")
-	if err != nil || n != 1 {
-		t.Fatalf("deleting with purge: %d %v", n, err)
+	deleted, err = alice.DeleteEnvironment(bg, "dev", true)
+	if err != nil || deleted.Purged != 1 {
+		t.Fatalf("deleting with purge: %+v %v", deleted, err)
 	}
 	if envs, _ := alice.ListEnvironments(); len(envs) != 1 {
 		t.Fatalf("environments = %+v", envs)
@@ -91,7 +91,7 @@ func TestPurgeIncarnationReclaimsWhatAPlainDeleteLeft(t *testing.T) {
 	if err := alice.SwitchEnvironment("default"); err != nil {
 		t.Fatal(err)
 	}
-	if err := alice.DeleteEnvironment("dev"); err != nil {
+	if _, err := alice.DeleteEnvironment(bg, "dev", false); err != nil {
 		t.Fatal(err)
 	}
 	if revs, _ := alice.Storage.Discover(bg, storage.KindState, scope); len(revs) != 1 {

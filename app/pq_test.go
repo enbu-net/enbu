@@ -50,7 +50,7 @@ func TestWorkspaceIsPostQuantumEndToEnd(t *testing.T) {
 	alice := &App{Storage: newMemRegistry(), Identities: pqKeys(t), CheckpointDir: t.TempDir(),
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
 	prepareApp(t, alice, "default")
-	if _, err := alice.InitializeRepository(bg); err != nil {
+	if _, err := alice.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.AddSecret(bg, "default", "KEY", "v1"); err != nil {

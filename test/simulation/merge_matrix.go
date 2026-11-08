@@ -260,7 +260,7 @@ func (w *World) MergeCase(ctx context.Context, c MergeCase) error {
 			if err != nil {
 				return err
 			}
-			if err := requireCode(a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"K": {Value: "stale"}}), apperr.CodeConflict); err != nil {
+			if err := requireCode(a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "K", Value: "stale"}}), apperr.CodeConflict); err != nil {
 				return err
 			}
 			headRefs = append(headRefs, node.Rev)
@@ -291,7 +291,7 @@ func (w *World) MergeCase(ctx context.Context, c MergeCase) error {
 		if c.DeleteChoice {
 			value.Value = ""
 		}
-		if err := a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"K": {Value: value.Value, Delete: !value.Present}}); err != nil {
+		if err := a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "K", Value: value.Value, Delete: !value.Present}}); err != nil {
 			return err
 		}
 	} else {
@@ -346,7 +346,7 @@ func (w *World) twoKeyMerge(ctx context.Context) error {
 	if len(set.Conflicts) != 2 || set.Conflicts[0].Key != "A" || set.Conflicts[1].Key != "B" {
 		return fmt.Errorf("lost independent key conflict: %+v", set)
 	}
-	if err := requireCode(a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"A": {Value: "chosen"}}), apperr.CodeSecretConflict); err != nil {
+	if err := requireCode(a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "A", Value: "chosen"}}), apperr.CodeSecretConflict); err != nil {
 		return err
 	}
 	for _, d := range w.Devices {
@@ -354,7 +354,7 @@ func (w *World) twoKeyMerge(ctx context.Context) error {
 			return fmt.Errorf("partial resolution became readable: %v", err)
 		}
 	}
-	choices := map[string]app.SecretChoice{"A": {Value: "chosen"}, "B": {Delete: true}, "UNRELATED": {Delete: true}, "UNKNOWN": {Value: "must-not-appear"}}
+	choices := []app.SecretChoice{{Key: "A", Value: "chosen"}, {Key: "B", Delete: true}, {Key: "UNRELATED", Delete: true}, {Key: "UNKNOWN", Value: "must-not-appear"}}
 	if err := a.ResolveSecrets(ctx, "default", set.Heads, choices); err != nil {
 		return err
 	}
