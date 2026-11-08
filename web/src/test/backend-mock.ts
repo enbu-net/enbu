@@ -56,6 +56,8 @@ export function createBackendMock() {
       backend: "keyring",
       algorithm: "MLKEM768-X25519",
       recipient: "age1pq1test",
+      device_id: "d",
+      fingerprint: "f",
     })),
     diagnoseIdentity: vi.fn(async () => ({
       backend: "tpm",

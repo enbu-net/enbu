@@ -19,6 +19,7 @@ describe("DevicePanel", () => {
       algorithm: "MLKEM768-P256",
       recipient: "age1tagpq1example",
       device: "TPM 2.0",
+      device_id: "d",
       fingerprint: "aaaa-bbbb",
     });
     await renderAndSettle(<DevicePanel repoPath="/a" />);
