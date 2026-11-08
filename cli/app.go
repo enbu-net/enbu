@@ -3,13 +3,8 @@ package cli
 import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/spf13/cobra"
 )
-
-func New(version string) *cobra.Command {
-	return NewWithApp(version, app.New(clock.New()))
-}
 
 func NewWithApp(version string, a *app.App) *cobra.Command {
 	// Flags belong to one command invocation. Sharing a service between commands

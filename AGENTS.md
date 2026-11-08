@@ -62,8 +62,7 @@ pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Encla
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
 pkg/keystore/            → OS keyring access, systemd-creds (`--user`) files for Linux without a keyring; ENBU_BACKEND=text stores the GitHub token in a file (tokens only, never an Identity)
-pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
-pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
+pkg/dotenv/              → .env parsing and rendering
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)

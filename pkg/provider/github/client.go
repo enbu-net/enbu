@@ -20,10 +20,6 @@ func NewClient(token string) *Client {
 	return newClient(token, http.DefaultClient, apiBaseURL)
 }
 
-func NewClientWithHTTPClient(token string, httpClient *http.Client) *Client {
-	return newClient(token, httpClient, apiBaseURL)
-}
-
 func newClient(token string, httpClient *http.Client, baseURL string) *Client {
 	options := []githubsdk.ClientOptionsFunc{
 		githubsdk.WithHTTPClient(httpClient),

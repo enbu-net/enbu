@@ -5,8 +5,8 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
 )
 
 // GetIdentity describes this device's keys in the selected workspace, as
@@ -56,9 +56,9 @@ func (s *Service) UpgradeIdentity() (app.KeyUpdateResult, error) {
 
 // ImportSecrets adds every variable of a dotenv file's content to env, as
 // `enbu import` does. The frontend reads the file the person chose.
-func (s *Service) ImportSecrets(env, dotenv string, overwrite bool) (app.ImportResult, error) {
+func (s *Service) ImportSecrets(env, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
-		secrets, err := secretmap.ImportDotenv([]byte(dotenv))
+		secrets, err := dotenv.Parse([]byte(content))
 		if err != nil {
 			return app.ImportResult{}, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
 		}

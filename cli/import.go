@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -37,7 +37,7 @@ the same value is left alone; one with another value stops the import unless
 			if err != nil {
 				return invalidArgument("reading "+path, err)
 			}
-			secrets, err := secretmap.ImportDotenv(data)
+			secrets, err := dotenv.Parse(data)
 			if err != nil {
 				return invalidArgument("not a valid dotenv file: "+path, err)
 			}
