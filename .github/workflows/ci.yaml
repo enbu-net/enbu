@@ -134,7 +134,7 @@ jobs:
         run: task export/aws/test/e2e
 
   check:
-    name: Check
+    name: Static checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -361,3 +361,21 @@ jobs:
           name: atago-failure-artifacts
           path: .tmp/atago-artifacts
           if-no-files-found: ignore
+
+  # The required status check of the main ruleset. It keeps the name "Check"
+  # so the ruleset needs no change: a PR (Renovate included) merges only after
+  # every job above has passed. always() makes a failed, cancelled or skipped
+  # job fail this check instead of skipping it, which would count as passing.
+  status-check:
+    name: Check
+    if: always()
+    needs: [core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
