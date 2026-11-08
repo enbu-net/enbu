@@ -2,9 +2,7 @@ package simulation
 
 import (
 	"fmt"
-	"os"
 	"reflect"
-	"strconv"
 	"testing"
 )
 
@@ -48,15 +46,8 @@ func TestGeneratedConcurrentWorkloads(t *testing.T) {
 	exploration(t)
 	for devices := 3; devices <= 8; devices++ {
 		for seed := uint64(0); seed < 4; seed++ {
-			if os.Getenv("ENBU_SIM_SHARDS") != "" {
-				shards := integer(t, "ENBU_SIM_SHARDS", 1)
-				shard, err := strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-				if err != nil || shard < 0 || shard >= shards {
-					t.Fatal("invalid shard")
-				}
-				if ((devices-3)*4+int(seed))%shards != shard {
-					continue
-				}
+			if !ownsIndex(t, (devices-3)*4+int(seed)) {
+				continue
 			}
 			t.Run(fmt.Sprintf("devices-%d/seed-%d", devices, seed), func(t *testing.T) {
 				exercise(t, seed+3000, Plan{Devices: devices, Actions: Generate(seed, 32, devices)})

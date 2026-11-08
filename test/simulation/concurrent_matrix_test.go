@@ -2,8 +2,6 @@ package simulation
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -61,15 +59,8 @@ func TestConcurrentOperationMatrix(t *testing.T) {
 		for _, right := range ConcurrentOperations {
 			for _, same := range []bool{false, true} {
 				index++
-				if raw := os.Getenv("ENBU_SIM_SHARDS"); raw != "" {
-					shards := integer(t, "ENBU_SIM_SHARDS", 1)
-					shard, err := strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-					if err != nil || shard < 0 || shard >= shards {
-						t.Fatal("invalid shard")
-					}
-					if (index-1)%shards != shard {
-						continue
-					}
+				if !ownsIndex(t, index-1) {
+					continue
 				}
 				for seed := uint64(0); seed < 4; seed++ {
 					t.Run(fmt.Sprintf("%s/%s/same-%t/seed-%d", left, right, same, seed), func(t *testing.T) {
@@ -86,6 +77,7 @@ func TestConcurrentAdditions(t *testing.T) {
 	for _, same := range []bool{false, true} {
 		for seed := uint64(0); seed < 4; seed++ {
 			t.Run(fmt.Sprintf("same-%t/seed-%d", same, seed), func(t *testing.T) {
+				shardCase(t)
 				exercise(t, seed, Plan{Devices: 3, Concurrent: &ConcurrentCase{Left: "add", Right: "add", SameKey: same}})
 			})
 		}

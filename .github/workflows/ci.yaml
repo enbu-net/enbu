@@ -384,12 +384,12 @@ jobs:
 
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
-  # every job above has passed. A failed or skipped dependency fails this
-  # check; !cancelled() (not always()) lets a superseded run release its
-  # concurrency slot immediately.
+  # every job above has passed. always() makes a failed, cancelled or skipped
+  # job fail this check instead of skipping it: a skipped required check counts
+  # as passing, so a cancelled run must not be mergeable.
   status-check:
     name: Check
-    if: ${{ !cancelled() }}
+    if: always()
     needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5

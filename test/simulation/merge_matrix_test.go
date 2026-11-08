@@ -2,8 +2,6 @@ package simulation
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"testing"
 )
 
@@ -12,15 +10,8 @@ func TestThreeWayMergeDAGMatrix(t *testing.T) {
 	index := 0
 	run := func(c MergeCase) {
 		index++
-		if raw := os.Getenv("ENBU_SIM_SHARDS"); raw != "" {
-			shards := integer(t, "ENBU_SIM_SHARDS", 1)
-			shard, err := strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-			if err != nil || shard < 0 || shard >= shards {
-				t.Fatal("invalid shard")
-			}
-			if (index-1)%shards != shard {
-				return
-			}
+		if !ownsIndex(t, index-1) {
+			return
 		}
 		c.DeleteChoice = index%2 == 0
 		t.Run(fmt.Sprintf("%s/base-%d-%d/heads-%v", c.Shape, c.Base, c.OtherBase, c.Heads), func(t *testing.T) { exercise(t, uint64(index), Plan{Devices: 4, MergeCase: &c}) })

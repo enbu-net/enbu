@@ -6,26 +6,18 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"testing"
 )
 
 func TestOperationFaultMatrix(t *testing.T) {
 	exploration(t)
 	for index, op := range ProbeOperations {
-		if os.Getenv("ENBU_SIM_SHARDS") != "" {
-			shards := integer(t, "ENBU_SIM_SHARDS", 1)
-			shard, err := strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-			if err != nil || shard < 0 || shard >= shards {
-				t.Fatal("invalid shard")
-			}
-			if index%shards != shard {
-				continue
-			}
+		if !ownsIndex(t, index) {
+			continue
 		}
 		t.Run(op, func(t *testing.T) {
-			baseline := exercise(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: op}})
-			counts := countsBetween(t, baseline, "probe-start", "probe-result")
+			measured := baseline(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: op}})
+			counts := countsBetween(t, measured, "probe-start", "probe-result")
 			methods := make([]string, 0, len(counts))
 			for method := range counts {
 				methods = append(methods, method)
@@ -88,8 +80,8 @@ func TestWildcardFaultProbeIsReachable(t *testing.T) {
 func TestActualContextCancellationRecovery(t *testing.T) {
 	for _, op := range []string{"edit", "approve", "remove", "upgrade", "compact", "purge", "pull-file"} {
 		t.Run(op, func(t *testing.T) {
-			baseline := exercise(t, 79, Plan{Devices: 3, Probe: &Probe{Operation: op}})
-			counts := countsBetween(t, baseline, "probe-start", "probe-result")
+			measured := baseline(t, 79, Plan{Devices: 3, Probe: &Probe{Operation: op}})
+			counts := countsBetween(t, measured, "probe-start", "probe-result")
 			methods := []string{"publish", "delete"}
 			if op == "pull-file" {
 				methods = []string{"blob", "discover"}
@@ -103,6 +95,7 @@ func TestActualContextCancellationRecovery(t *testing.T) {
 						continue // Lost replies are modeled at durable-write boundaries.
 					}
 					t.Run(method+"-"+mode, func(t *testing.T) {
+						shardCase(t)
 						exercise(t, 79, Plan{Devices: 3, Probe: &Probe{op, Fault{method, counts[method], mode}}})
 					})
 				}
