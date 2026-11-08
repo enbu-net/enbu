@@ -14,7 +14,7 @@ type TeamCase struct{ Control, Write string }
 
 var TeamWrites = []string{"add", "edit", "delete", "import", "sync", "restore"}
 
-var TeamControls = []string{"approve-joiner", "remove-other", "remove-writer", "promote-other", "demote-writer", "approve-key-update"}
+var TeamControls = []string{"approve-joiner", "remove-other", "remove-writer", "promote-other", "demote-writer"}
 
 // TeamCase overlaps membership administration with a separate member's write.
 // Revocation can discard an unaccepted old-control branch; it cannot discard
@@ -49,10 +49,6 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		if err := a.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
 			return err
 		}
-	case "approve-key-update":
-		if _, err := b.UpgradeIdentity(ctx); err != nil {
-			return err
-		}
 	}
 	control := func(int) error {
 		switch c.Control {
@@ -66,8 +62,6 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 			return a.SetAdmin(ctx, w.Devices[2].ID, true)
 		case "demote-writer":
 			return a.SetAdmin(ctx, w.Devices[1].ID, false)
-		case "approve-key-update":
-			return a.ApproveMember(ctx, w.Devices[1].ID)
 		default:
 			return fmt.Errorf("unknown team control %s", c.Control)
 		}

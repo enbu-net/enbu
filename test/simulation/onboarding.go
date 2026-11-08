@@ -99,7 +99,7 @@ func (w *World) FirstMember(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		_, err = age.Decrypt(oldCiphertext, id)
+		_, err = age.Decrypt(oldCiphertext, id.Identity)
 		_ = id.Close()
 		var noMatch *agecrypto.NoIdentityMatchError
 		if !errors.As(err, &noMatch) {

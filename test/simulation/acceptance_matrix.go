@@ -34,7 +34,7 @@ func (w *World) changeFixtureControl(ctx context.Context, mutate func(*wsp.Contr
 	if mutate == nil {
 		return view.Head()
 	}
-	signer, err := d.Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := d.Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}

@@ -112,14 +112,6 @@ func (c *tpmConn) parentAuth() tpm2.AuthHandle {
 	return tpm2.AuthHandle{Handle: c.handle, Name: c.name, Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16)}
 }
 
-// encryptedParentAuth authorizes a command with the primary as its parent in
-// a session that encrypts the first command parameter, which for Create holds
-// the new object's authValue or sealed data.
-func (c *tpmConn) encryptedParentAuth() tpm2.AuthHandle {
-	return tpm2.AuthHandle{Handle: c.handle, Name: c.name,
-		Auth: tpm2.HMAC(tpm2.TPMAlgSHA256, 16, c.sessionOpts(tpm2.AESEncryption(128, tpm2.EncryptIn))...)}
-}
-
 // sessionOpts salts a session to the primary and adds the parameter
 // encryption encrypt asks for: the session key, and so the parameters, are
 // unknown to anyone watching the bus between enbu and the TPM.

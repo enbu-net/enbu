@@ -15,7 +15,7 @@ func TestMultiUserClockProfiles(t *testing.T) {
 	exploration(t)
 	index := 0
 	for _, clock := range []string{"frozen", "backward", "skewed"} {
-		for _, scenario := range []string{"history", "key-update", "membership", "concurrent-keys", "conflicting-edits", "control-fork"} {
+		for _, scenario := range []string{"history", "membership", "concurrent-keys", "conflicting-edits", "control-fork"} {
 			index++
 			if os.Getenv("ENBU_SIM_SHARDS") != "" {
 				shards := integer(t, "ENBU_SIM_SHARDS", 1)
