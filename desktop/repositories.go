@@ -121,6 +121,7 @@ func (s *Service) RemoveRepository(path string) (err error) {
 	}
 	return config.SaveGUI(cfg)
 }
+
 func appendUnique(slice []string, val string) []string {
 	seen := make(map[string]struct{}, len(slice)+1)
 	result := slice[:0]
@@ -161,6 +162,7 @@ func (s *Service) GetRepoStatus() (_ RepoInfo, err error) {
 	}
 	return s.repoInfo(repo)
 }
+
 func (s *Service) loadSelectedRepo() {
 	cfg, err := config.LoadGUI()
 	if err != nil || cfg.SelectedRepo == "" {

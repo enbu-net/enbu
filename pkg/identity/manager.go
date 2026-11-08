@@ -490,16 +490,5 @@ func saveJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".identity-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	if err = errors.Join(err, f.Close()); err != nil {
-		return err
-	}
-	return fsutil.Rename(f.Name(), path)
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }

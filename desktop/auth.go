@@ -176,6 +176,7 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 func (s *Service) Logout() error {
 	return publicError(auth.DeleteToken())
 }
+
 func randomSessionID() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

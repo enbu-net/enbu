@@ -155,23 +155,9 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err = preserveProjectOwner(tmp, previous); err == nil {
-		err = tmp.Chmod(mode)
-	}
-	if err == nil {
-		if _, err = tmp.Write(content); err == nil {
-			err = tmp.Sync()
-		}
-	}
-	if err = errors.Join(err, tmp.Close()); err != nil {
-		return err
-	}
-	return fsutil.Rename(tmp.Name(), path)
+	return fsutil.WriteFileAtomicWith(path, content, mode, fsutil.AtomicOptions{
+		Prepare: func(tmp *os.File) error { return preserveProjectOwner(tmp, previous) },
+	})
 }
 
 // MarshalProject emits the compact, canonical enbu.toml layout. Encoding the

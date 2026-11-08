@@ -70,18 +70,7 @@ func (c *CredsBackend) Store(service, key string, secret []byte) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(c.Dir, ".cred-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err = tmp.Write(sealed); err == nil {
-		err = tmp.Sync()
-	}
-	if err = errors.Join(err, tmp.Close()); err != nil {
-		return err
-	}
-	return fsutil.Rename(tmp.Name(), path)
+	return fsutil.WriteFileAtomic(path, sealed, 0o600)
 }
 
 func (c *CredsBackend) Load(service, key string) ([]byte, error) {

@@ -1,12 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 // LocalConfig is per-user state of one workspace, kept outside the repository.
@@ -39,15 +41,14 @@ func SaveLocalStateTo(dir, workspaceID string, cfg *LocalConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("creating state file: %w", err)
-	}
-	encoder := toml.NewEncoder(f)
-	if err := encoder.Encode(cfg); err != nil {
-		_ = f.Close()
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return err
 	}
-	return f.Close()
+	if err := fsutil.WriteFileAtomic(path, buf.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("writing state file: %w", err)
+	}
+	return nil
 }
+
 func uuidOrHash(id string) string { return fmt.Sprintf("%x", sha256.Sum256([]byte(id))) }

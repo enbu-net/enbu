@@ -113,18 +113,7 @@ func writeFileAtomic(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".checkpoint-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if _, err = tmp.Write(b); err == nil {
-		err = tmp.Sync()
-	}
-	if err = errors.Join(err, tmp.Close()); err != nil {
-		return err
-	}
-	return fsutil.Rename(tmp.Name(), path)
+	return fsutil.WriteFileAtomic(path, b, 0o600)
 }
 
 // update runs fn on the current contents while holding the file lock, and
