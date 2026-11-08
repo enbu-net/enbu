@@ -35,14 +35,20 @@ jobs:
         run: python3 scripts/dst_plan.py
 
   simulation:
-    name: Simulation (${{ matrix.platform.target }})
+    name: Simulation (${{ matrix.platform.target }}, group ${{ matrix.group.id }})
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: ${{ needs.plan.outputs.mode == 'full' && 360 || 80 }}
     strategy:
       fail-fast: false
+      # Reserve runner capacity for normal PR checks while the nightly is large.
+      max-parallel: ${{ needs.plan.outputs.mode == 'full' && 10 || 5 }}
       matrix:
+        # Full keeps the same 1,024 seeds, spread over four runners per OS.
+        # Each runner still owns only four native parallel steps. Incremental
+        # keeps one runner per OS to avoid queue/setup overhead on short checks.
+        group: ${{ fromJSON(needs.plan.outputs.mode == 'full' && '[{"id":0,"lanes":[0,1,2,3]},{"id":1,"lanes":[4,5,6,7]},{"id":2,"lanes":[8,9,10,11]},{"id":3,"lanes":[12,13,14,15]}]' || '[{"id":0,"lanes":[0,1,2,3]}]') }}
         platform:
           - target: linux-amd64
             runner: ubuntu-26.04
@@ -59,9 +65,9 @@ jobs:
       ENBU_SIM_EXPLORE: '1'
       ENBU_SIM_EXHAUSTIVE: ${{ needs.plan.outputs.mode == 'full' && '1' || '0' }}
       ENBU_SIM_CASE_STRIDE: ${{ needs.plan.outputs.mode == 'full' && '1' || '8' }}
-      ENBU_SIM_SEEDS: ${{ needs.plan.outputs.mode == 'full' && '256' || '2' }}
+      ENBU_SIM_SEEDS: ${{ needs.plan.outputs.mode == 'full' && '64' || '2' }}
       ENBU_SIM_STEPS: ${{ needs.plan.outputs.mode == 'full' && '256' || '32' }}
-      ENBU_SIM_SHARDS: '4'
+      ENBU_SIM_SHARDS: ${{ needs.plan.outputs.mode == 'full' && '16' || '4' }}
       ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
       DST_TESTS: ${{ needs.plan.outputs.tests }}
       DST_MUTATION: ${{ needs.plan.outputs.mutation }}
@@ -74,10 +80,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - uses: $/.github/actions/setup-go
       - name: Test affected merge rules
         if: needs.plan.outputs.merge == 'true'
         run: go test -count=1 ./pkg/merge
@@ -88,44 +91,44 @@ jobs:
           - name: Explore and replay (lane 0)
             shell: bash
             env:
-              ENBU_SIM_SHARD: '0'
-              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-0
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[0] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[0] }}
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-0/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
           - name: Explore and replay (lane 1)
             shell: bash
             env:
-              ENBU_SIM_SHARD: '1'
-              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-1
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[1] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[1] }}
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-1/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
           - name: Explore and replay (lane 2)
             shell: bash
             env:
-              ENBU_SIM_SHARD: '2'
-              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-2
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[2] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[2] }}
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-2/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
           - name: Explore and replay (lane 3)
             shell: bash
             env:
-              ENBU_SIM_SHARD: '3'
-              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-3
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[3] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[3] }}
             run: |
               mkdir -p "$ENBU_SIM_ARTIFACTS"
-              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile=.tmp/simulation/lane-3/coverage.out -run "$DST_TESTS" -v ./test/simulation
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
               if [ "$DST_MUTATION" = true ]; then
                 ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
               fi
@@ -133,7 +136,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: simulation-${{ matrix.platform.target }}
+          name: simulation-${{ matrix.platform.target }}-${{ matrix.group.id }}
           path: ${{ github.workspace }}/.tmp/simulation
           if-no-files-found: ignore
           retention-days: 14

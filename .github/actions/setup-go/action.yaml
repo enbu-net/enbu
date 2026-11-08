@@ -1,0 +1,24 @@
+name: Setup Go with a workload cache
+description: Keep native, instrumented, and desktop build caches from competing for one immutable key
+inputs:
+  cache-scope:
+    description: Workload whose compiled packages should be retained
+    default: ${{ github.job }}
+runs:
+  using: composite
+  steps:
+    - name: Select Go build cache workload
+      shell: bash
+      env:
+        CACHE_SCOPE: ${{ inputs.cache-scope }}
+      run: |
+        mkdir -p .tmp
+        printf '%s\n' "$CACHE_SCOPE" > .tmp/go-cache-scope
+    - uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+        cache-dependency-path: |
+          go.sum
+          tools/wails3/go.sum
+          .tmp/go-cache-scope
