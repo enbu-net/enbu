@@ -361,3 +361,33 @@ jobs:
           name: atago-failure-artifacts
           path: .tmp/atago-artifacts
           if-no-files-found: ignore
+
+  # The single required status check: branch rules require this job, so a
+  # PR (Renovate included) merges only after every job above has passed.
+  result:
+    name: CI result
+    if: always()
+    needs:
+      - core-native
+      - identity-e2e
+      - storage-e2e
+      - aws-export-e2e
+      - check
+      - test
+      - desktop
+      - scenario
+      - e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            if [ "$result" != success ]; then
+              echo "::error::A required job ended with: $result"
+              exit 1
+            fi
+          done
