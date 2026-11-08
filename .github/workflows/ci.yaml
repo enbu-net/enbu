@@ -12,8 +12,9 @@ env:
   AQUA_GITHUB_TOKEN: ${{ github.token }}
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  # Only superseded PR runs cancel; main commits keep distinct queue slots.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   frontend:

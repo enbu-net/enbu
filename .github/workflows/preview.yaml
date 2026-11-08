@@ -7,8 +7,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: preview-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: preview-${{ github.event.pull_request.number || github.sha }}
+  # Only superseded PR runs cancel; main commits keep distinct queue slots.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-web:

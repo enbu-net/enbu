@@ -399,3 +399,63 @@ func TestScenarioTargetsCoverEveryScenarioTaggedPackage(t *testing.T) {
 		t.Fatal("no scenario-tagged files were inspected")
 	}
 }
+
+func TestOnlySupersededPullRequestsShareCancelableGroups(t *testing.T) {
+	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			root := readYAML(t, "../../.github/workflows/"+name)
+			concurrency := field(root, "concurrency")
+			cancel := field(concurrency, "cancel-in-progress")
+			if cancel == nil || cancel.Value != "${{ github.event_name == 'pull_request' }}" {
+				t.Fatal("main pushes may cancel an earlier commit's verification")
+			}
+			group := field(concurrency, "group")
+			if group == nil || !strings.Contains(group.Value, "github.event.pull_request.number || github.sha") || strings.Contains(group.Value, "github.ref") {
+				t.Fatal("main commits can replace each other in the pending concurrency slot")
+			}
+		})
+	}
+}
+
+func TestGoCoverageDoesNotDependOnReactTestResults(t *testing.T) {
+	root := readYAML(t, "../../.github/workflows/tobari.yaml")
+	jobs := field(root, "jobs")
+	for _, name := range []string{"unit", "scenario", "frontend"} {
+		job := field(jobs, name)
+		needs := field(job, "needs")
+		if needs == nil || len(needs.Content) != 1 || needs.Content[0].Value != "embed" {
+			t.Fatalf("%s must wait only for the shared build", name)
+		}
+		download := false
+		for _, step := range field(job, "steps").Content {
+			if uses := field(step, "uses"); uses != nil && strings.HasPrefix(uses.Value, "actions/download-artifact@") {
+				with := field(step, "with")
+				download = field(with, "name").Value == "coverage-embed" && field(with, "path").Value == "web"
+			}
+		}
+		if !download || field(field(job, "env"), "ENBU_FRONTEND_PREBUILT").Value != "1" {
+			t.Fatalf("%s lacks the shared bundle before skipping its frontend build", name)
+		}
+	}
+	embed := field(jobs, "embed")
+	if embed == nil || field(embed, "needs") != nil {
+		t.Fatal("embed build must not wait for coverage tests")
+	}
+	bundle, routes, build := false, false, false
+	for _, step := range field(embed, "steps").Content {
+		if run := field(step, "run"); run != nil {
+			build = build || run.Value == "task frontend/build/desktop"
+			if strings.Contains(run.Value, "test") {
+				t.Fatal("a test failure can suppress independent Go coverage")
+			}
+		}
+		if uses := field(step, "uses"); uses != nil && strings.HasPrefix(uses.Value, "actions/upload-artifact@") {
+			paths := field(field(step, "with"), "path").Value
+			bundle = strings.Contains(paths, "web/dist")
+			routes = strings.Contains(paths, "web/src/routeTree.gen.ts")
+		}
+	}
+	if !build || !bundle || !routes {
+		t.Fatal("shared coverage artifact lacks its bundle or generated router")
+	}
+}
