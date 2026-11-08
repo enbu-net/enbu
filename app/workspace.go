@@ -35,10 +35,9 @@ type session struct {
 	signer    signing.Signer
 	// acceptNewGenesis replaces a different pinned trust root instead of failing.
 	acceptNewGenesis bool
-	// founded is set when this session just founded the workspace, which moves
-	// the repository pin to it.
-	founded      bool
-	foundingRepo *wsp.Root
+	// founded is set when this device founded the workspace and has not pinned
+	// it yet, which moves the repository pin to it.
+	founded bool
 	// diagnostic verifies the existing trust state without pinning or accepting it.
 	diagnostic bool
 	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
@@ -65,22 +64,23 @@ func (a *App) checkpoints(workspace, genesis string) *wsp.Checkpoints {
 	return wsp.OpenCheckpoints(a.checkpointDir(), workspace, digest.Digest(genesis), a.clock())
 }
 
-// trustRoot is the genesis this device pinned for workspace on first use.
-func (a *App) trustRoot(workspace string) *wsp.TrustRoot {
-	return wsp.OpenTrustRoot(a.checkpointDir(), workspace, a.clock())
+// trust holds the roots this device pinned on first use, per workspace and
+// per repository.
+func (a *App) trust() *wsp.Trust {
+	return wsp.OpenTrust(a.checkpointDir(), a.clock())
 }
 
-// repositoryTrustRoot is the workspace and genesis this device pinned for the
-// repository's enbu.toml on first use, or nil when its path is unknown.
-func (a *App) repositoryTrustRoot() *wsp.TrustRoot {
+// repositoryKey is the absolute path of the repository's enbu.toml, which
+// keys its pin, or "" when the path is unknown.
+func (a *App) repositoryKey() string {
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
-		return nil
+		return ""
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return wsp.OpenRepositoryTrustRoot(a.checkpointDir(), path, a.clock())
+	return path
 }
 
 // wspError classifies verification failures so callers can tell an attack or
@@ -221,28 +221,16 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	// root it saw, both for the workspace ID and for this repository's
 	// enbu.toml, since a commit can change the workspace ID too.
 	root := wsp.Root{Workspace: s.workspace, Genesis: genesis}
-	type pin struct {
-		trust    *wsp.TrustRoot
-		replace  bool
-		expected *wsp.Root
+	trust, repo := a.trust(), a.repositoryKey()
+	mode := wsp.PinFirst
+	switch {
+	case s.acceptNewGenesis:
+		mode = wsp.PinReplace
+	case s.founded:
+		mode = wsp.PinFounded
 	}
-	pins := []pin{{trust: a.trustRoot(s.workspace), replace: s.acceptNewGenesis}}
-	if repo := a.repositoryTrustRoot(); repo != nil {
-		// Founding cannot hand trust to anyone else, so it moves the
-		// repository pin to the new workspace.
-		p := pin{trust: repo, replace: s.acceptNewGenesis || s.founded}
-		if s.founded && !s.acceptNewGenesis {
-			p.expected = s.foundingRepo
-		}
-		pins = append(pins, p)
-	}
-	for _, p := range pins {
-		if p.replace {
-			continue
-		}
-		if err := p.trust.Check(root); err != nil {
-			return wspError(err)
-		}
+	if err := trust.Check(root, repo, mode); err != nil {
+		return wspError(err)
 	}
 	// The checkpoint belongs to this trust root; the genesis may have just been created.
 	s.cps = a.checkpoints(s.workspace, s.cfg.ControlGenesis)
@@ -266,20 +254,12 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 	}
 	// Pin only a genesis that verified, so a typo or an unreachable storage
 	// never becomes the trust root.
-	for _, p := range pins {
-		var previous wsp.Root
-		var err error
-		if p.expected != nil {
-			previous, err = p.trust.PinReplacing(root, *p.expected)
-		} else {
-			previous, err = p.trust.Pin(root, p.replace)
-		}
-		if err != nil {
-			return wspError(err)
-		}
-		if previous != (wsp.Root{}) && previous != root && s.replaced == (wsp.Root{}) && !s.founded {
-			s.replaced = previous
-		}
+	previous, err := trust.Pin(root, repo, mode)
+	if err != nil {
+		return wspError(err)
+	}
+	if mode == wsp.PinReplace {
+		s.replaced = previous
 	}
 	if err := s.cps.AcceptControl(view); err != nil {
 		return wspError(err)
