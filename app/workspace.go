@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/merge"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -31,7 +31,7 @@ type session struct {
 	view      *wsp.ControlView
 	head      *wsp.Verified // the only head; nil while the Control is forked
 	cps       *wsp.Checkpoints
-	ids       []agecrypto.Identity
+	id        identity.Identity
 	signer    signing.Signer
 	// acceptNewGenesis replaces a different pinned trust root instead of failing.
 	acceptNewGenesis bool
@@ -46,7 +46,9 @@ type session struct {
 }
 
 func (s *session) Close() {
-	CloseIdentities(s.ids)
+	if s.id != nil {
+		_ = s.id.Close()
+	}
 	if s.signer != nil {
 		_ = s.signer.Close()
 	}
@@ -229,23 +231,14 @@ func (a *App) openSession(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if a.Identities == nil {
-		return nil, fmt.Errorf("identity store is not initialized")
-	}
-	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, apperr.New(apperr.CodeNotInitialized, "no signing key found (run 'enbu init' first)", nil)
-		}
-		return nil, identityError(fmt.Errorf("loading signing key: %w", err))
-	}
-	if _, ok := s.head.Principal(s.signer.Public().DeviceID()); !ok {
-		s.Close()
-		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.signer.Public().DeviceID().Fingerprint()})
-	}
-	a.promoteApprovedKey(s)
-	if s.ids, err = LoadIdentities(a.Identities, s.workspace); err != nil {
-		s.Close()
+	d, err := loadDevice(a.Identities, s.workspace)
+	if err != nil {
 		return nil, err
+	}
+	s.id, s.signer = d.Identity, d.Signer
+	if _, ok := s.head.Principal(s.self()); !ok {
+		s.Close()
+		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.self().Fingerprint()})
 	}
 	return s, nil
 }
@@ -337,7 +330,7 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 	if err != nil {
 		return nil, wspError(err)
 	}
-	return decryptSecretsObject(ciphertext, s.ids...)
+	return decryptSecretsObject(ciphertext, s.id)
 }
 
 // readResource returns the merged current content of env. The heads must have

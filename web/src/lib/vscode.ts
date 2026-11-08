@@ -1,9 +1,5 @@
 import { Create } from "@wailsio/runtime";
-import {
-  Diff,
-  ImportResult,
-  KeyUpdateResult,
-} from "../bindings/github.com/enbu-net/enbu/app/models";
+import { Diff, ImportResult } from "../bindings/github.com/enbu-net/enbu/app/models";
 import { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 import * as Desktop from "../bindings/github.com/enbu-net/enbu/desktop/models";
 import type { ServiceClient, ServiceMethod } from "./backend";
@@ -179,7 +175,6 @@ const results: { [K in ServiceMethod]?: (source: unknown) => Result<K> } = {
   ListJoinRequests: Create.Array((source) => Desktop.JoinRequest.createFrom(source)),
   GetIdentity: (source) => PublicInfo.createFrom(source),
   DiagnoseIdentity: (source) => Desktop.IdentityDiagnosis.createFrom(source),
-  UpgradeIdentity: (source) => KeyUpdateResult.createFrom(source),
 };
 
 /** The desktop service, called through the extension host instead of Wails. */

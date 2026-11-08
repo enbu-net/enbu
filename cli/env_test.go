@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
@@ -36,7 +37,7 @@ output = ".env.prod"
 	a := &app.App{
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		Identities:    &staticKeyStore{},
+		Identities:    &apptest.Identities{},
 		RepositoryDir: dir,
 	}
 	bootstrapCLIApp(t, a, storagetest.NewMemory())

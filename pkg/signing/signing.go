@@ -104,6 +104,9 @@ func P256FromUncompressed(b []byte) (PublicKey, error) {
 	return PublicKey{Alg: P256, Bytes: compressed}, nil
 }
 
+// Equal reports whether k and o are the same key.
+func (k PublicKey) Equal(o PublicKey) bool { return k.Alg == o.Alg && bytes.Equal(k.Bytes, o.Bytes) }
+
 func (k PublicKey) DeviceID() DeviceID {
 	h := sha256.New()
 	h.Write([]byte(deviceIDDomain))

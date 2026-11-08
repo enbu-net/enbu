@@ -359,12 +359,6 @@ export class JoinRequest {
     "algorithm": string;
     "requested_at": string;
 
-    /**
-     * KeyUpdate is set for a member replacing its key, as `enbu identity
-     * upgrade` asks, rather than a new device asking to join.
-     */
-    "key_update": boolean;
-
     /** Creates a new JoinRequest instance. */
     constructor($$source: Partial<JoinRequest> = {}) {
         if (!("device_id" in $$source)) {
@@ -378,9 +372,6 @@ export class JoinRequest {
         }
         if (!("requested_at" in $$source)) {
             this["requested_at"] = "0001-01-01T00:00:00.000Z";
-        }
-        if (!("key_update" in $$source)) {
-            this["key_update"] = false;
         }
 
         Object.assign(this, $$source);
@@ -405,11 +396,6 @@ export class Member {
     "admin": boolean;
     "self": boolean;
 
-    /**
-     * PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
-     */
-    "post_quantum": boolean;
-
     /** Creates a new Member instance. */
     constructor($$source: Partial<Member> = {}) {
         if (!("device_id" in $$source)) {
@@ -426,9 +412,6 @@ export class Member {
         }
         if (!("self" in $$source)) {
             this["self"] = false;
-        }
-        if (!("post_quantum" in $$source)) {
-            this["post_quantum"] = false;
         }
 
         Object.assign(this, $$source);

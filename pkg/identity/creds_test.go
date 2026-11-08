@@ -11,7 +11,7 @@ import (
 // Secret Service.
 type noKeyringVault struct{ memoryVault }
 
-func (noKeyringVault) Probe() error { return errNoReply }
+func (noKeyringVault) Probe(context.Context) error { return errNoReply }
 
 // Without a keyring, software keys go to systemd-creds, and load from there
 // even once a keyring appears.
@@ -29,24 +29,13 @@ func TestSoftwareKeysFallBackToSystemdCreds(t *testing.T) {
 	if !strings.Contains(warning, "using systemd-creds") {
 		t.Fatalf("warning = %q", warning)
 	}
-	s, signer, _, err := m.CreateSigner("ws")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	if signer.Backend != backendCreds {
-		t.Fatalf("signer backend = %q, want %q", signer.Backend, backendCreds)
-	}
-	if len(creds) != 2 {
-		t.Fatalf("systemd-creds holds %d keys, want 2", len(creds))
+	if len(creds) != 1 {
+		t.Fatalf("systemd-creds holds %d entries, want 1", len(creds))
 	}
 
 	m.Vault = memoryVault{}
 	if _, err := m.Load("ws"); err != nil {
 		t.Fatalf("Load with a keyring present: %v", err)
-	}
-	if _, err := m.LoadSigner("ws"); err != nil {
-		t.Fatalf("LoadSigner with a keyring present: %v", err)
 	}
 	m.Mode = "hardware"
 	if _, err := m.Load("ws"); err == nil {
@@ -70,9 +59,6 @@ func TestNoSoftwareBackendIsUnavailable(t *testing.T) {
 	m := &Manager{Dir: t.TempDir(), Vault: noKeyringVault{memoryVault{}}, Creds: noKeyringVault{memoryVault{}}}
 	if _, _, _, err := m.Create("ws"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Create = %v, want unavailable", err)
-	}
-	if _, _, _, err := m.CreateSigner("ws"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("CreateSigner = %v, want unavailable", err)
 	}
 }
 

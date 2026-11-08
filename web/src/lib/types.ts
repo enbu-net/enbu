@@ -23,7 +23,6 @@ export type {
 export type {
   Diff,
   ImportResult,
-  KeyUpdateResult,
   ProgressStep,
 } from "../bindings/github.com/enbu-net/enbu/app/models";
 export type { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";

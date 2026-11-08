@@ -1,11 +1,12 @@
 package cli
 
 import (
-	"github.com/enbu-net/enbu/app"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app"
 )
 
 func TestEnsureGitignore_CreatesNewFile(t *testing.T) {

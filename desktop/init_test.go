@@ -1,11 +1,13 @@
 package desktop
 
 import (
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app/apptest"
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -14,7 +16,7 @@ import (
 func newInitService(t *testing.T, dir string) *Service {
 	t.Helper()
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: map[string][]byte{}}
+	a.Identities = &apptest.Identities{}
 	a.CheckpointDir = t.TempDir()
 	s := NewService(a)
 	s.repoPath = dir

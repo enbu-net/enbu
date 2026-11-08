@@ -94,52 +94,6 @@ export class ImportResult {
     }
 }
 
-export class KeyUpdateResult {
-    "backend": string;
-    "algorithm": string;
-    "recipient": string;
-    "device_id": string;
-    "fingerprint": string;
-
-    /**
-     * Pending is set while an admin still has to approve the new key. Until
-     * then this device decrypts with either key.
-     */
-    "pending": boolean;
-
-    /** Creates a new KeyUpdateResult instance. */
-    constructor($$source: Partial<KeyUpdateResult> = {}) {
-        if (!("backend" in $$source)) {
-            this["backend"] = "";
-        }
-        if (!("algorithm" in $$source)) {
-            this["algorithm"] = "";
-        }
-        if (!("recipient" in $$source)) {
-            this["recipient"] = "";
-        }
-        if (!("device_id" in $$source)) {
-            this["device_id"] = "";
-        }
-        if (!("fingerprint" in $$source)) {
-            this["fingerprint"] = "";
-        }
-        if (!("pending" in $$source)) {
-            this["pending"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new KeyUpdateResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): KeyUpdateResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new KeyUpdateResult($$parsedSource as Partial<KeyUpdateResult>);
-    }
-}
-
 export class ProgressStep {
     /**
      * "add" | "pull" | "sync" | "delete"

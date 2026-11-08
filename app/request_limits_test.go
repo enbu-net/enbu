@@ -85,12 +85,12 @@ func TestApprovalChecksConflictsBeyondTheDisplayCap(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = recipient.Close() }()
-	signer, err := bob.Identities.LoadSigner(ws)
+	signer, err := loadSigner(bob, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = signer.Close() }()
-	blob, err := wsp.NewJoinRequest(ws, recipient.Recipient().String(), time.Unix(1700000000, 0), signer)
+	blob, err := wsp.NewJoinRequest(ws, recipient.Identity.Recipient().String(), time.Unix(1700000000, 0), signer)
 	if err != nil {
 		t.Fatal(err)
 	}
