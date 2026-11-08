@@ -382,9 +382,13 @@ jobs:
           path: .tmp/atago-artifacts
           if-no-files-found: ignore
 
+  # The required status check of the main ruleset. It keeps the name "Check"
+  # so the ruleset needs no change: a PR (Renovate included) merges only after
+  # every job above has passed. A failed or skipped dependency fails this
+  # check; !cancelled() (not always()) lets a superseded run release its
+  # concurrency slot immediately.
   status-check:
     name: Check
-    # Aggregate failures, but let cancelled workflows finish immediately.
     if: ${{ !cancelled() }}
     needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
     runs-on: ubuntu-26.04

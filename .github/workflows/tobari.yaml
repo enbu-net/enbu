@@ -267,3 +267,18 @@ jobs:
         with:
           tobari-json: .tmp/coverage/merged.json
           name: tobari-report
+
+  # Required status check for coverage: fails unless every coverage job passed.
+  status-check:
+    name: Coverage result
+    if: always()
+    needs: [unit, scenario, e2e, identity, frontend, coverage]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every coverage job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
