@@ -3,15 +3,12 @@
 package identity
 
 import (
-	"bytes"
-	"crypto/rand"
-	"crypto/x509"
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"slices"
 	"testing"
-	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -148,63 +145,3 @@ func (s *sharedRecording) Send(command []byte) ([]byte, error) {
 }
 
 func (s *sharedRecording) Close() error { return s.next.Close() }
-
-// TestTPMNativeAttestation runs the attestation on the real TPM: it needs an
-// EK certificate in the TPM's NV, and checks that the AK certifies new keys
-// and that the TPM answers a challenge encrypted to its EK. The EK chain is
-// not checked here, since the maker's roots are not part of the test.
-func TestTPMNativeAttestation(t *testing.T) {
-	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
-		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a TPM 2.0 device")
-	}
-	b, ok := platformHardware(clock.New()).(*TPMBackend)
-	if !ok {
-		t.Fatalf("platform hardware is %T, want a TPM", platformHardware(clock.New()))
-	}
-	id, md, err := b.Create()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = id.Close()
-	s, smd, err := b.CreateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	if md.TPMCertified == nil || smd.TPMCertified == nil {
-		c, err := b.acquire()
-		if err == nil {
-			c.mu.Lock()
-			var ak *tpm2.CreatePrimaryResponse
-			if ak, err = createAK(c.t); err == nil {
-				_ = flush(c.t, ak.ObjectHandle)
-			}
-			c.mu.Unlock()
-			_ = b.release(c)
-		}
-		t.Fatalf("the TPM did not certify the new keys (attestation key: %v)", err)
-	}
-	ev, err := b.Evidence(*md.TPMCertified, *smd.TPMCertified)
-	if err != nil {
-		t.Fatalf("evidence: %v", err)
-	}
-	leaf, err := x509.ParseCertificate(ev.EKCertificates[0])
-	if err != nil {
-		t.Fatalf("EK certificate: %v", err)
-	}
-	t.Logf("EK certificate: issuer %q, %T, AIA %v", leaf.Issuer.String(), leaf.PublicKey, leaf.IssuingCertificateURL)
-	att, err := attestKeys(ev, leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secret, blob, encrypted, err := att.Challenge(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := time.Now()
-	got, err := b.Activate(blob, encrypted)
-	if err != nil || !bytes.Equal(got, secret) {
-		t.Fatalf("activate: %v", err)
-	}
-	t.Logf("challenge answered in %v", time.Since(start))
-}

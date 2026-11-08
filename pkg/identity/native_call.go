@@ -2,8 +2,9 @@ package identity
 
 import (
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 // errNativeTimeout reports a framework call that did not return in time.
