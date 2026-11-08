@@ -30,7 +30,7 @@ task cli/test/scenario  # Scenario tests
 task cli/check          # Format and lint CLI code
 task gui/build          # Build GUI desktop app (desktop/wails/build/bin)
 task gui/run            # Run the desktop app against the Vite dev server
-task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
+task gui/bindings       # Regenerate web/src/bindings after changing desktop.Service or its types
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code, and fail on stale bindings
 task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
@@ -50,9 +50,9 @@ Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`,
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
+desktop/                 → desktop.Service, free of Wails: every exported method is a frontend operation, returning app result types directly; desktop/wails is the Wails v3 app that binds it (macOS/Windows metadata in packaging/); desktop/rpc serves the same methods, found by reflection, as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions
 vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local, trusted workspaces only
-web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend (the generated bindings, by their Go method names, or the preview mock); UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
@@ -98,4 +98,4 @@ test/                    → scenario tests (build tag: scenario)
 - Never inspect `err.Error()` to control behavior.
 - Desktop UI error state and error component props must use `DisplayError`; never render `err.message`, `String(err)`, an HTTP response body, or an `AppError` payload message directly.
 - Convert unknown frontend and backend failures with `toDisplayError`. Unknown or invalid codes must display the localized `internal` message; detailed causes belong only in logs.
-- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts`. Every exported `DesktopService` method that returns an error must return it through `result` or `publicError`, so the frontend receives the AppError payload and never an internal cause.
+- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts` (in VS Code it routes the bindings' calls to the extension host). Every exported `desktop.Service` method that returns an error must return it through `withRepo`, `withRepoResult`, `publicError` or `publicInto` (apperrlint checks it), so it fails with a `desktop.Error`: the AppError payload, never an internal cause. The Wails app and desktop/rpc send `desktop.ErrorPayload`.

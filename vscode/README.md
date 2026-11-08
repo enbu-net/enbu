@@ -51,6 +51,7 @@ How it fits together:
 - `src/panel.ts` relays the webview's calls to enbu and enbu's events back,
   and answers enbu's folder dialog and browser requests.
 - `src/webview.ts` serves `web/dist-vscode` with a strict Content Security
-  Policy. `web/src/lib/vscode.ts` is the webview side.
+  Policy. `web/src/lib/vscode.ts` is the webview side; the messages both
+  sides exchange are defined once in `web/src/lib/webview-protocol.ts`.
 
 Params and results carry secret values. Nothing in the extension logs them.
