@@ -19,10 +19,6 @@ type SelectedRepo struct {
 	HasRemote bool   `json:"has_remote"`
 }
 
-func ValidateRepoPath(path string) (*SelectedRepo, error) {
-	return validateRepoPath(context.Background(), gitprovider.NewCLIClient(), path)
-}
-
 func validateRepoPath(
 	ctx context.Context,
 	gitClient gitprovider.Client,

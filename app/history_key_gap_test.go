@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -27,7 +26,7 @@ func TestHistoryPreservesAncestryAcrossUnreadableRevisions(t *testing.T) {
 					at = 4000
 				}
 				publish := func(recipient string, values map[string]string, parents ...digest.Digest) digest.Digest {
-					cipher, err := age.EncryptForPublicKeys(bundle.Marshal(values), []string{recipient})
+					cipher, err := age.EncryptForPublicKeys(encodeSecrets(values), []string{recipient})
 					if err != nil {
 						t.Fatal(err)
 					}

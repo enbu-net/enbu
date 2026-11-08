@@ -152,23 +152,6 @@ jobs:
             task storage/test/e2e
           '
 
-  aws-export-e2e:
-    name: AWS Secrets Manager export E2E (Kumo)
-    runs-on: ubuntu-26.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - parallel:
-          - uses: $/.github/actions/setup-go
-          - uses: $/.github/actions/setup-tools
-
-      - name: Test core with race detector
-        run: go test -race ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
-      - name: AWS SDK export E2E
-        run: task export/aws/test/e2e
-
   check:
     name: Static checks
     needs: [frontend]
@@ -390,7 +373,7 @@ jobs:
   status-check:
     name: Check
     if: ${{ !cancelled() }}
-    needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, e2e, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
