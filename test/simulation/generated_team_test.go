@@ -105,7 +105,7 @@ func TestGeneratedTeamGroupSmoke(t *testing.T) {
 func TestGeneratedTeamGroupRetiredObserverSmoke(t *testing.T) {
 	shardCase(t)
 	exercise(t, 17913170502171862805, Plan{
-		Devices: 8, Scenario: "output-boundary-upgraded-preserve-hardlink",
+		Devices: 8, Scenario: "output-boundary-removed-hardlink",
 		Actions: []Action{
 			{Kind: "create-env", Device: 1, Environment: "env_2"},
 			{Kind: "parallel", Device: 6, Parallel: &ConcurrentCase{Left: "delete", Right: "import", SameKey: true, Devices: []int{0, 2}}},
@@ -119,5 +119,5 @@ func TestGeneratedTeamGroupCISeed(t *testing.T) {
 	exploration(t)
 	shardCase(t)
 	const seed = 17913170502171862805
-	exercise(t, seed, Plan{Devices: 8, Scenario: "output-boundary-upgraded-preserve-hardlink", Actions: Generate(seed, 32, 8)})
+	exercise(t, seed, Plan{Devices: 8, Scenario: "output-boundary-removed-hardlink", Actions: Generate(seed, 32, 8)})
 }

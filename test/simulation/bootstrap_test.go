@@ -3,9 +3,10 @@ package simulation
 import (
 	"context"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/config"
 	"sort"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {

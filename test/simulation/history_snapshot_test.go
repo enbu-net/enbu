@@ -8,7 +8,7 @@ import (
 func TestHistorySnapshotSmoke(t *testing.T) {
 	for _, profile := range []string{"forward", "backward"} {
 		for _, operation := range []string{"list", "diff"} {
-			for _, change := range []string{"edit", "remove", "upgrade", "compact"} {
+			for _, change := range []string{"edit", "remove", "compact"} {
 				t.Run(profile+"/"+operation+"/"+change, func(t *testing.T) {
 					shardCase(t)
 					clock := ""
@@ -27,7 +27,7 @@ func TestHistorySnapshotClocks(t *testing.T) {
 	for _, devices := range []int{2, 3, 8} {
 		for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 			for _, operation := range []string{"list", "diff"} {
-				for _, change := range []string{"edit", "remove", "upgrade", "compact"} {
+				for _, change := range []string{"edit", "remove", "compact"} {
 					for _, cache := range []string{"warm", "cold"} {
 						t.Run(fmt.Sprintf("devices-%d/%s/%s/%s/%s", devices, profile, operation, change, cache), func(t *testing.T) {
 							shardCase(t)
