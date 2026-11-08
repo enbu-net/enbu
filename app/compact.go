@@ -1,10 +1,12 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -24,10 +26,11 @@ type CompactResult struct {
 //
 // The revision keep-1 steps behind the current one (following each revision's
 // first parent) becomes the floor: it and every revision descending from it
-// stay. Everything else is deleted, after a signed record listing it is
-// published, so other devices accept that those revisions are gone instead of
-// reporting a rollback. The environment must have one head; concurrent heads
-// are merged with sync first.
+// stay, and so does every head storage shows. Everything else is deleted. No
+// record is needed: a device detects a rollback by Generation, which the kept
+// heads still carry, and history simply ends at a missing parent. The
+// environment must have one trusted head; concurrent heads are merged with sync
+// first.
 func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result *CompactResult, err error) {
 	defer apperr.NormalizeInto(&err)
 	if keep < 1 {
@@ -60,16 +63,27 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	head := read.heads[0].Digest
 	floor := compactionFloor(sv, head, keep)
 	kept := keptRevisions(sv.Graph, head, floor)
+	for _, h := range sv.Heads {
+		kept[h.Digest] = true
+	}
 	var removed []digest.Digest
 	for d := range sv.States {
 		if !kept[d] {
 			removed = append(removed, d)
 		}
 	}
-	slices.Sort(removed)
+	// Oldest first: a revision still waiting to be deleted keeps every child,
+	// so a compaction that stops halfway never leaves an old revision looking
+	// like a head.
+	slices.SortFunc(removed, func(a, b digest.Digest) int {
+		if c := cmp.Compare(sv.States[a].Generation, sv.States[b].Generation); c != 0 {
+			return c
+		}
+		return strings.Compare(string(a), string(b))
+	})
 	scope := storage.StateScope(s.workspace, resource)
-	// Revisions that failed to verify carry no authority and need no record,
-	// but they take space and count against the listing too.
+	// Revisions that failed to verify carry no authority, but they take space
+	// and count against the listing too.
 	listed, err := s.store.Discover(ctx, storage.KindState, scope)
 	if err != nil {
 		return nil, storageError(err)
@@ -90,11 +104,6 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	result = &CompactResult{Kept: len(kept)}
 	if len(removed)+len(junk) == 0 {
 		return result, nil
-	}
-	// Publish the records before deleting anything: a device must never see a
-	// revision it accepted gone without the record that excuses it.
-	if err := s.publishCompaction(ctx, resource, floor, removed); err != nil {
-		return nil, err
 	}
 	for _, d := range append(removed, junk...) {
 		if err := s.store.Delete(ctx, storage.KindState, scope, d); err != nil && !errorsIsNotFound(err) {
@@ -167,31 +176,4 @@ func compactionFloor(sv *wsp.StateView, head digest.Digest, keep int) digest.Dig
 		floor = next
 	}
 	return floor
-}
-
-// publishCompaction signs and publishes the records of one compaction, as
-// many as the removed list needs.
-func (s *session) publishCompaction(ctx context.Context, resource string, floor digest.Digest, removed []digest.Digest) error {
-	if len(removed) == 0 {
-		return nil
-	}
-	slices.Sort(removed)
-	for start := 0; start < len(removed); start += wsp.MaxCompactionRemoved {
-		end := min(start+wsp.MaxCompactionRemoved, len(removed))
-		c := wsp.Compaction{Workspace: s.workspace, Resource: resource, Floor: floor, Removed: removed[start:end],
-			Control: s.head.Digest, Author: s.self(), CreatedAt: s.app.now().Unix()}
-		blob, err := wsp.SignCompaction(c, s.signer)
-		if err != nil {
-			return err
-		}
-		rev := digest.FromBytes(blob)
-		if _, err := wsp.VerifyCompaction(s.view, s.workspace, resource, rev, blob); err != nil {
-			return err
-		}
-		obj := storage.Object{Kind: storage.KindCompaction, Scope: c.Scope(), Rev: rev, Head: blob}
-		if err := s.store.Publish(ctx, obj); err != nil {
-			return fmt.Errorf("saving the compaction record: %w", storageError(err))
-		}
-	}
-	return nil
 }

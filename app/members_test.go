@@ -161,47 +161,72 @@ func TestLastAdminCannotBeRemovedOrDemoted(t *testing.T) {
 	}
 }
 
-func TestMembershipChangeReportsIncompleteReencryption(t *testing.T) {
-	for _, op := range []string{"approve", "remove"} {
-		t.Run(op, func(t *testing.T) {
-			alice := newAlice(t)
-			var target string
-			if op == "approve" {
-				bob := newDevice(t, alice)
-				target = requestJoin(t, bob).DeviceID
-			} else {
-				target = mustMember(t, alice, approved(t, alice)).DeviceID
-			}
-			base := alice.Storage
-			// The control may change, but writing any secret state fails.
-			alice.Storage = failStatePublishes(base, nil)
-			var err error
-			if op == "approve" {
-				err = alice.ApproveMember(bg, target)
-			} else {
-				err = alice.RemoveMember(bg, target)
-			}
-			if !apperr.Is(err, apperr.CodeReencryptIncomplete) {
-				t.Fatalf("error = %v, want reencrypt_incomplete", err)
-			}
-			// The Control did change, which is why the caller must be told.
-			alice.Storage = base
-			members, lerr := alice.ListMembers(bg)
-			if lerr != nil {
-				t.Fatal(lerr)
-			}
-			want := 2
-			if op == "remove" {
-				want = 1
-			}
-			if len(members) != want {
-				t.Fatalf("members = %d, want %d", len(members), want)
-			}
-			// Sync finishes the job the error asked for.
-			if err := alice.SyncSecrets(bg, "default"); err != nil {
-				t.Fatal(err)
-			}
-		})
+func TestApprovalReportsIncompleteReencryption(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	target := requestJoin(t, bob).DeviceID
+	base := alice.Storage
+	// The control may change, but writing any secret state fails.
+	alice.Storage = failStatePublishes(base, nil)
+	if err := alice.ApproveMember(bg, target); !apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("error = %v, want reencrypt_incomplete", err)
+	}
+	// The Control did change, which is why the caller must be told.
+	alice.Storage = base
+	if members, err := alice.ListMembers(bg); err != nil || len(members) != 2 {
+		t.Fatalf("members = %v, %v", members, err)
+	}
+	// Sync finishes the job the error asked for.
+	if err := alice.SyncSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A removal re-encrypts before it changes the Control, so a failed
+// re-encryption leaves the member in place and the removal can simply run again.
+func TestRemovalThatCannotReencryptChangesNothing(t *testing.T) {
+	alice := newAlice(t)
+	target := mustMember(t, alice, approved(t, alice)).DeviceID
+	base := alice.Storage
+	alice.Storage = failStatePublishes(base, nil)
+	err := alice.RemoveMember(bg, target)
+	if err == nil || apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("error = %v, want the storage failure", err)
+	}
+	alice.Storage = base
+	if members, err := alice.ListMembers(bg); err != nil || len(members) != 2 {
+		t.Fatalf("members = %v, %v", members, err)
+	}
+	if err := alice.RemoveMember(bg, target); err != nil {
+		t.Fatal(err)
+	}
+	if members, err := alice.ListMembers(bg); err != nil || len(members) != 1 {
+		t.Fatalf("members = %v, %v", members, err)
+	}
+}
+
+// Removing a member never makes a remaining member see a rollback, even one
+// that last read a revision the removed member wrote.
+func TestRemovalKeepsRemainingMembersReading(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	carol := approved(t, alice)
+	if err := carol.AddSecret(bg, "default", "CAROL", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, bob); got["CAROL"] != "1" { // bob accepts carol's head
+		t.Fatalf("bob reads %v", got)
+	}
+	if err := alice.RemoveMember(bg, mustMember(t, alice, carol).DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	for name, who := range map[string]*App{"alice": alice, "bob": bob} {
+		if got := listOK(t, who); got["CAROL"] != "1" || got["KEY"] != "v1" {
+			t.Fatalf("%s reads %v", name, got)
+		}
+	}
+	if err := bob.AddSecret(bg, "default", "BOB", "2"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -306,7 +331,7 @@ func TestHistoricalStateOfARemovedAuthorStillVerifies(t *testing.T) {
 	}
 	defer bs.Close()
 	bobsEnv := "staging"
-	bobsState, err := bs.writeState(bg, bs.resource(bobsEnv), map[string]string{"A": "by bob"}, nil)
+	bobsState, err := bs.writeState(bg, bs.resource(bobsEnv), wsp.OpWrite, map[string]string{"A": "by bob"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

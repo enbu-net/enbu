@@ -11,64 +11,105 @@ import (
 	digest "github.com/opencontainers/go-digest"
 )
 
-// stateView builds a view from revision names and the parents they list.
+// stateView builds a view from revision names and the parents they list. The
+// Generation of each revision is the one its parents in the view imply.
 func stateView(edges map[string][]string) *StateView {
-	g := NewGraph()
+	sv := &StateView{Graph: NewGraph(), States: map[digest.Digest]*VerifiedState{}}
+	var gen func(name string) uint64
+	gen = func(name string) uint64 {
+		var top uint64
+		for _, p := range edges[name] {
+			top = max(top, gen(p))
+		}
+		return top + 1
+	}
 	for name, parents := range edges {
 		var ps []digest.Digest
 		for _, p := range parents {
 			ps = append(ps, d(p))
 		}
-		g.Add(d(name), ps)
+		sv.Graph.Add(d(name), ps)
+		sv.States[d(name)] = &VerifiedState{State: State{Parents: ps, Generation: gen(name)}, Digest: d(name)}
 	}
-	sv := &StateView{Graph: g, States: map[digest.Digest]*VerifiedState{}}
-	for _, h := range g.Heads() {
-		sv.Heads = append(sv.Heads, &VerifiedState{Digest: h})
+	for _, h := range sv.Graph.Heads() {
+		sv.Heads = append(sv.Heads, sv.States[h])
 	}
 	return sv
 }
 
-func TestStateCheckpointRejectsAViewThatLostAnAcceptedHead(t *testing.T) {
+func acceptView(c *Checkpoints, sv *StateView) error {
+	return c.AcceptState(testResource, sv, TopGeneration(sv.Heads))
+}
+
+func TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration(t *testing.T) {
 	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
-	if err := cps.CheckStates(testResource, stateView(map[string][]string{"a": nil}).Graph, nil); err != nil {
+	if err := cps.CheckState(testResource, nil); err != nil {
 		t.Fatalf("nothing accepted yet: %v", err)
 	}
-	// Two writers raced: a and b are both heads, both accepted.
-	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}})); err != nil {
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"a"}})); err != nil {
 		t.Fatal(err)
 	}
-	// Storage later shows only a: b vanished.
-	if err := cps.CheckStates(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}}).Graph, nil); !errors.Is(err, ErrRollback) {
-		t.Fatalf("lost head: %v", err)
+	if got, err := cps.Generation(testResource); err != nil || got != 3 {
+		t.Fatalf("accepted generation = %d %v", got, err)
 	}
-	// A merge of a and b contains both as ancestors, so it is progress.
-	merged := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}, "m": {"a", "b"}})
-	if err := cps.CheckStates(testResource, merged.Graph, nil); err != nil {
-		t.Fatalf("merge after fork: %v", err)
+	// Storage hides the newest revision: the view tops out at generation 2.
+	if err := cps.CheckState(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}})); !errors.Is(err, ErrRollback) {
+		t.Fatalf("hidden newer generation: %v", err)
 	}
-	if err := acceptView(cps, merged); err != nil {
-		t.Fatal(err)
+	if err := cps.CheckState(testResource, nil); !errors.Is(err, ErrRollback) {
+		t.Fatalf("everything hidden: %v", err)
 	}
-	got, err := cps.State(testResource)
-	if err != nil || len(got) != 1 || got[0] != d("m") {
-		t.Fatalf("accepted heads = %v %v", got, err)
-	}
-	// Going back to the pre-merge fork is now a rollback too: m is gone.
-	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"root"}})); !errors.Is(err, ErrRollback) {
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil})); !errors.Is(err, ErrRollback) {
 		t.Fatalf("accepting an older view: %v", err)
 	}
+	// Deleting old revisions without any record is not a rollback: the kept
+	// head still carries its generation, and history ends at the missing parent.
+	compacted := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"a"}})
+	delete(compacted.States, d("root"))
+	delete(compacted.States, d("a"))
+	compacted.Graph = NewGraph()
+	compacted.Graph.Add(d("b"), []digest.Digest{d("a")})
+	if err := cps.CheckState(testResource, compacted); err != nil {
+		t.Fatalf("deleted old revisions: %v", err)
+	}
 	// Resources have separate checkpoints.
-	if err := cps.CheckStates("secrets/prod", stateView(map[string][]string{"x": nil}).Graph, nil); err != nil {
+	if err := cps.CheckState("secrets/prod", stateView(map[string][]string{"x": nil})); err != nil {
 		t.Fatalf("other resource: %v", err)
 	}
 }
 
-func acceptView(c *Checkpoints, sv *StateView) error {
-	heads := make([]digest.Digest, len(sv.Heads))
-	for i, h := range sv.Heads {
-		heads[i] = h.Digest
+// The accepted limitation of ADR-26: storage that hides an accepted head while
+// showing a sibling branch of equal or higher Generation is not detected. The
+// sibling needs a member's signature, and the hidden change only misses the
+// next merge.
+func TestStateCheckpointDoesNotDetectAHiddenHeadBehindASiblingOfEqualGeneration(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "accepted": {"root"}})); err != nil {
+		t.Fatal(err)
 	}
-	return c.AcceptStates(testResource, sv.Graph, nil, heads, d("control"))
+	for name, sibling := range map[string]map[string][]string{
+		"equal":  {"root": nil, "sibling": {"root"}},
+		"higher": {"root": nil, "sibling": {"root"}, "later": {"sibling"}},
+	} {
+		if err := cps.CheckState(testResource, stateView(sibling)); err != nil {
+			t.Fatalf("%s sibling branch hiding the accepted head was detected: %v", name, err)
+		}
+	}
+}
+
+func TestStateCheckpointNeverLowersTheAcceptedGeneration(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
+	view := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"a"}})
+	if err := acceptView(cps, view); err != nil {
+		t.Fatal(err)
+	}
+	// A read that used an older trusted head of the same view keeps the higher value.
+	if err := cps.AcceptState(testResource, view, 1); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := cps.Generation(testResource); got != 3 {
+		t.Fatalf("accepted generation lowered to %d", got)
+	}
 }
 
 func controlView(names ...string) *ControlView {
@@ -114,12 +155,12 @@ func TestCheckpointFilesAreSeparatePerWorkspaceAndGenesis(t *testing.T) {
 	if err := acceptView(a, stateView(map[string][]string{"x": nil})); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := b.State(testResource); got != nil {
+	if got, _ := b.Generation(testResource); got != 0 {
 		t.Fatalf("another genesis shares the checkpoint: %v", got)
 	}
 }
 
-func TestCorruptAndOldCheckpointFiles(t *testing.T) {
+func TestCorruptCheckpointFile(t *testing.T) {
 	dir := t.TempDir()
 	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
 	if err := os.WriteFile(cps.path, []byte("not json"), 0o600); err != nil {
@@ -127,19 +168,6 @@ func TestCorruptAndOldCheckpointFiles(t *testing.T) {
 	}
 	if _, err := cps.Control(); err == nil {
 		t.Fatal("corrupt checkpoint accepted")
-	}
-	if err := os.WriteFile(cps.path, []byte(`{"version":99}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cps.Control(); err == nil {
-		t.Fatal("unsupported future version accepted")
-	}
-	// A file of the old single-digest format carries nothing over and starts empty.
-	if err := os.WriteFile(cps.path, []byte(`{"version":1,"control":{"generation":3,"digest":"x"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := cps.Control(); err != nil || got != nil {
-		t.Fatalf("old format: %v %v", got, err)
 	}
 	if filepath.Dir(cps.path) != dir {
 		t.Fatal("checkpoint escaped its directory")
@@ -167,28 +195,12 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	got, err := cps.State(testResource)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("heads = %v %v", got, err)
+	got, err := cps.Generation(testResource)
+	if err != nil || got == 0 {
+		t.Fatalf("generation = %v %v", got, err)
 	}
 	// Whatever won, the checkpoint never holds something a later view must lose.
-	if err := cps.CheckStates(testResource, views[2].Graph, nil); err != nil {
+	if err := cps.CheckState(testResource, views[2]); err != nil {
 		t.Fatalf("newest view rejected: %v", err)
-	}
-}
-
-func TestAcceptanceEpochPersistsAndAdvancesWithoutChangingHeads(t *testing.T) {
-	dir := t.TempDir()
-	cps := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
-	view := stateView(map[string][]string{"head": nil})
-	for _, epoch := range []digest.Digest{d("before-removal"), d("after-readmission")} {
-		if err := cps.AcceptStates(testResource, view.Graph, nil, []digest.Digest{d("head")}, epoch); err != nil {
-			t.Fatal(err)
-		}
-		fresh := OpenCheckpoints(dir, testWorkspace, d("genesis"), clock.New())
-		got, err := fresh.Accepted(testResource)
-		if err != nil || got.Control != epoch || len(got.Heads) != 1 || got.Heads[0] != d("head") {
-			t.Fatalf("acceptance not persisted: %+v %v", got, err)
-		}
 	}
 }

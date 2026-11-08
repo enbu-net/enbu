@@ -158,7 +158,7 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 	if err := device.Validate(); err != nil {
 		return apperr.New(apperr.CodeInvalidArgument, "invalid device id", nil)
 	}
-	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
+	return a.changeMembers(ctx, true, nil, func(s *session, c *wsp.Control) error {
 		if _, member := c.Principal(device); member {
 			return apperr.New(apperr.CodeInvalidArgument, "device is already a member", nil)
 		}
@@ -171,15 +171,16 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 	})
 }
 
-// RemoveMember removes a principal and re-encrypts every environment without
-// its recipient. Plaintext the member already obtained cannot be revoked.
+// RemoveMember removes a principal. Every environment is first re-encrypted
+// without its recipient, under the Control that still lists it, and only then
+// is the Control without it published. Its revisions are so already merged
+// into a remaining member's when it stops being trusted, and nothing a
+// remaining member read is set aside. Plaintext the member already obtained
+// cannot be revoked.
 func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
-	// Accept the current states first, while the member is still one. After the
-	// removal an admin can only take over a state it has already accepted.
-	a.acceptCurrentStates(ctx)
-	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
+	remove := func(c *wsp.Control) error {
 		kept := c.Principals[:0:0]
 		for _, p := range c.Principals {
 			if p.ID != device {
@@ -191,7 +192,22 @@ func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 		}
 		c.Principals = kept
 		return requireAdmin(c)
-	})
+	}
+	s, err := a.openAdminSession(ctx)
+	if err != nil {
+		return err
+	}
+	before := s.view
+	trial := s.head.Control
+	trial.Principals = append([]wsp.Principal(nil), trial.Principals...)
+	s.Close()
+	if err := remove(&trial); err != nil {
+		return err
+	}
+	if err := a.reencryptAll(ctx, device); err != nil {
+		return err
+	}
+	return a.changeMembers(ctx, false, before, func(_ *session, c *wsp.Control) error { return remove(c) })
 }
 
 // requireAdmin keeps the workspace manageable: a Control with no admin could
@@ -210,7 +226,7 @@ func requireAdmin(c *wsp.Control) error {
 func (a *App) SetAdmin(ctx context.Context, deviceID string, admin bool) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
-	return a.changeMembers(ctx, false, func(s *session, c *wsp.Control) error {
+	return a.changeMembers(ctx, false, nil, func(s *session, c *wsp.Control) error {
 		for i := range c.Principals {
 			if c.Principals[i].ID == device {
 				c.Principals[i].Admin = admin
@@ -224,16 +240,19 @@ func (a *App) SetAdmin(ctx context.Context, deviceID string, admin bool) (err er
 // changeMembers appends an admin-signed Control. When reencrypt is set it then
 // re-encrypts every environment for the new recipient set. Changing who is an
 // admin does not change the recipients, so it passes false.
-func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*session, *wsp.Control) error) error {
-	s, err := a.openSession(ctx)
+//
+// on is the Control view to append to, or nil for the current one. A removal
+// appends to the view it re-encrypted under: a change another admin made
+// meanwhile then forks the Control, and joining the fork re-encrypts again.
+func (a *App) changeMembers(ctx context.Context, reencrypt bool, on *wsp.ControlView, mutate func(*session, *wsp.Control) error) error {
+	s, err := a.openAdminSession(ctx)
 	if err != nil {
 		return err
 	}
-	if p, _ := s.head.Principal(s.self()); !p.Admin {
-		s.Close()
-		return apperr.New(apperr.CodeAccessDenied, "only a workspace admin can change members", nil)
+	if on == nil {
+		on = s.view
 	}
-	v, err := wsp.UpdateControl(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error { return mutate(s, c) })
+	v, err := wsp.UpdateControl(ctx, s.store, on, s.signer, func(c *wsp.Control) error { return mutate(s, c) })
 	s.Close()
 	if err != nil {
 		var appErr *apperr.Error
@@ -252,10 +271,23 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*se
 	// The Control is already committed here, so a failure leaves membership
 	// changed but some environments still encrypted for the old recipient set.
 	// Say so explicitly: retrying approve/remove would fail on the new state.
-	if err := a.reencryptAll(ctx); err != nil {
+	if err := a.reencryptAll(ctx, ""); err != nil {
 		return apperr.Wrap(apperr.CodeReencryptIncomplete, "membership changed but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return nil
+}
+
+// openAdminSession opens a session of a workspace admin.
+func (a *App) openAdminSession(ctx context.Context) (*session, error) {
+	s, err := a.openSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if p, _ := s.head.Principal(s.self()); !p.Admin {
+		s.Close()
+		return nil, apperr.New(apperr.CodeAccessDenied, "only a workspace admin can change members", nil)
+	}
+	return s, nil
 }
 
 // acceptControlHead reloads the Control DAG, which records the newest heads in
@@ -275,7 +307,11 @@ func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
 // of the current Control: the ones enbu.toml names and any other storage holds,
 // so an environment another member created, whose enbu.toml this device has not
 // pulled, does not stay encrypted for the old members.
-func (a *App) reencryptAll(ctx context.Context) error {
+//
+// For a removal, removing names the member, which is left out of the
+// recipients while the Control still lists it, and every head is re-encrypted
+// on its own (see reencryptHeads).
+func (a *App) reencryptAll(ctx context.Context, removing signing.DeviceID) error {
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return err
@@ -292,9 +328,14 @@ func (a *App) reencryptAll(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("storage holds %d more scopes than the %d examined; any environment among them that enbu.toml does not list was not re-encrypted, so add it to enbu.toml and run enbu sync", unexamined, maxExaminedScopes))
 	}
 	for _, t := range targets {
-		s, err := a.openSession(ctx)
-		if err == nil {
-			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+		var err error
+		if removing != "" {
+			err = a.reencryptHeads(ctx, t.resource, removing)
+		} else {
+			var s *session
+			if s, err = a.openSession(ctx); err == nil {
+				err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+			}
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))
@@ -306,22 +347,49 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	return nil
 }
 
-// acceptCurrentStates reads every environment's current state, which records it
-// in this device's checkpoint. It is best effort: an environment that cannot be
-// read now will fail to re-encrypt later with its own error.
-func (a *App) acceptCurrentStates(ctx context.Context) {
-	s, err := a.openSession(ctx)
+// reencryptHeads publishes, on top of every head of resource this device reads
+// as current, a revision with the same content encrypted for the recipients
+// without removing. It merges nothing, so heads in conflict stay in conflict:
+// a conflict, which any member can make, cannot hold up a removal.
+func (a *App) reencryptHeads(ctx context.Context, resource string, removing signing.DeviceID) error {
+	for attempt := 1; ; attempt++ {
+		s, err := a.openSession(ctx)
+		if err != nil {
+			return err
+		}
+		s.removing = removing
+		err = s.reencryptHeads(ctx, resource)
+		s.Close()
+		// Members changed while writing: start over on the new member list.
+		if !errors.Is(err, errControlMoved) {
+			return err
+		}
+		if attempt == maxRetries {
+			return apperr.Wrap(apperr.CodeConflict, "the members kept changing while removing; run the removal again", err, nil)
+		}
+	}
+}
+
+func (s *session) reencryptHeads(ctx context.Context, resource string) error {
+	sv, err := s.loadResource(ctx, resource)
+	if IsNotFoundError(err) {
+		return nil
+	}
 	if err != nil {
-		return
+		return err
 	}
-	defer s.Close()
-	targets, _, err := s.environmentResources(ctx)
-	if err != nil {
-		return
+	for _, h := range s.trustedHeads(sv) {
+		secrets, err := s.decrypt(ctx, h)
+		if err != nil {
+			return err
+		}
+		st, err := s.writeState(ctx, resource, wsp.OpSync, secrets, []*wsp.VerifiedState{h})
+		if err != nil {
+			return err
+		}
+		sv = sv.With(st)
 	}
-	for _, t := range targets {
-		_, _ = s.readResource(ctx, t.resource, nil, true)
-	}
+	return s.acceptView(resource, sv)
 }
 
 // maxExaminedScopes bounds how many scopes missing from enbu.toml are examined
@@ -420,9 +488,5 @@ func (s *session) hasTrustedHead(ctx context.Context, resource string) (bool, er
 	if err != nil {
 		return false, wspError(err)
 	}
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return false, err
-	}
-	return len(s.trustedHeads(sv, accepted)) > 0, nil
+	return len(s.trustedHeads(sv)) > 0, nil
 }

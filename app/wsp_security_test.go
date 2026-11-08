@@ -241,8 +241,8 @@ func TestRemoveMemberReencryptsWithoutThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(read.heads) != 1 || read.heads[0].Control != s.head.Digest || read.heads[0].Digest == oldRead.heads[0].Digest {
-		t.Fatalf("state was not re-signed after removal: %+v", read.heads)
+	if len(read.heads) != 1 || read.heads[0].Op != wsp.OpSync || read.heads[0].Digest == oldRead.heads[0].Digest || readableBy(t, s, bob, read.heads[0]) {
+		t.Fatalf("state was not re-encrypted without bob: %+v", read.heads)
 	}
 	if _, err := bob.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("removed member still reads: %v", err)

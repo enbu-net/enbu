@@ -17,15 +17,41 @@ import (
 //
 // States form a DAG: Parents are the revisions the author saw and merged. The
 // first revision of a resource has no parents.
+//
+// Generation is 1 + the highest Generation of the parents, 1 without parents.
+// It only grows along the DAG, so a device that accepted a generation detects
+// storage showing an older view (see Checkpoints).
 type State struct {
 	Workspace  string           `cbor:"workspace"`
 	Resource   string           `cbor:"resource"`
 	Parents    []digest.Digest  `cbor:"parents"` // sorted, unique
+	Generation uint64           `cbor:"generation"`
+	Op         string           `cbor:"op"`      // what made the revision, one of the Op constants
 	Control    digest.Digest    `cbor:"control"` // Control revision the author saw
 	Ciphertext digest.Digest    `cbor:"ciphertext"`
 	Author     signing.DeviceID `cbor:"author"`
 	CreatedAt  int64            `cbor:"created_at"` // unix seconds; display only, never used for ordering decisions
 }
+
+// The kinds of revision. A sync with one parent only re-encrypts its content.
+const (
+	OpWrite   = "write"   // a person changed secrets: add, edit, delete, import
+	OpSync    = "sync"    // re-encryption, and merging concurrent heads
+	OpRestore = "restore" // the content of an older revision, published again
+	OpResolve = "resolve" // merging heads with the values a person chose
+)
+
+// TopGeneration is the highest Generation of states, or 0 if there are none.
+func TopGeneration(states []*VerifiedState) uint64 {
+	var top uint64
+	for _, st := range states {
+		top = max(top, st.Generation)
+	}
+	return top
+}
+
+// NextGeneration is the Generation of a revision whose parents are parents.
+func NextGeneration(parents []*VerifiedState) uint64 { return TopGeneration(parents) + 1 }
 
 // VerifiedState is a State whose author and signature have been checked
 // against the Control it names. Digest is the digest of the SignedState bytes,
@@ -44,6 +70,14 @@ func (s State) validate() error {
 	}
 	if len(s.Parents) > MaxParents {
 		return invalid("state has too many parents")
+	}
+	if s.Generation == 0 || (s.Generation == 1) != (len(s.Parents) == 0) {
+		return invalid("state generation %d does not fit %d parents", s.Generation, len(s.Parents))
+	}
+	switch s.Op {
+	case OpWrite, OpSync, OpRestore, OpResolve:
+	default:
+		return invalid("state has an unknown op %q", s.Op)
 	}
 	for i, p := range s.Parents {
 		if err := validDigest(p); err != nil {
@@ -144,29 +178,27 @@ func AuthorIsCurrent(view *ControlView, head *Verified, st *VerifiedState) error
 }
 
 // StateView is the verified revision DAG of one resource as storage shows it.
+// A parent missing from it is history that was deleted: the DAG ends there.
 type StateView struct {
 	Graph   *Graph
 	States  map[digest.Digest]*VerifiedState
 	Heads   []*VerifiedState // sorted by digest
 	Skipped int              // listed revisions that failed to fetch or verify
-	// Compacted is what verified compaction records say about the view. The
-	// caller fills it in when the view lacks something (see LoadCompactions).
-	Compacted Compacted
 }
 
-// MissingParents lists the parents revisions name that are neither in the view
-// nor removed by a compaction.
-func (sv *StateView) MissingParents() []digest.Digest {
-	var out []digest.Digest
-	for _, d := range sv.Graph.Missing() {
-		if !sv.Compacted.Excuses(d) {
-			out = append(out, d)
+// MaxGeneration is the highest Generation of the verified revisions in the
+// view, whoever wrote them, or 0 for an empty view. It measures how fresh the
+// view is, not what may be read: see Checkpoints.
+func (sv *StateView) MaxGeneration() uint64 {
+	var top uint64
+	if sv != nil {
+		for _, st := range sv.States {
+			top = max(top, st.Generation)
 		}
 	}
-	return out
+	return top
 }
 
-// maxRevisions bounds how many revisions one load reads.
 // StateResource reads the workspace and resource a stored state names, without
 // verifying anything. The answer is untrusted; it only tells a caller that
 // found a revision by listing storage which resource to verify it against.
@@ -185,6 +217,7 @@ func StateResource(blob []byte) (workspace, resource string, err error) {
 	return s.Workspace, s.Resource, nil
 }
 
+// maxRevisions bounds how many revisions one load reads.
 var (
 	maxRevisions = 20000
 	// Bound aggregate metadata bytes, including invalid objects. One parallel
@@ -198,8 +231,9 @@ var (
 // ciphertext is read (OpenCiphertext) for the few revisions whose content is used.
 // Revisions that are damaged or unauthorized carry no authority and are skipped.
 // also lists revisions to include even if the listing does not show them.
-// A revision naming a parent storage cannot produce leaves the view incomplete,
-// which the caller sees as Graph.Missing.
+// A revision naming a parent storage cannot produce ends the history there. A
+// revision whose parents are all present must carry the Generation they imply;
+// one that does not is skipped like any other invalid revision.
 func LoadStates(ctx context.Context, store storage.Store, view *ControlView, workspace, resource string, also ...digest.Digest) (*StateView, error) {
 	scope := storage.StateScope(workspace, resource)
 	revs, err := store.Discover(ctx, storage.KindState, scope)
@@ -258,10 +292,40 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		}
 	}
 
+	sv.dropWrongGenerations()
 	for _, d := range sv.Graph.Heads() {
 		sv.Heads = append(sv.Heads, sv.States[d])
 	}
 	return sv, nil
+}
+
+// dropWrongGenerations removes revisions whose parents are all present but
+// whose Generation is not the one they imply. Missing parents were deleted, so
+// their generations cannot be checked.
+func (sv *StateView) dropWrongGenerations() {
+	var wrong []digest.Digest
+	for d, st := range sv.States {
+		parents := make([]*VerifiedState, 0, len(st.Parents))
+		for _, p := range st.Parents {
+			if ps, ok := sv.States[p]; ok {
+				parents = append(parents, ps)
+			}
+		}
+		if len(parents) == len(st.Parents) && st.Generation != NextGeneration(parents) {
+			wrong = append(wrong, d)
+		}
+	}
+	if len(wrong) == 0 {
+		return
+	}
+	for _, d := range wrong {
+		delete(sv.States, d)
+		sv.Skipped++
+	}
+	sv.Graph = NewGraph()
+	for d, st := range sv.States {
+		sv.Graph.Add(d, st.Parents)
+	}
 }
 
 // With returns a copy of the view that also holds st, such as a revision the
@@ -275,7 +339,6 @@ func (sv *StateView) With(st *VerifiedState) *StateView {
 			out.Graph.Add(d, v.Parents)
 		}
 		out.Skipped = sv.Skipped
-		out.Compacted = sv.Compacted
 	}
 	out.States[st.Digest] = st
 	out.Graph.Add(st.Digest, st.Parents)

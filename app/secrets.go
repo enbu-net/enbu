@@ -231,7 +231,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		a.emitStepProgress(op, "pull_secrets", "start")
 		cur, err := s.readResource(ctx, resource, choices, true, published...)
 		var secrets map[string]string
-		var parents []digest.Digest
+		var parents []*wsp.VerifiedState
 		if err != nil {
 			if !IsNotFoundError(err) {
 				return fmt.Errorf("pulling secrets: %w", err)
@@ -251,7 +251,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			if err := conflictError(cur.conflicts); err != nil {
 				return err
 			}
-			secrets, parents = maps.Clone(cur.secrets), cur.parents()
+			secrets, parents = maps.Clone(cur.secrets), cur.heads
 		}
 		// A membership change after Publish may restart this call. If one
 		// of our revisions is already in the trusted result, its mutation has
@@ -276,18 +276,14 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			if err != nil {
 				return err
 			}
-			accepted, err := s.cps.Accepted(resource)
-			if err != nil {
-				return err
-			}
-			if !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {
+			if !sameHeads(s.trustedHeads(latest), cur.heads) {
 				a.emitRetry(attempt+1, attempts)
 				continue
 			}
 		}
 		a.emitStepProgress(op, "encrypt", "start")
 		a.emitStepProgress(op, "push", "start")
-		st, err := s.writeState(ctx, resource, secrets, parents)
+		st, err := s.writeState(ctx, resource, stateOp(op), secrets, parents)
 		if st != nil {
 			published = append(published, st.Digest)
 		}
@@ -322,6 +318,19 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		return nil
 	}
 	return apperr.New(apperr.CodeConflict, fmt.Sprintf("secrets changed by other users while saving; failed after %d attempts", attempts), nil)
+}
+
+// stateOp is the kind of revision an operation publishes.
+func stateOp(op string) string {
+	switch op {
+	case "sync":
+		return wsp.OpSync
+	case "restore":
+		return wsp.OpRestore
+	case "resolve":
+		return wsp.OpResolve
+	}
+	return wsp.OpWrite
 }
 
 func publishedInRead(read *resourceRead, published []digest.Digest) bool {
@@ -496,12 +505,8 @@ func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, erro
 	if err != nil {
 		return nil, err
 	}
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return nil, err
-	}
 	keys := map[string]bool{}
-	history := historyStates(sv, s.trustedHeads(sv, accepted))
+	history := historyStates(sv, s.trustedHeads(sv))
 	// Decryption can fetch a blob: map order must not decide external effects.
 	for _, revision := range slices.Sorted(maps.Keys(history)) {
 		st := history[revision]

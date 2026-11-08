@@ -19,21 +19,8 @@ func editTimes(t *testing.T, a *App, n int) {
 	}
 }
 
-func compactionRecords(t *testing.T, a *App) []digest.Digest {
-	t.Helper()
-	cfg, err := a.loadProject()
-	if err != nil {
-		t.Fatal(err)
-	}
-	revs, err := a.Storage.Discover(bg, storage.KindCompaction, storage.StateScope(cfg.WorkspaceID, cfg.Resource("default")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return revs
-}
-
-// A device that accepted a revision the compaction removed reads on: the
-// signed record excuses the revision storage no longer shows.
+// A device that accepted a revision the compaction removed reads on: the kept
+// head carries a higher Generation than anything it accepted.
 func TestCompactionKeepsTheLatestAndOtherDevicesAccept(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
@@ -53,9 +40,6 @@ func TestCompactionKeepsTheLatestAndOtherDevicesAccept(t *testing.T) {
 	if left := revisionsOf(t, alice, "default"); len(left) != 2 {
 		t.Fatalf("revisions left = %d", len(left))
 	}
-	if len(compactionRecords(t, alice)) != 1 {
-		t.Fatal("no compaction record")
-	}
 	if got := listOK(t, bob); got["KEY"] != "vd" {
 		t.Fatalf("bob after compaction reads %v", got)
 	}
@@ -70,23 +54,41 @@ func TestCompactionKeepsTheLatestAndOtherDevicesAccept(t *testing.T) {
 	}
 }
 
-// The record is what makes a deletion acceptable: deleting the same revisions
-// without one is a rollback to a device that accepted one of them.
-func TestDeletingWithoutARecordIsARollback(t *testing.T) {
+// Deleting old revisions needs no record: a device that accepted one of them
+// reads on, because the newest revision is still shown.
+func TestDeletingOldRevisionsWithoutARecordIsNotARollback(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	listOK(t, bob)
 	accepted := revisionsOf(t, bob, "default")
 	editTimes(t, alice, 2)
-	s, err := alice.openSession(bg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scope := storage.StateScope(s.workspace, s.resource("default"))
-	s.Close()
+	scope := defaultScope(t, alice)
 	for _, d := range accepted {
 		if err := alice.Storage.Delete(bg, storage.KindState, scope, d); err != nil {
 			t.Fatal(err)
+		}
+	}
+	if got := listOK(t, bob); got["KEY"] != "vb" {
+		t.Fatalf("bob reads %v", got)
+	}
+}
+
+// Hiding the revisions newer than what a device accepted is a rollback.
+func TestHidingANewerGenerationIsARollback(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	before := map[digest.Digest]bool{}
+	for _, d := range revisionsOf(t, alice, "default") {
+		before[d] = true
+	}
+	editTimes(t, alice, 1)
+	listOK(t, bob) // bob accepts the edit
+	scope := defaultScope(t, alice)
+	for _, d := range revisionsOf(t, alice, "default") {
+		if !before[d] {
+			if err := alice.Storage.Delete(bg, storage.KindState, scope, d); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if _, err := bob.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeRollback) {
@@ -94,9 +96,18 @@ func TestDeletingWithoutARecordIsARollback(t *testing.T) {
 	}
 }
 
-// Two compactions in a row: a device offline across both is excused through
-// the second record, which removed the first one's floor.
-func TestRepeatedCompactionsChainTheirRecords(t *testing.T) {
+func defaultScope(t *testing.T, a *App) string {
+	t.Helper()
+	s, err := a.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	return storage.StateScope(s.workspace, s.resource("default"))
+}
+
+// Two compactions in a row: a device offline across both reads on.
+func TestRepeatedCompactions(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	listOK(t, bob)
@@ -116,9 +127,10 @@ func TestRepeatedCompactionsChainTheirRecords(t *testing.T) {
 	}
 }
 
-// A revision written on top of history that was removed meanwhile cannot be
-// merged: its merge base is gone. It is set aside so it does not block reads.
-func TestARevisionBuiltOnRemovedHistoryIsSetAside(t *testing.T) {
+// A revision written on top of history that was removed meanwhile shares no
+// retained history with the current head: every value they disagree on is a
+// conflict rather than silently merged.
+func TestARevisionBuiltOnRemovedHistoryConflicts(t *testing.T) {
 	alice := newAlice(t)
 	old := revisionsOf(t, alice, "default")
 	editTimes(t, alice, 3)
@@ -135,8 +147,9 @@ func TestARevisionBuiltOnRemovedHistoryIsSetAside(t *testing.T) {
 	}
 	publishRevision(t, alice.Storage, alice, s.workspace, s.resource("default"), s.head.Digest, cipher, old...)
 	s.Close()
-	if got := listOK(t, alice); got["KEY"] != "vc" {
-		t.Fatalf("reads %v", got)
+	set, err := alice.ListConflicts(bg, "default")
+	if err != nil || len(set.Conflicts) != 1 || set.Conflicts[0].Key != "KEY" || len(set.Conflicts[0].Candidates) != 2 {
+		t.Fatalf("conflicts = %+v, %v", set, err)
 	}
 }
 
@@ -161,9 +174,6 @@ func TestCompactionChecks(t *testing.T) {
 	result, err := alice.CompactHistory(bg, "default", n+5)
 	if err != nil || result.Removed != 0 || result.Kept != n {
 		t.Fatalf("result = %+v, %v", result, err)
-	}
-	if len(compactionRecords(t, alice)) != 0 {
-		t.Fatal("a compaction that removed nothing published a record")
 	}
 
 	// Concurrent heads are merged first.
@@ -208,7 +218,7 @@ func publishConcurrent(t *testing.T, a, b *App, fromA, fromB map[string]string) 
 }
 
 // Heads written on top of the floor after a compaction merge like before: the
-// floor is their merge base, and the parents it names below itself are excused.
+// floor is their merge base, and history ends at the parents it names.
 func TestConcurrentHeadsMergeAfterCompaction(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
@@ -230,7 +240,7 @@ func TestConcurrentHeadsMergeAfterCompaction(t *testing.T) {
 	}
 }
 
-// Revisions that fail verification are deleted too, without a record.
+// Revisions that fail verification are deleted too.
 func TestCompactionDeletesUnverifiableRevisions(t *testing.T) {
 	alice := newAlice(t)
 	editTimes(t, alice, 1)
@@ -316,26 +326,22 @@ func TestCompactionKeepsRevisionsItCannotJudge(t *testing.T) {
 	}
 }
 
-// A re-encryption is hidden while its parent is readable. Once compaction
-// removes that parent, warm and cold caches must both show the retained state.
-func TestCompactionMakesCachedRepeatVisible(t *testing.T) {
+// A re-encryption is hidden while its parent is in the history. Once
+// compaction removes that parent, the re-encryption is listed instead.
+func TestCompactionShowsAReencryptionWhoseParentIsGone(t *testing.T) {
 	a := newAlice(t)
 	if err := a.SyncSecrets(bg, "default"); err != nil {
 		t.Fatal(err)
 	}
-	if entries, err := a.ListHistory(bg, "default"); err != nil || len(entries) != 1 {
-		t.Fatalf("history before compaction = %v, %v", entries, err)
+	before, err := a.ListHistory(bg, "default")
+	if err != nil || len(before) != 1 {
+		t.Fatalf("history before compaction = %v, %v", before, err)
 	}
 	if _, err := a.CompactHistory(bg, "default", 1); err != nil {
 		t.Fatal(err)
 	}
-	warm, err := a.ListHistory(bg, "default")
-	if err != nil || len(warm) != 1 {
-		t.Fatalf("warm history = %v, %v", warm, err)
-	}
-	a.CacheDir = t.TempDir()
-	cold, err := a.ListHistory(bg, "default")
-	if err != nil || len(cold) != 1 || warm[0].Tag != cold[0].Tag {
-		t.Fatalf("cold history = %v, %v; warm = %v", cold, err, warm)
+	after, err := a.ListHistory(bg, "default")
+	if err != nil || len(after) != 1 || after[0].Tag == before[0].Tag {
+		t.Fatalf("history after compaction = %v, %v; before = %v", after, err, before)
 	}
 }

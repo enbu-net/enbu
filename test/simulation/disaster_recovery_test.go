@@ -39,7 +39,7 @@ func TestRecoveryProbeRejectsRecordedStorageWrites(t *testing.T) {
 }
 
 func TestDisasterRecoverySmoke(t *testing.T) {
-	for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data"} {
+	for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-old-data"} {
 		t.Run(mode, func(t *testing.T) {
 			exercise(t, 113, Plan{Devices: 3, Scenario: "disaster-" + mode + "-cold"})
 		})
@@ -50,7 +50,7 @@ func TestDisasterRecoveryClocks(t *testing.T) {
 	exploration(t)
 	for _, devices := range []int{2, 3, 8} {
 		for _, profile := range []string{"", "frozen", "backward", "skewed"} {
-			for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data"} {
+			for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-old-data"} {
 				for _, cache := range []string{"warm", "cold"} {
 					t.Run(fmt.Sprintf("devices-%d/%s/%s/%s", devices, profile, mode, cache), func(t *testing.T) {
 						shardCase(t)

@@ -84,7 +84,6 @@ writer's update and no compare-and-swap is needed:
 | Secret revision | `s-{scope}-{digest}` | `{prefix}/revisions/s-{scope}-{digest}` |
 | Control | `c-{digest}` | `{prefix}/revisions/c-{digest}` |
 | Join request | `r-{digest}` | `{prefix}/revisions/r-{digest}` |
-| Compaction record | `k-{scope}-{digest}` | `{prefix}/revisions/k-{scope}-{digest}` |
 
 `scope` is the first 128 bits of a hash of the workspace and the environment's
 resource name; `digest` is the SHA-256 of the signed bytes. A fetch re-derives the
@@ -119,15 +118,10 @@ published in its data directory (`cache/heads`, one file per digest) and fetches
 only heads it has not seen, several at a time. A head is named by its digest and
 never changes, so the cache needs no trust or expiry, and every head is verified
 again on each read. It answers only for revisions the latest listing showed, so it
-never brings back a revision that storage deleted. `enbu history` likewise keeps,
-per revision, whether this device can decrypt it and whether it only repeats a
-parent (a re-encryption), so a later listing decrypts only new revisions, and
-`enbu history diff` / `restore` decrypt only the versions they name. This display
-index is keyed by the full set of loaded decryption identities and remembers which
-parent a revision repeats; removing that parent causes the flag to be recomputed.
-Unlike digest-verified heads, these local display flags are trusted as written:
-editing them can hide entries and change the numeric indices used by diff and
-restore. They cannot add a revision outside the verified history.
+never brings back a revision that storage deleted. `enbu history` decrypts nothing
+to list: whether this device can read a revision comes from the Control it names,
+and a revision whose signed `op` is `sync` with one parent only re-encrypts that
+parent. `enbu history diff` / `restore` decrypt only the versions they name.
 
 `Discover` lists names: OCI `tags/list` (about 100 tags a page on GHCR; a listing
 of 1000 tags took about 3 seconds), S3 `ListObjects`. A listing may be stale and
@@ -140,19 +134,19 @@ parents; a key the heads changed differently is a conflict that stops reads and
 writes until `enbu resolve`. Revisions are not trimmed automatically, because a
 revision found late needs its merge base.
 
+Every revision carries a signed *generation*: 1 + the highest generation of its
+parents, 1 without parents. Readers check it against the parents storage still
+shows. Each device keeps, per environment, the highest generation it read; storage
+showing only lower generations is a rollback. A parent missing from storage is
+deleted history: the DAG simply ends there.
+
 `enbu history compact --keep N` (admin only) deletes an environment's revisions
 older than the latest N. The revision N-1 steps behind the head, following first
-parents, becomes the *floor*: it and every revision descending from it stay, and
-everything else is deleted. Before deleting, the admin publishes a signed
-compaction record listing what goes. A device that accepted one of those revisions
-would otherwise report a rollback; it accepts the deletion when a verified record
-lists the revision and the record's floor is still shown (or was removed by a later
-record whose floor is). A head that does not descend from a shown floor was built on
-removed history, whose merge base may be gone; reads set it aside like a head from
-a non-member, and the next compaction deletes it. Records are read only when a view
-lacks a parent or an accepted revision, so an environment that was never compacted
-costs nothing extra. Devices older than compaction see a rollback after one and
-must be updated.
+parents, becomes the *floor*: it, every revision descending from it, and every
+head stay, and everything else is deleted, oldest first. No record is published:
+the kept heads still carry the highest generation, so no device sees a rollback.
+A head written on top of deleted history merges with no base: every key the heads
+disagree on is a conflict.
 
 `enbu switch --delete NAME --purge`
 (admin only) deletes an environment's revisions where the backend can, and only

@@ -9,6 +9,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -93,16 +94,19 @@ func newHistoryTestApp(t *testing.T) (*App, []digest.Digest) {
 	}
 	defer s.Close()
 	ws := mustWorkspace(t, a)
-	publish := func(env string, at int64, secrets map[string]string, parents ...digest.Digest) digest.Digest {
+	publishOp := func(op, env string, at int64, secrets map[string]string, parents ...digest.Digest) digest.Digest {
 		ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(secrets), []string{kp.PublicKey})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return publishRevisionAt(t, a.Storage, a, ws, s.resource(env), s.head.Digest, ciphertext, at, parents...)
+		return publishRevisionOp(t, a.Storage, a, ws, s.resource(env), s.head.Digest, ciphertext, at, op, parents...)
+	}
+	publish := func(env string, at int64, secrets map[string]string, parents ...digest.Digest) digest.Digest {
+		return publishOp(wsp.OpWrite, env, at, secrets, parents...)
 	}
 	old := publish("default", 1000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "old", "Z_CHANGED": "old", "A_OLD": "removed", "Z_OLD": "removed"})
 	next := publish("default", 2000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}, old)
-	publish("default", 3000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}, next) // re-encryption only
+	publishOp(wsp.OpSync, "default", 3000, map[string]string{"UNCHANGED": "same", "A_CHANGED": "new", "Z_CHANGED": "new", "A_NEW": "added", "Z_NEW": "added"}, next) // re-encryption only
 	publish("production", 4000, map[string]string{"OTHER_ENV": "value"})
 	return a, []digest.Digest{old, next}
 }

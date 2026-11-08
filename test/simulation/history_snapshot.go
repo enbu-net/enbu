@@ -164,6 +164,14 @@ func (w *World) HistorySnapshot(ctx context.Context, operation, change string, c
 		if _, err := reader.App.InitializeRepository(ctx); err != nil {
 			return err
 		}
+		// A revision written while the reader is removed is never readable to it.
+		if err := advance("while-removed"); err != nil {
+			return err
+		}
+		if err := admin.AddSecret(ctx, "default", "WHILE_REMOVED", "hidden"); err != nil {
+			return err
+		}
+		w.Model["default"]["WHILE_REMOVED"] = "hidden"
 		previous, err := w.Devices[0].Store.Discover(ctx, storage.KindState, scope)
 		if err != nil {
 			return err
@@ -195,10 +203,13 @@ func (w *World) HistorySnapshot(ctx context.Context, operation, change string, c
 	if err != nil {
 		return err
 	}
+	// The removal's revision only re-encrypts (its Op says so) and is not
+	// listed. The revision written while the reader was removed is unreadable
+	// to it, so the readmission's re-encryption of it is the first readable
+	// revision with that content and is listed; the unreadable one still links
+	// it after its ancestors.
 	wantTags := append(slices.Clone(oldTags), added.Encoded())
 	if readmission != "" {
-		// The intervening parent is unreadable to the returning device, so
-		// it cannot prove this revision only re-encrypts unchanged content.
 		wantTags = append(wantTags, readmission.Encoded())
 	}
 	if change == "compact" {

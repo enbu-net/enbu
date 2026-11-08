@@ -197,22 +197,11 @@ func (s *session) diagnoseEnvironment(ctx context.Context, name string, r *Docto
 	resource := s.resource(name)
 	sv, err := s.loadResource(ctx, resource)
 	if apperr.Is(err, apperr.CodeArtifactNotFound) || errors.Is(err, storage.ErrNotFound) {
-		accepted, cpErr := s.cps.State(resource)
-		if cpErr != nil {
-			r.add("history", name, "fail", "Cannot read the local history checkpoint.", cpErr)
-		} else if len(accepted) > 0 {
-			r.add("history", name, "fail", "Previously accepted history is missing from storage.", wspError(wsp.ErrRollback))
-		} else {
-			r.add("history", name, "skip", "This environment has no revisions yet.", nil)
-		}
+		r.add("history", name, "skip", "This environment has no revisions yet.", nil)
 		return
 	}
 	if err != nil {
 		r.add("history", name, "fail", "History signature, ancestry or checkpoint verification failed.", err)
-		return
-	}
-	if len(sv.MissingParents()) > 0 {
-		r.add("history", name, "fail", "History has missing ancestors without a signed compaction record.", wspError(wsp.ErrRollback))
 		return
 	}
 	// Read every retained ciphertext to detect missing or corrupted old blobs too.

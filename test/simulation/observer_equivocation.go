@@ -234,15 +234,23 @@ func (w *World) ObserverStateEquivocation(ctx context.Context, conflict, cold bo
 		}
 		return requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:])
 	}
+	// Hiding one of two sibling branches of the same generation is not
+	// detected (ADR-26): the reader reads the other branch. Its signature still
+	// needs a member, and the hidden change only misses the next merge.
 	for i := range w.Devices {
-		hidden := leftRef
+		hidden, want := leftRef, right
 		if i == 1 {
-			hidden = rightRef
+			hidden, want = rightRef, left
 		}
 		if err := setView(i, hidden); err != nil {
 			return err
 		}
-		if err := rejectRollback(i); err != nil {
+		start := len(w.Tape.Recording.Entries)
+		got, err := w.Devices[i].App.ListSecrets(ctx, "default")
+		if err != nil || !reflect.DeepEqual(got, want) {
+			return fmt.Errorf("reader %d of a sibling branch read %v: %v", i, got, err)
+		}
+		if err := requireReadOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
 			return err
 		}
 	}
@@ -272,8 +280,8 @@ func (w *World) ObserverStateEquivocation(ctx context.Context, conflict, cold bo
 	if err := w.Check(ctx, "default"); err != nil {
 		return err
 	}
-	// The merged plaintext can equal a stale merged read. Signed ancestry and
-	// the checkpoint, not plaintext equality, must still reject hiding its head.
+	// The merged plaintext can equal a stale merged read. The merge's higher
+	// generation, not plaintext equality, must still reject hiding its head.
 	for i := range w.Devices {
 		if err := setView(i, merged); err != nil {
 			return err

@@ -42,6 +42,9 @@ type session struct {
 	diagnostic bool
 	// replaced is the root that acceptNewGenesis replaced, or a zero Root.
 	replaced wsp.Root
+	// removing is a member a removal is about to drop: what this session
+	// writes is encrypted without it, under the Control that still lists it.
+	removing signing.DeviceID
 }
 
 func (s *session) Close() {
@@ -187,7 +190,7 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 	}
 	// The resolution may have dropped members the existing ciphertext is still
 	// encrypted for, so it re-encrypts exactly as a removal does.
-	if err := a.reencryptAll(ctx); err != nil {
+	if err := a.reencryptAll(ctx, ""); err != nil {
 		return false, apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return true, nil
@@ -292,6 +295,18 @@ func (a *App) openSession(ctx context.Context) (*session, error) {
 
 func (s *session) self() signing.DeviceID { return s.signer.Public().DeviceID() }
 
+// recipients is the recipient set a revision is encrypted for: the current
+// Control's, without the member a removal is about to drop.
+func (s *session) recipients() []string {
+	var out []string
+	for _, p := range s.head.Principals {
+		if p.ID != s.removing {
+			out = append(out, p.Recipient)
+		}
+	}
+	return out
+}
+
 func (s *session) resource(env string) string { return s.cfg.Resource(env) }
 
 // resourceRead is the current content of one environment: every head storage
@@ -320,48 +335,24 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 		if err != nil {
 			return nil, wspError(err)
 		}
-		if sv.Graph.Len() == 0 {
-			accepted, err := s.cps.State(resource)
-			if err != nil {
-				return nil, err
-			}
-			if len(accepted) > 0 {
-				if attempt < acceptedRetries {
-					also = append(also, accepted...)
-					continue
-				}
-				return nil, wspError(fmt.Errorf("%w: all previously accepted revisions are missing", wsp.ErrRollback))
-			}
+		err = s.cps.CheckState(resource, sv)
+		if err == nil && sv.Graph.Len() == 0 {
 			return nil, storageError(storage.ErrNotFound)
 		}
-		// Load signed deletion records only when something is missing.
-		if len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
-			records, err := wsp.LoadCompactions(ctx, s.store, s.view, s.workspace, resource)
-			if err != nil {
-				return nil, wspError(err)
-			}
-			sv.Compacted = wsp.Compute(records, sv.Graph)
-		}
-		err = s.cps.CheckStates(resource, sv.Graph, sv.Compacted.Excuses)
 		if err == nil {
 			return sv, nil
 		}
+		// Another process of this device may have accepted a revision after
+		// the listing above was taken; a fresh listing shows it. One that
+		// storage really lost is still missing, and that stays a rollback.
 		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
 			return nil, wspError(err)
 		}
-		// Another process of this device may have accepted a revision after
-		// the listing above was taken. Fetch the accepted heads by name: one
-		// that storage really lost is still missing, and that stays a rollback.
-		accepted, err := s.cps.State(resource)
-		if err != nil {
-			return nil, err
-		}
-		also = append(append([]digest.Digest(nil), also...), accepted...)
 	}
 }
 
-// acceptedRetries bounds how often loadResource reads storage again for heads
-// that other processes of this device accepted meanwhile.
+// acceptedRetries bounds how often loadResource reads storage again for
+// revisions that other processes of this device accepted meanwhile.
 const acceptedRetries = 2
 
 // decrypt reads the ciphertext of one verified revision, checks it is the one
@@ -381,10 +372,9 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 }
 
 // readResource returns the merged current content of env. The heads must have
-// been written by current members, except heads this device already accepted
-// (so an admin can take over what a since-removed member last wrote). choices
-// settles conflicts a person has already decided. With record set the verified
-// view becomes this device's checkpoint.
+// been written by current members. choices settles conflicts a person has
+// already decided. With record set the Generation of the heads read becomes
+// this device's checkpoint.
 func (s *session) readResource(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
 	for attempt := 0; ; attempt++ {
 		sv, err := s.loadResource(ctx, resource, also...)
@@ -392,33 +382,34 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 			return nil, err
 		}
 		r, err := s.mergeResource(ctx, resource, sv, choices)
-		if err != nil || !record {
-			return r, err
+		if err == nil && record {
+			if err = s.cps.AcceptState(resource, sv, wsp.TopGeneration(r.heads)); err != nil {
+				err = wspError(err)
+			}
 		}
-		err = s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, r.parents(), s.head.Digest)
-		if err == nil {
-			return r, nil
+		// Storage changed while this read was working: another process of this
+		// device accepted a newer revision, or a compaction deleted a revision
+		// this read was about to decrypt. A fresh read sees the new view; a
+		// revision storage really lost is still missing then.
+		if errors.Is(err, wsp.ErrRollback) && attempt < acceptedRetries {
+			continue
 		}
-		// Another process of this device accepted a newer head while this one
-		// was reading; a fresh read includes it.
-		if !errors.Is(err, wsp.ErrRollback) || attempt == acceptedRetries {
-			return nil, wspError(err)
+		if err != nil {
+			return nil, err
 		}
+		return r, nil
 	}
 }
 
 func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.StateView, choices map[string]merge.Choice) (*resourceRead, error) {
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return nil, err
-	}
-	heads := s.trustedHeads(sv, accepted)
+	heads := s.trustedHeads(sv)
 	if len(heads) == 0 {
 		return nil, wspError(fmt.Errorf("%w: no revision of %s was written by a current member", wsp.ErrInvalid, resource))
 	}
 	r := &resourceRead{view: sv, heads: heads}
 	maps := make([]map[string]string, len(r.heads))
 	for i, h := range r.heads {
+		var err error
 		if maps[i], err = s.decrypt(ctx, h); err != nil {
 			return nil, err
 		}
@@ -426,11 +417,15 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	if len(maps) == 1 {
 		r.secrets = maps[0]
 	} else {
-		if missing := sv.MissingParents(); len(missing) > 0 {
-			return nil, wspError(fmt.Errorf("%w: revision %s is missing, so the heads cannot be merged yet", wsp.ErrRollback, missing[0]))
-		}
 		var bases []map[string]string
-		for _, b := range sv.Graph.MergeBases(r.parents()) {
+		found := sv.Graph.MergeBases(r.parents())
+		if len(found) == 0 && len(sv.Graph.Missing()) > 0 {
+			// The heads share no history storage still holds, because old
+			// revisions were deleted. Every head counts as a possible base, so
+			// any value they disagree on stays a conflict.
+			bases = append(bases, maps...)
+		}
+		for _, b := range found {
 			m, err := s.decrypt(ctx, sv.States[b])
 			var noMatch *agecrypto.NoIdentityMatchError
 			if errors.As(err, &noMatch) {
@@ -451,25 +446,13 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	return r, nil
 }
 
-// trustedHeads picks the heads this device may read as current. A head must be
-// written by a current member, or be one this device accepted while its author
-// was a member (so an admin can take over what a since-removed member last
-// wrote). A head failing both is not an error, because anyone able to write to
-// storage can publish one; it is set aside and its parents stand in for it, so
-// it neither injects content nor blocks reading.
-func (s *session) trustedHeads(sv *wsp.StateView, accepted wsp.StateAcceptance) []*wsp.VerifiedState {
-	trusted := func(h *wsp.VerifiedState) bool {
-		// A head below a compaction floor was built on removed history: its
-		// merge base may be gone, so it cannot be merged.
-		if !sv.Compacted.AboveFloors(sv.Graph, h.Digest) {
-			return false
-		}
-		// A returning device cannot carry its old accepted branches across
-		// its own removal. A continuously present observer may still take
-		// over a revision it accepted before the author's removal.
-		return wsp.AuthorIsCurrent(s.view, s.head, h) == nil ||
-			slices.Contains(accepted.Heads, h.Digest) && s.view.MembershipUnbroken(s.head.Digest, accepted.Control, s.self())
-	}
+// trustedHeads picks the heads this device may read as current: written by a
+// current member who was not removed since the Control the head names. A head
+// failing that is not an error, because anyone able to write to storage can
+// publish one; it is set aside and its parents stand in for it, so it neither
+// injects content nor blocks reading.
+func (s *session) trustedHeads(sv *wsp.StateView) []*wsp.VerifiedState {
+	trusted := func(h *wsp.VerifiedState) bool { return wsp.AuthorIsCurrent(s.view, s.head, h) == nil }
 	var heads []*wsp.VerifiedState
 	seen := map[digest.Digest]bool{}
 	queue := slices.Clone(sv.Heads)
@@ -527,20 +510,24 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 }
 
 // writeState encrypts secrets for the verified recipient set and publishes a
-// revision that merges parents. Storage has no compare-and-swap, so publishing
+// revision that merges parents, the heads it read. Storage has no compare-and-swap, so publishing
 // never replaces anything: a concurrent writer's revision stays beside this one
 // and the next reader merges them. The revision is returned once it is
 // published, even when the error says members changed meanwhile.
-func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
-	ciphertext, err := s.app.encrypt(encodeSecrets(secrets), s.head.Recipients())
+func (s *session) writeState(ctx context.Context, resource, op string, secrets map[string]string, parents []*wsp.VerifiedState) (*wsp.VerifiedState, error) {
+	ciphertext, err := s.app.encrypt(encodeSecrets(secrets), s.recipients())
 	if err != nil {
 		return nil, err
 	}
 	if err := s.controlUnchanged(ctx); err != nil {
 		return nil, err
 	}
-	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parents, Control: s.head.Digest,
-		Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: s.app.now().Unix()}
+	parentDigests := make([]digest.Digest, len(parents))
+	for i, p := range parents {
+		parentDigests[i] = p.Digest
+	}
+	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parentDigests, Generation: wsp.NextGeneration(parents),
+		Op: op, Control: s.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: s.app.now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
 		return nil, err
@@ -579,14 +566,5 @@ func (s *session) acceptPublished(ctx context.Context, resource string, st *wsp.
 }
 
 func (s *session) acceptView(resource string, sv *wsp.StateView) error {
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return err
-	}
-	heads := s.trustedHeads(sv, accepted)
-	digests := make([]digest.Digest, len(heads))
-	for i, h := range heads {
-		digests[i] = h.Digest
-	}
-	return s.cps.AcceptStates(resource, sv.Graph, sv.Compacted.Excuses, digests, s.head.Digest)
+	return s.cps.AcceptState(resource, sv, wsp.TopGeneration(s.trustedHeads(sv)))
 }

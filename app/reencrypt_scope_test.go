@@ -12,6 +12,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -76,7 +77,7 @@ func TestReencryptionCoversEnvironmentsMissingFromConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(read.heads) != 1 || read.heads[0].Control != s.head.Digest {
+	if len(read.heads) != 1 || read.heads[0].Op != wsp.OpSync || readableBy(t, s, carol, read.heads[0]) {
 		t.Fatalf("the environment was not re-encrypted for the members after the removal: %+v", read.heads)
 	}
 }

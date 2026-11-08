@@ -24,6 +24,7 @@ type stateFixture struct {
 	genesis  digest.Digest
 	view     *ControlView
 	headHash digest.Digest
+	gens     map[digest.Digest]uint64 // Generation of each revision publish stored
 }
 
 // newStateFixture founds a workspace with alice (admin) and bob (member).
@@ -32,11 +33,18 @@ func newStateFixture(t *testing.T) stateFixture {
 	store, alice, genesis := workspace(t)
 	bob := newActor(t, false)
 	v := addMember(t, store, genesis, alice, bob)
-	return stateFixture{store: store, alice: alice, bob: bob, genesis: genesis, view: load(t, store, genesis), headHash: v.Digest}
+	return stateFixture{store: store, alice: alice, bob: bob, genesis: genesis, view: load(t, store, genesis), headHash: v.Digest, gens: map[digest.Digest]uint64{}}
 }
 
+// state is a revision on top of parents, with the Generation they imply (a
+// parent publish did not store counts as generation 1).
 func (f stateFixture) state(author actor, parents ...digest.Digest) State {
-	return State{Workspace: testWorkspace, Resource: testResource, Parents: parents, Control: f.headHash, Ciphertext: digest.FromString("ciphertext"), Author: author.p.ID}
+	var top uint64
+	for _, p := range parents {
+		top = max(top, max(f.gens[p], 1))
+	}
+	return State{Workspace: testWorkspace, Resource: testResource, Parents: parents, Generation: top + 1, Op: OpWrite,
+		Control: f.headHash, Ciphertext: digest.FromString("ciphertext"), Author: author.p.ID}
 }
 
 func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) digest.Digest {
@@ -50,6 +58,7 @@ func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) di
 	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{[]byte(cipher)}}); err != nil {
 		t.Fatal(err)
 	}
+	f.gens[rev] = s.Generation
 	return rev
 }
 
@@ -436,5 +445,72 @@ func TestMembershipContinuityChecksEveryForkBranch(t *testing.T) {
 				t.Fatalf("got %t want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestStateGenerationAndOpMustBeWellFormed(t *testing.T) {
+	f := newStateFixture(t)
+	p := digest.FromString("p")
+	for name, mutate := range map[string]func(*State){
+		"zero":           func(s *State) { s.Generation = 0 },
+		"root above one": func(s *State) { s.Generation = 2 },
+		"child at one":   func(s *State) { s.Parents = []digest.Digest{p}; s.Generation = 1 },
+		"unknown op":     func(s *State) { s.Op = "compact" },
+		"missing op":     func(s *State) { s.Op = "" },
+	} {
+		s := f.state(f.bob)
+		mutate(&s)
+		if _, err := SignState(s, f.bob.signer); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
+// A revision whose parents are all present must carry the Generation they
+// imply; with a parent deleted it cannot be checked and is kept.
+func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	child := f.publish(t, f.state(f.alice, root), f.alice, "child")
+	inflated := f.state(f.bob, child)
+	inflated.Generation = 1000
+	wrong := f.publish(t, inflated, f.bob, "inflated")
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.MaxGeneration() != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
+		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.MaxGeneration())
+	}
+
+	if err := f.store.Delete(ctx, storage.KindState, storage.StateScope(testWorkspace, testResource), root); err != nil {
+		t.Fatal(err)
+	}
+	sv, err = LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sv.Graph.Has(child) || sv.Graph.Has(root) || sv.MaxGeneration() != 2 {
+		t.Fatalf("revision above a deleted parent: states %v max %d", sv.States, sv.MaxGeneration())
+	}
+}
+
+// A revision by a member removed since still counts as evidence of how fresh
+// storage is, though it is no longer read as current.
+func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	f.publish(t, f.state(f.bob, root), f.bob, "bob")
+	if _, err := UpdateControl(ctx, f.store, f.view, f.alice.signer, func(c *Control) error {
+		c.Principals = []Principal{f.alice.p}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sv, err := LoadStates(ctx, f.store, load(t, f.store, f.genesis), testWorkspace, testResource)
+	if err != nil || sv.MaxGeneration() != 2 {
+		t.Fatalf("max generation = %d %v", sv.MaxGeneration(), err)
 	}
 }

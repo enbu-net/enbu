@@ -375,7 +375,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		}
 		d := w.Devices[i]
 		checkpoint := wsp.OpenCheckpoints(d.App.CheckpointDir, cfg.WorkspaceID, goodRoot.Genesis, d.App.Runtime.Clock)
-		before, err := checkpoint.Accepted(cfg.Resource("default"))
+		before, err := checkpoint.Generation(cfg.Resource("default"))
 		if err != nil {
 			return err
 		}
@@ -393,12 +393,12 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		if err := requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
 			return err
 		}
-		after, err := checkpoint.Accepted(cfg.Resource("default"))
+		after, err := checkpoint.Generation(cfg.Resource("default"))
 		if err != nil {
 			return err
 		}
 		if !reflect.DeepEqual(before, after) {
-			return fmt.Errorf("rejected foreign branch changed accepted State heads")
+			return fmt.Errorf("rejected foreign branch changed the accepted State generation")
 		}
 		if err := firstContactPins(d, cfg.WorkspaceID, goodRoot); err != nil {
 			return err

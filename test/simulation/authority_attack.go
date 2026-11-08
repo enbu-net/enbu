@@ -15,11 +15,11 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var AuthorityAttacks = []string{"member-promotes-self", "member-removes-admin", "demoted-admin-promotes-self", "removed-admin-rejoins-self", "member-excuses-rollback", "fork-promotes-member", "fork-swaps-recipient"}
+var AuthorityAttacks = []string{"member-promotes-self", "member-removes-admin", "demoted-admin-promotes-self", "removed-admin-rejoins-self", "member-branch-hides-head", "fork-promotes-member", "fork-swaps-recipient"}
 
 // AuthorityAttack publishes canonical objects signed by real retained keys.
-// These objects pass structural and cryptographic checks; parent authority or
-// compaction authority is what must reject them.
+// These objects pass structural and cryptographic checks; parent authority, or
+// the readers' accepted generation, is what must reject them.
 func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	a := w.Devices[0].App
@@ -75,7 +75,15 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 		return err
 	}
 	defer func() { _ = signer.Close() }()
-	if mode == "member-excuses-rollback" {
+	if mode == "member-branch-hides-head" {
+		// Every device accepts a second generation, above the branch's first.
+		if err := a.EditSecret(ctx, "default", "BASE", "accepted-again"); err != nil {
+			return err
+		}
+		w.Model["default"]["BASE"] = "accepted-again"
+		if err := w.Check(ctx, "default"); err != nil {
+			return err
+		}
 		states, err := wsp.LoadStates(ctx, w.Devices[0].Store, view, cfg.WorkspaceID, cfg.Resource("default"))
 		if err != nil {
 			return err
@@ -84,17 +92,10 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 			return fmt.Errorf("expected single accepted head")
 		}
 		current := states.Heads[0]
-		// Keep a different genuine state visible as the forged compaction floor.
-		floor, err := w.publishMergeNode(ctx, 0, map[string]string{"BASE": "rolled-back"})
+		// Storage hides the accepted head and shows a genuine member-signed
+		// branch beside it instead, of a lower generation.
+		floor, err := w.publishMergeNode(ctx, 1, map[string]string{"BASE": "rolled-back"})
 		if err != nil {
-			return err
-		}
-		record := wsp.Compaction{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Floor: floor.Rev, Removed: []digest.Digest{current.Digest}, Control: head.Digest, Author: signer.Public().DeviceID()}
-		signed, err := wsp.SignCompaction(record, signer)
-		if err != nil {
-			return err
-		}
-		if err := w.Devices[1].Store.Publish(ctx, storage.Object{Kind: storage.KindCompaction, Scope: record.Scope(), Rev: digest.FromBytes(signed), Head: signed}); err != nil {
 			return err
 		}
 		blob, err := wsp.ReadCiphertext(ctx, w.Devices[0].Store, current)
@@ -112,7 +113,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 			w.Restart(i)
 			d := w.Devices[i]
 			if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeRollback) != nil {
-				return fmt.Errorf("unauthorized compaction excused rollback: %v", err)
+				return fmt.Errorf("a member's branch hid an accepted head: %v", err)
 			}
 		}
 		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: current.Scope(), Rev: current.Digest, Head: signedState, Blobs: [][]byte{blob}}); err != nil {

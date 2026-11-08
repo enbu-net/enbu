@@ -19,20 +19,20 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-// checkpointVersion is the on-disk format. Files of an older format held a
-// single digest per object and are not carried over: they start empty.
-const checkpointVersion = 3
-
 type checkpointFile struct {
-	Version int                        `json:"version"`
-	Control []digest.Digest            `json:"control,omitempty"`
-	States  map[string]StateAcceptance `json:"states,omitempty"`
+	Control []digest.Digest   `json:"control,omitempty"`
+	States  map[string]uint64 `json:"states,omitempty"` // accepted Generation per resource
 }
 
-// Checkpoints persists the heads a client has accepted, locally only, so
-// storage cannot later show less than it already showed. It needs no server.
-// A head is an anchor, not an order: a later view must still contain every
-// accepted head, as itself or as an ancestor, and may add newer revisions.
+// Checkpoints persists what a client has accepted, locally only, so storage
+// cannot later show less than it already showed. It needs no server.
+//
+// For the Control DAG, which is never deleted, it keeps the accepted heads: a
+// later view must still contain each of them. For a resource, whose old
+// revisions may be deleted, it keeps the highest Generation accepted: a later
+// view must show a verified revision of at least that Generation. Storage
+// hiding an accepted head behind a sibling branch of equal or higher
+// Generation is not detected; that branch still needs a member's signature.
 //
 // Every update is a read-modify-write under an OS file lock, so concurrent
 // processes cannot overwrite each other.
@@ -55,19 +55,10 @@ func OpenCheckpoints(dir, workspace string, genesis digest.Digest, c clock.Clock
 func (c *Checkpoints) read() (checkpointFile, error) {
 	b, err := os.ReadFile(c.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return checkpointFile{Version: checkpointVersion}, nil
+		return checkpointFile{}, nil
 	}
 	if err != nil {
 		return checkpointFile{}, err
-	}
-	var v struct {
-		Version int `json:"version"`
-	}
-	if err := json.Unmarshal(b, &v); err != nil || v.Version < 1 || v.Version > checkpointVersion {
-		return checkpointFile{}, fmt.Errorf("corrupt checkpoint file %s", c.path)
-	}
-	if v.Version < checkpointVersion {
-		return checkpointFile{Version: checkpointVersion}, nil
 	}
 	var f checkpointFile
 	if err := json.Unmarshal(b, &f); err != nil {
@@ -165,35 +156,12 @@ func (c *Checkpoints) Control() ([]digest.Digest, error) {
 	return f.Control, err
 }
 
-// StateAcceptance binds accepted heads to the Control epoch in which this
-// observer read them. Revocation checks must start at acceptance, not authorship.
-type StateAcceptance struct {
-	Heads   []digest.Digest `json:"heads"`
-	Control digest.Digest   `json:"control"`
-}
-
-// State returns the accepted heads of resource, or nil if none.
-func (c *Checkpoints) State(resource string) ([]digest.Digest, error) {
-	state, err := c.Accepted(resource)
-	return state.Heads, err
-}
-
-// Accepted reads heads and their acceptance epoch from the same file snapshot.
-func (c *Checkpoints) Accepted(resource string) (StateAcceptance, error) {
+// Generation returns the accepted Generation of resource, or 0 if none.
+func (c *Checkpoints) Generation(resource string) (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	f, err := c.read()
 	return f.States[resource], err
-}
-
-// missingFrom returns the first accepted head that the view no longer holds.
-func missingFrom(accepted []digest.Digest, has func(digest.Digest) bool) (digest.Digest, bool) {
-	for _, d := range accepted {
-		if !has(d) {
-			return d, true
-		}
-	}
-	return "", false
 }
 
 func sameDigests(a, b []digest.Digest) bool {
@@ -217,8 +185,10 @@ func (c *Checkpoints) AcceptControl(view *ControlView) error {
 		heads[i] = h.Digest
 	}
 	return c.update(func(f *checkpointFile) (bool, error) {
-		if d, gone := missingFrom(f.Control, func(d digest.Digest) bool { _, ok := view.Get(d); return ok }); gone {
-			return false, fmt.Errorf("%w: accepted control %s is missing from storage", ErrRollback, d)
+		for _, d := range f.Control {
+			if _, ok := view.Get(d); !ok {
+				return false, fmt.Errorf("%w: accepted control %s is missing from storage", ErrRollback, d)
+			}
 		}
 		if sameDigests(f.Control, heads) {
 			return false, nil
@@ -228,43 +198,41 @@ func (c *Checkpoints) AcceptControl(view *ControlView) error {
 	})
 }
 
-// CheckStates rejects a view of resource that lacks a head this client
-// accepted, unless excused reports that a compaction removed it. excused may
-// be nil. It does not record anything.
-func (c *Checkpoints) CheckStates(resource string, g *Graph, excused func(digest.Digest) bool) error {
-	accepted, err := c.State(resource)
+// CheckState rejects a view of resource whose verified revisions are all of a
+// lower Generation than this client accepted. sv may be nil for a resource
+// storage shows nothing of. It does not record anything.
+func (c *Checkpoints) CheckState(resource string, sv *StateView) error {
+	accepted, err := c.Generation(resource)
 	if err != nil {
 		return err
 	}
-	if d, gone := missingFrom(accepted, shownOrExcused(g, excused)); gone {
-		return fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
+	return rollbackBelow(resource, sv, accepted)
+}
+
+func rollbackBelow(resource string, sv *StateView, accepted uint64) error {
+	if shown := sv.MaxGeneration(); shown < accepted {
+		return fmt.Errorf("%w: storage shows %s up to generation %d, below the accepted %d", ErrRollback, resource, shown, accepted)
 	}
 	return nil
 }
 
-func shownOrExcused(g *Graph, excused func(digest.Digest) bool) func(digest.Digest) bool {
-	return func(d digest.Digest) bool { return g.Has(d) || excused != nil && excused(d) }
-}
-
-// AcceptStates records heads as the accepted heads of resource. Only revisions
-// the caller trusts belong here: an accepted head is later allowed even if its
-// author has been removed. Accepted heads a compaction removed (excused) are
-// dropped. The check runs again under the lock, so a view that
-// became stale while the caller was working is rejected rather than silently dropped.
-func (c *Checkpoints) AcceptStates(resource string, g *Graph, excused func(digest.Digest) bool, heads []digest.Digest, control digest.Digest) error {
-	heads = append([]digest.Digest(nil), heads...)
-	sortDigests(heads)
+// AcceptState raises the accepted Generation of resource to generation, the
+// highest Generation of the heads the caller read from sv. The check runs again
+// under the lock, so a view that became stale while the caller was working is
+// rejected rather than silently accepted.
+func (c *Checkpoints) AcceptState(resource string, sv *StateView, generation uint64) error {
 	return c.update(func(f *checkpointFile) (bool, error) {
-		if d, gone := missingFrom(f.States[resource].Heads, shownOrExcused(g, excused)); gone {
-			return false, fmt.Errorf("%w: %s revision %s is missing from storage", ErrRollback, resource, d)
+		accepted := f.States[resource]
+		if err := rollbackBelow(resource, sv, accepted); err != nil {
+			return false, err
 		}
-		if sameDigests(f.States[resource].Heads, heads) && f.States[resource].Control == control {
+		if generation <= accepted {
 			return false, nil
 		}
 		if f.States == nil {
-			f.States = map[string]StateAcceptance{}
+			f.States = map[string]uint64{}
 		}
-		f.States[resource] = StateAcceptance{Heads: heads, Control: control}
+		f.States[resource] = generation
 		return true, nil
 	})
 }

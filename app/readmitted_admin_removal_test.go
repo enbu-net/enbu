@@ -6,7 +6,9 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
-func TestReadmittedObserverKeepsStateAcceptedInNewEpoch(t *testing.T) {
+// A readmitted admin that removes a member keeps what that member wrote under
+// a Control from before the admin's readmission.
+func TestReadmittedAdminRemovalKeepsWhatTheRemovedMemberWrote(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	carol := approved(t, alice)
@@ -46,7 +48,7 @@ func TestReadmittedObserverKeepsStateAcceptedInNewEpoch(t *testing.T) {
 	if got := listOK(t, bob); got["CAROL"] != "accepted after readmission" {
 		t.Fatalf("readmitted observer: %v", got)
 	}
-	// Simulate a fresh process using the persisted acceptance epoch.
+	// A fresh process, with only the persisted checkpoint.
 	restarted := *bob
 	bob = &restarted
 	if err := bob.RemoveMember(bg, string(carolsEntry.ID)); err != nil {

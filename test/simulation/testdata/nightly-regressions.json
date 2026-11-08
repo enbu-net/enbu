@@ -5992,7 +5992,7 @@
     "Seed": 11012636119122646251,
     "Plan": {
       "Devices": 7,
-      "Scenario": "disaster-compacted-no-record-cold",
+      "Scenario": "disaster-compacted-cold",
       "Actions": [
         {
           "Kind": "parallel",

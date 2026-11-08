@@ -31,7 +31,7 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 		{"delete", func(a *App) error { return a.DeleteSecret(ctx, "default", "KEY") }},
 		{"sync", func(a *App) error { return a.SyncSecrets(ctx, "default") }},
 		{"restore", func(a *App) error { return a.RestoreHistory(ctx, "default", 1) }},
-		{"diff", func(a *App) error { _, err := a.DiffHistory(ctx, "default", 1, 1); return err }},
+		{"diff", func(a *App) error { _, err := a.DiffHistory(ctx, "default", 1, 2); return err }},
 	} {
 		t.Run(operation.name, func(t *testing.T) {
 			for _, failure := range []string{"config", "identity", "storage", "ciphertext", "bundle"} {

@@ -368,8 +368,9 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
 - **Signed State** binds a ciphertext digest and its parent revisions to the device that wrote
   it. Readers verify the author and signature before decrypting, and set aside anything a
   non-member published.
-- **Local checkpoints** remember the Control and State heads this device accepted, so storage
-  cannot silently hide them. A delayed listing is retried, not treated as lost data.
+- **Local checkpoints** remember the Control heads and, per environment, the highest revision
+  generation this device accepted, so storage cannot silently show an older state. A delayed
+  listing is retried, not treated as lost data.
 - **Pinned trust root.** Each device remembers, in one local `trust.json`, the first
   `control_genesis` it verified for a workspace, and the workspace each checkout's `enbu.toml`
   first named. If a later
@@ -381,7 +382,8 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
   is never written to storage.
 
 Not covered: storage denying service, hiding the newest revision from a fresh device with no
-checkpoint, a malicious admin, and stolen admin keys. A removed member who can still write to
+checkpoint, hiding one of two concurrent revisions behind the other (the hidden change waits for
+the next merge), a malicious admin, and stolen admin keys. A removed member who can still write to
 storage can publish a revision that claims the control they knew; reads and history set it aside,
 but a device that has not yet seen the removal still accepts it.
 

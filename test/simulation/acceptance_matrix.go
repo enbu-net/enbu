@@ -18,9 +18,9 @@ type AcceptanceCase struct {
 	Admin            bool
 }
 
-// changeFixtureControl deliberately isolates the acceptance protocol from the
-// application's automatic re-encryption. Otherwise its takeover masks the
-// distinction between an observer's old and new acceptance epochs.
+// changeFixtureControl deliberately isolates the trust rule from the
+// application's re-encryption on removal. Otherwise its takeover masks whether
+// a removed author's unmerged head is still read.
 func (w *World) changeFixtureControl(ctx context.Context, mutate func(*wsp.Control) error) (*wsp.Verified, error) {
 	d := w.Devices[0]
 	cfg, err := config.LoadProjectFrom(d.App.RepositoryDir)
@@ -104,7 +104,7 @@ func (w *World) AcceptanceCase(ctx context.Context, c AcceptanceCase) error {
 			return err
 		}
 		if !reflect.DeepEqual(got, want) {
-			return &Violation{Kind: "acceptance-epoch", Detail: fmt.Errorf("case %+v got %v want %v", c, got, want)}
+			return &Violation{Kind: "acceptance", Detail: fmt.Errorf("case %+v got %v want %v", c, got, want)}
 		}
 		return w.Tape.Observe("observer-accepted", c, got)
 	}
@@ -151,10 +151,9 @@ func (w *World) AcceptanceCase(ctx context.Context, c AcceptanceCase) error {
 	if _, err := w.Devices[2].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
 		return fmt.Errorf("removed author read: %v", err)
 	}
+	// Without the re-encryption a removal publishes first, the removed author's
+	// unmerged head is set aside for every observer, whenever it read it.
 	want := map[string]string{"BASE": "kept"}
-	if c.AfterReadmission {
-		want = values
-	}
 	if err := checkObserver(want); err != nil {
 		return err
 	}
@@ -162,8 +161,8 @@ func (w *World) AcceptanceCase(ctx context.Context, c AcceptanceCase) error {
 		return err
 	}
 	w.Model["default"] = clone(want)
-	// Re-admitting the author must not revive the old branch that an observer
-	// accepted before its own removal. Fresh author writes must still work.
+	// Re-admitting the author must not revive its old branch. Fresh author
+	// writes must still work.
 	if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
 		return err
 	}

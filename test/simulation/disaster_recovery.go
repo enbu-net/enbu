@@ -117,9 +117,9 @@ func (w *World) backupRecoveryStore(ctx context.Context) ([]storage.Object, erro
 	}
 	s := w.Devices[0].Store
 	var out []storage.Object
-	for _, kind := range []storage.Kind{storage.KindControl, storage.KindRequest, storage.KindState, storage.KindCompaction} {
+	for _, kind := range []storage.Kind{storage.KindControl, storage.KindRequest, storage.KindState} {
 		scopes := []string{""}
-		if kind == storage.KindState || kind == storage.KindCompaction {
+		if kind == storage.KindState {
 			scopes = nil
 			for _, env := range cfg.EnvironmentNames() {
 				scopes = append(scopes, storage.StateScope(cfg.WorkspaceID, cfg.Resource(env)))
@@ -174,7 +174,7 @@ func (w *World) restoreRecoveryStore(ctx context.Context, backup []storage.Objec
 // freshness without it. Keep this boundary distinct from a failed recovery.
 func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) error {
 	switch mode {
-	case "witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data":
+	case "witness", "all-stale", "compacted", "compacted-old-data":
 	default:
 		return fmt.Errorf("unknown disaster recovery mode %q", mode)
 	}
@@ -234,7 +234,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
-	compacted := mode == "compacted" || mode == "compacted-no-record" || mode == "compacted-old-data"
+	compacted := mode == "compacted" || mode == "compacted-old-data"
 	if compacted {
 		for _, env := range []string{"default", "staging"} {
 			result, err := a.CompactHistory(ctx, env, 1)
@@ -249,14 +249,12 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 				return err
 			}
 			scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource(env))
-			for _, kind := range []storage.Kind{storage.KindState, storage.KindCompaction} {
-				refs, err := w.Devices[0].Store.Discover(ctx, kind, scope)
-				if err != nil {
-					return err
-				}
-				if len(refs) != 1 {
-					return fmt.Errorf("compacted recovery %s/%s has %d objects, want one", env, kind, len(refs))
-				}
+			refs, err := w.Devices[0].Store.Discover(ctx, storage.KindState, scope)
+			if err != nil {
+				return err
+			}
+			if len(refs) != 1 {
+				return fmt.Errorf("compacted recovery %s has %d revisions, want one", env, len(refs))
 			}
 		}
 	}
@@ -290,10 +288,10 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 		}
 	}
 	if mode == "compacted-old-data" {
-		// The restored store keeps the latest signed Control and compaction logs,
-		// but its ciphertext and State DAG come from an older backup. The current
-		// trusted checkpoints must still reject this mixture: a signed compaction
-		// can excuse missing ancestors only while its retained floor is present.
+		// The restored store keeps the latest signed Control, but its ciphertext
+		// and State DAG come from an older backup. The current trusted
+		// checkpoints must still reject this mixture: the compaction deleted the
+		// newer revisions' ancestors, not the newer generation itself.
 		var mixed []storage.Object
 		for _, object := range currentStore {
 			if object.Kind != storage.KindState {
@@ -309,20 +307,6 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
-	if mode == "compacted-no-record" {
-		records := 0
-		for _, object := range currentStore {
-			if object.Kind == storage.KindCompaction {
-				if err := w.Devices[0].Store.Delete(ctx, object.Kind, object.Scope, object.Rev); err != nil {
-					return err
-				}
-				records++
-			}
-		}
-		if records != 2 {
-			return fmt.Errorf("expected one compaction record per environment, got %d", records)
-		}
-	}
 	for i, d := range w.Devices {
 		selection := "default"
 		if i%2 == 1 && mode != "compacted-old-data" {
@@ -334,7 +318,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 		for _, env := range []string{"default", "staging"} {
 			start := len(w.Tape.Recording.Entries)
 			got, err := d.App.ListSecrets(ctx, env)
-			if mode == "compacted-no-record" || mode == "compacted-old-data" || mode == "witness" && i == 0 {
+			if mode == "compacted-old-data" || mode == "witness" && i == 0 {
 				if err := requireCode(err, apperr.CodeRollback); err != nil {
 					return fmt.Errorf("retained witness accepted a rolled-back store: %w", err)
 				}

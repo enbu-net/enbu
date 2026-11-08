@@ -141,7 +141,7 @@ func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error 
 		w.Model["default"] = lateValues
 	}
 	// Restart everyone, including the observer with the old checkpoint, before
-	// retrying. Signed records must make partially completed deletion readable.
+	// retrying. A partially completed deletion must stay readable.
 	for i := range w.Devices {
 		w.Restart(i)
 	}

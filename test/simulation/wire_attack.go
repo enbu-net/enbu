@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"slices"
 
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -174,25 +173,11 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	if err != nil || len(states.Heads) != 1 {
 		return fmt.Errorf("wire fixture requires one accepted head: %v", err)
 	}
-	accepted := states.Heads[0]
-	originalHead, err := w.Devices[0].Store.FetchHead(ctx, storage.KindState, accepted.Scope(), accepted.Digest)
-	if err != nil {
-		return err
-	}
-	originalCipher, err := wsp.ReadCiphertext(ctx, w.Devices[0].Store, accepted)
-	if err != nil {
-		return err
-	}
-	original := storage.Object{Kind: storage.KindState, Scope: accepted.Scope(), Rev: accepted.Digest, Head: originalHead, Blobs: [][]byte{originalCipher}}
 	floor, err := w.publishMergeNode(ctx, 0, map[string]string{"BASE": "must-not-accept"})
 	if err != nil {
 		return err
 	}
 	if err := w.Devices[0].Store.Delete(ctx, floor.Kind, floor.Scope, floor.Rev); err != nil {
-		return err
-	}
-	compaction, err := wsp.SignCompaction(wsp.Compaction{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: head.Digest, Author: signer.Public().DeviceID(), Floor: floor.Rev, Removed: []digest.Digest{accepted.Digest}}, signer)
-	if err != nil {
 		return err
 	}
 	keys := &Keys{Tape: w.Tape, Device: len(w.Devices)}
@@ -244,10 +229,6 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 			return err
 		}},
 		{storage.KindRequest, request, signing.DomainJoin, requestSigner, func(b []byte) error { _, err := wsp.VerifyJoinRequest(cfg.WorkspaceID, b); return err }},
-		{storage.KindCompaction, compaction, signing.DomainCompact, signer, func(b []byte) error {
-			_, err := wsp.VerifyCompaction(view, cfg.WorkspaceID, cfg.Resource("default"), digest.FromBytes(b), b)
-			return err
-		}},
 	}
 	for _, source := range sources {
 		if err := source.verify(source.blob); err != nil {
@@ -266,22 +247,11 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 			}
 			object := storage.Object{Kind: source.kind, Head: bad, Rev: digest.FromBytes(bad)}
 			rejected, badBlobs = object.Rev, 0
-			if source.kind == storage.KindState || source.kind == storage.KindCompaction {
-				object.Scope = floor.Scope
-			}
 			if source.kind == storage.KindState {
-				object.Blobs = floor.Blobs
+				object.Scope, object.Blobs = floor.Scope, floor.Blobs
 			}
 			if err := w.Devices[0].Store.Publish(ctx, object); err != nil {
 				return err
-			}
-			if source.kind == storage.KindCompaction {
-				if err := w.Devices[0].Store.Publish(ctx, floor); err != nil {
-					return err
-				}
-				if err := w.Devices[0].Store.Delete(ctx, original.Kind, original.Scope, original.Rev); err != nil {
-					return err
-				}
 			}
 			for _, d := range w.Devices {
 				if cold {
@@ -290,10 +260,6 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 					}
 				}
 				switch source.kind {
-				case storage.KindCompaction:
-					if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeRollback) != nil {
-						return fmt.Errorf("malformed compaction excused rollback: %v", err)
-					}
 				case storage.KindRequest:
 					requests, err := d.App.ListJoinRequests(ctx)
 					if err != nil || len(requests) != 0 {
@@ -318,14 +284,6 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 			}
 			if badBlobs != 0 {
 				return fmt.Errorf("malformed %s/%s opened %d ciphertexts", source.kind, mode, badBlobs)
-			}
-			if source.kind == storage.KindCompaction {
-				if err := w.Devices[0].Store.Publish(ctx, original); err != nil {
-					return err
-				}
-				if err := w.Devices[0].Store.Delete(ctx, floor.Kind, floor.Scope, floor.Rev); err != nil {
-					return err
-				}
 			}
 			if err := w.Devices[0].Store.Delete(ctx, object.Kind, object.Scope, object.Rev); err != nil {
 				return err

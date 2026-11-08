@@ -20,7 +20,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var Scenarios = []string{"disaster-witness-warm", "disaster-witness-cold", "disaster-all-stale-warm", "disaster-all-stale-cold", "disaster-compacted-warm", "disaster-compacted-cold", "disaster-compacted-no-record-warm", "disaster-compacted-no-record-cold", "disaster-compacted-old-data-warm", "disaster-compacted-old-data-cold", "portable-config", "output-boundary-public", "output-boundary-hardlink", "output-boundary-canceled-hardlink", "output-boundary-removed-hardlink", "wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-lost"}
+var Scenarios = []string{"disaster-witness-warm", "disaster-witness-cold", "disaster-all-stale-warm", "disaster-all-stale-cold", "disaster-compacted-warm", "disaster-compacted-cold", "disaster-compacted-old-data-warm", "disaster-compacted-old-data-cold", "portable-config", "output-boundary-public", "output-boundary-hardlink", "output-boundary-canceled-hardlink", "output-boundary-removed-hardlink", "wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-lost"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -36,12 +36,8 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		return e
 	}
 	w.Model["default"]["BASE"] = "original"
-	if strings.HasPrefix(name, "retained-observer-") {
-		parts := strings.Split(strings.TrimPrefix(name, "retained-observer-"), "-")
-		if len(parts) != 2 || parts[0] != "value" && parts[0] != "delete" || parts[1] != "warm" && parts[1] != "cold" {
-			return fmt.Errorf("invalid retained observer scenario %q", name)
-		}
-		return w.RetainedObserver(ctx, parts[1] == "cold", parts[0] == "delete")
+	if name == "retained-observer-warm" || name == "retained-observer-cold" {
+		return w.RetainedObserver(ctx, name == "retained-observer-cold")
 	}
 	if name == "observer-control-cold" || name == "observer-control-warm" {
 		return w.ObserverControlEquivocation(ctx, name == "observer-control-cold")

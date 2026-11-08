@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -15,12 +16,21 @@ func TestHistoryPreservesAncestryAcrossUnreadableRevisions(t *testing.T) {
 			t.Run(fmt.Sprintf("backward-%t/gap-%d", backward, gap), func(t *testing.T) {
 				currentKey, historicalKey := mustKeyPair(t), mustKeyPair(t)
 				a := newTestApp(t, "owner", "repo", "default", currentKey, nil)
-				s, err := a.openSession(bg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer s.Close()
 				workspace := mustWorkspace(t, a)
+				resource := "secrets/default"
+				control := func() digest.Digest {
+					s, err := a.openSession(bg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer s.Close()
+					resource = s.resource("default")
+					return s.head.Digest
+				}
+				// recipient lists this device under key in the Control.
+				recipient := func(key string) {
+					changeControl(t, a, func(c *wsp.Control) { c.Principals[0].Recipient = key })
+				}
 				at := int64(1000)
 				if backward {
 					at = 4000
@@ -30,7 +40,7 @@ func TestHistoryPreservesAncestryAcrossUnreadableRevisions(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					rev := publishRevisionAt(t, a.Storage, a, workspace, s.resource("default"), s.head.Digest, cipher, at, parents...)
+					rev := publishRevisionAt(t, a.Storage, a, workspace, resource, control(), cipher, at, parents...)
 					if backward {
 						at -= 1000
 					}
@@ -39,10 +49,12 @@ func TestHistoryPreservesAncestryAcrossUnreadableRevisions(t *testing.T) {
 				oldValues := map[string]string{"OLD_ONLY": "old", "CHANGED": "old"}
 				old := publish(currentKey.PublicKey, oldValues)
 				parent := old
+				// This device had another key for these historical revisions.
+				recipient(historicalKey.PublicKey)
 				for range gap {
-					// This client has lost the key for these historical revisions.
 					parent = publish(historicalKey.PublicKey, map[string]string{"HIDDEN": "not readable"}, parent)
 				}
+				recipient(currentKey.PublicKey)
 				latest := publish(currentKey.PublicKey, map[string]string{"NEW_ONLY": "new", "CHANGED": "new"}, parent)
 				entries, err := a.ListHistory(bg, "default")
 				if err != nil || len(entries) != 2 || entries[0].Tag != old.Encoded() || entries[1].Tag != latest.Encoded() {

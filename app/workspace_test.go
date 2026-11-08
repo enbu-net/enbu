@@ -24,11 +24,30 @@ const stagingEnv = "staging"
 
 func writeStaging(t *testing.T, s *session, secrets map[string]string, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	st, err := s.writeState(bg, s.resource(stagingEnv), secrets, parents)
+	st, err := s.writeState(bg, s.resource(stagingEnv), wsp.OpWrite, secrets, parentStates(t, s, s.resource(stagingEnv), parents))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return st.Digest
+}
+
+// parentStates returns the verified revisions of resource named by parents.
+func parentStates(t *testing.T, s *session, resource string, parents []digest.Digest) []*wsp.VerifiedState {
+	t.Helper()
+	if len(parents) == 0 {
+		return nil
+	}
+	sv, err := wsp.LoadStates(bg, s.store, s.view, s.workspace, resource, parents...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]*wsp.VerifiedState, len(parents))
+	for i, p := range parents {
+		if out[i] = sv.States[p]; out[i] == nil {
+			t.Fatalf("parent %s is not in storage", p)
+		}
+	}
+	return out
 }
 
 // encryptForTest encrypts secrets for the recipients of the verified Control.
@@ -356,7 +375,7 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.writeState(bg, s.resource(stagingEnv), map[string]string{"A": "1"}, nil)
+	_, err = s.writeState(bg, s.resource(stagingEnv), wsp.OpWrite, map[string]string{"A": "1"}, nil)
 	if !errors.Is(err, errControlMoved) {
 		t.Fatalf("write on a stale control: %v", err)
 	}
@@ -369,7 +388,7 @@ func TestWriteStateRefusesToPublishAfterTheControlMoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer fresh.Close()
-	if _, err := fresh.writeState(bg, fresh.resource(stagingEnv), map[string]string{"A": "1"}, nil); err != nil {
+	if _, err := fresh.writeState(bg, fresh.resource(stagingEnv), wsp.OpWrite, map[string]string{"A": "1"}, nil); err != nil {
 		t.Fatalf("write on the current control: %v", err)
 	}
 }
@@ -403,15 +422,13 @@ func changeControl(t *testing.T, a *App, mutate func(*wsp.Control)) {
 	}
 }
 
-// An admin must be able to take over what a member last wrote when removing
-// them, so a revision this device accepted stays acceptable. A revision the
-// removed member signs afterwards was never accepted and is set aside.
-func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
+// Removing a member first re-encrypts what it last wrote under a remaining
+// admin's signature, so its content stays readable. A revision the removed
+// member signs afterwards is set aside.
+func TestRemovalTakesOverWhatTheRemovedMemberWrote(t *testing.T) {
 	alice := newAlice(t)
-	bob := newDevice(t, alice)
-	requestJoin(t, bob)
-	bobsEntry := principalOf(t, bob)
-	changeControl(t, alice, func(c *wsp.Control) { c.Principals = append(c.Principals, bobsEntry) })
+	bob := approved(t, alice)
+	bobsID := mustMember(t, alice, bob).DeviceID
 
 	ws := mustWorkspace(t, alice)
 	s, err := alice.openSession(bg)
@@ -422,44 +439,38 @@ func TestSessionKeepsAnAcceptedStateAfterItsAuthorIsRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bobsRev := publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), s.head.Digest, raw)
-	if read, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil || read.secrets["A"] != "by bob" {
-		t.Fatalf("bob's state while he is a member: %v", err)
-	}
+	oldControl := s.head.Digest
+	bobsRev := publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), oldControl, raw)
 	s.Close()
 
-	changeControl(t, alice, func(c *wsp.Control) {
-		kept := c.Principals[:0:0]
-		for _, p := range c.Principals {
-			if p.ID != bobsEntry.ID {
-				kept = append(kept, p)
-			}
-		}
-		c.Principals = kept
-	})
+	if err := alice.RemoveMember(bg, bobsID); err != nil {
+		t.Fatal(err)
+	}
 	s, err = alice.openSession(bg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if read, err := s.readResource(bg, s.resource(stagingEnv), nil, true); err != nil || read.secrets["A"] != "by bob" {
-		t.Fatalf("the state alice already accepted was refused after bob left: %v", err)
+	read, err := s.readResource(bg, s.resource(stagingEnv), nil, true)
+	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Author == signing.DeviceID(bobsID) {
+		t.Fatalf("what bob wrote before his removal: %+v %v", read, err)
 	}
+	takeover := read.heads[0].Digest
 
 	// Bob claims the control he knew and signs something new on top of his own revision.
-	oldControl := s.head.Parents[0]
 	forged, err := encryptForTest(s, map[string]string{"A": "bob again"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	publishRevision(t, alice.Storage, bob, ws, s.resource(stagingEnv), oldControl, forged, bobsRev)
-	read, err := s.readResource(bg, s.resource(stagingEnv), nil, true)
-	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Digest != bobsRev {
+	read, err = s.readResource(bg, s.resource(stagingEnv), nil, true)
+	if err != nil || read.secrets["A"] != "by bob" || len(read.heads) != 1 || read.heads[0].Digest != takeover {
 		t.Fatalf("a revision signed after the removal changed what is read: %+v %v", read, err)
 	}
 }
 
-// A removed member whose only revision this device never accepted cannot be read.
+// A head by a member removed without the re-encryption RemoveMember does
+// first cannot be read, whatever this device read before.
 func TestSessionSetsAsideAHeadOfAMemberRemovedBeforeItWasAccepted(t *testing.T) {
 	alice := newAlice(t)
 	bob := newDevice(t, alice)

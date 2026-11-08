@@ -2,14 +2,10 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"sort"
 	"time"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -29,12 +25,9 @@ type Diff struct {
 
 // ListHistory lists the retained revisions of env that changed its secrets,
 // oldest first. It is a change log bounded by what storage still holds, not an
-// audit log. Revisions that only re-encrypted the same content are left out, as
+// audit log. Revisions that only re-encrypted a listed parent are left out, as
 // are revisions this device cannot decrypt (written before it was a member).
-//
-// Telling those apart needs each revision decrypted once. What was learned is
-// kept in a local index (two flags per revision, never content), so later
-// listings decrypt only revisions that are new since.
+// Both are told from the signed revision and its Control, without decrypting.
 func (a *App) ListHistory(ctx context.Context, env string) (history []HistoryEntry, err error) {
 	defer apperr.NormalizeInto(&err)
 	h, err := a.openHistory(ctx, env)
@@ -107,106 +100,38 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	if err != nil {
 		return err
 	}
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return err
-	}
-	h.states = historyStates(sv, s.trustedHeads(sv, accepted))
-	index := s.app.openHistoryIndex(s, resource)
-	known := index.load()
-	// unreadable notes revisions found unreadable in this call before their
-	// flags are complete; known holds only complete flags.
-	unreadable := map[digest.Digest]bool{}
-	readable := func(d digest.Digest) (bool, error) {
-		if f, ok := known[d]; ok {
-			return f.Readable, nil
-		}
-		if unreadable[d] {
-			return false, nil
-		}
-		_, err := h.secrets(ctx, d)
-		var noMatch *agecrypto.NoIdentityMatchError
-		if errors.As(err, &noMatch) {
-			unreadable[d] = true
-			return false, nil
-		}
-		return err == nil, err
-	}
-	var listed []digest.Digest
-	// Stable traversal makes external reads and failure locations reproducible.
-	for _, d := range slices.Sorted(maps.Keys(h.states)) {
-		f, ok := known[d]
-		if f.Repeats {
-			// A cached repeat becomes visible if compaction removed the
-			// parent whose content it repeated.
-			_, ok = h.states[f.RepeatParent]
-		}
-		if !ok {
-			r, err := readable(d)
-			if err != nil {
-				return err
-			}
-			f = historyFlags{}
-			if r {
-				if f, err = h.flags(ctx, d, readable); err != nil {
-					return err
-				}
-			}
-			known[d] = f
-		}
-		if !f.Readable {
-			continue
-		}
-		if !f.Repeats {
-			listed = append(listed, d)
-		}
-	}
-	index.save(known, h.states)
-	keep := map[digest.Digest]bool{}
-	for _, d := range listed {
-		keep[d] = true
-	}
+	h.states = historyStates(sv, s.trustedHeads(sv))
 	// An unreadable key epoch still links its readable ancestors and
 	// descendants. Filter visibility after sorting the complete verified DAG.
 	for _, d := range chronological(h.states) {
-		if keep[d] {
-			st := h.states[d]
-			h.entries = append(h.entries, HistoryEntry{Index: len(h.entries) + 1, Timestamp: time.Unix(st.CreatedAt, 0).UTC(), Tag: d.Encoded()})
+		st := h.states[d]
+		if !s.readable(st) || h.reencrypts(st) {
+			continue
 		}
+		h.entries = append(h.entries, HistoryEntry{Index: len(h.entries) + 1, Timestamp: time.Unix(st.CreatedAt, 0).UTC(), Tag: d.Encoded()})
 	}
 	return nil
 }
 
-// flags works out whether a readable revision only repeats the content of one
-// of its parents, as a re-encryption does.
-func (h *historyView) flags(ctx context.Context, d digest.Digest, readable func(digest.Digest) (bool, error)) (historyFlags, error) {
-	f := historyFlags{Readable: true}
-	mine, err := h.secrets(ctx, d)
-	if err != nil {
-		return f, err
+// readable reports whether st was encrypted for this device: the Control it
+// names lists this device with its current recipient.
+func (s *session) readable(st *wsp.VerifiedState) bool {
+	c, ok := s.view.Get(st.Control)
+	if !ok {
+		return false
 	}
-	for _, p := range h.states[d].Parents {
-		if _, ok := h.states[p]; !ok {
-			continue
-		}
-		ok, err := readable(p)
-		if err != nil {
-			return f, err
-		}
-		if !ok {
-			continue
-		}
-		parent, err := h.secrets(ctx, p)
-		if err != nil {
-			return f, err
-		}
-		if maps.Equal(parent, mine) {
-			f.Repeats = true
-			f.RepeatParent = p
-			break
-		}
+	p, ok := c.Principal(s.self())
+	return ok && p.Recipient == s.id.Recipient().String()
+}
+
+// reencrypts reports whether st only re-encrypted the content of its one
+// parent, and that parent is in the history for this device to read.
+func (h *historyView) reencrypts(st *wsp.VerifiedState) bool {
+	if st.Op != wsp.OpSync || len(st.Parents) != 1 {
+		return false
 	}
-	return f, nil
+	parent, ok := h.states[st.Parents[0]]
+	return ok && h.s.readable(parent)
 }
 
 // historyStates keeps the revisions that lead to the current content: the heads

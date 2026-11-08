@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 func TestNewMemberMergesWithoutHistoricalDecryptionKey(t *testing.T) {
@@ -24,7 +25,7 @@ func TestNewMemberMergesWithoutHistoricalDecryptionKey(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			parents := read.parents()
+			parents := read.heads
 			s.Close()
 			bob := approved(t, alice)
 			// Approval publishes v1 for Bob. A concurrent restore also
@@ -37,7 +38,7 @@ func TestNewMemberMergesWithoutHistoricalDecryptionKey(t *testing.T) {
 			if !tc.deleted {
 				want["KEY"] = value
 			}
-			_, err = s.writeState(bg, resource, want, parents)
+			_, err = s.writeState(bg, resource, wsp.OpRestore, want, parents)
 			s.Close()
 			if err != nil {
 				t.Fatal(err)

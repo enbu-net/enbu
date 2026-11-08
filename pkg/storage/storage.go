@@ -47,13 +47,10 @@ const (
 	KindState   Kind = "state"
 	KindControl Kind = "control"
 	KindRequest Kind = "request"
-	// KindCompaction holds an admin's record of the revisions of one resource
-	// that were removed. It is scoped like the resource's states.
-	KindCompaction Kind = "compaction"
 )
 
 // scoped reports whether objects of the kind belong to a state scope.
-func (k Kind) scoped() bool { return k == KindState || k == KindCompaction }
+func (k Kind) scoped() bool { return k == KindState }
 
 func (k Kind) letter() (string, bool) {
 	switch k {
@@ -63,8 +60,6 @@ func (k Kind) letter() (string, bool) {
 		return "c", true
 	case KindRequest:
 		return "r", true
-	case KindCompaction:
-		return "k", true
 	}
 	return "", false
 }
@@ -78,7 +73,7 @@ func (k Kind) letter() (string, bool) {
 // blob is fetched only for a revision whose content is actually needed.
 type Object struct {
 	Kind  Kind
-	Scope string // StateScope for State and Compaction, empty otherwise
+	Scope string // StateScope for State, empty otherwise
 	Rev   digest.Digest
 	Head  []byte
 	Blobs [][]byte

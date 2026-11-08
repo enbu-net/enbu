@@ -31,7 +31,7 @@ func TestLargerTeamRejectsInvalidCountsBeforeBootstrap(t *testing.T) {
 func TestLargerTeamClocks(t *testing.T) {
 	exploration(t)
 	scenes := []string{"swarm-disjoint-add", "swarm-disjoint-mixed", "swarm-identical-edit", "swarm-identical-delete", "swarm-distinct-edit", "swarm-edit-delete", "swarm-conflicting-import", "swarm-offline-observer", "team-incident"}
-	for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data"} {
+	for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-old-data"} {
 		for _, cache := range []string{"warm", "cold"} {
 			scenes = append(scenes, "disaster-"+mode+"-"+cache)
 		}

@@ -16,7 +16,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var metadataFloodCases = []string{"control-count", "state-count", "compaction-count", "control-duplicate", "state-duplicate"}
+var metadataFloodCases = []string{"control-count", "state-count", "control-duplicate", "state-duplicate"}
 
 func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 	if err := w.Check(ctx, "default"); err != nil {
@@ -39,9 +39,6 @@ func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 	case "state-count", "state-duplicate":
 		kind = storage.KindState
 		count = 20001
-	case "compaction-count":
-		kind = storage.KindCompaction
-		count = 1001
 	default:
 		return fmt.Errorf("unknown metadata flood %q", mode)
 	}
@@ -60,14 +57,6 @@ func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 			return err
 		}
 		injected = &object
-	} else if mode == "compaction-count" {
-		// A valid, unaccepted root without the accepted ancestor forces the reader
-		// to inspect deletion excuses. None of the flood's records may be trusted.
-		object, err := w.publishNodeAtControl(ctx, 0, "", clone(w.Model["default"]))
-		if err != nil {
-			return err
-		}
-		injected = &object
 	}
 	var refs []digest.Digest
 	if !duplicate {
@@ -81,9 +70,6 @@ func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 	base := w.Devices[0].Store.Store
 	attack := storagetest.Wrap(base, storagetest.Hooks{
 		Discover: func(ctx context.Context, next storage.Store, k storage.Kind, s string) ([]digest.Digest, error) {
-			if mode == "compaction-count" && k == storage.KindState && s == scope {
-				return []digest.Digest{injected.Rev}, nil
-			}
 			if k == kind && (k == storage.KindControl || s == scope) {
 				if duplicate {
 					found, err := next.Discover(ctx, k, s)

@@ -37,8 +37,8 @@ type App struct {
 	// per-user data directory.
 	CheckpointDir string
 	// CacheDir holds what this device keeps to avoid fetching again: heads of
-	// stored revisions and the history index. Empty means the per-user data
-	// directory. Nothing in it is trusted or secret.
+	// stored revisions. Empty means the per-user data directory. Nothing in it
+	// is trusted or secret.
 	CacheDir string
 	// AcceptNewGenesis lets InitializeRepository replace the genesis this
 	// device pinned for the workspace with the one enbu.toml names. Only a

@@ -102,7 +102,19 @@ func (w *World) publishNodeAtControl(ctx context.Context, actor int, epoch diges
 		return storage.Object{}, err
 	}
 	defer func() { _ = signer.Close() }()
-	state := wsp.State{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: control.Digest, Parents: slices.Clone(parents), Author: signer.Public().DeviceID(), Ciphertext: digest.FromBytes(cipher), CreatedAt: d.App.Runtime.Clock.Now().Unix()}
+	// A parent storage does not show, or that does not verify, counts as generation 1.
+	var top uint64
+	for _, p := range parents {
+		gen := uint64(1)
+		head, err := d.Store.FetchHead(ctx, storage.KindState, storage.StateScope(cfg.WorkspaceID, cfg.Resource("default")), p)
+		if err == nil {
+			if st, err := wsp.VerifyRevision(view, cfg.WorkspaceID, cfg.Resource("default"), p, head); err == nil {
+				gen = st.Generation
+			}
+		}
+		top = max(top, gen)
+	}
+	state := wsp.State{Workspace: cfg.WorkspaceID, Resource: cfg.Resource("default"), Control: control.Digest, Parents: slices.Clone(parents), Generation: top + 1, Op: wsp.OpWrite, Author: signer.Public().DeviceID(), Ciphertext: digest.FromBytes(cipher), CreatedAt: d.App.Runtime.Clock.Now().Unix()}
 	if epoch != "" {
 		state.Control = epoch
 	}
@@ -216,8 +228,15 @@ func (w *World) MergeCase(ctx context.Context, c MergeCase) error {
 			if err := w.Tape.Observe("erase-fixture-cache", i, nil); err != nil {
 				return err
 			}
-			if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeRollback) != nil {
-				return fmt.Errorf("missing merge base was accepted: %v", err)
+			// Deleted history is no rollback (ADR-26), but without the base the
+			// heads cannot be merged: any disagreement is a conflict.
+			got, err := d.App.ListSecrets(ctx, "default")
+			if agreed := !slices.ContainsFunc(headValues, func(v mergeDatum) bool { return v != headValues[0] }); agreed {
+				if err != nil || !reflect.DeepEqual(got, mergeSnapshot(headValues[0])) {
+					return fmt.Errorf("agreeing heads without their base: %v %v", got, err)
+				}
+			} else if requireCode(err, apperr.CodeSecretConflict) != nil {
+				return fmt.Errorf("heads without their base merged silently: %v", err)
 			}
 		}
 		if err := w.Devices[0].Store.Publish(ctx, root); err != nil {
