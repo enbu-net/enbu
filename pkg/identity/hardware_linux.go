@@ -5,8 +5,9 @@ package identity
 import (
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"io/fs"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpm2/transport/linuxtpm"
@@ -19,7 +20,7 @@ import (
 const tpmDevice = "/dev/tpmrm0"
 
 func platformHardware(c clock.Clock) HardwareBackend {
-	return &TPMBackend{Clock: c, Device: tpmDevice, Open: func() (transport.TPMCloser, error) {
+	return &TPMBackend{Device: tpmDevice, Open: func() (transport.TPMCloser, error) {
 		t, err := linuxtpm.Open(tpmDevice)
 		return t, explainTPMOpenError(err)
 	}}

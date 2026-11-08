@@ -2,9 +2,10 @@ package identity
 
 import (
 	"errors"
-	"github.com/jonboulle/clockwork"
 	"testing"
 	"time"
+
+	"github.com/jonboulle/clockwork"
 )
 
 func TestCallWithTimeoutReturnsResult(t *testing.T) {

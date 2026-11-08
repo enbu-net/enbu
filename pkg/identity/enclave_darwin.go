@@ -8,11 +8,12 @@ import (
 	"crypto/mlkem"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/ebitengine/purego"
 )
