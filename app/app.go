@@ -134,17 +134,14 @@ func (a *App) openStorage(ctx context.Context, cfg *config.ProjectConfig) (stora
 		// ghcr.io uses enbu's GitHub login; any other registry uses the Docker
 		// credential configuration.
 		credential := a.ociCredential(u.Host)
-		var opts []storage.OCIOption
 		if u.Host == "ghcr.io" {
 			// Deleting needs the GitHub Packages API, which the same token can reach.
-			if g, ok := storage.GHCRPackagesFor(u.Host+u.Path, func() (string, error) {
+			return storage.NewGHCR(u.Host+u.Path, credential, func() (string, error) {
 				token, _, err := a.TokenProvider.LoadToken()
 				return token, err
-			}); ok {
-				opts = append(opts, storage.WithTagDeleter(g))
-			}
+			})
 		}
-		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP, opts...)
+		return storage.NewOCI(u.Host+u.Path, credential, settings.PlainHTTP)
 	default:
 		return nil, apperr.New(apperr.CodeInvalidArgument, "storage must be specified with oci:// or s3://", nil)
 	}
@@ -172,11 +169,7 @@ func (a *App) ociCredential(registry string) auth.CredentialFunc {
 	}
 }
 
-func (a *App) workspaceStorage(ctx context.Context) (storage.Store, error) {
-	cfg, err := a.loadProject()
-	if err != nil {
-		return nil, err
-	}
+func (a *App) workspaceStorage(ctx context.Context, cfg *config.ProjectConfig) (storage.Store, error) {
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
 		return nil, apperr.New(apperr.CodeNotInitialized, "workspace ID missing or invalid", nil)
 	}
@@ -193,6 +186,8 @@ func storageError(err error) error {
 		return apperr.Wrap(apperr.CodeArtifactNotFound, "storage object not found", err, nil)
 	case errors.Is(err, storage.ErrCorrupt):
 		return apperr.Wrap(apperr.CodeUntrusted, "stored data does not match its name", err, nil)
+	case errors.Is(err, storage.ErrUnsupported):
+		return apperr.Wrap(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", err, nil)
 	default:
 		return err
 	}

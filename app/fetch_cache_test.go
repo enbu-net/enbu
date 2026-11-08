@@ -25,9 +25,9 @@ func countCalls(a *App) *storageCalls {
 			c.heads.Add(1)
 			return next.FetchHead(ctx, kind, scope, rev)
 		},
-		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 			c.blobs.Add(1)
-			return next.OpenBlob(ctx, kind, scope, rev, index)
+			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
 			if kind == storage.KindState {
@@ -156,14 +156,14 @@ func TestReadRecordsAfterAnotherProcessAcceptedMeanwhile(t *testing.T) {
 	real := a.Storage
 	done := false
 	a.Storage = storagetest.Wrap(real, storagetest.Hooks{
-		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 			if !done {
 				done = true
 				if err := twin.AddSecret(ctx, "default", "B", "2"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			return next.OpenBlob(ctx, kind, scope, rev, index)
+			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 	})
 	got, err := a.ListSecrets(context.Background(), "default")

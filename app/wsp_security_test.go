@@ -114,7 +114,7 @@ func TestRecipientInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	resource := s.resource("default")
 	t.Run("unsigned state", func(t *testing.T) {
 		junk := []byte("not a signed state")
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {

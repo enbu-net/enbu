@@ -116,7 +116,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 				return fmt.Errorf("a member's branch hid an accepted head: %v", err)
 			}
 		}
-		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: current.Scope(), Rev: current.Digest, Head: signedState, Blobs: [][]byte{blob}}); err != nil {
+		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: current.Scope(), Rev: current.Digest, Head: signedState, Payload: blob}); err != nil {
 			return err
 		}
 		if err := w.Devices[0].Store.Delete(ctx, floor.Kind, floor.Scope, floor.Rev); err != nil {

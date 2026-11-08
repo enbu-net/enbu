@@ -4,7 +4,7 @@ Identity and Storage are independent. TPM, Secure Enclave and OS keyring identit
 can each use OCI or S3 storage. The application stores encrypted environment
 bundles, public recipients and signed membership through the same
 `pkg/storage.Store` interface: `Publish` a revision, `Discover` revisions, then
-`FetchHead` and `OpenBlob` to read them. `Scopes` lists the state scopes that hold
+`FetchHead` and `OpenPayload` to read them. `Scopes` lists the state scopes that hold
 revisions, so a membership change re-encrypts environments missing from the local
 `enbu.toml`.
 
@@ -92,25 +92,27 @@ OCI registry can be moved by anyone who can write, so this check, not the tag, i
 what is trusted.
 
 A revision is a *head* (the signed state, small, and the thing that names the
-revision) plus any number of *blobs* it refers to (for a secret revision, the
+revision) plus an optional *payload* it refers to (for a secret revision, the
 ciphertext). Storage gives them no meaning. On OCI it is one manifest whose first
-layer is the head and whose other layers are the blobs, so the registry sees the
-ciphertext as reachable. `Publish` writes everything and returns only after
-reading the manifest back by tag and finding every blob; a head is never visible
-without its blobs. S3 writes an object atomically and `Publish` then checks its
-size and head, so it confirms the object exists and its head is intact, not the
-content of every blob; each blob is checked when it is read. S3 stores each revision as one object, written with a
+layer is the head and whose second layer, if any, is the payload, so the registry
+sees the ciphertext as reachable. `Publish` writes everything and returns only
+after reading the manifest back by tag and finding every blob it names; a head is
+never visible without its payload. A blob the registry dropped before the read-back
+(a GC of blobs no manifest referenced yet) is uploaded again, a few times at most.
+S3 writes an object atomically and `Publish` then checks its size and head, so it
+confirms the object exists and its head is intact, not the payload; the payload is
+checked when it is read. S3 stores each revision as one object, written with a
 create-only `If-None-Match: *` (a backend needs only to avoid replacing an
-existing name; correctness does not depend on it), laid out as a short table of
-lengths followed by the head and the blobs, so a ranged read reaches one part
-without the others.
+existing name; correctness does not depend on it), laid out as the head's length
+(a uvarint), the head, then the payload, so a ranged read reaches either without
+the other.
 
 Reads are separate on purpose. Finding a resource's heads and merge base needs
 only the small head of every revision, so `FetchHead` never transfers a
-ciphertext, and `OpenBlob` streams one blob for a revision whose content is
+ciphertext, and `OpenPayload` streams the payload of a revision whose content is
 actually used (the heads, and the merge base when they are merged). So the
 ciphertext a read transfers does not grow with the history. The caller checks a
-blob against the digest its head names.
+payload against the digest its head names.
 
 Listing the names still grows with the history, and so does verifying every head.
 Fetching the heads does not: each device keeps the heads it has fetched or
@@ -155,7 +157,8 @@ without `--purge` prints its incarnation; `enbu switch --purge-incarnation ID`
 reclaims its revisions later: S3 and the
 local fixture directly, GHCR through the GitHub Packages API (token with
 `delete:packages`; a package version that carries any other tag is left alone,
-because deleting a version deletes all its tags). Other registries cannot.
+because deleting a version deletes all its tags). Other registries cannot: their
+first deletion fails, before anything is deleted.
 
 Payloads are limited to 10 MiB. Names are at most 128 ASCII characters, with
 letters, digits, `-`, `_`, `.`. Invalid/corrupt records, authentication failures,

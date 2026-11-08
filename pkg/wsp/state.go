@@ -419,7 +419,7 @@ const MaxCiphertextBytes = storage.MaxPayloadBytes
 // the one the signed State names. It is attached to the revision as its only
 // blob; anything else storage holds there is refused.
 func ReadCiphertext(ctx context.Context, store storage.Store, st *VerifiedState) ([]byte, error) {
-	data, err := storage.ReadBlob(ctx, store, storage.KindState, st.Scope(), st.Digest, 0, MaxCiphertextBytes)
+	data, err := storage.ReadPayload(ctx, store, storage.KindState, st.Scope(), st.Digest, MaxCiphertextBytes)
 	if err != nil {
 		return nil, err
 	}

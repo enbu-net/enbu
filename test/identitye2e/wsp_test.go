@@ -74,7 +74,7 @@ func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.HybridIdentity) []
 		t.Fatalf("states: %v (%d heads)", err, len(sv.Heads))
 	}
 	state := sv.Heads[0]
-	ciphertext, err := storage.ReadBlob(ctx, store, storage.KindState, state.Scope(), state.Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(ctx, store, storage.KindState, state.Scope(), state.Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

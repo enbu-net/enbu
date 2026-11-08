@@ -203,7 +203,7 @@ func (a *App) openControlView(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := a.workspaceStorage(ctx)
+	store, err := a.workspaceStorage(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +308,12 @@ func (s *session) recipients() []string {
 }
 
 func (s *session) resource(env string) string { return s.cfg.Resource(env) }
+
+// environment resolves an environment name ("" for the current one) from the
+// enbu.toml the session was opened with.
+func (s *session) environment(name string) (*ResolvedEnvironment, error) {
+	return resolveEnvironment(func() (*config.ProjectConfig, error) { return s.cfg, nil }, name)
+}
 
 // resourceRead is the current content of one environment: every head storage
 // shows, decrypted and merged against their merge base. A key the heads changed
@@ -497,7 +503,8 @@ var errControlMoved = errors.New("workspace members changed while writing")
 
 // controlUnchanged loads the Control DAG again just before and after
 // publishing. Encrypting for a recipient set that has since changed would hand
-// new ciphertext to someone who was removed in the meantime.
+// new ciphertext to someone who was removed in the meantime, and leave a head
+// that someone approved in the meantime cannot read.
 func (s *session) controlUnchanged(ctx context.Context) error {
 	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), nil)
 	if err != nil {
@@ -538,7 +545,7 @@ func (s *session) writeState(ctx context.Context, resource, op string, secrets m
 	if err != nil {
 		return nil, err
 	}
-	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
+	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Payload: ciphertext}
 	if err := s.store.Publish(ctx, obj); err != nil {
 		return nil, fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}

@@ -259,7 +259,7 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 			if err != nil {
 				return err
 			}
-			if err := target.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(dst.WorkspaceID, dst.Resource("default")), Rev: head.Digest, Head: body, Blobs: [][]byte{cipher}}); err != nil {
+			if err := target.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(dst.WorkspaceID, dst.Resource("default")), Rev: head.Digest, Head: body, Payload: cipher}); err != nil {
 				return err
 			}
 		}

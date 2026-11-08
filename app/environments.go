@@ -255,9 +255,10 @@ func (a *App) PurgeIncarnation(ctx context.Context, incarnation string) (deleted
 	return s.purgeResource(ctx, "secrets/"+incarnation)
 }
 
-// openPurgeSession opens a session and checks that this device may delete and
-// that the backend can, before anything is deleted. Deleting is not a right
-// that writing to storage gives.
+// openPurgeSession opens a session and checks that this device may delete
+// before anything is deleted. Deleting is not a right that writing to storage
+// gives. A backend that cannot delete fails the first deletion, before
+// anything is gone.
 func (a *App) openPurgeSession(ctx context.Context) (*session, error) {
 	s, err := a.openSession(ctx)
 	if err != nil {
@@ -266,10 +267,6 @@ func (a *App) openPurgeSession(ctx context.Context) (*session, error) {
 	if p, _ := s.head.Principal(s.self()); !p.Admin {
 		s.Close()
 		return nil, apperr.New(apperr.CodeAccessDenied, "only a workspace admin can delete stored revisions", nil)
-	}
-	if !s.store.Capabilities().PhysicalDelete {
-		s.Close()
-		return nil, apperr.New(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", nil)
 	}
 	return s, nil
 }

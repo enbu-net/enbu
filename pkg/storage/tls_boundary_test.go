@@ -90,9 +90,9 @@ func TestRemoteTLSCertificateBoundaries(t *testing.T) {
 					var active atomic.Pointer[tls.Certificate]
 					active.Store(&valid)
 					var requests atomic.Int32
-					object := Object{Kind: KindState, Scope: StateScope("team", "default"), Head: []byte("signed-header-fixture"), Blobs: [][]byte{[]byte("encrypted-payload-fixture")}}
+					object := Object{Kind: KindState, Scope: StateScope("team", "default"), Head: []byte("signed-header-fixture"), Payload: []byte("encrypted-payload-fixture")}
 					object.Rev = digest.FromBytes(object.Head)
-					_, _, manifest, desc, err := manifestFor(object)
+					_, manifest, desc, err := manifestFor(object)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -125,8 +125,8 @@ func TestRemoteTLSCertificateBoundaries(t *testing.T) {
 							data, media, dgst = manifest, ocispec.MediaTypeImageManifest, desc.Digest.String()
 						case strings.HasSuffix(r.URL.Path, "/blobs/"+object.Rev.String()):
 							data, media, dgst = object.Head, "application/octet-stream", object.Rev.String()
-						case strings.HasSuffix(r.URL.Path, "/blobs/"+digest.FromBytes(object.Blobs[0]).String()):
-							data, media, dgst = object.Blobs[0], "application/octet-stream", digest.FromBytes(object.Blobs[0]).String()
+						case strings.HasSuffix(r.URL.Path, "/blobs/"+digest.FromBytes(object.Payload).String()):
+							data, media, dgst = object.Payload, "application/octet-stream", digest.FromBytes(object.Payload).String()
 						default:
 							http.NotFound(w, r)
 							return
@@ -150,9 +150,10 @@ func TestRemoteTLSCertificateBoundaries(t *testing.T) {
 					endpoint := strings.TrimPrefix(server.URL, "https://")
 					var store Store
 					if backend == "oci" {
-						store, err = NewOCI(endpoint+"/team/secrets", func(context.Context, string) (auth.Credential, error) { return auth.EmptyCredential, nil }, false, func(s *ociStore) {
-							s.repo.Client.(*auth.Client).Client = &http.Client{Transport: transport}
-						})
+						store, err = NewOCI(endpoint+"/team/secrets", func(context.Context, string) (auth.Credential, error) { return auth.EmptyCredential, nil }, false)
+						if err == nil {
+							withHTTPClient(store, &http.Client{Transport: transport})
+						}
 					} else {
 						var client *minio.Client
 						// Certificate rejection needs one attempt, with no SDK
@@ -184,7 +185,7 @@ func TestRemoteTLSCertificateBoundaries(t *testing.T) {
 								return fmt.Errorf("wrong header")
 							}
 						case "blob":
-							reader, err := store.OpenBlob(t.Context(), object.Kind, object.Scope, object.Rev, 0)
+							reader, err := store.OpenPayload(t.Context(), object.Kind, object.Scope, object.Rev)
 							if err != nil {
 								return err
 							}
@@ -193,7 +194,7 @@ func TestRemoteTLSCertificateBoundaries(t *testing.T) {
 							if err != nil {
 								return err
 							}
-							if !bytes.Equal(payload, object.Blobs[0]) {
+							if !bytes.Equal(payload, object.Payload) {
 								return fmt.Errorf("wrong payload")
 							}
 						}

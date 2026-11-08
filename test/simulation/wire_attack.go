@@ -202,11 +202,11 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	base := w.Devices[0].Store.Store
 	var rejected digest.Digest
 	badBlobs := 0
-	observed := storagetest.Wrap(base, storagetest.Hooks{OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	observed := storagetest.Wrap(base, storagetest.Hooks{OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 		if rev == rejected {
 			badBlobs++
 		}
-		return next.OpenBlob(ctx, kind, scope, rev, index)
+		return next.OpenPayload(ctx, kind, scope, rev)
 	}})
 	for _, d := range w.Devices {
 		d.Store.Store = observed
@@ -248,7 +248,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 			object := storage.Object{Kind: source.kind, Head: bad, Rev: digest.FromBytes(bad)}
 			rejected, badBlobs = object.Rev, 0
 			if source.kind == storage.KindState {
-				object.Scope, object.Blobs = floor.Scope, floor.Blobs
+				object.Scope, object.Payload = floor.Scope, floor.Payload
 			}
 			if err := w.Devices[0].Store.Publish(ctx, object); err != nil {
 				return err

@@ -122,7 +122,7 @@ func (w *World) publishNodeAtControl(ctx context.Context, actor int, epoch diges
 	if err != nil {
 		return storage.Object{}, err
 	}
-	obj := storage.Object{Kind: storage.KindState, Scope: state.Scope(), Rev: digest.FromBytes(signed), Head: signed, Blobs: [][]byte{cipher}}
+	obj := storage.Object{Kind: storage.KindState, Scope: state.Scope(), Rev: digest.FromBytes(signed), Head: signed, Payload: cipher}
 	if err := d.Store.Publish(ctx, obj); err != nil {
 		return storage.Object{}, err
 	}
