@@ -104,7 +104,7 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 			t.Fatal("lane bypasses selection or nested parallelism limit")
 		}
 	}
-	if field(field(job, "env"), "ENBU_SIM_SHARDS").Value != "${{ needs.plan.outputs.mode == 'full' && '16' || '4' }}" {
+	if field(field(job, "env"), "ENBU_SIM_SHARDS").Value != "${{ needs.plan.outputs.mode == 'full' && '32' || '4' }}" {
 		t.Fatal("lane/shard mismatch")
 	}
 	schedule := field(field(doc.Content[0], "on"), "schedule")

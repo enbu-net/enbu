@@ -182,6 +182,25 @@ func TestLargeTeamPartitionsAreCompleteAndBalanced(t *testing.T) {
 			}
 		}
 	}
+	// Full exploration uses 32 lanes; 84 worlds per actor block cannot divide
+	// evenly, but no lane may own more than one extra world of any block.
+	counts := make([][3]int, 32)
+	for index := range 252 {
+		lane, _, err := indexedCaseOwner(index, 32, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[lane][index/84]++
+	}
+	for actors := range 3 {
+		low, high := counts[0][actors], counts[0][actors]
+		for lane := range counts {
+			low, high = min(low, counts[lane][actors]), max(high, counts[lane][actors])
+		}
+		if high-low > 1 {
+			t.Fatalf("unbalanced actors=%d across 32 lanes: %v", actors, counts)
+		}
+	}
 	for _, invalid := range [][3]int{{-1, 4, 8}, {0, 0, 8}, {0, 4, 0}} {
 		if _, _, err := indexedCaseOwner(invalid[0], invalid[1], invalid[2]); err == nil {
 			t.Fatalf("invalid indexed partition accepted: %v", invalid)
@@ -268,8 +287,8 @@ func TestSeedPartitionPreservesWorkload(t *testing.T) {
 		}
 		return out
 	}
-	old, previous, current := collect(8, 128), collect(4, 256), collect(16, 64)
-	if len(current) != 1024 || !reflect.DeepEqual(current, old) || !reflect.DeepEqual(current, previous) {
+	old, previous, sixteen, current := collect(8, 128), collect(4, 256), collect(16, 64), collect(32, 32)
+	if len(current) != 1024 || !reflect.DeepEqual(current, old) || !reflect.DeepEqual(current, previous) || !reflect.DeepEqual(current, sixteen) {
 		t.Fatal("repartitioning changed the explored workloads")
 	}
 }

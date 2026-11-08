@@ -201,15 +201,16 @@ dispatch. It uses all tests, exhaustive fault positions, and 1,024 seeds × 256
 actions per platform, half fixed and half derived from the commit SHA.
 Scheduled full runs are not cancelled by incremental pushes.
 
-Both modes use one job each for Linux x64, Linux ARM64, macOS ARM64, Windows x64
-and Windows ARM64. Each job uses GitHub Actions `parallel` for four lanes with
-logical shards 0–3. Go runs with `-parallel=1`; each lane has separate logs,
-recordings and an App coverage profile. Full runs use 256 seeds per lane. The
-seed partition test proves this retains the original 1,024 workloads per
-platform. Each world keeps its own deterministic scheduler and strict replay.
-A timeout is failure. The full job is limited to six hours, with a 330-minute
-Go timeout leaving time for mutation checks and artifact upload. Incremental jobs
-have a 45-minute limit and a 30-minute Go timeout. Failure artifacts contain
+Both modes cover Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows
+ARM64. Each job uses GitHub Actions `parallel` for four lanes. Incremental mode
+runs one job per platform with logical shards 0–3; full mode runs eight jobs per
+platform (see Full-run scheduling). Go runs with `-parallel=1`; each lane has
+separate logs, recordings and an App coverage profile. The seed partition test
+proves the full partition retains the original 1,024 workloads per platform.
+Each world keeps its own deterministic scheduler and strict replay. A timeout is
+failure. The full job is limited to six hours, with a 330-minute Go timeout
+leaving time for mutation checks and artifact upload. Incremental jobs have an
+80-minute limit and a 55-minute Go timeout. Failure artifacts contain
 synthetic private keys and plaintext to recreate the fixture; never use real
 workspace data.
 
@@ -450,4 +451,4 @@ appropriate tests.
 
 ### Full-run scheduling
 
-Full exploration uses four runner groups per native platform, each with four Actions `parallel` lanes. Sixteen disjoint logical lanes run 64 seeds each: the same 1,024 seeds as the former four lanes × 256 seeds. Finite cases and mutation experiments use the same global lane count. Regression tests compare the entire seed sets and validate that every runner group owns exactly four distinct lanes. The full matrix permits at most ten concurrent jobs so routine PR checks retain runner capacity; incremental checks retain one runner per platform. Wall-time improvement depends on runner availability and is verified separately from case completeness.
+Full exploration uses eight runner groups per native platform, each with four Actions `parallel` lanes. Thirty-two disjoint logical lanes run 32 seeds each: the same 1,024 seeds as the former 16 lanes × 64 and four lanes × 256 seeds. With four runner groups, every Windows lane reached the 330-minute limit after about 56 of 64 seeds (run 42446542441), because `FlushFileBuffers` on checkpoint writes dominates there; eight groups halve each runner's share of seeds and finite cases. Finite cases and mutation experiments use the same global lane count. Regression tests compare the entire seed sets and validate that every runner group owns exactly four distinct lanes. The full matrix permits at most ten concurrent jobs so routine PR checks retain runner capacity; incremental checks retain one runner per platform. Wall-time improvement depends on runner availability and is verified separately from case completeness.

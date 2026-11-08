@@ -107,7 +107,7 @@ func TestFullDSTRunnerGroupsCoverEveryLogicalLaneOnce(t *testing.T) {
 	if len(arrays) != 2 {
 		t.Fatalf("expected full and incremental groups: %s", expression)
 	}
-	for index, size := range []int{16, 4} {
+	for index, size := range []int{32, 4} {
 		var groups []struct {
 			ID    int   `json:"id"`
 			Lanes []int `json:"lanes"`
