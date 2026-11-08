@@ -1,17 +1,12 @@
 name: Setup coverage toolchain
-description: Install Go, aqua tools, Tobari, and Vite+ for a coverage job
+description: Install only Go, workload tools and Tobari for Go coverage
 
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v7.0.0
-      with:
-        go-version-file: go.mod
-        cache: true
+    - uses: $/.github/actions/setup-go
 
-    - uses: aquaproj/aqua-installer@v4.1.1
-      with:
-        aqua_version: v2.66.1
+    - uses: $/.github/actions/setup-tools
 
     - uses: goccy/tobari-action/setup@v1.3.0
       with:
@@ -19,9 +14,3 @@ runs:
         # a mismatch fails the test link with "fingerprint mismatch". Renovate
         # updates both together (customManagers in renovate.json).
         version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
-
-    - uses: voidzero-dev/setup-vp@v1.22.0
-      with:
-        run-install: false
-        package-manager: false
-        node-manager: false

@@ -5,9 +5,44 @@ on:
     branches: [main]
   pull_request:
 
-permissions: {}
+permissions:
+  contents: read
+
+env:
+  AQUA_GITHUB_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  # Only superseded PR runs cancel; main commits keep distinct queue slots.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  frontend:
+    name: Build shared frontend
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-tools
+        with:
+          cache-scope: frontend
+      - uses: $/.github/actions/setup-frontend
+      # Both modes clean styled-system; keep them serial in one producer.
+      - name: Build desktop and VS Code frontend modes
+        run: task frontend/build
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ci-frontend
+          compression-level: 1
+          path: |
+            web/dist
+            web/dist-vscode
+            web/src/routeTree.gen.ts
+          if-no-files-found: error
+          retention-days: 1
+
   core-native:
     name: Core (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
@@ -17,9 +52,9 @@ jobs:
       matrix:
         include:
           - target: linux-amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - target: linux-arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
           - target: windows-amd64
             runner: windows-2025
           - target: windows-arm64
@@ -33,21 +68,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      # Concurrent composite preparation races the runner's event.json on
+      # Windows (run 42394154896 / job 128467827950). Keep Windows setup serial
+      # until the runner fixes that shared-file lock; Unix setup remains parallel.
+      - parallel:
+          - uses: $/.github/actions/setup-go
+            if: runner.os != 'Windows'
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
+            if: runner.os != 'Windows'
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+      - uses: $/.github/actions/setup-go
+        if: runner.os == 'Windows'
+
+      - uses: $/.github/actions/setup-tools
+        if: runner.os == 'Windows'
 
       - name: Test core
         run: task core/test
@@ -59,21 +94,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, windows-2025, macos-15]
+        runner: [ubuntu-26.04, windows-2025, macos-15]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
-      - name: Install Linux Secret Service
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      # Concurrent composite preparation races the runner's event.json on
+      # Windows (run 42394154896 / job 128467827950). Keep Windows setup serial
+      # until the runner fixes that shared-file lock; Unix setup remains parallel.
+      - parallel:
+          - uses: $/.github/actions/setup-go
+            if: runner.os != 'Windows'
+          - uses: $/.github/actions/setup-tools
+            if: runner.os != 'Windows'
+
+          - name: Install Linux Secret Service
+            if: runner.os == 'Linux'
+            run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - uses: $/.github/actions/setup-go
+        if: runner.os == 'Windows'
+      - uses: $/.github/actions/setup-tools
+        if: runner.os == 'Windows'
+
       - name: Identity E2E with unlocked Linux keyring
         if: runner.os == 'Linux'
         run: |
@@ -97,15 +139,12 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
-      - name: Install Secret Service
-        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+
+          - name: Install Secret Service
+            run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
       - name: Storage E2E with unlocked keyring
         run: |
           dbus-run-session -- sh -eu -c '
@@ -121,13 +160,10 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+
       - name: Test core with race detector
         run: go test -race ./pkg/artifact/... ./pkg/content/... ./pkg/schema/secretmap/... ./pkg/schema/opaque/... ./pkg/export/awssecrets/...
       - name: AWS SDK export E2E
@@ -135,7 +171,10 @@ jobs:
 
   check:
     name: Static checks
-    runs-on: ubuntu-latest
+    needs: [frontend]
+    env:
+      ENBU_FRONTEND_PREBUILT: "1"
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
       contents: read
@@ -156,29 +195,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - parallel:
+          - uses: $/.github/actions/setup-go
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+          - uses: actions/download-artifact@v8.0.2
+            with:
+              name: ci-frontend
+              path: web
 
-      - uses: voidzero-dev/setup-vp@v1.22.0
-        with:
-          run-install: false
-          package-manager: false
-          node-manager: false
+          - uses: $/.github/actions/desktop-deps
 
-      - uses: $/.github/actions/desktop-deps
+      - uses: $/.github/actions/setup-frontend
 
       - name: Check
         run: task all/check
@@ -197,82 +226,94 @@ jobs:
 
   test:
     name: Unit and component tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    needs: [frontend]
+    env:
+      ENBU_FRONTEND_PREBUILT: "1"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - parallel:
+          - uses: $/.github/actions/setup-go
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+          - uses: actions/download-artifact@v8.0.2
+            with:
+              name: ci-frontend
+              path: web
 
-      - uses: voidzero-dev/setup-vp@v1.22.0
-        with:
-          run-install: false
-          package-manager: false
-          node-manager: false
+          - uses: $/.github/actions/desktop-deps
 
-      - uses: $/.github/actions/desktop-deps
+          # Dependencies and code generation finish before parallel readers start.
+      - uses: $/.github/actions/setup-frontend
 
-      - name: Test
-        run: |
-          task cli/test/unit
-          task gui/test
-          task vscode/test
-          task vscode/package
-          task scripts/test
-
+      - name: Prepare frontend dependencies
+        run: task frontend/install
+      - parallel:
+          - name: Go unit tests
+            run: task cli/test/unit
+          - name: React tests
+            run: task gui/test
+          - name: Extension tests and package
+            run: |
+              task vscode/test
+              task vscode/package
+          - name: Automation tests
+            run: task scripts/test
 
   desktop:
     name: Desktop build (${{ matrix.runner }})
+    needs: [frontend]
+    env:
+      ENBU_FRONTEND_PREBUILT: "1"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, windows-2025, macos-15]
+        runner: [ubuntu-26.04, windows-2025, macos-15]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      # Concurrent composite preparation races the runner's event.json on
+      # Windows (run 42394154896 / job 128467827950). Keep Windows setup serial
+      # until the runner fixes that shared-file lock; Unix setup remains parallel.
+      - parallel:
+          - uses: $/.github/actions/setup-go
+            if: runner.os != 'Windows'
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
+            if: runner.os != 'Windows'
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+          - uses: actions/download-artifact@v8.0.2
+            if: runner.os != 'Windows'
+            with:
+              name: ci-frontend
+              path: web
 
-      - uses: voidzero-dev/setup-vp@v1.22.0
+          - uses: $/.github/actions/desktop-deps
+            if: runner.os != 'Windows'
+
+      - uses: $/.github/actions/setup-go
+        if: runner.os == 'Windows'
+
+      - uses: $/.github/actions/setup-tools
+        if: runner.os == 'Windows'
+
+      - uses: actions/download-artifact@v8.0.2
+        if: runner.os == 'Windows'
         with:
-          run-install: false
-          package-manager: false
-          node-manager: false
+          name: ci-frontend
+          path: web
 
       - uses: $/.github/actions/desktop-deps
+        if: runner.os == 'Windows'
 
       - name: Build desktop app
         shell: bash
@@ -284,67 +325,47 @@ jobs:
 
   scenario:
     name: Scenario tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    needs: [frontend]
+    env:
+      ENBU_FRONTEND_PREBUILT: "1"
+    runs-on: ubuntu-26.04
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - parallel:
+          - uses: $/.github/actions/setup-go
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
+          - uses: actions/download-artifact@v8.0.2
+            with:
+              name: ci-frontend
+              path: web
 
-      - uses: voidzero-dev/setup-vp@v1.22.0
-        with:
-          run-install: false
-          package-manager: false
-          node-manager: false
-
-      - uses: $/.github/actions/desktop-deps
+          - uses: $/.github/actions/desktop-deps
 
       - name: Scenario tests
         run: task cli/test/scenario
 
   e2e:
     name: CLI E2E tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
+      - parallel:
+          - uses: $/.github/actions/setup-go
 
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.local/share/aquaproj-aqua
-          key: v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('aqua.yaml') }}
-          restore-keys: |
-            v2-aqua-installer-${{ runner.os }}-${{ runner.arch }}-
+          - uses: $/.github/actions/setup-tools
 
-      - uses: aquaproj/aqua-installer@v4.1.1
-        with:
-          aqua_version: v2.66.1
-
-      - name: Install Secret Service
-        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
+          - name: Install Secret Service
+            run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
 
       - name: CLI E2E tests
         run: |
@@ -352,7 +373,6 @@ jobs:
             printf "\n" | gnome-keyring-daemon --unlock --components=secrets
             task cli/test/e2e
           '
-
 
       - name: Upload atago failure artifacts
         if: failure()
@@ -364,13 +384,14 @@ jobs:
 
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
-  # every job above has passed. always() makes a failed, cancelled or skipped
-  # job fail this check instead of skipping it, which would count as passing.
+  # every job above has passed. A failed or skipped dependency fails this
+  # check; !cancelled() (not always()) lets a superseded run release its
+  # concurrency slot immediately.
   status-check:
     name: Check
-    if: always()
-    needs: [core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e]
-    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
     steps:
@@ -379,3 +400,18 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
+
+  renovate-config:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+      - name: Validate Renovate configuration
+        env:
+          RENOVATE_VERSION: 44.219.0 # renovate: datasource=npm depName=renovate
+        run: npx --yes --package "renovate@$RENOVATE_VERSION" renovate-config-validator --strict renovate.json
