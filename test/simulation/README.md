@@ -446,3 +446,8 @@ These are open gaps, not rows marked covered by being declared outside the
 in-memory harness. Transport faults are inapplicable only to operations with no
 transport effect; their local state and user-visible failure paths still require
 appropriate tests.
+
+
+### Full-run scheduling
+
+Full exploration uses four runner groups per native platform, each with four Actions `parallel` lanes. Sixteen disjoint logical lanes run 64 seeds each: the same 1,024 seeds as the former four lanes × 256 seeds. Finite cases and mutation experiments use the same global lane count. Regression tests compare the entire seed sets and validate that every runner group owns exactly four distinct lanes. The full matrix permits at most ten concurrent jobs so routine PR checks retain runner capacity; incremental checks retain one runner per platform. Wall-time improvement depends on runner availability and is verified separately from case completeness.

@@ -268,7 +268,7 @@ func TestSeedPartitionPreservesWorkload(t *testing.T) {
 		}
 		return out
 	}
-	old, previous, current := collect(8, 128), collect(32, 32), collect(4, 256)
+	old, previous, current := collect(8, 128), collect(4, 256), collect(16, 64)
 	if len(current) != 1024 || !reflect.DeepEqual(current, old) || !reflect.DeepEqual(current, previous) {
 		t.Fatal("repartitioning changed the explored workloads")
 	}
