@@ -1,0 +1,6297 @@
+[
+  {
+    "Name": "256-85f5b840",
+    "Seed": 256,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "contention-add-yield",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_8",
+          "Value": "v_5_3309189673320873373",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              3,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_7_15719815317135376318",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_15_10806902290482950946",
+          "Value": "v_15_10806902290482950946",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 5,
+          "Key": "K_6",
+          "Value": "v_23_11275409488325241412",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "257-3f5f056c",
+    "Seed": 257,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "contention-edit-exhausted",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              2,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 6,
+          "Key": "K_1",
+          "Value": "v_7_18267784635747704313",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 6,
+          "Key": "TEAM_v_15_15469266425176536085",
+          "Value": "v_15_15469266425176536085",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "sync",
+            "Devices": [
+              5,
+              1
+            ]
+          },
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_39_8494432148853364322",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_5",
+          "Value": "v_40_5127454203497459774",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_47_16639847827101651639",
+          "Value": "v_47_16639847827101651639",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_48_767021501222999132",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "import",
+          "Device": 6,
+          "Key": "K_9",
+          "Value": "v_53_508062644936691826",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "Devices": [
+              1,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_55_8691826520388484232",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_66_16671388106940458607",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              0,
+              5
+            ]
+          },
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_71_15376103726109264215",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_76_11386005063596193366",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_79_10731071802624646260",
+          "Value": "v_79_10731071802624646260",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              3,
+              6
+            ]
+          },
+          "Device": 2,
+          "Key": "K_2",
+          "Value": "v_87_6655924572056474590",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "300-fdf11df4",
+    "Seed": 300,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "metadata-control-duplicate",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Key": "K_11",
+          "Value": "v_25_1012924291941634342",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Key": "K_7",
+          "Value": "v_26_5569614448223521207",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "import",
+          "Device": 7,
+          "Key": "K_10",
+          "Value": "v_34_9913092315180085950",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "edit",
+          "Device": 6,
+          "Key": "K_7",
+          "Value": "v_49_3535373597189461214",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              6,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_7",
+          "Value": "v_55_3540537762618072842",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_68_14095128573506501923",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_6",
+          "Value": "v_69_771941471959044372",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_79_10686162229058787972",
+          "Value": "v_79_10686162229058787972",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              6,
+              3
+            ]
+          },
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_87_6358504029130912363",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "335-bf35254f",
+    "Seed": 335,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "contention-edit-exhausted",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_1_5324122042897250256",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              4,
+              5
+            ]
+          },
+          "Device": 7,
+          "Key": "K_2",
+          "Value": "v_7_12833608863341586249",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_47_1382678692404343133",
+          "Value": "v_47_1382678692404343133",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              0,
+              5
+            ]
+          },
+          "Device": 5,
+          "Key": "K_0",
+          "Value": "v_55_18395244520341855908",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "339-85d16310",
+    "Seed": 339,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "contention-import-exhausted",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_4",
+          "Value": "v_76_14193728147120044137",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_79_12844047501680103803",
+          "Value": "v_79_12844047501680103803",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_87_4069028947736180554",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "342-8bf14bb4",
+    "Seed": 342,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "contention-sync-yield",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_160_8493479215474289269",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              7,
+              3
+            ]
+          },
+          "Device": 1,
+          "Key": "K_10",
+          "Value": "v_167_10986625674409234452",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 7,
+          "Key": "K_7",
+          "Value": "v_171_9720427353295553075",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_175_17455438957409939942",
+          "Value": "v_175_17455438957409939942",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              1,
+              6
+            ]
+          },
+          "Key": "K_11",
+          "Value": "v_183_11426340867466448989",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 7,
+          "Key": "K_1",
+          "Value": "v_195_3684946432047518627",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_199_9691353599658499362",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 7,
+          "Key": "K_4",
+          "Value": "v_202_5494066970377038679",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_207_13555133851308264279",
+          "Value": "v_207_13555133851308264279",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              7,
+              5
+            ]
+          },
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_231_2557185930459981327",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "347-5a8032f1",
+    "Seed": 347,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "concurrent-keys",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 5,
+          "Key": "K_7",
+          "Value": "v_43_16620947001003120734",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_8",
+          "Value": "v_44_12628365082259696297",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_47_13818137694397904742",
+          "Value": "v_47_13818137694397904742",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_68_15925933552759649467",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              4,
+              2
+            ]
+          },
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_71_2537008827206347402",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              3
+            ]
+          },
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_87_7638761831613417753",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Key": "K_9",
+          "Value": "v_135_11455038926729039220",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_143_7001294277636060379",
+          "Value": "v_143_7001294277636060379",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              4,
+              2
+            ]
+          },
+          "Device": 3,
+          "Key": "K_5",
+          "Value": "v_151_18348387941470438764",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "373-62f6e23c",
+    "Seed": 373,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "multiple-workspaces",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_6_6408109992625060228",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_7_12297717929497165930",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_22_781809416610925151",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              0,
+              3
+            ]
+          },
+          "Key": "K_11",
+          "Value": "v_23_14960242294178158297",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_26_8099872313352866708",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_8",
+          "Value": "v_35_3605881920136225366",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_36_3755822391812992919",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_7",
+          "Value": "v_39_12693682737566783963",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_47_3034514757751922675",
+          "Value": "v_47_3034514757751922675",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_78_6748828739118377565",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_79_15584227166107124705",
+          "Value": "v_79_15584227166107124705",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_93_443952318037286914",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 3,
+          "Key": "K_5",
+          "Value": "v_110_5265241068075089058",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_111_4077791932843896687",
+          "Value": "v_111_4077791932843896687",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_122_11742553208297312914",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_143_10352623416783748268",
+          "Value": "v_143_10352623416783748268",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 1,
+          "Key": "K_7",
+          "Value": "v_167_15580628468299207243",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "379-a59bc82e",
+    "Seed": 379,
+    "Plan": {
+      "Devices": 3,
+      "Scenario": "metadata-state-duplicate",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_3_10490895320042176452",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_9",
+          "Value": "v_7_17646945693341154681",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Key": "K_6",
+          "Value": "v_10_13156864245053211773",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_14_13897850490017882216",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_15_8016532683334521300",
+          "Value": "v_15_8016532683334521300",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_10",
+          "Value": "v_16_731268149696176296",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              0,
+              1
+            ]
+          },
+          "Key": "K_0",
+          "Value": "v_23_4079410324807373379",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_26_8327646619660030320",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_29_15049586060859639841",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_4",
+          "Value": "v_31_13313754498249536672",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_99_3634388448603043117",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_101_16480759902061975324",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_8",
+          "Value": "v_103_3194435455864391349",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_9",
+          "Value": "v_131_11871247999395889068",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_133_9004141917450735417",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_134_10452106209444103226",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              1
+            ],
+            "Compact": true
+          },
+          "Key": "K_1",
+          "Value": "v_135_2573057642969764922",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_143_10149611260834769365",
+          "Value": "v_143_10149611260834769365",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Key": "K_6",
+          "Value": "v_148_11934120819997681080",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "Devices": [
+              2,
+              1
+            ]
+          },
+          "Key": "K_3",
+          "Value": "v_151_14093591549507222414",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_7",
+          "Value": "v_154_16226647180588866596",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              1,
+              2
+            ]
+          },
+          "Key": "K_8",
+          "Value": "v_199_16829113607945153487",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_204_15748980742309853099",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_207_18290613936560367056",
+          "Value": "v_207_18290613936560367056",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "Devices": [
+              2,
+              0
+            ]
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_215_2643619770210815275",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "389-98327ab8",
+    "Seed": 389,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "partial-key-promotion-after",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_7_8227637881974128752",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_23_16340999851263574139",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_24_3678697436047857373",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_30_6513872641476459918",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "import",
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_31_10254712234915933458",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 5,
+          "Key": "K_7",
+          "Value": "v_75_231052013798289191",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_7",
+          "Value": "v_81_81255678860427890",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 5,
+          "Key": "K_2",
+          "Value": "v_83_9081356918606881083",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              5,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_87_11185981329218000923",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 1,
+          "Key": "K_7",
+          "Value": "v_108_12982156612288705571",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_111_7178419751267514835",
+          "Value": "v_111_7178419751267514835",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              2,
+              0
+            ]
+          },
+          "Device": 5,
+          "Key": "K_6",
+          "Value": "v_135_17385721784561270512",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_143_545765512167293637",
+          "Value": "v_143_545765512167293637",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              4,
+              0
+            ]
+          },
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_167_15625439538302452894",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "395-ad17a9b4",
+    "Seed": 395,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "disaster-retired-key-cold",
+      "Actions": [
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_2",
+          "Value": "v_9_13679320427218614886",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_10",
+          "Value": "v_10_17787595151234703022",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_13_15892788499194367733",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Key": "K_3",
+          "Value": "v_21_886968512830372744",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "Devices": [
+              1,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_1",
+          "Value": "v_23_10639120675900892925",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_30_17805939799209368879",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_9",
+          "Value": "v_128_2414285244563410413",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              4,
+              1
+            ],
+            "Compact": true
+          },
+          "Key": "K_5",
+          "Value": "v_135_1742838192657764181",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_143_18227228643750420182",
+          "Value": "v_143_18227228643750420182",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "delete",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_153_6139596171344446231",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "sync",
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_156_3309484673865064063",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "import",
+          "Key": "K_8",
+          "Value": "v_161_18383307199877444410",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_165_9592418326268514027",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              3,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_167_7210307058528659121",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_175_9307974533752227508",
+          "Value": "v_175_9307974533752227508",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_181_4370271581632153357",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              1,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_183_1890456599384610418",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_2",
+          "Value": "v_199_15950762081856179210",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_207_8864602728583118725",
+          "Value": "v_207_8864602728583118725",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "Devices": [
+              0,
+              4
+            ]
+          },
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_215_3682144380537579611",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "402-3e3dbc32",
+    "Seed": 402,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "portable-config",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              3,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_39_11144373663829354000",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_41_6143728733726931035",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_47_11042065551202873965",
+          "Value": "v_47_11042065551202873965",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_55_1279093253251226532",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "404-d5fe46c5",
+    "Seed": 404,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "output-boundary-hardlink",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 6,
+          "Key": "K_3",
+          "Value": "v_136_6008994596179315591",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 4,
+          "Key": "K_4",
+          "Value": "v_137_16107382659543968915",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_138_2492298637196399706",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "add",
+          "Device": 6,
+          "Key": "K_7",
+          "Value": "v_142_17869506325419490056",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_143_99173536572735559",
+          "Value": "v_143_99173536572735559",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_165_1824570175807561852",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              6
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_167_1234089858901056593",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_177_6988407550448715147",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_180_6325345348205406097",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              6,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 6,
+          "Key": "K_1",
+          "Value": "v_183_11600273448758863347",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 5,
+          "Key": "K_6",
+          "Value": "v_200_11099700705124660709",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_207_13986682206523615774",
+          "Value": "v_207_13986682206523615774",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              3
+            ]
+          },
+          "Key": "K_4",
+          "Value": "v_215_9159505572543021581",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "405-6945a028",
+    "Seed": 405,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "output-boundary-canceled-hardlink",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              6,
+              0
+            ]
+          },
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_23_3345853639395271462",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_66_1972928993178502166",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_69_12504869040335042574",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              5,
+              6
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_71_1721226180833821062",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_72_5524700119114872341",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_74_3901800966050778044",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_79_16413554373416497298",
+          "Value": "v_79_16413554373416497298",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "import",
+          "Device": 7,
+          "Key": "K_10",
+          "Value": "v_80_3425460315113455202",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "delete",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_82_5229226244219750036",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 2,
+          "Key": "K_5",
+          "Value": "v_83_10034835158718892776",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_84_3563600031748586005",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_7",
+          "Value": "v_86_17297991836940749296",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              4,
+              7
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_6",
+          "Value": "v_87_807411489373132805",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_1",
+          "Value": "v_100_1490265183274583831",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              2,
+              6
+            ]
+          },
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_103_8287195112978746966",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 7,
+          "Key": "K_0",
+          "Value": "v_108_12371637155449755949",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_111_3936522775200281645",
+          "Value": "v_111_3936522775200281645",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              4
+            ]
+          },
+          "Device": 5,
+          "Key": "K_4",
+          "Value": "v_119_2490510823384219796",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "412-4a767c42",
+    "Seed": 412,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "contention-add-yield",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_36_2015202230532869722",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_38_4160384712403448998",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 6,
+          "Key": "K_1",
+          "Value": "v_39_1304918577921876555",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 7,
+          "Key": "TEAM_v_47_14227589491407873159",
+          "Value": "v_47_14227589491407873159",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_143_9063045137078809752",
+          "Value": "v_143_9063045137078809752",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              6,
+              2
+            ]
+          },
+          "Key": "K_6",
+          "Value": "v_151_7404121372040741480",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "423-fb4fd04f",
+    "Seed": 423,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "membership",
+      "Actions": [
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_15_18362920629637888279",
+          "Value": "v_15_18362920629637888279",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_68_3775540971813147333",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_79_1869568958751322446",
+          "Value": "v_79_1869568958751322446",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_8",
+          "Value": "v_82_4533443983817811300",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 4,
+          "Key": "K_6",
+          "Value": "v_86_10458237996129833011",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              3,
+              1
+            ],
+            "Compact": true
+          },
+          "Key": "K_1",
+          "Value": "v_87_205685749670935166",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_111_17455541565157515813",
+          "Value": "v_111_17455541565157515813",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              2,
+              0
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_119_7509200157672699364",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "431-078cacab",
+    "Seed": 431,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "file-output",
+      "Actions": [
+        {
+          "Kind": "sync",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_6_7411734908882403589",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              0
+            ]
+          },
+          "Key": "K_9",
+          "Value": "v_7_72801681876981364",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_12_3841580669111800974",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_15_14940957206340825815",
+          "Value": "v_15_14940957206340825815",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "sync",
+            "Devices": [
+              4,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_23_11230143137604145406",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              5
+            ]
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_135_18070084678654460852",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_3",
+          "Value": "v_141_10093228002407506430",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_143_13005418127719771646",
+          "Value": "v_143_13005418127719771646",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              5,
+              4
+            ]
+          },
+          "Key": "K_4",
+          "Value": "v_151_14852162929853229579",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "440-e3db060b",
+    "Seed": 440,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "forged-state-signature",
+      "Actions": [
+        {
+          "Kind": "team-group",
+          "Device": 6,
+          "Key": "TEAM_v_15_16906277859421615762",
+          "Value": "v_15_16906277859421615762",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              7,
+              0
+            ]
+          },
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_23_13607894171111280711",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 2,
+          "Key": "K_7",
+          "Value": "v_32_12526931071530388838",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_47_8652991008642242899",
+          "Value": "v_47_8652991008642242899",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_79_14899960820341614950",
+          "Value": "v_79_14899960820341614950",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_183_24488669480535825",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "442-aad1da71",
+    "Seed": 442,
+    "Plan": {
+      "Devices": 3,
+      "Scenario": "team-migration",
+      "Actions": [
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_4_10113797998576794874",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_0",
+          "Value": "v_7_18193891186158307238",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_11_13797116212825129730",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_15_13410852328974555997",
+          "Value": "v_15_13410852328974555997",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              2,
+              0
+            ]
+          },
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_23_3886846606308167664",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "445-839828f0",
+    "Seed": 445,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "request-signature-attack",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 5,
+          "Key": "K_0",
+          "Value": "v_130_17388910007121723927",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              0,
+              4
+            ]
+          },
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_135_445940967592891523",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_6",
+          "Value": "v_137_14370217586456577396",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_140_9884303434729046313",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_143_11483186541687861591",
+          "Value": "v_143_11483186541687861591",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 4,
+          "Key": "K_11",
+          "Value": "v_151_1336481653076521784",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "447-656411ce",
+    "Seed": 447,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "first-member",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_0_2054433681422237432",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_5_10360633240551121376",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_6_11752379730678440679",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              7,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_7_5147869269150250233",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 6,
+          "Key": "K_11",
+          "Value": "v_10_6242281594507826574",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_11_7387732199297115479",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_15_8137696208193614918",
+          "Value": "v_15_8137696208193614918",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_66_11729894022844219019",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 7,
+          "Key": "K_3",
+          "Value": "v_67_8138046599175984582",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              5,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 6,
+          "Key": "K_10",
+          "Value": "v_71_18108515635764230613",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_76_10387211074078475313",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 6,
+          "Key": "TEAM_v_79_6283554319334745558",
+          "Value": "v_79_6283554319334745558",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              6,
+              7
+            ]
+          },
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_87_9069261488463901385",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_88_5872802199498836953",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_90_5717591705367508660",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              5,
+              7
+            ]
+          },
+          "Device": 5,
+          "Key": "K_4",
+          "Value": "v_135_726464144186178617",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 6,
+          "Key": "TEAM_v_143_1963595189425693554",
+          "Value": "v_143_1963595189425693554",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              3,
+              5
+            ]
+          },
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_151_12186352037775261696",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "452-f1f4f89c",
+    "Seed": 452,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "shared-storage-workspaces",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_2_2246680399382481778",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 5,
+          "Key": "K_2",
+          "Value": "v_3_16635049791638542883",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_5_13908852982659162819",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_19_2153967841434792103",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_10",
+          "Value": "v_22_13058065852552365280",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              3,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_1",
+          "Value": "v_23_398442176249568462",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 4,
+          "Key": "K_11",
+          "Value": "v_66_3260995966241215264",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_67_16481923667924688103",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 4,
+          "Key": "K_4",
+          "Value": "v_68_16578031882811345698",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_70_4284803130354665265",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              1,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_71_11897255960284870335",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_74_7001449136786272139",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_79_2769518633101457340",
+          "Value": "v_79_2769518633101457340",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              0,
+              3
+            ]
+          },
+          "Device": 5,
+          "Key": "K_11",
+          "Value": "v_87_11946570411595865624",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "454-e64b3e43",
+    "Seed": 454,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "metadata-state-count",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Key": "K_6",
+          "Value": "v_36_12089486883306161484",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_6",
+          "Value": "v_37_9646983250897843735",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              2,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 5,
+          "Key": "K_0",
+          "Value": "v_39_8383472287231246208",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_47_10621375031520982320",
+          "Value": "v_47_10621375031520982320",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              5,
+              6
+            ]
+          },
+          "Device": 6,
+          "Key": "K_8",
+          "Value": "v_55_16147792251635860242",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "457-e503072d",
+    "Seed": 457,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "metadata-state-duplicate",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_133_9558697099494485092",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_135_12343885848597715861",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "import",
+          "Key": "K_8",
+          "Value": "v_137_17855121166980559901",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_0",
+          "Value": "v_147_13064207667800028079",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              3,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_10",
+          "Value": "v_167_12411356822064424851",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_175_2332449143758421269",
+          "Value": "v_175_2332449143758421269",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              3
+            ]
+          },
+          "Device": 3,
+          "Key": "K_5",
+          "Value": "v_183_13633338415732731201",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "459-f2c611d2",
+    "Seed": 459,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "hidden-request-conflict",
+      "Actions": [
+        {
+          "Kind": "import",
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_8_16655841227560424756",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Device": 4,
+          "Key": "K_10",
+          "Value": "v_12_1249204766586749925",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_11",
+          "Value": "v_14_12152863993055594226",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_15_17044324655560787409",
+          "Value": "v_15_17044324655560787409",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 5,
+          "Key": "K_4",
+          "Value": "v_20_5700993123397481245",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_68_17434865812042695947",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_70_6480147200894833754",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              4,
+              3
+            ],
+            "Compact": true
+          },
+          "Key": "K_2",
+          "Value": "v_71_1507372828786482427",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_79_1731514213371109933",
+          "Value": "v_79_1731514213371109933",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_87_11671852379667954907",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "461-b2079843",
+    "Seed": 461,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "partial-key-signing",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 6,
+          "Key": "K_8",
+          "Value": "v_0_8674877594964010337",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_1_4301690665754572400",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 5,
+          "Key": "K_6",
+          "Value": "v_2_9983789172071019439",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              6,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 6,
+          "Key": "K_0",
+          "Value": "v_7_388758510415192741",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_9_14128542527368603399",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_13_2924921034757487999",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_15_6444285878231593220",
+          "Value": "v_15_6444285878231593220",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_3",
+          "Value": "v_17_3853393295695291181",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              3,
+              5
+            ]
+          },
+          "Device": 7,
+          "Key": "K_5",
+          "Value": "v_23_14938912341205581272",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "add",
+          "Device": 7,
+          "Key": "K_0",
+          "Value": "v_25_11778221680270181155",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_26_4379443493123045896",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_48_5236800923028833006",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_3",
+          "Value": "v_52_7243883681887362266",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              3,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_5",
+          "Value": "v_55_12176845113412646024",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_66_16652056306834458476",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              0
+            ]
+          },
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_71_10234443381138763566",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 7,
+          "Key": "TEAM_v_79_6817164899580014292",
+          "Value": "v_79_6817164899580014292",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "delete",
+          "Device": 7,
+          "Key": "K_8",
+          "Value": "v_101_17178449768900305423",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 7,
+          "Key": "K_5",
+          "Value": "v_102_7425031842875450610",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              3,
+              6
+            ]
+          },
+          "Device": 7,
+          "Key": "K_1",
+          "Value": "v_103_5640827222162833588",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_111_18180036140578749312",
+          "Value": "v_111_18180036140578749312",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_117_2415936397602557402",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Key": "K_9",
+          "Value": "v_118_14363616733070756689",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              1,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_119_9120371811430155569",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rename-env",
+          "Key": "K_4",
+          "Value": "v_128_3611440441904786473",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_133_3973301083253959976",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              3,
+              7
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_135_2803434511839545053",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_143_11143416617952691388",
+          "Value": "v_143_11143416617952691388",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 7,
+          "Key": "K_2",
+          "Value": "v_151_7923928573180401142",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "466-12784ceb",
+    "Seed": 466,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "partial-key-promotion-before",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              3,
+              4
+            ]
+          },
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_71_7579435045437458366",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_72_5212872681741927449",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_73_8980894393334886696",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_76_2917573318072564142",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_3",
+          "Value": "v_78_11837445956531953455",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_79_9588696902753063086",
+          "Value": "v_79_9588696902753063086",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "import",
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_94_17243788383029835518",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_9",
+          "Value": "v_101_12601430248174771099",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "delete",
+            "Devices": [
+              3,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_103_17830085246811638108",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_111_16442512085412775792",
+          "Value": "v_111_16442512085412775792",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Key": "K_8",
+          "Value": "v_119_526583433114615922",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "467-cca679fc",
+    "Seed": 467,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "partial-key-promotion-after",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_6_16555305059529290853",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              1,
+              0
+            ]
+          },
+          "Device": 5,
+          "Key": "K_0",
+          "Value": "v_7_956491342230678598",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_17_115338742711896384",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_19_1269329507745702248",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              4,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_23_9039693651968095791",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_33_4713185420399878130",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_37_224398948285325464",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              2,
+              3
+            ],
+            "Compact": true
+          },
+          "Key": "K_0",
+          "Value": "v_39_9255779537806720630",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_47_6688669450129769097",
+          "Value": "v_47_6688669450129769097",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              5,
+              0
+            ]
+          },
+          "Key": "K_9",
+          "Value": "v_55_12753872985819634153",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "474-fe314939",
+    "Seed": 474,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "disaster-compacted-warm",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_5",
+          "Value": "v_6_8994245989903564396",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "Devices": [
+              5,
+              3
+            ]
+          },
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_7_6923245455913983610",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_15_15701604154711008914",
+          "Value": "v_15_15701604154711008914",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_3",
+          "Value": "v_22_7929648151371145310",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ]
+          },
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_23_568912828006321740",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_70_16726726047181433711",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              4,
+              6
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_7",
+          "Value": "v_71_10673357541805266016",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_79_2695223113838561930",
+          "Value": "v_79_2695223113838561930",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 6,
+          "Key": "TEAM_v_111_2796615211838961873",
+          "Value": "v_111_2796615211838961873",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_207_17769810978918081177",
+          "Value": "v_207_17769810978918081177",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "Devices": [
+              4,
+              0
+            ]
+          },
+          "Device": 5,
+          "Key": "K_6",
+          "Value": "v_215_6416454741178222569",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "475-155b1225",
+    "Seed": 475,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "disaster-compacted-cold",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              5,
+              2
+            ]
+          },
+          "Device": 5,
+          "Key": "K_3",
+          "Value": "v_23_4462712707973224259",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_37_8972545146015603232",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_10",
+          "Value": "v_91_11618625253869519716",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_93_10445106580875400847",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_98_1756974713426577802",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Device": 7,
+          "Key": "K_7",
+          "Value": "v_102_9511410959197875631",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              6,
+              4
+            ],
+            "Compact": true
+          },
+          "Key": "K_0",
+          "Value": "v_103_11712867413072398729",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_106_13598836597697620231",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_108_17696232190834187463",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_11",
+          "Value": "v_110_5923123974885147492",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_111_10538220227695414126",
+          "Value": "v_111_10538220227695414126",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              6,
+              7
+            ]
+          },
+          "Device": 5,
+          "Key": "K_10",
+          "Value": "v_119_3774413144239598471",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "478-e33edf91",
+    "Seed": 478,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "disaster-compacted-old-data-warm",
+      "Actions": [
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_79_959405339334328376",
+          "Value": "v_79_959405339334328376",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_85_10640320008509293530",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              3,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_87_4709570652583449567",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_103_11129404329281919892",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_104_12655419177661213236",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_1",
+          "Value": "v_107_3136962404855928452",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_119_18006862335227531510",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_149_13331987992501412908",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_157_8276715932207332583",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_0",
+          "Value": "v_159_8905706236992083096",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_193_3264619858756277872",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "add",
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_195_9420976982949800049",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_207_8095774368249521720",
+          "Value": "v_207_8095774368249521720",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Key": "K_4",
+          "Value": "v_223_9357400696069955104",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_230_17140961706791053912",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              1,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_231_17043623684887156571",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_235_16864124318045221823",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_239_8494457004301959867",
+          "Value": "v_239_8494457004301959867",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              0
+            ]
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_247_13070519402288896942",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "479-c53d08db",
+    "Seed": 479,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "disaster-compacted-old-data-cold",
+      "Actions": [
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_15_14485006205821402661",
+          "Value": "v_15_14485006205821402661",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_19_11803273142003393418",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              2,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_10",
+          "Value": "v_23_1061054717477995563",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_10",
+          "Value": "v_26_1467967020192172921",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_28_7362988084217163339",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_79_14153286773894322505",
+          "Value": "v_79_14153286773894322505",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_103_15200581793141708914",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "488-bf88836e",
+    "Seed": 488,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "wire-format-cold",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 6,
+          "Key": "K_11",
+          "Value": "v_51_9996364344158752168",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "Devices": [
+              3,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_6",
+          "Value": "v_55_9720229156517550473",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_10",
+          "Value": "v_78_10993067101333063875",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_79_1310823638892570475",
+          "Value": "v_79_1310823638892570475",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_84_1599033167850211952",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_85_10352453743345022585",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_112_17808561830299939960",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              4,
+              6
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_119_1784485196369009975",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_130_10119761593020119408",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              3,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_7",
+          "Value": "v_135_3163276906808408537",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_172_9729955097941123212",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_207_7505735807694324211",
+          "Value": "v_207_7505735807694324211",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 6,
+          "Key": "K_0",
+          "Value": "v_215_8543223507037944841",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "507-df303719",
+    "Seed": 507,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "write-faults",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_2_6647420099654743980",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_7_876509574220731180",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_9_1600958646862978435",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_11_8332496730256854464",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_15_12227007077089779462",
+          "Value": "v_15_12227007077089779462",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "delete",
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 4,
+          "Key": "K_8",
+          "Value": "v_23_12129576705374255057",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_47_16855955670284986479",
+          "Value": "v_47_16855955670284986479",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 3,
+          "Key": "K_1",
+          "Value": "v_55_14458455312449569631",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_9",
+          "Value": "v_60_16687005514952528614",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              2,
+              1
+            ]
+          },
+          "Key": "K_3",
+          "Value": "v_71_6546630750951524564",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_79_9555087841196005748",
+          "Value": "v_79_9555087841196005748",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              3,
+              4
+            ]
+          },
+          "Device": 2,
+          "Key": "K_7",
+          "Value": "v_87_11494732400300045926",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646031-02425cab",
+    "Seed": 11012636119122646031,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "contention-edit-exhausted",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Key": "K_4",
+          "Value": "v_0_1187509606396112035",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_5_4846688966085676811",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              3,
+              0
+            ]
+          },
+          "Key": "K_11",
+          "Value": "v_7_8175456897352842795",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_12_7463299669091391900",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_15_10930997469763941860",
+          "Value": "v_15_10930997469763941860",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "sync",
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_49_5815509418123897393",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              1,
+              0
+            ]
+          },
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_55_5875974800328867781",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              2,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_71_34844352293450624",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_104_4735855817257829604",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_111_7002543345251318445",
+          "Value": "v_111_7002543345251318445",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_128_13200946208408007717",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_135_14873485090336516773",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_139_8293490393416571322",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_143_5669064701561119109",
+          "Value": "v_143_5669064701561119109",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_157_17801865844595325166",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "sync",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_185_4148348639399537792",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "edit",
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_186_6413849573674391442",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 2,
+          "Key": "K_5",
+          "Value": "v_190_527442864515438054",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "import",
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_198_17545194503743530003",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              3,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_199_12100581467945685478",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_207_8845422906923821531",
+          "Value": "v_207_8845422906923821531",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_215_6797254983679042814",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646032-ed39caf7",
+    "Seed": 11012636119122646032,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "contention-edit-yield",
+      "Actions": [
+        {
+          "Kind": "sync",
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_22_4701371673003400080",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "rejoin",
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_30_7630288082428796700",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_44_3009386054667953753",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_61_15669409974556893309",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_63_18230750093586026037",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "Devices": [
+              2,
+              4
+            ],
+            "Compact": true
+          },
+          "Key": "K_6",
+          "Value": "v_71_13843916615752022639",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_79_10401774239884017898",
+          "Value": "v_79_10401774239884017898",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "Devices": [
+              0,
+              4
+            ]
+          },
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_87_9954040570102180343",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646034-d70c65fb",
+    "Seed": 11012636119122646034,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "contention-delete-yield",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "Devices": [
+              5,
+              6
+            ]
+          },
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_7_13574235185826611331",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_13_1172910494202827785",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_15_8583093572119410654",
+          "Value": "v_15_8583093572119410654",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              2,
+              5
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_23_18274404041790163513",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646047-02b8b4e2",
+    "Seed": 11012636119122646047,
+    "Plan": {
+      "Devices": 6,
+      "Scenario": "write-faults",
+      "Actions": [
+        {
+          "Kind": "import",
+          "Device": 2,
+          "Key": "K_2",
+          "Value": "v_2_15223803725696442680",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Key": "K_4",
+          "Value": "v_3_15669313453280745773",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_3",
+          "Value": "v_6_17111289797675481768",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "Devices": [
+              1,
+              4
+            ]
+          },
+          "Key": "K_11",
+          "Value": "v_7_15661777465468853641",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_15_15518574260953143256",
+          "Value": "v_15_15518574260953143256",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              2,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 5,
+          "Key": "K_7",
+          "Value": "v_23_2035532061198578919",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Key": "K_11",
+          "Value": "v_50_9619004879054930856",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "delete",
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_53_8591491232839822222",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              2,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_55_15850723382115874772",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 5,
+          "Key": "K_11",
+          "Value": "v_58_8251122678678978360",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_68_3623776003100282991",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 5,
+          "Key": "K_2",
+          "Value": "v_70_3325225836165072428",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              5,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_71_11014609684168880501",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_79_7796924261373816814",
+          "Value": "v_79_7796924261373816814",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_86_13150047990725633108",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 4,
+          "Key": "K_6",
+          "Value": "v_95_6364960500237819677",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 5,
+          "Key": "K_8",
+          "Value": "v_98_10143041378128215684",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              0,
+              3
+            ]
+          },
+          "Device": 2,
+          "Key": "K_1",
+          "Value": "v_103_10034420210369769828",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_111_2285840699853677504",
+          "Value": "v_111_2285840699853677504",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              1,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_119_10730136406642792130",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_10",
+          "Value": "v_126_14554695488536392279",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 4,
+          "Key": "K_2",
+          "Value": "v_129_15533959168713592820",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 5,
+          "Key": "K_11",
+          "Value": "v_130_17480857701240370317",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_135_17730305144250416237",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_143_74546704943639197",
+          "Value": "v_143_74546704943639197",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_151_3978496714513419575",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646053-36f9a7a8",
+    "Seed": 11012636119122646053,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "delete-faults",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_19_14640508493484969205",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_23_15259238013560530067",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              4,
+              1
+            ]
+          },
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_39_373145773707032281",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_45_10526731820401690035",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_47_12119634711410978335",
+          "Value": "v_47_12119634711410978335",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_55_13331329347376191758",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "delete-env",
+          "Device": 4,
+          "Key": "K_4",
+          "Value": "v_72_7628940485324080595",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_73_13632409817996587976",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_79_5477654703579500815",
+          "Value": "v_79_5477654703579500815",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_81_11869962227199571077",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              3,
+              4
+            ]
+          },
+          "Key": "K_11",
+          "Value": "v_87_17027925618494369415",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_5",
+          "Value": "v_90_10713763166196091355",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_91_8335386953906496704",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 2,
+          "Key": "K_5",
+          "Value": "v_115_14145156405847252995",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_7",
+          "Value": "v_116_5768996427264231362",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              1,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_119_17434768968973386012",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_141_6839336677456884926",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_143_12868784479483518543",
+          "Value": "v_143_12868784479483518543",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "delete",
+            "Devices": [
+              0,
+              4
+            ]
+          },
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_151_12691096766407825957",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646070-cfd204a8",
+    "Seed": 11012636119122646070,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "shared-storage-workspaces",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "Devices": [
+              1,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 5,
+          "Key": "K_2",
+          "Value": "v_135_8485444686318687808",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_143_2717481059477522884",
+          "Value": "v_143_2717481059477522884",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_147_8911397712165574334",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_150_9009924990109403087",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "Devices": [
+              2,
+              7
+            ],
+            "Compact": true
+          },
+          "Key": "K_6",
+          "Value": "v_151_11941310109687054090",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Key": "K_1",
+          "Value": "v_164_9069571822355820245",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_3",
+          "Value": "v_166_3260050937685536160",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "Devices": [
+              2,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_8",
+          "Value": "v_167_3493186585089486544",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 7,
+          "Key": "TEAM_v_175_11723310346135570829",
+          "Value": "v_175_11723310346135570829",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 4,
+          "Key": "K_3",
+          "Value": "v_183_11802250971604367195",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646146-6328e22a",
+    "Seed": 11012636119122646146,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "lost-device-replacement",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              0,
+              5
+            ]
+          },
+          "Device": 5,
+          "Key": "K_4",
+          "Value": "v_71_4621538387727495858",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_79_16941539524624626927",
+          "Value": "v_79_16941539524624626927",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "compact",
+          "Device": 6,
+          "Key": "K_3",
+          "Value": "v_82_5663668669760555126",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              1,
+              4
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_11",
+          "Value": "v_87_1247227659663136903",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 4,
+          "Key": "K_8",
+          "Value": "v_119_12690451062704799574",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_9",
+          "Value": "v_132_12050313497528477961",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_134_1230270488486463230",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              2,
+              5
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_135_1005365316032998477",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_143_14916020119740621098",
+          "Value": "v_143_14916020119740621098",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              0,
+              6
+            ]
+          },
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_167_15007648376194406230",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646160-994fcbe3",
+    "Seed": 11012636119122646160,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "partial-key-pending-after-approval",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_131_5218343171777828460",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Key": "K_4",
+          "Value": "v_133_13327575068587346228",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_10",
+          "Value": "v_135_11477614379594321173",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 6,
+          "Key": "K_8",
+          "Value": "v_136_6313451021815121955",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_143_10553777339822902617",
+          "Value": "v_143_10553777339822902617",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              4,
+              5
+            ]
+          },
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_199_10603688237666004802",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_207_14473496520065726219",
+          "Value": "v_207_14473496520065726219",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              3,
+              6
+            ]
+          },
+          "Device": 4,
+          "Key": "K_0",
+          "Value": "v_215_6994418839393971161",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646167-b050da17",
+    "Seed": 11012636119122646167,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "disaster-all-stale-cold",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Key": "K_10",
+          "Value": "v_6_15636772336945374558",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_15_8835432893229956743",
+          "Value": "v_15_8835432893229956743",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_11",
+          "Value": "v_23_18211329739932927347",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646193-37bd906a",
+    "Seed": 11012636119122646193,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "contention-sync-exhausted",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_3_9594096160223240329",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Key": "K_8",
+          "Value": "v_4_3620953167708848326",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_1",
+          "Value": "v_5_12793920422621876720",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              4,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_7_2354351592591874783",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_15_17956813471204186375",
+          "Value": "v_15_17956813471204186375",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_23_3815599296532561850",
+          "Environment": "env_2"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646206-2646a2dc",
+    "Seed": 11012636119122646206,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "public-surface",
+      "Actions": [
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_36_11778481000975252828",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "edit",
+            "Devices": [
+              2,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_39_2172163838403248245",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_9",
+          "Value": "v_42_2350761323760672805",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 2,
+          "Key": "TEAM_v_47_8712922247426137893",
+          "Value": "v_47_8712922247426137893",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Device": 1,
+          "Key": "K_8",
+          "Value": "v_55_18329394464965804483",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646216-68fa17b6",
+    "Seed": 11012636119122646216,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "team-migration",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              5,
+              1
+            ]
+          },
+          "Device": 6,
+          "Key": "K_11",
+          "Value": "v_7_2310922936299067141",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_6",
+          "Value": "v_10_13394672683502190373",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_12_7299059831134457871",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 4,
+          "Key": "K_4",
+          "Value": "v_14_10099463435870304923",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_15_6287031325309485947",
+          "Value": "v_15_6287031325309485947",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_17_4035094178687441450",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_19_14218465546425444554",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              1,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_23_14538295198792499655",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 6,
+          "Key": "K_3",
+          "Value": "v_26_6883212090731847521",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 2,
+          "Key": "K_8",
+          "Value": "v_36_7431363638662897661",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              3,
+              5
+            ]
+          },
+          "Device": 6,
+          "Key": "K_5",
+          "Value": "v_39_7444475482160619745",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "compact",
+          "Device": 6,
+          "Key": "K_8",
+          "Value": "v_42_11218091911233796865",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 3,
+          "Key": "K_9",
+          "Value": "v_44_13198962154225056733",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 4,
+          "Key": "TEAM_v_47_2132919676777496264",
+          "Value": "v_47_2132919676777496264",
+          "Environment": "env_0"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              4,
+              5
+            ]
+          },
+          "Device": 4,
+          "Key": "K_1",
+          "Value": "v_71_1852886353124263515",
+          "Environment": "env_1"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646227-6afd3ac2",
+    "Seed": 11012636119122646227,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "metadata-control-count",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_4_14469349081523475743",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_15_2005664598061466927",
+          "Value": "v_15_2005664598061466927",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_3",
+          "Value": "v_16_4897760200859587005",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "rename-env",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_17_6530149503579052364",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Key": "K_7",
+          "Value": "v_20_4524895277461671909",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              2,
+              1
+            ],
+            "Compact": true
+          },
+          "Key": "K_3",
+          "Value": "v_23_10603452764896691083",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_0",
+          "Value": "v_33_12385353217556103686",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "SameKey": true,
+            "Devices": [
+              3,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 2,
+          "Key": "K_0",
+          "Value": "v_39_10214451997892121384",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "add",
+          "Device": 1,
+          "Key": "K_2",
+          "Value": "v_46_56485751405524770",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_47_15382986098695923669",
+          "Value": "v_47_15382986098695923669",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 1,
+          "Key": "K_5",
+          "Value": "v_75_1812524231177096669",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_0",
+          "Value": "v_76_11388330254632825783",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "import",
+          "Device": 1,
+          "Key": "K_6",
+          "Value": "v_77_17707770757681836657",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "rejoin",
+          "Key": "K_8",
+          "Value": "v_78_13736773656167537799",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_111_17957736787909141206",
+          "Value": "v_111_17957736787909141206",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              1,
+              3
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_2",
+          "Value": "v_119_6788989716364212218",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Key": "K_1",
+          "Value": "v_133_8440060600399287732",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              1,
+              3
+            ],
+            "Compact": true
+          },
+          "Key": "K_8",
+          "Value": "v_135_7152807743502206544",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_143_16597937470849648162",
+          "Value": "v_143_16597937470849648162",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "import",
+            "Devices": [
+              2,
+              3
+            ]
+          },
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_151_16123575814305278759",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646249-d7b0b95a",
+    "Seed": 11012636119122646249,
+    "Plan": {
+      "Devices": 5,
+      "Scenario": "disaster-compacted-cold",
+      "Actions": [
+        {
+          "Kind": "team-group",
+          "Key": "TEAM_v_15_16239525067256503254",
+          "Value": "v_15_16239525067256503254",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_2",
+          "Value": "v_20_3935695158372189495",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "SameKey": true,
+            "Devices": [
+              3,
+              2
+            ],
+            "Compact": true
+          },
+          "Device": 1,
+          "Key": "K_3",
+          "Value": "v_23_1456848388436370713",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "SameKey": true,
+            "Devices": [
+              3,
+              4
+            ]
+          },
+          "Device": 2,
+          "Key": "K_5",
+          "Value": "v_39_5628406150027827268",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_47_13653562331724354016",
+          "Value": "v_47_13653562331724354016",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "sync",
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_1",
+          "Value": "v_55_4554764821128080091",
+          "Environment": "env_1",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646251-b0b95259",
+    "Seed": 11012636119122646251,
+    "Plan": {
+      "Devices": 7,
+      "Scenario": "disaster-compacted-no-record-cold",
+      "Actions": [
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              1,
+              3
+            ]
+          },
+          "Device": 4,
+          "Key": "K_7",
+          "Value": "v_71_3457308026818058167",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_79_3652493389977168552",
+          "Value": "v_79_3652493389977168552",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "delete",
+            "Devices": [
+              2,
+              4
+            ]
+          },
+          "Key": "K_7",
+          "Value": "v_87_9559981070692791309",
+          "Environment": "env_0",
+          "Admin": true
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646262-c21b130c",
+    "Seed": 11012636119122646262,
+    "Plan": {
+      "Devices": 4,
+      "Scenario": "wire-format-cold",
+      "Actions": [
+        {
+          "Kind": "add",
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_132_11158788096338477911",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_11",
+          "Value": "v_133_15432670017555881656",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "import",
+            "Devices": [
+              1,
+              2
+            ]
+          },
+          "Device": 2,
+          "Key": "K_6",
+          "Value": "v_135_12364371679753628564",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "edit",
+          "Device": 3,
+          "Key": "K_10",
+          "Value": "v_146_7376339033469885035",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "sync",
+          "Device": 1,
+          "Key": "K_4",
+          "Value": "v_147_10165507529036651751",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "sync",
+          "Key": "K_7",
+          "Value": "v_149_9998278918311885791",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "sync",
+            "SameKey": true,
+            "Devices": [
+              2,
+              1
+            ],
+            "Compact": true
+          },
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_151_999771487281550998",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "compact",
+          "Device": 3,
+          "Key": "K_3",
+          "Value": "v_152_4114438173077422725",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "delete",
+            "Right": "delete",
+            "Devices": [
+              0,
+              2
+            ]
+          },
+          "Key": "K_1",
+          "Value": "v_215_17338000533851549503",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 3,
+          "Key": "TEAM_v_239_3466784815801509804",
+          "Value": "v_239_3466784815801509804",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "import",
+            "Right": "delete",
+            "Devices": [
+              3,
+              2
+            ]
+          },
+          "Key": "K_2",
+          "Value": "v_247_835252856746788497",
+          "Environment": "env_0"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "11012636119122646266-fe571bdf",
+    "Seed": 11012636119122646266,
+    "Plan": {
+      "Devices": 8,
+      "Scenario": "contention-edit-yield",
+      "Actions": [
+        {
+          "Kind": "compact",
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_77_17943463716176280664",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 7,
+          "Key": "TEAM_v_79_3240356908271975922",
+          "Value": "v_79_3240356908271975922",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "import",
+          "Device": 5,
+          "Key": "K_9",
+          "Value": "v_96_13901535251402721785",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "team-group",
+          "Device": 5,
+          "Key": "TEAM_v_111_6099818766176566073",
+          "Value": "v_111_6099818766176566073",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "delete",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_114_14177498339637922191",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "edit",
+            "Devices": [
+              6,
+              7
+            ]
+          },
+          "Device": 5,
+          "Key": "K_5",
+          "Value": "v_119_6352527709588945836",
+          "Environment": "env_2"
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_9",
+          "Value": "v_123_11040539336071207727",
+          "Environment": "env_2",
+          "Admin": true
+        },
+        {
+          "Kind": "add",
+          "Device": 2,
+          "Key": "K_4",
+          "Value": "v_127_7494443667874926704",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 7,
+          "Key": "K_11",
+          "Value": "v_163_5192620779262362710",
+          "Environment": "env_1"
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "edit",
+            "Right": "edit",
+            "Devices": [
+              4,
+              2
+            ],
+            "Compact": true
+          },
+          "Key": "K_0",
+          "Value": "v_167_9357057047986726239",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "create-env",
+          "Device": 2,
+          "Key": "K_10",
+          "Value": "v_173_16903060499595472625",
+          "Environment": "env_0",
+          "Admin": true
+        },
+        {
+          "Kind": "team-group",
+          "Device": 1,
+          "Key": "TEAM_v_175_849440405808348123",
+          "Value": "v_175_849440405808348123",
+          "Environment": "env_1",
+          "Admin": true
+        },
+        {
+          "Kind": "parallel",
+          "Parallel": {
+            "Left": "sync",
+            "Right": "delete",
+            "Devices": [
+              3,
+              5
+            ]
+          },
+          "Device": 3,
+          "Key": "K_4",
+          "Value": "v_183_7279591122006423001",
+          "Environment": "env_2",
+          "Admin": true
+        }
+      ]
+    }
+  }
+]

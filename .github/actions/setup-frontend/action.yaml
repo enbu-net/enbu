@@ -1,0 +1,12 @@
+name: Setup frontend toolchain
+description: Restore the content-addressed dependency store using the web lockfile
+runs:
+  using: composite
+  steps:
+    - uses: voidzero-dev/setup-vp@v1.22.0
+      with:
+        working-directory: web
+        run-install: false
+        package-manager: false
+        node-manager: false
+        cache: true

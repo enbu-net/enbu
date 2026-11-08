@@ -14,6 +14,23 @@ tasks:
       - gui/test
       - vscode/test
       - scripts/test
+      - simulation/smoke
+
+  simulation/smoke:
+    desc: Run bounded deterministic simulation regressions
+    env:
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=2m ./test/simulation -run '^TestSimulationSmoke$'
+
+  simulation/test:
+    desc: Run deterministic simulations and strict replays
+    env:
+      ENBU_SIM_EXPLORE: '1'
+      ENBU_SIM_ARTIFACTS: '{{.ROOT_DIR}}/.tmp/simulation'
+      CGO_ENABLED: '0'
+    cmds:
+      - go test -count=1 -timeout=55m ./pkg/merge ./test/simulation
 
   cli/test:
     desc: Run all CLI tests
@@ -29,7 +46,7 @@ tasks:
     deps:
       - gui/build/frontend
     cmds:
-      - go test -v -shuffle=on -race -tags=fixture ./...
+      - go test -v -shuffle=on -race -timeout=55m -tags=fixture ./...
 
   cli/test/scenario:
     desc: Run scenario tests
@@ -39,7 +56,7 @@ tasks:
       - docker compose up -d --wait
       - defer: docker compose down
       - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
-      - go test -v -shuffle=on -race -tags=fixture,scenario ./...
+      - go test -v -shuffle=on -race -timeout=55m -tags=fixture,scenario ./cli ./test
 
   cli/test/coverage:
     desc: Collect all Go unit tests with tobari, including desktop
@@ -86,6 +103,7 @@ tasks:
   gui/test/coverage:
     desc: Collect React test coverage with V8
     deps:
+      - gui/install
       - gui/build/frontend
     dir: web
     cmds:
@@ -140,6 +158,7 @@ tasks:
   gui/test:
     desc: Run GUI tests
     deps:
+      - gui/install
       - gui/build/frontend
     dir: web
     cmds:
@@ -290,6 +309,7 @@ tasks:
   gui/check:
     desc: Format and lint GUI code, and check the generated bindings are current
     deps:
+      - gui/install
       - gui/build/frontend
     cmds:
       - task: gui/bindings
@@ -348,6 +368,9 @@ tasks:
       # run at once (vscode/package builds the CLI, which needs gui/build/frontend).
       - task: gui/build/frontend
       - vp run build:vscode
+    status:
+      - test "${ENBU_FRONTEND_PREBUILT:-}" = "1"
+      - test -f dist-vscode/index.html
 
   scripts/check:
     desc: Check Python formatting and lint
@@ -384,6 +407,22 @@ tasks:
     run: once
     cmds:
       - vp env off
+
+  frontend/build:
+    desc: Build desktop and VS Code frontend bundles for shared CI artifacts
+    cmds:
+      - task: vscode/build/frontend
+
+  frontend/build/desktop:
+    desc: Build the desktop frontend bundle for shared Go embed artifacts
+    cmds:
+      - task: gui/build/frontend
+
+  frontend/install:
+    desc: Prepare both frontend dependency trees before parallel CI readers
+    deps:
+      - gui/install
+      - vscode/install
 
   gui/install:
     internal: true
