@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sync"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/keystore"
@@ -18,13 +19,15 @@ const (
 	tokenKeyringAccount = "github-oauth"
 )
 
-var tokenBackend = func() keystore.Backend {
+// tokenBackend picks the token store on first use, so importing the package
+// never waits on the OS keyring probe. Tests replace it.
+var tokenBackend = sync.OnceValue(func() keystore.Backend {
 	b, err := keystore.New()
 	if err != nil || b == nil {
 		return &keystore.TextBackend{}
 	}
 	return b
-}()
+})
 
 type StoredToken struct {
 	AccessToken string `json:"access_token"`
@@ -40,10 +43,10 @@ func SaveToken(token *StoredToken) error {
 	if err != nil {
 		return err
 	}
-	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, data); err != nil {
+	if err := tokenBackend().Store(tokenKeyringService, tokenKeyringAccount, data); err != nil {
 		return fmt.Errorf("saving token: %w", err)
 	}
-	stored, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
+	stored, err := tokenBackend().Load(tokenKeyringService, tokenKeyringAccount)
 	if err != nil || !bytes.Equal(stored, data) {
 		return errors.New("verifying saved token failed")
 	}
@@ -59,7 +62,7 @@ func LoadToken() (*StoredToken, error) {
 		return &StoredToken{AccessToken: tokenEnv, Username: actor}, nil
 	}
 
-	data, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
+	data, err := tokenBackend().Load(tokenKeyringService, tokenKeyringAccount)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, notLoggedInError()
@@ -82,7 +85,7 @@ func LoadToken() (*StoredToken, error) {
 }
 
 func DeleteToken() error {
-	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := tokenBackend().Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("removing token: %w", err)
 	}
 	return nil

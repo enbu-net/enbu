@@ -93,14 +93,14 @@ func TestStartOAuthLogin(t *testing.T) {
 	s := NewService(a)
 	s.ctx = context.Background()
 	s.SetBrowserOpener(func(url string) error {
-		if url != "https://github.com/login/oauth/authorize" {
+		if url != "https://github.com/login/device" {
 			t.Fatalf("opened url = %q", url)
 		}
 		return nil
 	})
 	cancelled := make(chan struct{})
-	s.authLogin = func(ctx context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
-		if err := open("https://github.com/login/oauth/authorize"); err != nil {
+	s.authLogin = func(ctx context.Context, prompt auth.DevicePrompter) (*auth.StoredToken, error) {
+		if err := prompt(auth.DeviceAuthorization{UserCode: "ABCD-1234", VerificationURI: "https://github.com/login/device"}); err != nil {
 			return nil, err
 		}
 		<-ctx.Done()
@@ -112,8 +112,8 @@ func TestStartOAuthLogin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartOAuthLogin: %v", err)
 	}
-	if start.SessionID == "" {
-		t.Fatal("SessionID is empty")
+	if start.SessionID == "" || start.UserCode != "ABCD-1234" || start.VerificationURI != "https://github.com/login/device" {
+		t.Fatalf("start = %+v", start)
 	}
 	if err := s.CancelOAuthLogin(start.SessionID); err != nil {
 		t.Fatalf("CancelOAuthLogin: %v", err)
@@ -179,7 +179,7 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
 	var loginContext context.Context
-	s.authLogin = func(ctx context.Context, _ auth.BrowserOpener) (*auth.StoredToken, error) {
+	s.authLogin = func(ctx context.Context, _ auth.DevicePrompter) (*auth.StoredToken, error) {
 		loginContext = ctx
 		return nil, errors.New("login failed")
 	}
@@ -200,7 +200,7 @@ func TestStartOAuthLoginCancelsFailedContext(t *testing.T) {
 func TestStartOAuthLoginClassifiesExpiredContext(t *testing.T) {
 	s := NewService(app.New(clock.New()))
 	s.ctx = context.Background()
-	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
+	s.authLogin = func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
 		return nil, context.DeadlineExceeded
 	}
 

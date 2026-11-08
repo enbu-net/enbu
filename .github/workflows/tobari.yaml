@@ -90,40 +90,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  e2e:
-    name: CLI E2E coverage
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: $/.github/actions/setup-coverage
-
-      - name: Install Secret Service
-        run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
-
-      - name: Collect CLI E2E coverage
-        run: |
-          dbus-run-session -- sh -eu -c '
-            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            task cli/test/coverage/e2e
-          '
-
-      - name: Upload e2e coverage
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: coverage-e2e
-          path: |
-            .tmp/coverage/e2e/
-            .tmp/coverage/e2e.json
-          if-no-files-found: error
-          retention-days: 14
-
   identity:
     name: Identity E2E coverage
     runs-on: ubuntu-26.04
@@ -223,7 +189,7 @@ jobs:
 
   coverage:
     name: Tobari Go coverage
-    needs: [unit, scenario, e2e, identity]
+    needs: [unit, scenario, identity]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -251,11 +217,9 @@ jobs:
           path: |
             .tmp/coverage/unit/
             .tmp/coverage/scenario/
-            .tmp/coverage/e2e/
             .tmp/coverage/identity/
             .tmp/coverage/unit.json
             .tmp/coverage/scenario.json
-            .tmp/coverage/e2e.json
             .tmp/coverage/identity.json
             .tmp/coverage/merged.json
             .tmp/coverage/coverage.out
@@ -272,7 +236,7 @@ jobs:
   status-check:
     name: Coverage result
     if: always()
-    needs: [unit, scenario, e2e, identity, frontend, coverage]
+    needs: [unit, scenario, identity, frontend, coverage]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}

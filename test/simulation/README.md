@@ -220,7 +220,7 @@ failure and strict replay reproduces it again. Original recordings are retained.
 ## Complementary integration evidence
 
 Simulation tests the application contract, not native UI events or a registry's
-HTTP implementation. `test/scenario_test.go`, `test/e2e/`, desktop/RPC tests,
+HTTP implementation. `test/scenario_test.go`, desktop/RPC tests,
 web frontend tests and VS Code tests cover their adapters. `test/identitye2e/`
 covers real key stores and TPM fixtures; `pkg/storage/remote_e2e_test.go` and storage
 E2E cover OCI/S3. OAuth, shell execution, completion and editor trust handling stay

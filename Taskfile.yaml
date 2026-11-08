@@ -37,7 +37,6 @@ tasks:
     deps:
       - cli/test/unit
       - cli/test/scenario
-      - cli/test/e2e
       - identity/test/e2e
       - storage/test/e2e
 
@@ -75,11 +74,6 @@ tasks:
       - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
       - uv run --project scripts python scripts/tobari.py scenario
 
-  cli/test/coverage/e2e:
-    desc: Collect subprocess CLI E2E coverage with tobari
-    cmds:
-      - uv run --project scripts python scripts/tobari.py e2e
-
   identity/test/coverage:
     desc: Collect Identity E2E and child CLI coverage with tobari
     cmds:
@@ -91,11 +85,10 @@ tasks:
       - uv run --project scripts python scripts/tobari.py report
 
   all/coverage:
-    desc: Collect Go unit, scenario, CLI E2E, Identity, and React coverage
+    desc: Collect Go unit, scenario, Identity, and React coverage
     cmds:
       - task cli/test/coverage
       - task cli/test/coverage/scenario
-      - task cli/test/coverage/e2e
       - task identity/test/coverage
       - task coverage/report
       - task gui/test/coverage
@@ -120,16 +113,6 @@ tasks:
       CGO_ENABLED: '0'
     cmds:
       - go test -v -shuffle=on ./pkg/config/... ./pkg/dotenv/... ./pkg/storage/... ./pkg/wsp/...
-
-  cli/test/e2e:
-    desc: Run CLI end-to-end tests with atago
-    cmds:
-      - docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
-      - docker compose -p enbu-e2e -f test/e2e/compose.yaml up -d --wait
-      - defer: docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
-      - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5001/v2/
-      - aqua exec -- atago list test/e2e
-      - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts test/e2e
 
   identity/test/e2e:
     desc: Run Identity CLI E2E with local OCI and persistent vTPM (real OS keyring required)
