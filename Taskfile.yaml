@@ -57,7 +57,7 @@ tasks:
       - docker compose up -d --wait
       - defer: docker compose down
       - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5000/v2/
-      - go test -v -shuffle=on -race -timeout=55m -tags=fixture,scenario ./cli ./test
+      - go test -v -shuffle=on -race -timeout=55m -tags=fixture,scenario ./...
 
   cli/test/coverage:
     desc: Collect all Go unit tests with tobari, including desktop
@@ -104,7 +104,6 @@ tasks:
   gui/test/coverage:
     desc: Collect React test coverage with V8
     deps:
-      - gui/install
       - gui/build/frontend
     dir: web
     cmds:
@@ -175,7 +174,6 @@ tasks:
   gui/test:
     desc: Run GUI tests
     deps:
-      - gui/install
       - gui/build/frontend
     dir: web
     cmds:
@@ -326,7 +324,6 @@ tasks:
   gui/check:
     desc: Format and lint GUI code, and check the generated bindings are current
     deps:
-      - gui/install
       - gui/build/frontend
     cmds:
       - task: gui/bindings
@@ -385,9 +382,6 @@ tasks:
       # run at once (vscode/package builds the CLI, which needs gui/build/frontend).
       - task: gui/build/frontend
       - vp run build:vscode
-    status:
-      - test "${ENBU_FRONTEND_PREBUILT:-}" = "1"
-      - test -f dist-vscode/index.html
 
   scripts/check:
     desc: Check Python formatting and lint
@@ -424,22 +418,6 @@ tasks:
     run: once
     cmds:
       - vp env off
-
-  frontend/build:
-    desc: Build desktop and VS Code frontend bundles for shared CI artifacts
-    cmds:
-      - task: vscode/build/frontend
-
-  frontend/build/desktop:
-    desc: Build the desktop frontend bundle for shared Go embed artifacts
-    cmds:
-      - task: gui/build/frontend
-
-  frontend/install:
-    desc: Prepare both frontend dependency trees before parallel CI readers
-    deps:
-      - gui/install
-      - vscode/install
 
   gui/install:
     internal: true

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -113,27 +112,6 @@ func run() error {
 		return err
 	}
 	paths = append(paths, other...)
-	// Resolve and build the pinned tool once. Repeating go run pkg@version
-	// for every workflow repeats module resolution and tool startup.
-	dir, err := os.MkdirTemp("", "enbu-actionlint-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	install := exec.Command("go", "install", "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12")
-	install.Env = append(os.Environ(), "GOBIN="+dir)
-	install.Stdout, install.Stderr = os.Stdout, os.Stderr
-	if err := install.Run(); err != nil {
-		return fmt.Errorf("build pinned actionlint: %w", err)
-	}
-	binary := filepath.Join(dir, "actionlint")
-	if runtime.GOOS == "windows" {
-		binary += ".exe"
-	}
-	return lintWorkflows(paths, binary)
-}
-
-func lintWorkflows(paths []string, binary string) error {
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -143,7 +121,7 @@ func lintWorkflows(paths []string, binary string) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
-		cmd := exec.Command(binary, "-color", "-ignore", `specifying action "\$/\.github/actions/[^" ]+" in invalid format because ref is missing`, "-stdin-filename", path, "-")
+		cmd := exec.Command("go", "run", "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12", "-color", "-ignore", `specifying action "\$/\.github/actions/[^" ]+" in invalid format because ref is missing`, "-stdin-filename", path, "-")
 		cmd.Stdin = bytes.NewReader(data)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -65,7 +63,7 @@ func TestNormalizeLeavesOrdinaryWorkflowsUnchanged(t *testing.T) {
 		t.Fatalf("ordinary workflow changed: %s %v", data, err)
 	}
 }
-func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
+func TestDSTHasOneJobPerPlatformAndFourDisjointLanes(t *testing.T) {
 	data, err := os.ReadFile("../../.github/workflows/simulation.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -77,8 +75,8 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 	jobs := field(doc.Content[0], "jobs")
 	job := field(jobs, "simulation")
 	matrix := field(field(job, "strategy"), "matrix")
-	if len(matrix.Content) != 4 || len(field(matrix, "platform").Content) != 5 {
-		t.Fatal("DST matrix must contain five platforms and explicit runner groups")
+	if len(matrix.Content) != 2 || len(field(matrix, "platform").Content) != 5 {
+		t.Fatal("DST matrix must contain only five platforms")
 	}
 	var lanes []*yaml.Node
 	for _, step := range field(job, "steps").Content {
@@ -104,7 +102,7 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 			t.Fatal("lane bypasses selection or nested parallelism limit")
 		}
 	}
-	if field(field(job, "env"), "ENBU_SIM_SHARDS").Value != "${{ needs.plan.outputs.mode == 'full' && '16' || '4' }}" {
+	if field(field(job, "env"), "ENBU_SIM_SHARDS").Value != "4" {
 		t.Fatal("lane/shard mismatch")
 	}
 	schedule := field(field(doc.Content[0], "on"), "schedule")
@@ -125,38 +123,5 @@ func TestUbuntuRunnerPolicy(t *testing.T) {
 		if _, err := normalize([]byte("jobs:\n  test:\n    runs-on: " + label + "\n")); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-// Every workflow still gets its own filename and normalized stdin when the
-// precompiled linter is reused; an error must stop before later workflows.
-func TestLintWorkflowsReusesBinaryAndPreservesFailures(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture")
-	}
-	dir := t.TempDir()
-	calls := filepath.Join(dir, "calls")
-	binary := filepath.Join(dir, "actionlint")
-	script := "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' \"$*\" >> '" + calls + "'\ncase \"$*\" in *reject*) exit 7;; esac\n"
-	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for _, name := range []string{"first.yaml", "reject.yaml", "never.yaml"} {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte("on: push\njobs:\n  test:\n    runs-on: ubuntu-26.04\n    steps:\n      - parallel: [{run: echo one}, {run: echo two}]\n"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		paths = append(paths, path)
-	}
-	if err := lintWorkflows(paths, binary); err == nil {
-		t.Fatal("linter failure was ignored")
-	}
-	data, err := os.ReadFile(calls)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "first.yaml") || !strings.Contains(string(data), "reject.yaml") || strings.Contains(string(data), "never.yaml") {
-		t.Fatalf("wrong workflow scheduling: %s", data)
 	}
 }
