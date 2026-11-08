@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"go/build"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,6 +219,14 @@ func TestPrebuiltFrontendRequiresBothFlagAndExpectedArtifacts(t *testing.T) {
 	if err != nil {
 		t.Skip("task is not installed")
 	}
+	// Resolve the actual binary before entering a fixture without aqua.yaml.
+	// CI puts aqua's context-dependent task shim on PATH.
+	if aqua, err := exec.LookPath("aqua"); err == nil {
+		resolved, err := exec.CommandContext(t.Context(), aqua, "which", "task").Output()
+		if err == nil {
+			task = strings.TrimSpace(string(resolved))
+		}
+	}
 	raw, err := os.ReadFile("../../Taskfile.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -322,5 +332,70 @@ func TestWindowsCompositeSetupIsSerialAndUnixSetupRunsOnce(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// Scenario tags exist only in the CLI mocks and scenario harness. Re-running
+// unrelated app/desktop/core/DST tests with that tag repeats the unit job.
+// Any newly tagged package must be added explicitly, even if its tagged file is
+// only a helper/init function: it could change the behavior of ordinary tests.
+func TestScenarioTargetsCoverEveryScenarioTaggedPackage(t *testing.T) {
+	root := readYAML(t, "../../Taskfile.yaml")
+	target := field(field(root, "tasks"), "cli/test/scenario")
+	packages := map[string]bool{}
+	for _, cmd := range field(target, "cmds").Content {
+		if strings.HasPrefix(cmd.Value, "go test ") {
+			for _, arg := range strings.Fields(cmd.Value) {
+				if strings.HasPrefix(arg, "./") {
+					packages[strings.TrimPrefix(arg, "./")] = true
+				}
+			}
+		}
+	}
+	if packages["..."] || len(packages) == 0 {
+		t.Fatal("scenario suite repeats all unit/DST packages or has no target")
+	}
+	base := build.Default
+	base.BuildTags = append(append([]string(nil), base.BuildTags...), "fixture")
+	scenario := base
+	scenario.BuildTags = append(append([]string(nil), base.BuildTags...), "scenario")
+	scanned := 0
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", ".tmp", ".kotowari", "node_modules", "vendor":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		included, err := scenario.MatchFile(filepath.Dir(path), entry.Name())
+		if err != nil || !included {
+			return err
+		}
+		included, err = base.MatchFile(filepath.Dir(path), entry.Name())
+		if err != nil || included {
+			return err
+		}
+		scanned++
+		relative, err := filepath.Rel("../..", filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		if !packages[filepath.ToSlash(relative)] {
+			t.Errorf("scenario-tagged package %s is omitted: %s", relative, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scanned == 0 {
+		t.Fatal("no scenario-tagged files were inspected")
 	}
 }

@@ -205,6 +205,8 @@ def select(paths: list[str], full: bool = False) -> dict:
         tests |= {
             "TestSimulation",
             "TestSimulationSmoke",
+            "TestFullSignatureAttackSeedRegressionSmoke",
+            "TestStateSignatureAttackSmoke",
             "TestEveryAppOperationHasSimulationDriver",
         }
     return {

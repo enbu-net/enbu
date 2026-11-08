@@ -492,3 +492,19 @@ def test_first_contact_helper_selects_its_family():
     assert selected(plan, "TestFirstContactSmoke")
     assert selected(plan, "TestFirstContactClocks")
     assert not selected(plan, "TestThreeWayMergeDAGMatrix")
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/secrets.go",
+        "pkg/auth/token.go",
+        "test/simulation/clock_test.go",
+        ".github/workflows/simulation.yaml",
+    ],
+)
+def test_full_signature_seed_is_retained_in_every_selected_native_exploration(path):
+    plan = dst_plan.select([path])
+    assert plan["run"]
+    assert selected(plan, "TestFullSignatureAttackSeedRegressionSmoke")
+    assert selected(plan, "TestStateSignatureAttackSmoke")
