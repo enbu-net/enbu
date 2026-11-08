@@ -48,8 +48,10 @@ sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # Desktop app (GTK 4, We
 
 ### 1. Choose storage
 
-In a repository whose `origin` is on GitHub, sign in and run `init`. The workspace is
-stored on GHCR beside the repository, at `oci://ghcr.io/OWNER/REPO-enbu`:
+In a repository whose `origin` is on GitHub, sign in and run `init`. `auth login` uses
+the GitHub Device Flow: it shows a code to enter at github.com/login/device, so it
+works over SSH too. The workspace is stored on GHCR beside the repository, at
+`oci://ghcr.io/OWNER/REPO-enbu`:
 
 ```bash
 enbu auth login
@@ -245,18 +247,15 @@ enbu history compact --keep 50  # admin: delete revisions older than the latest 
 ## Identity storage
 
 New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
-Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
-X25519 recipients can be included in the same encrypted file.
+Hardware P-256 private keys stay on the device. Each device keeps one key set per
+workspace: an encryption identity and a separate signing key.
 
-New identities are post-quantum hybrids, so ciphertext stored today stays safe against a
+Every identity is a post-quantum hybrid, so ciphertext stored today stays safe against a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
-ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
-P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
-encrypted to the Secure Enclave key). A file is post-quantum only when every member has a hybrid key;
-with any classical member it is encrypted classically. Members created before this
-switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
-the new key with `enbu member approve`, and `enbu member list` shows how many members
-have upgraded. Members on an enbu that predates hybrid keys must update enbu first.
+ML-KEM-768 + P-256 (`age1tagpq1…`, an age Tagged Recipient) on hardware. TPMs and the
+Secure Enclave cannot run ML-KEM yet, so the P-256 half stays in hardware and the
+ML-KEM seed is encrypted to it. Classical recipients are refused. To change a device's
+keys, remove it and let it join again.
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
@@ -277,10 +276,8 @@ machine's host key, and to the TPM when one exists. The user does not need TPM a
 enbu doctor                  # No authentication or persistent key creation
 enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
-enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
 # Other choices: hardware (required), keyring (software key: OS keyring, or systemd-creds without one)
-export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
 `enbu doctor` also checks workspace configuration, GHCR token validity (when
@@ -339,8 +336,7 @@ Errors enbu cannot classify show a generic message; set `ENBU_DEBUG=1` to print
 the underlying cause on stderr.
 `enbu pull --json` does not write an `.env` file; it returns the decrypted secrets in `data.secrets`.
 Do not log or persist this response.
-`enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
-Use `enbu auth login --json` for browser authentication.
+`enbu auth login --json` prints the Device Flow code on stderr; stdout holds only the JSON result.
 
 ## Test coverage
 
@@ -399,19 +395,16 @@ but a device that has not yet seen the removal still accepts it.
 sequenceDiagram
     participant User
     participant CLI as enbu CLI
-    participant Auth as auth.enbu.net
     participant GitHub as GitHub OAuth
     participant GHCR as Storage
 
     User->>CLI: enbu auth login
-    CLI->>CLI: Start 127.0.0.1 callback listener
-    CLI->>Auth: Create PKCE session
-    Auth-->>CLI: GitHub authorization URL
-    CLI-->>User: Open browser
-    User->>GitHub: Authorize in browser
-    GitHub-->>CLI: Authorization code via loopback callback
-    CLI->>Auth: Exchange code with PKCE verifier
-    Auth-->>CLI: Access token
+    CLI->>GitHub: Request a device code
+    GitHub-->>CLI: User code
+    CLI-->>User: Show the code, open github.com/login/device
+    User->>GitHub: Enter the code and authorize
+    CLI->>GitHub: Poll for the token
+    GitHub-->>CLI: Access token
     CLI->>CLI: Store token in OS keychain
     CLI-->>User: ✓ Authenticated
 

@@ -55,7 +55,7 @@ type Service struct {
 	authMu     sync.Mutex
 	repoPath   string
 	sessions   map[string]*oauthSession
-	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
+	authLogin  func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error)
 	emit       EventEmitter
 	AppVersion string
 }
@@ -77,8 +77,8 @@ func NewService(a *app.App) *Service {
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock
 	}
-	s.authLogin = func(ctx context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
-		return (auth.Client{Clock: s.clock}).Login(ctx, open)
+	s.authLogin = func(ctx context.Context, prompt auth.DevicePrompter) (*auth.StoredToken, error) {
+		return (auth.Client{Clock: s.clock}).Login(ctx, prompt)
 	}
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()
@@ -141,9 +141,13 @@ type RepoInfo struct {
 	StorageConfigured bool   `json:"storage_configured"`
 }
 
+// OAuthStart is a GitHub Device Flow sign-in waiting for the user to enter
+// UserCode at VerificationURI.
 type OAuthStart struct {
-	SessionID string    `json:"session_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SessionID       string    `json:"session_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	UserCode        string    `json:"user_code"`
+	VerificationURI string    `json:"verification_uri"`
 }
 
 type OAuthStatus struct {
@@ -281,7 +285,7 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	}
 	expiresAt := s.clock.Now().Add(10 * time.Minute)
 	loginCtx, cancel := clock.WithDeadline(s.context(), s.clock, expiresAt)
-	opened := make(chan struct{}, 1)
+	prompted := make(chan auth.DeviceAuthorization, 1)
 	finished := make(chan struct{})
 	s.authMu.Lock()
 	for _, session := range s.sessions {
@@ -299,14 +303,14 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	go func() {
 		defer close(finished)
 		defer cancel()
-		token, err := s.authLogin(loginCtx, func(authorizeURL string) error {
-			if s.openURL == nil {
-				return errors.New("browser opener is unavailable")
+		token, err := s.authLogin(loginCtx, func(device auth.DeviceAuthorization) error {
+			// The code is shown in the app; opening the page is a convenience.
+			if s.openURL != nil {
+				if err := s.openURL(device.VerificationURI); err != nil {
+					slog.Warn("could not open the GitHub device page", "err", err)
+				}
 			}
-			if err := s.openURL(authorizeURL); err != nil {
-				return err
-			}
-			opened <- struct{}{}
+			prompted <- device
 			return nil
 		})
 		if err != nil {
@@ -326,8 +330,8 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	}()
 
 	select {
-	case <-opened:
-		return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt}, nil
+	case device := <-prompted:
+		return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt, UserCode: device.UserCode, VerificationURI: device.VerificationURI}, nil
 	case <-finished:
 		status, _ := s.GetOAuthLoginStatus(sessionID)
 		if status.State == "success" {

@@ -92,29 +92,24 @@ def collect(suite: str) -> int:
     if suite == "identity":
         targets = [f"{MODULE}/test/identitye2e"]
     failed = False
-    if suite == "e2e":
-        failed = (
-            subprocess.run(["task", "cli/test/e2e"], cwd=ROOT, env=env).returncode != 0
+    for package in targets:
+        package_env = env | {
+            "TOBARI_COVERDIR": str(
+                output / (package.removeprefix(MODULE).strip("/") or "main")
+            ),
+        }
+        # The parent test name is supplied by the Identity CLI harness.
+        result = subprocess.run(
+            ["go", "test", "-count=1", "-shuffle=on", "-race", package],
+            cwd=ROOT,
+            env=package_env,
         )
-    else:
-        for package in targets:
-            package_env = env | {
-                "TOBARI_COVERDIR": str(
-                    output / (package.removeprefix(MODULE).strip("/") or "main")
-                ),
-            }
-            # The parent test name is supplied by the Identity CLI harness.
-            result = subprocess.run(
-                ["go", "test", "-count=1", "-shuffle=on", "-race", package],
-                cwd=ROOT,
-                env=package_env,
-            )
-            failed = failed or result.returncode != 0
-            report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
-            if not report.is_file():
-                failed = True
-                print(f"Missing package report: {package}", flush=True)
-    if suite in ("e2e", "identity") and not report_paths(output / "processes"):
+        failed = failed or result.returncode != 0
+        report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
+        if not report.is_file():
+            failed = True
+            print(f"Missing package report: {package}", flush=True)
+    if suite == "identity" and not report_paths(output / "processes"):
         failed = True
         print(f"Missing child CLI reports: {suite}", flush=True)
     merge(output, OUTPUT / f"{suite}.json")
@@ -136,15 +131,11 @@ def summarize(report: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "suite", choices=("unit", "scenario", "identity", "e2e", "report")
-    )
+    parser.add_argument("suite", choices=("unit", "scenario", "identity", "report"))
     suite = parser.parse_args().suite
     if suite != "report":
         return collect(suite)
-    reports = [
-        OUTPUT / f"{suite}.json" for suite in ("unit", "scenario", "identity", "e2e")
-    ]
+    reports = [OUTPUT / f"{suite}.json" for suite in ("unit", "scenario", "identity")]
     missing = [str(p) for p in reports if not p.is_file()]
     if missing:
         raise RuntimeError(f"Missing suite reports: {missing}")

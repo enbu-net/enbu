@@ -26,8 +26,8 @@ function useSecondsLeft(start: OAuthStart | null, pending: boolean) {
 }
 
 /**
- * Signs in with GitHub: the browser completes the authorization while the app
- * polls for the result.
+ * Signs in with the GitHub Device Flow: the user enters the shown code on
+ * GitHub while the app polls for the result.
  */
 export function SignIn() {
   const { refresh, reloadRepo } = useSession();
@@ -68,6 +68,8 @@ export function SignIn() {
     return (
       <PageCenter>
         <OAuthLoginPanel
+          userCode={start.user_code}
+          verificationURI={start.verification_uri}
           status={status}
           expiresIn={expiresIn}
           onCancel={async () => {

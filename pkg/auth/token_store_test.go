@@ -14,7 +14,7 @@ func stubBackend(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ENBU_TEXT_BACKEND_DIR", dir)
 	orig := tokenBackend
-	tokenBackend = &keystore.TextBackend{}
+	tokenBackend = func() keystore.Backend { return &keystore.TextBackend{} }
 	t.Cleanup(func() { tokenBackend = orig })
 }
 
@@ -50,7 +50,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 func TestTokenStoreSaveErrorPropagated(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	orig := tokenBackend
-	tokenBackend = &errorBackend{err: errors.New("disk full")}
+	tokenBackend = func() keystore.Backend { return &errorBackend{err: errors.New("disk full")} }
 	t.Cleanup(func() { tokenBackend = orig })
 
 	err := SaveToken(&StoredToken{AccessToken: "token", Username: "octo", UserID: 123})
@@ -68,7 +68,7 @@ func TestGitHubTokenIsEphemeral(t *testing.T) {
 		t.Fatalf("LoadToken = %#v, %v", token, err)
 	}
 	// Env token must NOT be persisted in the backend.
-	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := tokenBackend().Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatal("GITHUB_TOKEN was persisted in backend")
 	}
 }
@@ -81,7 +81,7 @@ func TestDeleteTokenRemovesStoredToken(t *testing.T) {
 	if err := DeleteToken(); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
-	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := tokenBackend().Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("token still stored: %v", err)
 	}
 	if err := DeleteToken(); err != nil {

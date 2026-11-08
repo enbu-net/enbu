@@ -43,6 +43,8 @@ describe("SignIn", () => {
     mocked.startOAuthLogin.mockResolvedValue({
       session_id: "session",
       expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user_code: "ABCD-1234",
+      verification_uri: "https://github.com/login/device",
     });
   });
 
@@ -94,6 +96,8 @@ describe("SignIn", () => {
     renderSignIn();
 
     await connect();
+    expect(container.textContent).toContain("ABCD-1234");
+    expect(container.textContent).toContain("https://github.com/login/device");
     await act(async () => {
       queryButton("Cancel")?.click();
       await Promise.resolve();
