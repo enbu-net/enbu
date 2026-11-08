@@ -3,9 +3,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -87,7 +88,7 @@ func TestRecipientInjection(t *testing.T) {
 	}
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
-	ms, _ := mallory.Identities.LoadSigner(ws)
+	ms, _ := loadSigner(mallory, ws)
 	defer func() { _ = ms.Close() }()
 	s, err := alice.openSession(bg)
 	if err != nil {
@@ -334,7 +335,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 func TestIncompatibleStorageRejected(t *testing.T) {
 	t.Run("storage already holds a workspace", func(t *testing.T) {
 		alice := newAlice(t)
-		other := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+		other := &App{Storage: alice.Storage, Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 		prepareApp(t, other, "default")
 		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("a workspace without a trusted genesis was adopted: %v", err)
@@ -342,7 +343,7 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {
 		alice := newAlice(t)
-		other := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
+		other := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
 		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("trust root silently replaced: %v", err)
 		}
@@ -352,7 +353,7 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 func TestSigningKeyIsNotStoredInWorkspaceStorage(t *testing.T) {
 	alice := newAlice(t)
 	ws := mustWorkspace(t, alice)
-	signer, err := alice.Identities.LoadSigner(ws)
+	signer, err := loadSigner(alice, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +375,7 @@ func TestSigningKeyIsNotStoredInWorkspaceStorage(t *testing.T) {
 // genesis control goes through publish, so a test can watch or fail the moment.
 func foundingApp(t *testing.T, publish func(ctx context.Context, data []byte) error) *App {
 	t.Helper()
-	a := &App{Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+	a := &App{Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
 		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
 			if o.Kind == storage.KindControl && publish != nil {

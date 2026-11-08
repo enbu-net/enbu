@@ -77,7 +77,6 @@ var Methods = []string{
 	"ResolveMemberFork",
 	"GetIdentity",
 	"DiagnoseIdentity",
-	"UpgradeIdentity",
 	"ReadConfig",
 	"WriteConfig",
 	"GetAppVersion",

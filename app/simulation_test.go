@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
+	"io"
+	"testing"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
-	"io"
-	"testing"
 )
 
 // Missing bytes of an acknowledged revision must never be classified as an

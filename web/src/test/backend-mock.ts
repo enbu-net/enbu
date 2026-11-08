@@ -54,21 +54,13 @@ export function createBackendMock() {
     resolveMemberFork: vi.fn(async () => {}),
     identity: vi.fn(async () => ({
       backend: "keyring",
-      algorithm: "X25519",
-      recipient: "age1test",
+      algorithm: "MLKEM768-X25519",
+      recipient: "age1pq1test",
     })),
     diagnoseIdentity: vi.fn(async () => ({
       backend: "tpm",
       available: false,
       fallback_available: true,
-    })),
-    upgradeIdentity: vi.fn(async () => ({
-      backend: "keyring",
-      algorithm: "ML-KEM-768+X25519",
-      recipient: "age1pq",
-      device_id: "d",
-      fingerprint: "f",
-      pending: false,
     })),
     readConfig: vi.fn(async () => ""),
     writeConfig: vi.fn(async () => {}),

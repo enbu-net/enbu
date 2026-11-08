@@ -10,7 +10,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/clock"
 
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
@@ -24,24 +23,18 @@ func TestTPMNativeLifecycle(t *testing.T) {
 	if d := b.Probe(); !d.Available {
 		t.Fatalf("native hardware unavailable: %+v", d)
 	}
-	id, md, err := b.Create()
+	m := &Manager{Dir: t.TempDir(), Mode: "hardware", Hardware: b}
+	d, info, _, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := age.EncryptForPublicKeys([]byte("native TPM"), []string{id.Recipient().String()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = id.Close()
-	loaded, err := b.Load(md)
+	_ = d.Close()
+	loaded, err := m.Load("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = loaded.Close() }()
-	out, err := age.Decrypt(ct, loaded)
-	if err != nil || string(out) != "native TPM" {
-		t.Fatalf("native decrypt: %q %v", out, err)
-	}
+	roundTrip(t, loaded, info.Recipient)
 }
 
 // TestTPMNativeKeyOrigin checks, on the real TPM, the properties the identity
@@ -72,37 +65,24 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 		}
 		return &sharedRecording{rec: rec, next: next}, nil
 	}}
-	id, md, err := b.Create()
+	md := &Metadata{}
+	key, s, err := b.Create(md)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = id.Close() }()
-	if !slices.Equal(rec.sensitive, []int{0}) {
+	defer func() { _ = key.Close(); _ = s.Close() }()
+	if !slices.Equal(rec.sensitive, []int{0, 0}) {
 		t.Fatalf("TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
 	}
-	ct, err := age.EncryptForPublicKeys([]byte("native TPM"), []string{id.Recipient().String()})
-	if err != nil {
+	before := len(rec.sent())
+	if _, err := key.ECDH(key.PublicKey()); err != nil {
 		t.Fatal(err)
 	}
-	before := len(rec.sent())
-	if out, err := age.Decrypt(ct, id); err != nil || string(out) != "native TPM" {
-		t.Fatalf("native decrypt: %q %v", out, err)
-	}
 	if !slices.Contains(rec.sent()[before:], tpm2.TPMCCECDHZGen) {
-		t.Fatal("decryption did not run ECDH_ZGen on the host TPM")
+		t.Fatal("ECDH did not run ECDH_ZGen on the host TPM")
 	}
 	if md.Device != native.Device {
 		t.Fatalf("metadata device = %q, want %q", md.Device, native.Device)
-	}
-
-	rec.sensitive = nil
-	s, _, err := b.CreateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	if !slices.Equal(rec.sensitive, []int{0}) {
-		t.Fatalf("signer TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
 	}
 	before = len(rec.sent())
 	sig, err := s.Sign(signing.DomainState, []byte("native TPM"))

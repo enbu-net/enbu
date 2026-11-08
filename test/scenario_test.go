@@ -4,12 +4,13 @@ package test
 
 import (
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/config"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 func TestScenario_SingleUserAddPull(t *testing.T) {

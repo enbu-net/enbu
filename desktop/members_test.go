@@ -2,11 +2,12 @@ package desktop
 
 import (
 	"context"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/app/apptest"
@@ -37,7 +38,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 			t.Fatal(err)
 		}
 		a := app.New(clock.New())
-		a.Identities = &desktopKeyStore{values: map[string][]byte{}}
+		a.Identities = &apptest.Identities{}
 		a.CheckpointDir = t.TempDir()
 		s := NewService(a)
 		s.repoPath = dir
@@ -70,7 +71,7 @@ func newMembersFixture(t *testing.T) *membersFixture {
 // another asks to join with a fresh device, the way a third person would.
 func (f *membersFixture) another(t *testing.T) string {
 	t.Helper()
-	id, err := apptest.JoinRequest(context.Background(), f.store, f.workspace, &desktopKeyStore{values: map[string][]byte{}}, clock.New())
+	id, err := apptest.JoinRequest(context.Background(), f.store, f.workspace, &apptest.Identities{}, clock.New())
 	if err != nil {
 		t.Fatal(err)
 	}

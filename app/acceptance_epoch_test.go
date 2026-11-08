@@ -1,8 +1,9 @@
 package app
 
 import (
-	"github.com/enbu-net/enbu/pkg/wsp"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 func TestReadmittedObserverKeepsStateAcceptedInNewEpoch(t *testing.T) {

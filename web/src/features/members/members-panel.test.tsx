@@ -12,7 +12,6 @@ const sampleMember = {
   algorithm: "p256",
   admin: false,
   self: false,
-  post_quantum: false,
 };
 
 describe("MemberAvatar", () => {
@@ -127,7 +126,6 @@ describe("MembersPanel approval", () => {
     fingerprint: "1111-2222-3333-4444-5555",
     algorithm: "ed25519",
     requested_at: "2026-10-06T09:30:00Z",
-    key_update: false,
   };
 
   function renderPanel(props: Partial<Parameters<typeof MembersPanel>[0]> = {}) {
@@ -252,7 +250,6 @@ describe("PendingRow", () => {
               fingerprint: "aaaa-bbbb",
               algorithm: "p256",
               requested_at: "not a date",
-              key_update: false,
             }}
             onApprove={() => {}}
           />
@@ -372,20 +369,5 @@ describe("MembersPanel admin rights", () => {
     await act(async () => queryButton("Join member changes")?.click());
     await act(async () => Promise.resolve());
     expect(queryButton("Join member changes")).not.toBeNull();
-  });
-
-  it("marks a key update among the requests", () => {
-    renderPanel({
-      requests: [
-        {
-          device_id: other.device_id,
-          fingerprint: other.fingerprint,
-          algorithm: "p256",
-          requested_at: "2026-10-06T09:30:00Z",
-          key_update: true,
-        },
-      ],
-    });
-    expect(container.textContent).toContain("Key update");
   });
 });

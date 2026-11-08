@@ -211,10 +211,6 @@ func (s *DesktopService) DiagnoseIdentity() desktop.IdentityDiagnosis {
 	return s.core.DiagnoseIdentity()
 }
 
-func (s *DesktopService) UpgradeIdentity() (app.KeyUpdateResult, error) {
-	return result(s.core.UpgradeIdentity())
-}
-
 func (s *DesktopService) ReadConfig() (string, error) {
 	return result(s.core.ReadConfig())
 }

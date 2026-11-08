@@ -10,46 +10,25 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/storage"
 )
 
-const (
-	KeystoreService    = "enbu"
-	DefaultEnvironment = "default"
-)
+const DefaultEnvironment = "default"
 
-func LoadIdentities(store IdentityStore, workspaceID string) ([]agecrypto.Identity, error) {
+// loadDevice loads this device's keys for workspaceID.
+func loadDevice(store IdentityStore, workspaceID string) (*identity.Device, error) {
 	if store == nil {
 		return nil, fmt.Errorf("identity store is not initialized")
 	}
-	id, err := store.Load(workspaceID)
+	d, err := store.Load(workspaceID)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, apperr.New(apperr.CodeNotInitialized, "no identity found (run 'enbu init' first)", nil)
+	}
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, apperr.New(apperr.CodeNotInitialized, "no identity found (run 'enbu init' first)", nil)
-		}
 		return nil, identityError(fmt.Errorf("loading identity: %w", err))
 	}
-	ids := []agecrypto.Identity{id}
-	if r, ok := store.(retainedLoader); ok {
-		retained, err := r.LoadRetained(workspaceID)
-		if err != nil {
-			_ = id.Close()
-			return nil, identityError(err)
-		}
-		for _, i := range retained {
-			ids = append(ids, i)
-		}
-	}
-	return ids, nil
-}
-
-// CloseIdentities releases native references, TPM objects, sessions and devices.
-func CloseIdentities(ids []agecrypto.Identity) {
-	for _, id := range ids {
-		if c, ok := id.(interface{ Close() error }); ok {
-			_ = c.Close()
-		}
-	}
+	return d, nil
 }
 
 func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (map[string]string, error) {

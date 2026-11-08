@@ -2,11 +2,11 @@ package apptest
 
 import (
 	"context"
+
 	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -14,8 +14,7 @@ import (
 // KeyStore is the part of an identity store these helpers need. It matches
 // app.IdentityStore without importing app, which would be a cycle for app's own tests.
 type KeyStore interface {
-	Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
-	CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error)
+	Create(workspaceID string) (*identity.Device, identity.PublicInfo, string, error)
 }
 
 // Control makes this device the founder of the workspace configured in repoDir:
@@ -30,16 +29,12 @@ func Control(ctx context.Context, store storage.Store, repoDir string, ids KeySt
 	if cfg.ControlGenesis != "" {
 		return nil
 	}
-	id, _, _, err := ids.Create(cfg.WorkspaceID)
+	d, _, _, err := ids.Create(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = id.Close() }()
-	signer, _, _, err := ids.CreateSigner(cfg.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = signer.Close() }()
+	defer func() { _ = d.Close() }()
+	id, signer := d.Identity, d.Signer
 	founder := wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: id.Recipient().String(), Admin: true}
 	v, err := wsp.CreateControl(ctx, store, cfg.WorkspaceID, founder, signer)
 	if err != nil {
@@ -52,16 +47,12 @@ func Control(ctx context.Context, store storage.Store, repoDir string, ids KeySt
 // JoinRequest makes this device ask to join the workspace, as `enbu init` does
 // for a device that is not a member. It returns the device id.
 func JoinRequest(ctx context.Context, store storage.Store, workspaceID string, ids KeyStore, c clock.Clock) (string, error) {
-	id, _, _, err := ids.Create(workspaceID)
+	d, _, _, err := ids.Create(workspaceID)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = id.Close() }()
-	signer, _, _, err := ids.CreateSigner(workspaceID)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = signer.Close() }()
+	defer func() { _ = d.Close() }()
+	id, signer := d.Identity, d.Signer
 	request, err := wsp.NewJoinRequest(workspaceID, id.Recipient().String(), c.Now(), signer)
 	if err != nil {
 		return "", err

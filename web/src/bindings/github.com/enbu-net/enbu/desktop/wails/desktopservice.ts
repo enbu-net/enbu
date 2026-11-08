@@ -221,12 +221,6 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
     return $Call.ByID(766171131, env);
 }
 
-export function UpgradeIdentity(): $CancellablePromise<app$0.KeyUpdateResult> {
-    return $Call.ByID(249321161).then(($result: any) => {
-        return $$createType23($result);
-    });
-}
-
 export function WriteConfig(content: string): $CancellablePromise<void> {
     return $Call.ByID(404015626, content);
 }
@@ -255,4 +249,3 @@ const $$createType19 = $Create.Array($$createType0);
 const $$createType20 = desktop$0.SecretsResponse.createFrom;
 const $$createType21 = desktop$0.PullResult.createFrom;
 const $$createType22 = desktop$0.OAuthStart.createFrom;
-const $$createType23 = app$0.KeyUpdateResult.createFrom;

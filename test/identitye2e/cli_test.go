@@ -180,15 +180,15 @@ func TestIdentityCLI(t *testing.T) {
 		h.run("add", "DATABASE_URL", "first")
 		assertSecret(t, h.run("pull"), "first")
 		h.run("edit", "DATABASE_URL", "second")
-		// Add a real X25519 member through the signed Control.
-		x, err := agecrypto.GenerateX25519Identity()
+		// Add a real software member through the signed Control.
+		x, err := agecrypto.GenerateHybridIdentity()
 		if err != nil {
 			t.Fatal(err)
 		}
-		approveX25519(t, h, x)
+		approveSoftware(t, h, x)
 		h.run("sync")
 		if plaintext := decryptCurrent(t, h, x); !bytes.Contains(plaintext, []byte("second")) {
-			t.Fatalf("X25519 member recovered the wrong bundle: %s", plaintext)
+			t.Fatalf("software member recovered the wrong bundle: %s", plaintext)
 		}
 		stop()
 		endpoint, _ = startVTPM(t, state)
@@ -218,7 +218,7 @@ func TestIdentityCLI(t *testing.T) {
 		if err := json.Unmarshal(saved, &md); err != nil {
 			t.Fatal(err)
 		}
-		md.TPMPrivate[len(md.TPMPrivate)-1] ^= 1
+		md.TPM.ECDH.Private[len(md.TPM.ECDH.Private)-1] ^= 1
 		b, _ := json.Marshal(md)
 		if err := os.WriteFile(path, b, 0o600); err != nil {
 			t.Fatal(err)

@@ -5,18 +5,16 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+/**
+ * PublicInfo describes a device's keys without any private material.
+ */
 export class PublicInfo {
     "backend": string;
     "algorithm": string;
     "recipient": string;
     "device"?: string;
-
-    /**
-     * DeviceID and Fingerprint describe the separate signing key. They are
-     * filled in by the app layer, not stored with the encryption identity.
-     */
-    "device_id"?: string;
-    "fingerprint"?: string;
+    "device_id": string;
+    "fingerprint": string;
 
     /** Creates a new PublicInfo instance. */
     constructor($$source: Partial<PublicInfo> = {}) {
@@ -28,6 +26,12 @@ export class PublicInfo {
         }
         if (!("recipient" in $$source)) {
             this["recipient"] = "";
+        }
+        if (!("device_id" in $$source)) {
+            this["device_id"] = "";
+        }
+        if (!("fingerprint" in $$source)) {
+            this["fingerprint"] = "";
         }
 
         Object.assign(this, $$source);

@@ -222,8 +222,6 @@ type Member struct {
 	Algorithm   string `json:"algorithm"`
 	Admin       bool   `json:"admin"`
 	Self        bool   `json:"self"`
-	// PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
-	PostQuantum bool `json:"post_quantum"`
 }
 
 // JoinRequest is a device waiting for an admin to approve it.
@@ -232,9 +230,6 @@ type JoinRequest struct {
 	Fingerprint string    `json:"fingerprint"`
 	Algorithm   string    `json:"algorithm"`
 	RequestedAt time.Time `json:"requested_at"`
-	// KeyUpdate is set for a member replacing its key, as `enbu identity
-	// upgrade` asks, rather than a new device asking to join.
-	KeyUpdate bool `json:"key_update"`
 }
 
 // InitResult describes this device after initializing a workspace. Pending
@@ -499,7 +494,7 @@ func (s *Service) ListMembers() ([]Member, error) {
 		}
 		out := make([]Member, len(infos))
 		for i, m := range infos {
-			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self, PostQuantum: m.PostQuantum}
+			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self}
 		}
 		return out, nil
 	})
@@ -513,7 +508,7 @@ func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
 		}
 		out := make([]JoinRequest, len(infos))
 		for i, r := range infos {
-			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt, KeyUpdate: r.KeyUpdate}
+			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt}
 		}
 		return out, nil
 	})
@@ -869,9 +864,8 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
 			info.StorageConfigured = cfg.Storage.URL != ""
-			identities, identityErr := s.app.LoadWorkspaceIdentities()
-			defer app.CloseIdentities(identities)
-			info.Initialized = identityErr == nil && len(identities) > 0
+			_, identityErr := s.app.IdentityInfo()
+			info.Initialized = identityErr == nil
 		}
 		return info, nil
 	})
