@@ -199,10 +199,6 @@ func (s *DesktopService) SetAdmin(deviceID string, admin bool) error {
 	return publicError(s.core.SetAdmin(deviceID, admin))
 }
 
-func (s *DesktopService) ResolveMemberFork() error {
-	return publicError(s.core.ResolveMemberFork())
-}
-
 func (s *DesktopService) GetIdentity() (identity.PublicInfo, error) {
 	return result(s.core.GetIdentity())
 }

@@ -74,7 +74,6 @@ var Methods = []string{
 	"ApproveMember",
 	"RemoveMember",
 	"SetAdmin",
-	"ResolveMemberFork",
 	"GetIdentity",
 	"DiagnoseIdentity",
 	"ReadConfig",

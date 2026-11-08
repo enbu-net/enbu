@@ -1,6 +1,7 @@
 package app
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -8,15 +9,17 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
-// Two admins who change the members at the same time fork the Control. Nothing
-// proceeds until an admin resolves it, and the resolution grants nothing that
-// both sides did not.
-func TestControlForkStopsEverythingUntilAnAdminResolvesIt(t *testing.T) {
+// Two admins who change the members at the same time fork the Control. A
+// device that is not an admin of every head stops; the next ordinary operation
+// of an admin of every head joins the fork, granting nothing that both sides
+// did not.
+func TestControlForkIsJoinedByAnAdminsNextOperation(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	if err := alice.SetAdmin(bg, mustMember(t, alice, bob).DeviceID, true); err != nil {
 		t.Fatal(err)
 	}
+	eve := approved(t, alice) // a plain member
 	carol, dave := newDevice(t, alice), newDevice(t, alice)
 	requestJoin(t, carol)
 	requestJoin(t, dave)
@@ -47,40 +50,106 @@ func TestControlForkStopsEverythingUntilAnAdminResolvesIt(t *testing.T) {
 	}
 
 	for name, run := range map[string]func() error{
-		"members": func() error { _, err := alice.ListMembers(bg); return err },
-		"list":    func() error { _, err := alice.ListSecrets(bg, "default"); return err },
-		"write":   func() error { return alice.AddSecret(bg, "default", "X", "y") },
-		"approve": func() error { return alice.ApproveMember(bg, string(carolEntry.ID)) },
+		"members": func() error { _, err := eve.ListMembers(bg); return err },
+		"list":    func() error { _, err := eve.ListSecrets(bg, "default"); return err },
+		"write":   func() error { return eve.AddSecret(bg, "default", "X", "y") },
+		"carol":   func() error { _, err := carol.ListMembers(bg); return err },
 	} {
 		if err := run(); !apperr.Is(err, apperr.CodeControlForked) {
 			t.Fatalf("%s during a fork: %v", name, err)
 		}
 	}
-	if err := carol.ResolveControlFork(bg); !apperr.Is(err, apperr.CodeAccessDenied) {
-		t.Fatalf("a device that is not a member resolved the fork: %v", err)
-	}
 
-	if err := alice.ResolveControlFork(bg); err != nil {
+	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
+		t.Fatalf("an admin's write during a fork: %v", err)
+	}
+	cur, err := alice.openControlView(bg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	members, err := alice.ListMembers(bg)
+	defer cur.Close()
+	if len(cur.view.Heads) != 1 {
+		t.Fatalf("heads after joining = %d", len(cur.view.Heads))
+	}
+	members, err := eve.ListMembers(bg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// carol and dave were each added on one side only, so neither survives.
+	admins := map[string]bool{}
+	for _, m := range members {
+		admins[m.DeviceID] = m.Admin
+	}
+	want := map[string]bool{
+		mustMember(t, alice, alice).DeviceID: true,
+		mustMember(t, alice, bob).DeviceID:   true,
+		mustMember(t, alice, eve).DeviceID:   false,
+	}
+	if !reflect.DeepEqual(admins, want) {
+		t.Fatalf("members after joining = %v, want %v", admins, want)
+	}
+	if got := listOK(t, eve); got["AFTER"] != "ok" {
+		t.Fatalf("eve after joining: %v", got)
+	}
+}
+
+// An admin whose rights one side revoked is not an admin of every head, so it
+// stops like any member until the remaining admin joins the fork.
+func TestControlForkStopsAnAdminDemotedOnOneSide(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	bobID := mustMember(t, alice, bob).DeviceID
+	if err := alice.SetAdmin(bg, bobID, true); err != nil {
+		t.Fatal(err)
+	}
+	dave := newDevice(t, alice)
+	requestJoin(t, dave)
+	daveEntry := principalOf(t, dave)
+
+	as, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer as.Close()
+	bs, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bs.Close()
+	if _, err := wsp.UpdateControl(bg, as.store, as.view, as.signer, func(c *wsp.Control) error {
+		for i := range c.Principals {
+			if string(c.Principals[i].ID) == bobID {
+				c.Principals[i].Admin = false
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wsp.UpdateControl(bg, bs.store, bs.view, bs.signer, func(c *wsp.Control) error {
+		c.Principals = append(c.Principals, daveEntry)
+		return nil
+	}); !apperr.Is(wspError(err), apperr.CodeControlForked) {
+		t.Fatalf("the second concurrent change must report the fork: %v", err)
+	}
+
+	if _, err := bob.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeControlForked) {
+		t.Fatalf("a demoted admin joined the fork: %v", err)
+	}
+	if _, err := alice.ListSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+	members, err := bob.ListMembers(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(members) != 2 {
-		t.Fatalf("members after resolving = %+v", members)
+		t.Fatalf("members after joining = %+v", members)
 	}
 	for _, m := range members {
-		if m.DeviceID == string(carolEntry.ID) || m.DeviceID == string(daveEntry.ID) {
-			t.Fatalf("a one-sided addition survived the resolution: %+v", m)
+		if m.DeviceID == bobID && m.Admin {
+			t.Fatal("the join kept an admin right one side revoked")
 		}
-	}
-	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
-		t.Fatalf("writing after the resolution: %v", err)
-	}
-	if err := alice.ResolveControlFork(bg); !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("resolving a Control that is not forked: %v", err)
 	}
 }
 
@@ -128,9 +197,7 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 		t.Fatalf("the concurrent change must report the fork: %v", err)
 	}
 
-	if err := alice.ResolveControlFork(bg); err != nil {
-		t.Fatal(err)
-	}
+	// alice's next operation joins the fork.
 	if got := listOK(t, alice); got["KEY"] != "v1" {
 		t.Fatalf("alice after resolving: %v", got)
 	}

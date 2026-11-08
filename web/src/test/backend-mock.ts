@@ -51,7 +51,6 @@ export function createBackendMock() {
     approveMember: vi.fn(async () => {}),
     removeMember: vi.fn(async () => {}),
     setAdmin: vi.fn(async () => {}),
-    resolveMemberFork: vi.fn(async () => {}),
     identity: vi.fn(async () => ({
       backend: "keyring",
       algorithm: "MLKEM768-X25519",

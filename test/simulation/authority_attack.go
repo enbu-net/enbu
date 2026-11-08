@@ -270,11 +270,17 @@ func (w *World) forkResolutionAttack(ctx context.Context, mode string, cfg *conf
 	if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(signed), Head: signed}); err != nil {
 		return err
 	}
+	// Device 0, the only admin of both heads, joins the fork with its next
+	// operation; every other device stays stopped until then.
 	for i := range w.Devices {
 		w.Restart(i)
+		if i == 0 {
+			continue
+		}
 		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("malicious resolution bypassed fork: %v", err)
 		}
 	}
-	return w.Devices[0].App.ResolveControlFork(ctx)
+	_, err = w.Devices[0].App.ListSecrets(ctx, "default")
+	return err
 }

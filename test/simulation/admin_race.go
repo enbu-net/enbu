@@ -97,7 +97,13 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			return fmt.Errorf("admin race %s: %w", kind, result)
 		}
 	}
-	for _, d := range w.Devices {
+	// Only a device that is an admin of every head joins the fork; a is one,
+	// and b is one unless its own rights changed on a's side.
+	bAdminOfAll := kind != "demote-admin" && kind != "remove-admin"
+	for i, d := range w.Devices {
+		if i == 0 || i == 1 && bAdminOfAll {
+			continue
+		}
 		if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("fork did not stop reads: %v", err)
 		}
@@ -105,12 +111,8 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			return err
 		}
 	}
-	if kind == "demote-admin" || kind == "remove-admin" {
-		if err := requireCode(b.ResolveControlFork(ctx), apperr.CodeAccessDenied); err != nil {
-			return err
-		}
-	}
-	if err := a.ResolveControlFork(ctx); err != nil {
+	// An ordinary operation of an admin of every head joins the fork.
+	if _, err := a.ListSecrets(ctx, "default"); err != nil && requireCode(err, apperr.CodeReencryptIncomplete) != nil {
 		return err
 	}
 	members, err := a.ListMembers(ctx)

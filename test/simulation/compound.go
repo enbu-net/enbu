@@ -89,7 +89,13 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 			return fmt.Errorf("compound control update: %w", result)
 		}
 	}
-	for _, i := range []int{0, 1, 2} {
+	// a is an admin of both heads, and so is b unless a demoted it; any other
+	// device stays stopped until an admin of both joins the fork.
+	stopped := []int{2}
+	if c.Control == "demote-admin" {
+		stopped = append(stopped, 1)
+	}
+	for _, i := range stopped {
 		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("control fork failed to block device %d: %v", i, err)
 		}
@@ -97,15 +103,11 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 			return err
 		}
 	}
-	if c.Control == "demote-admin" {
-		if err := requireCode(b.ResolveControlFork(ctx), apperr.CodeAccessDenied); err != nil {
-			return err
-		}
-	}
-	// Control resolution commits first; data re-encryption must report the
-	// unresolved data conflict rather than treating it as a successful full repair.
-	if err := requireCode(a.ResolveControlFork(ctx), apperr.CodeReencryptIncomplete); err != nil {
-		return err
+	// a's next operation joins the fork. Control resolution commits first; data
+	// re-encryption must report the unresolved data conflict rather than
+	// treating it as a successful full repair.
+	if _, err := a.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeReencryptIncomplete) != nil {
+		return fmt.Errorf("joining the fork: %v", err)
 	}
 	members, err := a.ListMembers(ctx)
 	if err != nil {
