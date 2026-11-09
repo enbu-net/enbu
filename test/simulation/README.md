@@ -252,9 +252,12 @@ or continuing observer, member/admin roles, four clock profiles, and four seeds.
 The author remains continuously authorized when its old-Control revision is
 published. Control transitions deliberately omit the re-encryption a removal
 publishes first, so that it cannot mask the trust rule. After the author's
-removal every observer, whenever it read the author's head, must fall back to
-the earlier legitimate parent without seeing a rollback (ADR-26 has no
-acceptance exception). Author readmission must not revive the set-aside branch.
+removal the observer that accepted the author's higher generation must reject
+reads and sync as rollback, without partial secrets, including after restart
+(ADR-28 / F2b). Falling back to the older parent would hide a rollback. An
+explicit fixture publication by a current member then supplies a sufficiently
+recent trusted head; this is not automatic recovery or a checkpoint reset.
+Author readmission must not revive the set-aside branch.
 Fresh writes, compaction, restart, and a second environment are checked.
 Two bounded smoke cases run in ordinary CI too.
 

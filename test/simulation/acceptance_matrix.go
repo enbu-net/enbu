@@ -152,9 +152,40 @@ func (w *World) AcceptanceCase(ctx context.Context, c AcceptanceCase) error {
 	if _, err := w.Devices[2].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
 		return fmt.Errorf("removed author read: %v", err)
 	}
-	// Without the re-encryption a removal publishes first, the removed author's
-	// unmerged head is set aside for every observer, whenever it read it.
+	// This fixture deliberately bypasses removal's re-encryption. The author's
+	// unmerged head is now untrusted, but the observer already accepted its
+	// generation. Returning the older root would violate F2b's fail-closed
+	// freshness rule; neither a read nor sync may lower that checkpoint.
+	checkRollback := func() error {
+		got, err := w.Devices[1].App.ListSecrets(ctx, "default")
+		if err := requireCode(err, apperr.CodeRollback); err != nil {
+			return fmt.Errorf("removed author's accepted generation did not stop the observer: %w", err)
+		}
+		if got != nil {
+			return fmt.Errorf("rollback returned partial secrets: %v", got)
+		}
+		return nil
+	}
+	if err := checkRollback(); err != nil {
+		return err
+	}
+	if err := requireCode(w.Devices[1].App.SyncSecrets(ctx, "default"), apperr.CodeRollback); err != nil {
+		return fmt.Errorf("sync bypassed the accepted generation: %w", err)
+	}
+	if c.Restart {
+		w.Restart(1)
+		if err := checkRollback(); err != nil {
+			return fmt.Errorf("restart lost the accepted generation: %w", err)
+		}
+	}
+	// An explicit new publication by a current member can establish freshness
+	// again. This is a fixture-authorized value, not automatic recovery of the
+	// removed author's branch or a checkpoint reset. Keep checking below that
+	// readmission alone never revives the old content.
 	want := map[string]string{"BASE": "kept"}
+	if _, err := w.publishMergeNode(ctx, 0, want, root.Rev); err != nil {
+		return err
+	}
 	if err := checkObserver(want); err != nil {
 		return err
 	}
