@@ -1,24 +1,13 @@
 package simulation
 
 import (
-	"os"
-	"strconv"
 	"testing"
 )
 
 func TestOperationStateMatrix(t *testing.T) {
 	exploration(t)
 	for index, op := range StateOperations {
-		shards := integer(t, "ENBU_SIM_SHARDS", 1)
-		shard := 0
-		if shards > 1 {
-			var err error
-			shard, err = strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-			if err != nil || shard < 0 || shard >= shards {
-				t.Fatal("invalid shard")
-			}
-		}
-		if index%shards != shard {
+		if !ownsIndex(t, index) {
 			continue
 		}
 		for _, state := range DataStates {

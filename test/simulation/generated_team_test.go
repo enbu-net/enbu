@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 )
 
@@ -67,15 +66,8 @@ func TestGeneratedTeamGroupsPreservePriorWork(t *testing.T) {
 	for devices := 3; devices <= 8; devices++ {
 		for seed := uint64(0); seed < 4; seed++ {
 			index++
-			if os.Getenv("ENBU_SIM_SHARDS") != "" {
-				shards := integer(t, "ENBU_SIM_SHARDS", 1)
-				shard, err := strconv.Atoi(os.Getenv("ENBU_SIM_SHARD"))
-				if err != nil || shard < 0 || shard >= shards {
-					t.Fatal("invalid shard")
-				}
-				if (index-1)%shards != shard {
-					continue
-				}
+			if !ownsIndex(t, index-1) {
+				continue
 			}
 			t.Run(fmt.Sprintf("devices-%d/seed-%d", devices, seed), func(t *testing.T) {
 				actions := Generate(seed, 32, devices)

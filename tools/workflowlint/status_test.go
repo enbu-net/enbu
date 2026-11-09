@@ -29,12 +29,14 @@ func statusJob(t *testing.T, file, name string) *yaml.Node {
 	return job
 }
 
-func TestStatusJobsDoNotHoldCancelledWorkflows(t *testing.T) {
-	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status"} {
+// A skipped required check counts as passing, so a status job skipped by
+// !cancelled() would let a cancelled run merge. always() makes it fail instead.
+func TestStatusJobsFailCancelledWorkflows(t *testing.T) {
+	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status", "tobari.yaml": "status-check"} {
 		t.Run(file, func(t *testing.T) {
 			condition := field(statusJob(t, file, name), "if")
-			if condition == nil || strings.TrimSpace(condition.Value) != "${{ !cancelled() }}" {
-				t.Fatal("status job must aggregate failures while remaining cancellable")
+			if condition == nil || strings.TrimSpace(condition.Value) != "always()" {
+				t.Fatal("status job must run, and fail, when its workflow is cancelled")
 			}
 		})
 	}
