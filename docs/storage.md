@@ -138,8 +138,8 @@ writes until `enbu resolve`. Revisions are not trimmed automatically, because a
 revision found late needs its merge base.
 
 Every revision carries a signed *generation*: 1 + the highest generation of its
-parents, 1 without parents. Readers check it against the parents storage still
-shows. Each device keeps, per environment, the highest generation it read; storage
+parents, 1 without parents, and at most 2^53. Readers check it against the parents
+storage still shows. Each device keeps, per environment, the highest generation it read; storage
 showing only lower generations is a rollback. Only generations that something
 vouches for count: a head the device reads as current, or a revision whose every
 ancestor storage still shows, so each step was checked. A revision above a missing

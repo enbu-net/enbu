@@ -51,6 +51,11 @@ func TopGeneration(states []*VerifiedState) uint64 {
 	return top
 }
 
+// MaxGeneration bounds Generation, far above any history people write, so a
+// child of a valid revision can always be counted without wrapping. A member
+// signing a larger one would otherwise leave a resource nobody can write on.
+const MaxGeneration = 1 << 53
+
 // NextGeneration is the Generation of a revision whose parents are parents.
 func NextGeneration(parents []*VerifiedState) uint64 { return TopGeneration(parents) + 1 }
 
@@ -71,6 +76,9 @@ func (s State) validate() error {
 	}
 	if len(s.Parents) > MaxParents {
 		return invalid("state has too many parents")
+	}
+	if s.Generation > MaxGeneration {
+		return invalid("state generation %d exceeds %d", s.Generation, uint64(MaxGeneration))
 	}
 	if s.Generation == 0 || (s.Generation == 1) != (len(s.Parents) == 0) {
 		return invalid("state generation %d does not fit %d parents", s.Generation, len(s.Parents))

@@ -488,6 +488,7 @@ func TestStateGenerationAndOpMustBeWellFormed(t *testing.T) {
 		"child at one":   func(s *State) { s.Parents = []digest.Digest{p}; s.Generation = 1 },
 		"unknown op":     func(s *State) { s.Op = "compact" },
 		"missing op":     func(s *State) { s.Op = "" },
+		"above max":      func(s *State) { s.Parents = []digest.Digest{p}; s.Generation = MaxGeneration + 1 },
 	} {
 		s := f.state(f.bob)
 		mutate(&s)
@@ -618,5 +619,48 @@ func TestUnprovenGenerationOfAnUntrustedRevisionDoesNotMaskARollback(t *testing.
 	}
 	if err := cps.CheckState(testResource, sv, trusted); !errors.Is(err, ErrRollback) {
 		t.Fatalf("planted generation masked the rollback: %v", err)
+	}
+}
+
+// A member could sign Generation 2^64-1: its child's Generation wrapped to 0,
+// which no revision may carry, so nobody could write the resource again. Such
+// a revision is invalid and skipped.
+func TestLoadStatesSkipsAGenerationAboveTheMaximum(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	// Above a parent storage does not hold, nothing else checks the Generation.
+	huge := f.state(f.bob, digest.FromString("deleted history"))
+	huge.Generation = ^uint64(0)
+	body, err := encMode.Marshal(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := f.bob.signer.Sign(signing.DomainState, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := Signed{Body: body, Signature: sig}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := digest.FromBytes(blob)
+	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: huge.Scope(), Rev: rev, Head: blob, Payload: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("generation 2^64-1 verified: %v", err)
+	}
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil || sv.Skipped != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d: %v", sv.Heads, sv.Skipped, err)
+	}
+	if NextGeneration(sv.Heads) != 2 {
+		t.Fatalf("next generation = %d", NextGeneration(sv.Heads))
+	}
+	top := f.state(f.bob, root)
+	top.Generation = MaxGeneration
+	if _, err := SignState(top, f.bob.signer); err != nil {
+		t.Fatalf("the maximum itself is valid: %v", err)
 	}
 }

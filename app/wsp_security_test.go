@@ -11,6 +11,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -677,5 +678,69 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 	}
 	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
 		t.Fatal("retry changed workspace or root")
+	}
+}
+
+// publishGeneration signs, as author, a revision of env above parent carrying
+// generation, bypassing the checks SignState makes.
+func publishGeneration(t *testing.T, author *App, env string, parent digest.Digest, generation uint64) {
+	t.Helper()
+	s, err := author.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "v1"}), s.recipients())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := wsp.State{Workspace: s.workspace, Resource: s.resource(env), Parents: []digest.Digest{parent}, Generation: generation,
+		Op: wsp.OpWrite, Control: s.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: s.self()}
+	enc, err := cbor.CoreDetEncOptions().EncMode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := enc.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := s.signer.Sign(signing.DomainState, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := wsp.Signed{Body: body, Signature: sig}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := author.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A member signing Generation 2^64-1 used to make every child wrap to 0, so
+// nobody could write the environment again. That revision is now skipped.
+func TestGenerationAboveTheMaximumDoesNotBlockWrites(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	// Above a parent storage does not hold, nothing checks the Generation.
+	publishGeneration(t, bob, "default", digest.FromString("deleted history"), ^uint64(0))
+	if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+		t.Fatalf("read beside generation 2^64-1: %v %v", got, err)
+	}
+	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
+		t.Fatalf("write beside generation 2^64-1: %v", err)
+	}
+}
+
+// A revision at the maximum Generation is valid, but nothing can be written on
+// top of it: the write fails with a clear conflict instead of wrapping.
+func TestWritingAboveTheMaximumGenerationIsAConflict(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	// Above a parent storage does not hold, nothing checks the Generation.
+	publishGeneration(t, bob, "default", digest.FromString("deleted history"), wsp.MaxGeneration)
+	err := alice.AddSecret(bg, "default", "AFTER", "ok")
+	if !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("write above the maximum generation: %v", err)
 	}
 }

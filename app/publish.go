@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -35,6 +36,10 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // and the next reader merges them. The revision is returned once it is
 // published, even when the error says members changed meanwhile.
 func (s *session) writeState(ctx context.Context, resource, op string, secrets map[string]string, parents []*wsp.VerifiedState) (*wsp.VerifiedState, error) {
+	generation := wsp.NextGeneration(parents)
+	if generation > wsp.MaxGeneration {
+		return nil, apperr.New(apperr.CodeConflict, "this environment has reached the highest revision generation and cannot take another revision", nil)
+	}
 	ciphertext, err := s.app.encrypt(encodeSecrets(secrets), s.recipients())
 	if err != nil {
 		return nil, err
@@ -46,7 +51,7 @@ func (s *session) writeState(ctx context.Context, resource, op string, secrets m
 	for i, p := range parents {
 		parentDigests[i] = p.Digest
 	}
-	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parentDigests, Generation: wsp.NextGeneration(parents),
+	next := wsp.State{Workspace: s.workspace, Resource: resource, Parents: parentDigests, Generation: generation,
 		Op: op, Control: s.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: s.self(), CreatedAt: s.app.now().Unix()}
 	blob, err := wsp.SignState(next, s.signer)
 	if err != nil {
