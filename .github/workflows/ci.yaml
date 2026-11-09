@@ -333,6 +333,25 @@ jobs:
       - name: Scenario tests
         run: task cli/test/scenario
 
+  formal:
+    name: Formal model (${{ matrix.model }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ControlDAG, StateDAG, MemberChange, WriteRetry, Founding]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-tools
+      # The small config must hold and every mutant must yield a counterexample.
+      - name: Check the model and its mutants
+        env:
+          MODEL: ${{ matrix.model }}
+        run: task formal/model MODEL="$MODEL"
+
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
   # every job above has passed. always() makes a failed, cancelled or skipped
@@ -341,7 +360,7 @@ jobs:
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
