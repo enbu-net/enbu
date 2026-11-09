@@ -121,8 +121,17 @@ func wspError(err error) error {
 // the same time and this device is an admin of every head, it joins the heads
 // first; any other device fails with CodeControlForked until an admin does.
 func (a *App) openControl(ctx context.Context) (*session, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	return a.openControlWith(ctx, cfg)
+}
+
+// openControlWith is openControl on an enbu.toml already loaded.
+func (a *App) openControlWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
 	for attempt := 0; ; attempt++ {
-		s, err := a.openControlView(ctx)
+		s, err := a.openControlViewWith(ctx, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -203,6 +212,10 @@ func (a *App) openControlView(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.openControlViewWith(ctx, cfg)
+}
+
+func (a *App) openControlViewWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
 	store, err := a.workspaceStorage(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -277,7 +290,34 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 // openSession also loads the encryption identity and the signing key, and
 // requires this device to be a principal of the verified Control.
 func (a *App) openSession(ctx context.Context) (*session, error) {
-	s, err := a.openControl(ctx)
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	return a.openSessionWith(ctx, cfg)
+}
+
+// openEnvironment resolves env from enbu.toml before opening a session on the
+// same config, so an unknown environment is reported from the local file
+// before storage is reached or membership is checked.
+func (a *App) openEnvironment(ctx context.Context, env string) (*session, *ResolvedEnvironment, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved, err := resolveEnvironment(func() (*config.ProjectConfig, error) { return cfg, nil }, env)
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := a.openSessionWith(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s, resolved, nil
+}
+
+func (a *App) openSessionWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	s, err := a.openControlWith(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -308,12 +348,6 @@ func (s *session) recipients() []string {
 }
 
 func (s *session) resource(env string) string { return s.cfg.Resource(env) }
-
-// environment resolves an environment name ("" for the current one) from the
-// enbu.toml the session was opened with.
-func (s *session) environment(name string) (*ResolvedEnvironment, error) {
-	return resolveEnvironment(func() (*config.ProjectConfig, error) { return s.cfg, nil }, name)
-}
 
 // resourceRead is the current content of one environment: every head storage
 // shows, decrypted and merged against their merge base. A key the heads changed
