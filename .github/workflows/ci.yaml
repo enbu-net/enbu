@@ -333,6 +333,32 @@ jobs:
       - name: Scenario tests
         run: task cli/test/scenario
 
+  formal:
+    name: Formal models (${{ matrix.models.name }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Two shards of about the same TLC time; together they cover every
+        # PR-tier model in spec/tla/checks.toml (formal-shards checks that).
+        models:
+          - name: control, members, founding
+            run: ^(ControlDAG|MemberChange|Founding)
+          - name: state
+            run: ^StateDAG
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      - name: Model-check with TLC
+        env:
+          MODELS: ${{ matrix.models.run }}
+        run: go run ./tools/formalcheck -tier pr -run "$MODELS" -jobs 2 -workers 2
+
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
   # every job above has passed. always() makes a failed, cancelled or skipped
@@ -341,7 +367,7 @@ jobs:
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}

@@ -15,6 +15,22 @@ tasks:
       - vscode/test
       - scripts/test
       - simulation/smoke
+      - formal/check
+
+  formal/check:
+    desc: Model-check the TLA+ models (PR tier) with seeded bugs, witnesses and coverage
+    cmds:
+      - go run ./tools/formalcheck -tier pr {{.CLI_ARGS}}
+
+  formal/nightly:
+    desc: Model-check the TLA+ models with the nightly bounds
+    cmds:
+      - go run ./tools/formalcheck -tier nightly -timeout 5h {{.CLI_ARGS}}
+
+  formal/invariants:
+    desc: Check that every invariant in spec/INVARIANTS.md has existing TLA+ properties and Go tests
+    cmds:
+      - go run ./tools/formalcheck -invariants spec/INVARIANTS.md
 
   simulation/smoke:
     desc: Run bounded deterministic simulation regressions
@@ -273,6 +289,7 @@ tasks:
       - gui/check
       - vscode/check
       - scripts/check
+      - formal/invariants
 
   cli/check:
     desc: Format and lint CLI code

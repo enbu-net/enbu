@@ -94,7 +94,16 @@ func main() {
 	jobs := flag.Int("jobs", max(1, runtime.NumCPU()/4), "TLC processes at once")
 	workers := flag.Int("workers", 4, "TLC workers per process")
 	timeout := flag.Duration("timeout", 30*time.Minute, "limit for one TLC run")
+	invariants := flag.String("invariants", "", "check this invariants table (spec/INVARIANTS.md) against the models and Go tests instead of running TLC")
 	flag.Parse()
+	if *invariants != "" {
+		if err := CheckInvariants(*invariants, *dir, "."); err != nil {
+			fmt.Fprintln(os.Stderr, "formalcheck:", err)
+			os.Exit(1)
+		}
+		fmt.Println("every invariant is checked")
+		return
+	}
 	if err := Run(*dir, *tier, *run, *tlc, *jobs, *workers, *timeout); err != nil {
 		fmt.Fprintln(os.Stderr, "formalcheck:", err)
 		os.Exit(1)
@@ -299,10 +308,10 @@ func Judge(j Job, out string, runErr error) error {
 	switch j.Expect {
 	case "pass":
 		if violated != "" {
-			return fmt.Errorf("property %s is violated:\n%s", violated, tail(out, 60))
+			return fmt.Errorf("property %s is violated:\n%s", violated, errorLines(out, 60))
 		}
 		if !reCompleted.MatchString(out) || runErr != nil {
-			return fmt.Errorf("TLC did not complete (%v):\n%s", runErr, tail(out, 30))
+			return fmt.Errorf("TLC did not complete (%v):\n%s", runErr, errorLines(out, 30))
 		}
 		if n := distinctStates(out); n < j.Model.MinStates {
 			return fmt.Errorf("explored %d distinct states, fewer than min_states %d", n, j.Model.MinStates)
@@ -318,7 +327,7 @@ func Judge(j Job, out string, runErr error) error {
 			if reCompleted.MatchString(out) {
 				return fmt.Errorf("expected a violation of %s, but TLC found no error", strings.Join(j.Violates, " or "))
 			}
-			return fmt.Errorf("TLC failed without a property violation (%v):\n%s", runErr, tail(out, 30))
+			return fmt.Errorf("TLC failed without a property violation (%v):\n%s", runErr, errorLines(out, 30))
 		}
 		if !slices.Contains(j.Violates, violated) {
 			return fmt.Errorf("expected a violation of %s, got %s", strings.Join(j.Violates, " or "), violated)
@@ -341,6 +350,20 @@ func DeadActions(out string, allowed []string) []string {
 	}
 	slices.Sort(dead)
 	return slices.Compact(dead)
+}
+
+// errorLines keeps TLC's own error report and the trace that follows it, or
+// the last lines when there is none.
+func errorLines(s string, n int) string {
+	if i := strings.Index(s, "Error:"); i >= 0 {
+		s = s[i:]
+		lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+		if len(lines) > 4*n {
+			lines = lines[:4*n]
+		}
+		return strings.Join(lines, "\n")
+	}
+	return tail(s, n)
 }
 
 func tail(s string, n int) string {

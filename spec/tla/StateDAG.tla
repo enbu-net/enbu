@@ -206,7 +206,7 @@ Covers(h, a) ==
 
 \* The read properties, judged on one read of S with outcome o.
 ReadViolations(S, o) ==
-    \* REJOIN / STATE-1: never adopt what the attacker wrote.
+    \* REJOIN-1 / STATE-1: never adopt what the attacker wrote.
     {"NoAttackerContentAdopted" : x \in {h \in o.heads : h.evil}}
     \* GEN-2 / GEN-6: never go back behind an adopted revision whose author is
     \* still trusted; a removed author's content is set aside on purpose.
