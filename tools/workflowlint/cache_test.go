@@ -95,17 +95,21 @@ func TestAquaCacheUsesTheSameIsolatedRootOnWindowsAndUnix(t *testing.T) {
 
 func TestAquaInstallSkipsCachedAquaAndRetriesOnce(t *testing.T) {
 	root := readYAML(t, "../../.github/actions/setup-tools/action.yaml")
-	var first string
+	var first, version string
 	retries := 0
 	for _, step := range field(field(root, "runs"), "steps").Content {
 		uses := field(step, "uses")
 		if uses == nil || !strings.HasPrefix(uses.Value, "aquaproj/aqua-installer@") {
 			continue
 		}
-		if field(field(step, "with"), "skip_install_aqua").Value != "true" {
+		// aqua-installer skips only when aqua is already on PATH, so a cold
+		// cache still installs it.
+		with := field(step, "with")
+		if field(with, "skip_install_aqua").Value != "true" {
 			t.Fatal("aqua is downloaded again although the cache restored it")
 		}
 		if first == "" {
+			version = field(with, "aqua_version").Value
 			if field(step, "continue-on-error").Value != "true" {
 				t.Fatal("a failed first install does not reach the retry")
 			}
@@ -114,6 +118,9 @@ func TestAquaInstallSkipsCachedAquaAndRetriesOnce(t *testing.T) {
 		}
 		if field(step, "if").Value != "steps."+first+".outcome == 'failure'" {
 			t.Fatal("the retry does not run only after a failed first install")
+		}
+		if field(with, "aqua_version").Value != version {
+			t.Fatal("the retry installs a different aqua version")
 		}
 		retries++
 	}
