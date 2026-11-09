@@ -110,3 +110,11 @@ min_efficacy = 85
   at = "trust.go:237:40"
   type = "INVERT_LOGICAL"
   reason = "without a repository entry the previous root is the zero Root, the same as no previous root"
+  [[target.equivalent]]
+  at = "chain.go:193:37"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "the heads sorted have distinct digests, so < and <= order them alike"
+  [[target.equivalent]]
+  at = "chain.go:323:18"
+  type = "INVERT_LOGICAL"
+  reason = "(inAll || ok) differs only when a head lacks the principal, and then q is the zero Principal whose key never matches"

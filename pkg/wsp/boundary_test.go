@@ -493,3 +493,54 @@ func TestAMissingListedStateIsSkippedOnce(t *testing.T) {
 		t.Fatalf("valid read %v, skipped %d; want the valid revision and 1 skipped", ok, sv.Skipped)
 	}
 }
+
+// The join is the same whichever head comes first, and with three heads a
+// principal missing from any one of them is left out.
+func TestResolveForkIsTheIntersectionInAnyHeadOrder(t *testing.T) {
+	store, alice, genesis := workspace(t)
+	bob, carol := newActor(t, false), newActor(t, false)
+	addMember(t, store, genesis, alice, bob)
+	addMember(t, store, genesis, alice, carol)
+	before := load(t, store, genesis)
+	branch := func(mutate func(*Control)) {
+		_, _ = UpdateControl(context.Background(), store, before, alice.signer, func(c *Control) error {
+			mutate(c)
+			return nil
+		})
+	}
+	// Bob is an admin on one branch only; carol is missing from the third.
+	branch(func(c *Control) {
+		for i := range c.Principals {
+			if c.Principals[i].ID == bob.p.ID {
+				c.Principals[i].Admin = true
+			}
+		}
+	})
+	branch(func(c *Control) { c.Principals = append(c.Principals, newActor(t, false).p) })
+	branch(func(c *Control) {
+		c.Principals = slices.DeleteFunc(c.Principals, func(p Principal) bool { return p.ID == carol.p.ID })
+	})
+	view := load(t, store, genesis)
+	if len(view.Heads) != 3 {
+		t.Fatalf("want three heads, got %d", len(view.Heads))
+	}
+	want := map[signing.DeviceID]bool{alice.p.ID: true, bob.p.ID: false}
+	var orders [][]*Verified
+	for _, perm := range [][]int{{0, 1, 2}, {1, 2, 0}, {2, 0, 1}, {2, 1, 0}} {
+		orders = append(orders, []*Verified{view.Heads[perm[0]], view.Heads[perm[1]], view.Heads[perm[2]]})
+	}
+	for _, heads := range orders {
+		v, err := ResolveFork(context.Background(), store, &ControlView{Workspace: view.Workspace, Genesis: view.Genesis, Heads: heads, verified: view.verified},
+			alice.signer, func(*Control) error { return nil })
+		if err != nil {
+			t.Fatalf("heads in order %v: %v", heads, err)
+		}
+		got := map[signing.DeviceID]bool{}
+		for _, p := range v.Principals {
+			got[p.ID] = p.Admin
+		}
+		if len(got) != len(want) || got[alice.p.ID] != true || got[bob.p.ID] != false {
+			t.Fatalf("heads in order %v: resolution keeps %v, want alice as admin and bob as member", heads, got)
+		}
+	}
+}
