@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"filippo.io/age"
 	enbuage "github.com/enbu-net/enbu/pkg/age"
@@ -21,6 +20,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
+	"github.com/jonboulle/clockwork"
 )
 
 const serveEnv = "ENBU_WINBRIDGE_TEST_SERVE"
@@ -428,7 +428,14 @@ func TestCloseKillsAStuckExe(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Skip("no sleep: ", err)
 	}
-	if err := waitOrKill(cmd, 10*time.Millisecond); err == nil {
+	fake := clockwork.NewFakeClock()
+	done := make(chan error, 1)
+	go func() { done <- waitOrKill(cmd, fake, closeGrace) }()
+	if err := fake.BlockUntilContext(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	fake.Advance(closeGrace)
+	if err := <-done; err == nil {
 		t.Fatal("a stuck process exited cleanly")
 	}
 }
