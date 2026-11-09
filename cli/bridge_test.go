@@ -23,6 +23,7 @@ import (
 // The hidden bridge command answers the WSL side on stdout and nothing else:
 // any other output would break the stream.
 func TestIdentityBridgeServesOnStdio(t *testing.T) {
+	notInWSL(t)
 	a := &app.App{Identities: &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityMemVault{}}}
 	cmd := NewWithApp("v9.9.9", a)
 	var out, errOut bytes.Buffer
@@ -107,10 +108,14 @@ func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
 type wslDoctorKeyStore struct {
 	staticKeyStore
 	status identity.WSLStatus
+	noKeys bool // Windows has neither hardware nor Credential Manager
 }
 
 func (s *wslDoctorKeyStore) Doctor(context.Context) identity.Diagnosis {
-	d := identity.Diagnosis{Mode: "auto", Backend: "tpm", Available: s.status.Error == "", WSL: &s.status}
+	d := identity.Diagnosis{Mode: "auto", Backend: "tpm", Available: s.status.Error == "" && !s.noKeys, WSL: &s.status}
+	if s.noKeys {
+		d.KeyringReason = "Credential Manager is disabled"
+	}
 	if s.status.Error != "" {
 		d.Backend, d.Reason = "windows", s.status.Error
 	}
@@ -120,14 +125,18 @@ func (s *wslDoctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 func TestDoctorShowsTheWindowsEnbuInsideWSL(t *testing.T) {
 	for _, tc := range []struct {
 		status identity.WSLStatus
+		noKeys bool
 		want   []string
 	}{
-		{identity.WSLStatus{Exe: "/mnt/c/enbu/enbu.exe", Version: "v1.0.0"},
+		{identity.WSLStatus{Exe: "/mnt/c/enbu/enbu.exe", Version: "v1.0.0"}, false,
 			[]string{"Windows enbu: /mnt/c/enbu/enbu.exe (v1.0.0)", "identity_backend: ok — New identities use the hardware (tpm) of Windows"}},
-		{identity.WSLStatus{Error: "the Windows enbu.exe was not found on PATH"},
-			[]string{"Windows enbu error: the Windows enbu.exe was not found on PATH", "identity_backend: warn", "(identity_unavailable)"}},
+		{identity.WSLStatus{Error: "the Windows enbu.exe was not found on PATH"}, false,
+			[]string{"Windows enbu: (not found)", "Windows enbu error: the Windows enbu.exe was not found on PATH", "identity_backend: warn", "(identity_unavailable)"}},
+		// The Linux Secret Service would not help: WSL never uses it.
+		{identity.WSLStatus{Exe: "/mnt/c/enbu/enbu.exe", Version: "v1.0.0"}, true,
+			[]string{"Credential Manager is disabled. Run enbu.exe doctor in Windows.", "(identity_unavailable)"}},
 	} {
-		a := &app.App{Identities: &wslDoctorKeyStore{status: tc.status}, RepositoryDir: t.TempDir()}
+		a := &app.App{Identities: &wslDoctorKeyStore{status: tc.status, noKeys: tc.noKeys}, RepositoryDir: t.TempDir()}
 		cmd := NewWithApp("test", a)
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -140,6 +149,25 @@ func TestDoctorShowsTheWindowsEnbuInsideWSL(t *testing.T) {
 				t.Fatalf("doctor output lacks %q:\n%s", w, out.String())
 			}
 		}
+	}
+}
+
+// notInWSL makes the test behave the same on a WSL host.
+func notInWSL(t *testing.T) {
+	t.Helper()
+	prev := inWSL
+	inWSL = func() bool { return false }
+	t.Cleanup(func() { inWSL = prev })
+}
+
+// An enbu.exe that cannot start is identity_unavailable and points to doctor.
+func TestRunInWindowsNamesAMissingExe(t *testing.T) {
+	t.Setenv(winbridge.ExeEnv, filepath.Join(t.TempDir(), "missing", "enbu.exe"))
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	err := runInWindows(context.Background(), cmd, "auth", "login")
+	if apperr.CodeOf(err) != apperr.CodeIdentityUnavailable || !strings.Contains(err.Error(), "enbu doctor") {
+		t.Fatalf("runInWindows = %v (%s), want identity_unavailable naming enbu doctor", err, apperr.CodeOf(err))
 	}
 }
 

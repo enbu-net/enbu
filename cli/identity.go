@@ -72,7 +72,11 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 				return writeJSON(cmd, d)
 			}
 			if d.WSL != nil {
-				cmd.Printf("WSL: keys are kept in Windows\nWindows enbu: %s", d.WSL.Exe)
+				exe := d.WSL.Exe
+				if exe == "" {
+					exe = "(not found)"
+				}
+				cmd.Printf("WSL: keys are kept in Windows\nWindows enbu: %s", exe)
 				if d.WSL.Version != "" {
 					cmd.Printf(" (%s)", d.WSL.Version)
 				}

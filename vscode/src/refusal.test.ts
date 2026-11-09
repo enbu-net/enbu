@@ -10,6 +10,7 @@ describe("refusalReason", () => {
   it("refuses other remotes, where the extension host is another machine", () => {
     for (const remote of ["ssh-remote", "dev-container", "codespaces", "tunnel"]) {
       expect(refusalReason(remote, true)).toMatch(/local folders and WSL only/);
+      expect(refusalReason(remote, false)).toMatch(/local folders and WSL only/);
     }
   });
 

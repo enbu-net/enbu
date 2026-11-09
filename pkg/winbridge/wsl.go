@@ -26,10 +26,11 @@ const (
 
 var (
 	procVersion = "/proc/version"
-	// interopFiles exist in a WSL 2 distribution that can start Windows
-	// programs. A Linux container on a WSL 2 kernel (Docker Desktop, a
-	// devcontainer) shares /proc/version but not these.
-	interopFiles = []string{"/proc/sys/fs/binfmt_misc/WSLInterop", "/proc/sys/fs/binfmt_misc/WSLInterop-late"}
+	// wslMarkers exist in a WSL 2 distribution: the interop registrations,
+	// and the directories WSL mounts whether or not interop is on. A Linux
+	// container on a WSL 2 kernel (Docker Desktop, a devcontainer) shares
+	// /proc/version but none of these.
+	wslMarkers = []string{"/proc/sys/fs/binfmt_misc/WSLInterop", "/proc/sys/fs/binfmt_misc/WSLInterop-late", "/run/WSL", "/mnt/wsl"}
 )
 
 // interopHint is added when enbu.exe cannot start: WSL runs Windows programs
@@ -39,11 +40,11 @@ const interopHint = "WSL starts Windows programs only with interop on; check tha
 // InWSL reports whether this process runs inside WSL 1 or 2. It checks what
 // WSL itself sets, like Git Credential Manager: WSL_INTEROP (WSL 2) or
 // WSL_DISTRO_NAME, then "microsoft" in /proc/version. A WSL 2 kernel counts
-// only with interop registered, so a Linux container on Docker Desktop keeps
-// its own keystore.
-var InWSL = sync.OnceValue(func() bool { return detect(os.Getenv, procVersion, interopFiles) })
+// only with a WSL marker, so a Linux container on Docker Desktop keeps its own
+// keystore; a WSL distribution with interop off still counts, and fails.
+var InWSL = sync.OnceValue(func() bool { return detect(os.Getenv, procVersion, wslMarkers) })
 
-func detect(getenv func(string) string, versionFile string, interop []string) bool {
+func detect(getenv func(string) string, versionFile string, markers []string) bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
@@ -55,10 +56,12 @@ func detect(getenv func(string) string, versionFile string, interop []string) bo
 	if err != nil || !bytes.Contains(version, []byte("microsoft")) {
 		return false
 	}
-	if !bytes.Contains(version, []byte("wsl2")) {
-		return true // WSL 1, which runs no containers
+	// WSL 2 kernels say "microsoft-standard" (older ones lack "WSL2"); WSL 1
+	// says "Microsoft" only, and runs no containers.
+	if !bytes.Contains(version, []byte("wsl2")) && !bytes.Contains(version, []byte("microsoft-standard")) {
+		return true
 	}
-	for _, f := range interop {
+	for _, f := range markers {
 		if _, err := os.Stat(f); err == nil {
 			return true
 		}

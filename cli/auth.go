@@ -56,7 +56,7 @@ func newAuthLoginCommand() *cobra.Command {
 		deviceLogin:  client.LoginDevice,
 		openBrowser:  auth.OpenBrowser,
 	}
-	if winbridge.InWSL() {
+	if inWSL() {
 		deps.windows = runInWindows
 	}
 	return newAuthLoginCommandWithDeps(deps)
@@ -64,13 +64,18 @@ func newAuthLoginCommand() *cobra.Command {
 
 // runInWindows runs an enbu command in the Windows enbu.exe on this terminal.
 // Windows prints its own errors, so a failure only carries the exit status.
+// An enbu.exe that is missing or cannot start is identity_unavailable, as for
+// every other key operation inside WSL.
 func runInWindows(ctx context.Context, cmd *cobra.Command, args ...string) error {
 	err := winbridge.RunWindows(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args...)
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		return &apperr.ExitError{Code: exit.ExitCode()}
 	}
-	return err
+	if err != nil {
+		return apperr.Wrap(apperr.CodeIdentityUnavailable, "Inside WSL, enbu signs in through the Windows enbu.exe, which could not run: "+err.Error()+". Run enbu doctor.", err, nil)
+	}
+	return nil
 }
 
 func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {

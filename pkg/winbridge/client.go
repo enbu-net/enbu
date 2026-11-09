@@ -39,6 +39,7 @@ type Client struct {
 	enc     *json.Encoder
 	dec     *json.Decoder
 	next    uint64
+	gen     uint64 // counts connections; a handle is valid only on its own
 	exe     string
 	version string
 }
@@ -112,6 +113,7 @@ func (c *Client) connect() error {
 		return unavailable(err)
 	}
 	c.conn, c.enc, c.dec = conn, json.NewEncoder(conn.W), json.NewDecoder(conn.R)
+	c.gen++
 	var hello helloResult
 	if err := c.roundTrip(methodHello, helloParams{Protocol: Protocol}, &hello); err != nil {
 		c.reset()
@@ -134,11 +136,33 @@ func unavailable(err error) error {
 }
 
 func (c *Client) call(method string, params, result any) error {
+	_, err := c.open(method, params, result)
+	return err
+}
+
+// open is call for a request that opens handles: it also returns the
+// connection they belong to.
+func (c *Client) open(method string, params, result any) (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err := c.connect(); err != nil {
-		return err
+		return 0, err
 	}
+	return c.gen, c.send(method, params, result)
+}
+
+// callHandle uses a handle opened on connection gen. After enbu.exe restarted,
+// the same number may name another key, so the call is refused instead.
+func (c *Client) callHandle(gen uint64, method string, params, result any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil || c.gen != gen {
+		return unavailable(fmt.Errorf("the Windows %s restarted, and the key this command opened is closed; run the command again", exe))
+	}
+	return c.send(method, params, result)
+}
+
+func (c *Client) send(method string, params, result any) error {
 	err := c.roundTrip(method, params, result)
 	var remote *remoteError
 	if err != nil && !errors.As(err, &remote) && !errors.Is(err, age.ErrIncorrectIdentity) {
@@ -212,10 +236,11 @@ func (c *Client) CreatePending(workspaceID string) (identity.Identity, identity.
 
 func (c *Client) create(method, workspaceID string) (identity.Identity, identity.PublicInfo, string, error) {
 	var r identityResult
-	if err := c.call(method, ws(workspaceID), &r); err != nil {
+	gen, err := c.open(method, ws(workspaceID), &r)
+	if err != nil {
 		return nil, identity.PublicInfo{}, "", err
 	}
-	id, err := c.identity(r)
+	id, err := c.identity(gen, r)
 	if err != nil {
 		return nil, identity.PublicInfo{}, "", err
 	}
@@ -225,20 +250,22 @@ func (c *Client) create(method, workspaceID string) (identity.Identity, identity
 
 func (c *Client) Load(workspaceID string) (identity.Identity, error) {
 	var r identityResult
-	if err := c.call(methodLoad, ws(workspaceID), &r); err != nil {
+	gen, err := c.open(methodLoad, ws(workspaceID), &r)
+	if err != nil {
 		return nil, err
 	}
-	return c.identity(r)
+	return c.identity(gen, r)
 }
 
 func (c *Client) LoadRetained(workspaceID string) ([]identity.Identity, error) {
 	var r retainedResult
-	if err := c.call(methodLoadRetained, ws(workspaceID), &r); err != nil {
+	gen, err := c.open(methodLoadRetained, ws(workspaceID), &r)
+	if err != nil {
 		return nil, err
 	}
 	ids := make([]identity.Identity, 0, len(r.Identities))
 	for _, ir := range r.Identities {
-		id, err := c.identity(ir)
+		id, err := c.identity(gen, ir)
 		if err != nil {
 			for _, open := range ids {
 				_ = open.Close()
@@ -273,19 +300,21 @@ func (c *Client) PromotePending(workspaceID string) error {
 
 func (c *Client) CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error) {
 	var r signerResult
-	if err := c.call(methodCreateSigner, ws(workspaceID), &r); err != nil {
+	gen, err := c.open(methodCreateSigner, ws(workspaceID), &r)
+	if err != nil {
 		return nil, identity.SignerInfo{}, "", err
 	}
 	r.Info.Created = r.Created
-	return &remoteSigner{c: c, handle: r.Handle, public: r.Public}, r.Info, r.Warning, nil
+	return &remoteSigner{c: c, gen: gen, handle: r.Handle, public: r.Public}, r.Info, r.Warning, nil
 }
 
 func (c *Client) LoadSigner(workspaceID string) (signing.Signer, error) {
 	var r signerResult
-	if err := c.call(methodLoadSigner, ws(workspaceID), &r); err != nil {
+	gen, err := c.open(methodLoadSigner, ws(workspaceID), &r)
+	if err != nil {
 		return nil, err
 	}
-	return &remoteSigner{c: c, handle: r.Handle, public: r.Public}, nil
+	return &remoteSigner{c: c, gen: gen, handle: r.Handle, public: r.Public}, nil
 }
 
 func (c *Client) SignerInfo(workspaceID string) (identity.SignerInfo, error) {
@@ -314,7 +343,7 @@ func (c *Client) Doctor(ctx context.Context) identity.Diagnosis {
 	return d
 }
 
-func (c *Client) identity(r identityResult) (identity.Identity, error) {
+func (c *Client) identity(gen uint64, r identityResult) (identity.Identity, error) {
 	parsed, err := enbuage.ParseRecipient(r.Recipient)
 	if err != nil {
 		return nil, fmt.Errorf("the Windows enbu.exe returned an invalid recipient: %w", err)
@@ -323,13 +352,13 @@ func (c *Client) identity(r identityResult) (identity.Identity, error) {
 	if !ok {
 		return nil, errors.New("the Windows enbu.exe returned an invalid recipient")
 	}
-	return &remoteIdentity{c: c, handle: r.Handle, recipient: recipient}, nil
+	return &remoteIdentity{c: c, gen: gen, handle: r.Handle, recipient: recipient}, nil
 }
 
-func (c *Client) release(h uint64) error {
+func (c *Client) release(gen, h uint64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.conn == nil {
+	if c.conn == nil || c.gen != gen {
 		return nil // the process is gone, and its handles with it
 	}
 	return c.roundTrip(methodClose, handleParams{Handle: h}, nil)
@@ -337,23 +366,25 @@ func (c *Client) release(h uint64) error {
 
 type remoteIdentity struct {
 	c         *Client
+	gen       uint64
 	handle    uint64
 	recipient identity.Recipient
 }
 
 func (r *remoteIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
 	var res unwrapResult
-	if err := r.c.call(methodUnwrap, unwrapParams{Handle: r.handle, Stanzas: stanzas}, &res); err != nil {
+	if err := r.c.callHandle(r.gen, methodUnwrap, unwrapParams{Handle: r.handle, Stanzas: stanzas}, &res); err != nil {
 		return nil, err
 	}
 	return res.FileKey, nil
 }
 
 func (r *remoteIdentity) Recipient() identity.Recipient { return r.recipient }
-func (r *remoteIdentity) Close() error                  { return r.c.release(r.handle) }
+func (r *remoteIdentity) Close() error                  { return r.c.release(r.gen, r.handle) }
 
 type remoteSigner struct {
 	c      *Client
+	gen    uint64
 	handle uint64
 	public signing.PublicKey
 }
@@ -362,13 +393,13 @@ func (s *remoteSigner) Public() signing.PublicKey { return s.public }
 
 func (s *remoteSigner) Sign(domain string, body []byte) ([]byte, error) {
 	var res signResult
-	if err := s.c.call(methodSign, signParams{Handle: s.handle, Domain: domain, Body: body}, &res); err != nil {
+	if err := s.c.callHandle(s.gen, methodSign, signParams{Handle: s.handle, Domain: domain, Body: body}, &res); err != nil {
 		return nil, err
 	}
 	return res.Signature, nil
 }
 
-func (s *remoteSigner) Close() error { return s.c.release(s.handle) }
+func (s *remoteSigner) Close() error { return s.c.release(s.gen, s.handle) }
 
 // Keyring is the OS keyring of Windows, for the entries the Windows side
 // shares (the GitHub token).

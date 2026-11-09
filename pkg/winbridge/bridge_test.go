@@ -103,6 +103,40 @@ func pipeClient(t *testing.T, s *Server) *Client {
 	return c
 }
 
+// After enbu.exe restarts, a handle from the old process may name another key
+// in the new one, so it is refused, and closing it sends nothing.
+func TestAHandleBelongsToItsProcess(t *testing.T) {
+	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	old, info, _, err := c.Create("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, _, _, err := c.CreateSigner("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil { // the stream ends, as when enbu.exe dies
+		t.Fatal(err)
+	}
+	if _, _, _, err := c.Create("b"); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := enbuage.EncryptForPublicKeys([]byte("secret"), []string{info.Recipient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unavailable *identity.UnavailableError
+	if _, err := enbuage.Decrypt(ct, old); !errors.As(err, &unavailable) {
+		t.Fatalf("decrypt with a handle of the old process = %v, want unavailable", err)
+	}
+	if _, err := signer.Sign("d", []byte("x")); !errors.As(err, &unavailable) {
+		t.Fatalf("sign with a handle of the old process = %v, want unavailable", err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIdentityRoundTrip(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
 
@@ -352,9 +386,11 @@ func TestDetect(t *testing.T) {
 	}
 	plain := write("linux", "Linux version 6.8.0-45-generic (buildd@lcy02)")
 	wsl2 := write("wsl2", "Linux version 5.15.153.1-microsoft-standard-WSL2")
+	oldWSL2 := write("oldwsl2", "Linux version 4.19.128-microsoft-standard (oe-user@oe-host)")
 	wsl1 := write("wsl1", "Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com)")
 	interop := []string{write("WSLInterop", "enabled")}
 	noInterop := []string{filepath.Join(dir, "missing")}
+	mounts := []string{filepath.Join(dir, "missing"), t.TempDir()} // /mnt/wsl with interop off
 	none := func(string) string { return "" }
 	withInterop := func(k string) string {
 		if k == "WSL_INTEROP" {
@@ -377,6 +413,10 @@ func TestDetect(t *testing.T) {
 		// Docker Desktop and devcontainers share the WSL 2 kernel but have no
 		// interop: they keep their own keystore.
 		{"container on a WSL 2 kernel", none, wsl2, noInterop, false},
+		{"container on an older WSL 2 kernel", none, oldWSL2, noInterop, false},
+		{"older WSL 2 kernel", none, oldWSL2, interop, linux},
+		// Interop off: still WSL, so enbu stops instead of using a Linux keystore.
+		{"WSL 2 with interop off", none, wsl2, mounts, linux},
 	} {
 		if got := detect(tc.getenv, tc.file, tc.interop); got != tc.want {
 			t.Errorf("%s: detect = %t, want %t", tc.name, got, tc.want)

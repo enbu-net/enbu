@@ -301,7 +301,7 @@ Linux／Windowsの実TPMでは、`ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=
 
 WSL（1 / 2）の中では、enbu は Linux に鍵を置きません。コマンドごとに Windows の enbu.exe を 1 つ起動し（`enbu.exe identity bridge --stdio`）、鍵の作成、ファイル鍵の復号、署名、GitHub トークンの保管だけを任せます。秘密鍵、TPM、Windows Hello は Windows の中に残るので、WSL でも Windows と同じ保護になり、Windows とすべてのディストリビューションが 1 台の端末として 1 回のサインインで済みます。ストレージ、git、`.env`、`enbu run` は WSL の中で動き、ファイルパスは渡しません。
 
-Windows にも同じ版の enbu を入れてください。enbu は、WSL が Windows から足す PATH 上の `enbu.exe`、または `ENBU_WINDOWS_EXE` を使います。見つからないときや interop が無効なとき（`/etc/wsl.conf` の `[interop] enabled=false`）は、どちらかを示して `identity_unavailable` で止まり、Linux の keyring には落ちません。`enbu auth login` は Windows で動き、ブラウザも Windows で開きます。`enbu doctor` は Windows の enbu.exe の場所と版、Windows 側の TPM と keyring の状態を表示します。VS Code 拡張も WSL のウィンドウで同じように使えます。
+Windows にも同じ版の enbu を入れてください。enbu は、WSL が Windows から足す PATH 上の `enbu.exe`、または `ENBU_WINDOWS_EXE` を使います。見つからないときや interop が無効なとき（`/etc/wsl.conf` の `[interop] enabled=false`）は、どちらかを示して `identity_unavailable` で止まり、Linux の keyring には落ちません。`enbu auth login` は Windows で動き、ブラウザも Windows で開きます（enbu.exe がなければ同じく `identity_unavailable` で止まります）。そのとき `enbu auth status` は、`GITHUB_TOKEN` がなければ未サインインと表示します。`enbu doctor` は Windows の enbu.exe の場所と版、Windows 側の TPM と keyring の状態を表示します。VS Code 拡張も WSL のウィンドウで同じように使えます。
 
 Windows 側は WSL ではなく Windows の環境変数を読みます。`ENBU_IDENTITY_BACKEND` などを WSL から効かせるには `WSLENV` で渡します。ディストリビューションの中のどの Linux ユーザーも、ほかの Windows のプログラムと同じく、同じ Windows ユーザーとして enbu.exe を起動できます。Windows Hello を有効にしていれば承認が加わります。
 

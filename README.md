@@ -343,7 +343,9 @@ Install enbu on Windows too, the same version as in WSL. enbu finds `enbu.exe` o
 the PATH that WSL adds from Windows, or at `ENBU_WINDOWS_EXE`. Without it, or with
 interop turned off (`[interop] enabled=false` in `/etc/wsl.conf`), enbu stops with
 `identity_unavailable` and says which; it never falls back to a Linux keyring.
-`enbu auth login` runs in Windows, which opens the browser there.
+`enbu auth login` runs in Windows, which opens the browser there (and stops with
+the same `identity_unavailable` without enbu.exe); `enbu auth status` then
+reports that you are not signed in, unless `GITHUB_TOKEN` is set.
 `enbu doctor` shows the Windows enbu.exe, its version, and the Windows side's
 TPM and keyring. The VS Code extension works in a WSL window the same way.
 

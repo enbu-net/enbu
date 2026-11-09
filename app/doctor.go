@@ -66,6 +66,9 @@ func (r *DoctorReport) addIdentityBackend() {
 	case r.Mode != "keyring" && r.Denied:
 		r.add("identity_backend", "", "warn", "The hardware ("+r.Backend+") exists but this user may not use it, and enbu does not fall back to a software key: "+r.Reason+". Or set ENBU_IDENTITY_BACKEND=keyring to use the OS keyring.",
 			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
+	case r.WSL != nil:
+		r.add("identity_backend", "", "warn", "Windows has no usable hardware and no Credential Manager for a software key: "+r.KeyringReason+". Run enbu.exe doctor in Windows.",
+			apperr.New(apperr.CodeIdentityUnavailable, r.KeyringReason, nil))
 	case r.KeyringLocked:
 		r.add("identity_backend", "", "warn", "The OS keyring is locked. Unlock it (log in to the desktop, or run gnome-keyring-daemon --unlock) and retry.",
 			apperr.New(apperr.CodeKeyringLocked, r.KeyringReason, nil))

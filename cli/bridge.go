@@ -10,6 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// inWSL is winbridge.InWSL, replaced in tests so they behave the same on a
+// WSL host.
+var inWSL = winbridge.InWSL
+
 // newIdentityBridgeCommand serves this device's key operations to the enbu
 // inside WSL, which starts it as enbu.exe. It is hidden: nobody runs it by
 // hand.
@@ -24,7 +28,7 @@ func newIdentityBridgeCommand(version string, a *app.App) *cobra.Command {
 			if !stdio {
 				return invalidArgument("bridge needs --stdio", nil)
 			}
-			if winbridge.InWSL() {
+			if inWSL() {
 				return invalidArgument("the identity bridge runs in Windows, not inside WSL", nil)
 			}
 			store, ok := a.Identities.(winbridge.Store)
