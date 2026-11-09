@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -31,6 +32,14 @@ func integer(t *testing.T, name string, def int) int {
 func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 	t.Helper()
 	sampleCase(t)
+	return baseline(t, seed, plan)
+}
+
+// baseline runs a world without incremental sampling. Use it for a parent's
+// measurement run whose child cases call exercise: sampling both levels would
+// keep a child only when the parent and child names land in the same sample.
+func baseline(t *testing.T, seed uint64, plan Plan) *Tape {
+	t.Helper()
 	tape, e := Prepare(seed, revision(t), plan)
 	if e != nil {
 		t.Fatal(e)
@@ -91,20 +100,32 @@ func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 		var violation *Violation
 		if errors.As(e, &violation) && len(plan.Actions) > 0 {
 			var minimized *Tape
+			rev := revision(t)
+			// Each candidate runs two worlds. Remove them right away: a long
+			// shrink would otherwise keep hundreds of world trees until the test
+			// ends, which is slow to clean up on Windows.
+			world := func(tape *Tape) error {
+				root, err := os.MkdirTemp("", "enbu-sim-shrink-*")
+				if err != nil {
+					return err
+				}
+				defer func() { _ = os.RemoveAll(root) }()
+				return Execute(context.Background(), tape, root)
+			}
 			reduced := Minimize(plan.Actions, func(actions []Action) bool {
 				candidatePlan := plan
 				candidatePlan.Actions = actions
-				candidate, ce := Prepare(seed, revision(t), candidatePlan)
+				candidate, ce := Prepare(seed, rev, candidatePlan)
 				if ce != nil {
 					return false
 				}
-				ce = Execute(context.Background(), candidate, t.TempDir())
+				ce = world(candidate)
 				var v *Violation
 				if !errors.As(ce, &v) || v.Kind != violation.Kind {
 					return false
 				}
 				replay := &Tape{Recording: candidate.Recording, Replay: true}
-				re := Execute(context.Background(), replay, t.TempDir())
+				re := world(replay)
 				var rv *Violation
 				if !errors.As(re, &rv) || rv.Kind != v.Kind || replay.Finish() != nil {
 					return false
@@ -117,7 +138,8 @@ func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 				if dir == "" {
 					dir = filepath.Join(os.TempDir(), "enbu-simulation-failures")
 				}
-				path := filepath.Join(dir, fmt.Sprintf("%d-minimized.json", seed))
+				// Matrix tests share small seeds, so the name must include the case.
+				path := filepath.Join(dir, fmt.Sprintf("%d-%s-minimized.json", seed, strings.ReplaceAll(t.Name(), "/", "_")))
 				if se := minimized.Save(path); se != nil {
 					t.Error(se)
 				}
@@ -135,15 +157,7 @@ func exercise(t *testing.T, seed uint64, plan Plan) *Tape {
 func TestSimulation(t *testing.T) {
 	seeds := integer(t, "ENBU_SIM_SEEDS", 2)
 	steps := integer(t, "ENBU_SIM_STEPS", 16)
-	shards := integer(t, "ENBU_SIM_SHARDS", 1)
-	shard := 0
-	if raw := os.Getenv("ENBU_SIM_SHARD"); raw != "" {
-		var e error
-		shard, e = strconv.Atoi(raw)
-		if e != nil || shard < 0 || shard >= shards {
-			t.Fatal("invalid shard")
-		}
-	}
+	shard, shards := simulationLane(t)
 	for i := 0; i < seeds; i++ {
 		seed := simulationSeed(i, shards, shard, os.Getenv("GITHUB_SHA"))
 		t.Run(fmt.Sprintf("seed-%d", seed), func(t *testing.T) {
@@ -211,10 +225,17 @@ func TestReplayAcrossProcesses(t *testing.T) {
 	}
 }
 
+var revisions sync.Map // PATH -> git revision, so cases do not spawn git each time
+
 func revision(t *testing.T) string {
 	t.Helper()
 	if sha := os.Getenv("GITHUB_SHA"); sha != "" {
 		return sha
+	}
+	// Keyed by PATH: a test that hides git must still see "unknown".
+	path := os.Getenv("PATH")
+	if rev, ok := revisions.Load(path); ok {
+		return rev.(string)
 	}
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	out, err := cmd.Output()
@@ -222,7 +243,9 @@ func revision(t *testing.T) string {
 		t.Logf("revision unavailable: %v", err)
 		return "unknown"
 	}
-	return strings.TrimSpace(string(out))
+	rev := strings.TrimSpace(string(out))
+	revisions.Store(path, rev)
+	return rev
 }
 
 func TestSimulationSmokeWithoutGitMetadata(t *testing.T) {

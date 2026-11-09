@@ -102,19 +102,94 @@ func caseOnLane(name string, lanes, lane int) (bool, error) {
 	return int(h.Sum64()%uint64(lanes)) == lane, nil
 }
 
+// simulationLane returns this process's lane and the lane count. Every
+// partitioned test uses it, so a misconfigured lane fails instead of silently
+// running another lane's cases (or every lane running lane 0's).
+func simulationLane(t *testing.T) (lane, lanes int) {
+	t.Helper()
+	lane, lanes, err := parseLane(os.Getenv("ENBU_SIM_SHARDS"), os.Getenv("ENBU_SIM_SHARD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lane, lanes
+}
+
+func parseLane(lanesRaw, laneRaw string) (lane, lanes int, err error) {
+	lanes = 1
+	if lanesRaw != "" {
+		if lanes, err = strconv.Atoi(lanesRaw); err != nil || lanes < 1 {
+			return 0, 0, fmt.Errorf("ENBU_SIM_SHARDS must be positive")
+		}
+	}
+	if laneRaw == "" {
+		if lanes > 1 {
+			return 0, 0, fmt.Errorf("ENBU_SIM_SHARD is required with multiple lanes")
+		}
+		return 0, lanes, nil
+	}
+	if lane, err = strconv.Atoi(laneRaw); err != nil || lane < 0 || lane >= lanes {
+		return 0, 0, fmt.Errorf("invalid simulation lane %q of %d", laneRaw, lanes)
+	}
+	return lane, lanes, nil
+}
+
+func TestLaneConfigurationIsNeverSilentlyShared(t *testing.T) {
+	for _, valid := range [][4]string{{"", "", "0", "1"}, {"1", "0", "0", "1"}, {"32", "31", "31", "32"}} {
+		lane, lanes, err := parseLane(valid[0], valid[1])
+		if err != nil || fmt.Sprint(lane) != valid[2] || fmt.Sprint(lanes) != valid[3] {
+			t.Fatalf("parseLane(%q, %q) = %d, %d, %v", valid[0], valid[1], lane, lanes, err)
+		}
+	}
+	// Unset lanes with several shards would make every lane run lane 0's cases.
+	for _, invalid := range [][2]string{{"4", ""}, {"4", "4"}, {"4", "-1"}, {"4", "x"}, {"0", ""}, {"", "1"}} {
+		if _, _, err := parseLane(invalid[0], invalid[1]); err == nil {
+			t.Fatalf("parseLane(%q, %q) accepted", invalid[0], invalid[1])
+		}
+	}
+}
+
+// A parent's measurement run must not be sampled: its children are, and
+// sampling both would keep a child only when both names share a sample.
+func TestBaselineIsNotSampledTwice(t *testing.T) {
+	const revision = "nested-sample"
+	t.Setenv("GITHUB_SHA", revision)
+	t.Setenv("ENBU_SIM_CASE_STRIDE", "8")
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(revision))
+	phase := int(h.Sum64() % 8)
+	for i := range 100 {
+		name := fmt.Sprint(i)
+		selected, err := caseInSample(t.Name()+"/"+name, 8, phase)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if selected {
+			continue
+		}
+		measured := false
+		t.Run(name, func(t *testing.T) {
+			baseline(t, 1, Plan{Devices: 2, Scenario: "concurrent-keys"})
+			measured = true
+		})
+		if !measured {
+			t.Fatal("a parent outside the sample skipped its measurement run")
+		}
+		return
+	}
+	t.Fatal("could not find a case outside the sample")
+}
+
+// ownsIndex reports whether the case at a zero-based index belongs to this
+// lane. Matrices number their cases in a fixed order and skip the others.
+func ownsIndex(t *testing.T, index int) bool {
+	t.Helper()
+	lane, lanes := simulationLane(t)
+	return index%lanes == lane
+}
+
 func shardCase(t *testing.T) {
 	t.Helper()
-	lanes := integer(t, "ENBU_SIM_SHARDS", 1)
-	lane := 0
-	if raw := os.Getenv("ENBU_SIM_SHARD"); raw != "" {
-		var err error
-		lane, err = strconv.Atoi(raw)
-		if err != nil {
-			t.Fatal("invalid simulation lane")
-		}
-	} else if lanes > 1 {
-		t.Fatal("ENBU_SIM_SHARD is required with multiple lanes")
-	}
+	lane, lanes := simulationLane(t)
 	selected, err := caseOnLane(t.Name(), lanes, lane)
 	if err != nil {
 		t.Fatal(err)
@@ -136,17 +211,7 @@ func indexedCaseOwner(index, lanes, stride int) (lane, phase int, err error) {
 
 func indexedCase(t *testing.T, index int) {
 	t.Helper()
-	lanes := integer(t, "ENBU_SIM_SHARDS", 1)
-	lane := 0
-	if raw := os.Getenv("ENBU_SIM_SHARD"); raw != "" {
-		var err error
-		lane, err = strconv.Atoi(raw)
-		if err != nil || lane < 0 || lane >= lanes {
-			t.Fatal("invalid simulation lane")
-		}
-	} else if lanes > 1 {
-		t.Fatal("ENBU_SIM_SHARD is required with multiple lanes")
-	}
+	lane, lanes := simulationLane(t)
 	stride := integer(t, "ENBU_SIM_CASE_STRIDE", 1)
 	owner, phase, err := indexedCaseOwner(index, lanes, stride)
 	if err != nil {
