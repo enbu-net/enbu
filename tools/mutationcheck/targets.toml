@@ -46,3 +46,55 @@ min_efficacy = 95
 [[target]]
 package = "pkg/wsp"
 min_efficacy = 85
+  [[target.equivalent]]
+  at = "chain.go:140:17"
+  type = "INVERT_LOGICAL"
+  reason = "a Control that fails to decode is the zero Control, whose empty workspace differs anyway; one of another workspace is refused by VerifyChild"
+  [[target.equivalent]]
+  at = "chain.go:152:30"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "a pending Control without parents becomes ready, but VerifyChild refuses a Control without parents"
+  [[target.equivalent]]
+  at = "chain.go:157:6"
+  type = "INVERT_LOOPCTRL"
+  reason = "ready is already false; scanning the remaining parents changes nothing"
+  [[target.equivalent]]
+  at = "chain.go:289:47"
+  type = "INVERT_LOGICAL"
+  reason = "VerifyChild refuses a child whose author is not an admin before anything is published"
+  [[target.equivalent]]
+  at = "chain.go:311:40"
+  type = "INVERT_LOGICAL"
+  reason = "VerifyChild refuses a join whose author is not an admin of every head before anything is published"
+  [[target.equivalent]]
+  at = "checkpoint.go:135:16"
+  type = "INVERT_LOGICAL"
+  reason = "no update function reports a change together with an error, so && and || agree"
+  [[target.equivalent]]
+  at = "checkpoint.go:222:17"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "writing the same accepted generation again changes nothing"
+  [[target.equivalent]]
+  at = "control.go:84:36"
+  type = "INVERT_LOGICAL"
+  reason = "an empty principal list has no admin and is refused by the admin check below"
+  [[target.equivalent]]
+  at = "control.go:103:10"
+  type = "INCREMENT_DECREMENT"
+  reason = "only a count of zero is refused, and counting down from zero never returns to zero"
+  [[target.equivalent]]
+  at = "control.go:125:75"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "repeated principal IDs are refused by Validate after sorting, so ties never decide the result"
+  [[target.equivalent]]
+  at = "dag.go:115:52"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "the digests sorted are distinct, so < and <= order them alike"
+  [[target.equivalent]]
+  at = "state.go:221:71"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "a present parent has a strictly lower Generation, so revisions of equal Generation never depend on each other's order"
+  [[target.equivalent]]
+  at = "state.go:292:5"
+  type = "INVERT_LOOPCTRL"
+  reason = "stopping a batch at an already tried digest leaves the rest queued for the next batch"

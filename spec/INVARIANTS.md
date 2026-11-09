@@ -27,6 +27,7 @@ A property stated only in Go (for example arithmetic limits) has `—` in the TL
 |----|----------|------|----|
 | AUTH-1 | Storage access, member keys and forged signatures make no Control verify; every principal and admin right comes from an honest admin. | ControlDAG.OnlyHonestControlsVerify | TestMemberCannotSignControl, TestOutsiderCannotSignControl, TestForgedControlIgnored, TestControlVerifierMatchesTheModel |
 | AUTH-2 | Only an admin of every parent can sign a verified child Control. | ControlDAG.ChildrenSignedByAdminsOfEveryParent | TestMemberCannotChangeControl, TestControlVerifierMatchesTheModel |
+| AUTH-3 | Only an admin changes members, compacts history, or deletes an environment's revisions; a member's attempt changes nothing. | — | TestMemberCannotApprove, TestCompactionChecks, TestMemberCannotPurge |
 | FORK-1 | A verified resolution keeps only principals and admin rights its parents listed. | ControlDAG.ResolutionsStayInsideParents | TestControlVerifierMatchesTheModel |
 | FORK-2 | No session runs on a forked Control; a device that is not an admin of every head stops with `control_forked`. | ControlDAG.NoSessionWhileForked | TestControlForkStopsAnAdminDemotedOnOneSide |
 | FORK-3 | Whenever an honest device is an admin of every head, its join verifies and leaves one head. | ControlDAG.ForkCanBeJoined | TestControlForkIsJoinedByAnAdminsNextOperation |
@@ -57,6 +58,7 @@ A property stated only in Go (for example arithmetic limits) has `—` in the TL
 | TRUST-2 | Founding adopts only a genesis this device signed, and never proceeds when its check found another workspace in storage. | Founding.FoundedIsOwn, Founding.NeverFoundOverOthers | TestFindGenesisRecognisesOnlyTheAuthorsGenesis, TestFoundingRefusesAnotherDevicesGenesis, TestPinnedDeviceDoesNotFoundTheWorkspaceAgain |
 | TRUST-3 | A device pins only a genesis that verified in storage. | Founding.OnlyVerifiedPinned | TestUnverifiedGenesisIsNotPinned |
 | TRUST-4 | `enbu.toml` names a new genesis only after its publish returned. | Founding.TomlNamesPublished | TestFailedPublishFoundsAgainOnRetry |
+| TRUST-5 | The settings editor never changes `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`). | — | TestWriteConfigProtectsTrustAndStorageLineage |
 | CRYPTO-1 | A signature verifies only for its domain, key and exact body; changing any bit refuses it. | — | TestSignaturesRejectEveryBitFlip, FuzzVerifyNeverAcceptsAlteredBodies |
 | CRYPTO-2 | A ciphertext decrypts only for its recipients and only to the encrypted plaintext; a changed ciphertext fails. | — | TestEncryptionRoundTripsOnlyForRecipients |
 | CRYPTO-3 | A device ID names exactly one signing key. | — | TestDeviceIDIsInjective |
