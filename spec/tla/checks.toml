@@ -1,0 +1,58 @@
+# Checks that tools/formalcheck runs (task formal/check).
+#
+# Each model runs once and must pass with every action taken at least once.
+# Each mutant seeds one bug through the model's Mutant constant and must be
+# caught by one of the listed properties. Each witness is an invariant that
+# must be violated, which proves the configuration reaches what the
+# properties are about. Tier "pr" runs on every pull request; "nightly" runs
+# the same properties with larger bounds.
+
+[[model]]
+name = "ControlDAG authority"
+module = "MCControlDAG.tla"
+config = "ControlDAG.cfg"
+tier = "pr"
+uncovered = ["ReaderStep"]
+min_states = 100000
+  [[model.mutant]]
+  name = "skip-signature"
+  violates = ["OnlyHonestControlsVerify"]
+  [[model.mutant]]
+  name = "resolve-union"
+  violates = ["HonestResolutionIsIntersection"]
+  [[model.witness]]
+  invariant = "WitnessNoFork"
+  [[model.witness]]
+  invariant = "WitnessNoJoin"
+  [[model.witness]]
+  invariant = "WitnessNoAttackStored"
+
+[[model]]
+name = "ControlDAG leaked admin key"
+module = "MCControlDAG.tla"
+config = "ControlDAG_insider.cfg"
+tier = "pr"
+uncovered = ["ReaderStep"]
+min_states = 100000
+  [[model.mutant]]
+  name = "any-parent-admin"
+  violates = ["ChildrenSignedByAdminsOfEveryParent"]
+  [[model.mutant]]
+  name = "skip-resolution-check"
+  violates = ["ResolutionsStayInsideParents"]
+
+[[model]]
+name = "ControlDAG reader checkpoint"
+module = "MCControlDAG.tla"
+config = "ControlDAG_reader.cfg"
+tier = "pr"
+uncovered = ["Attack"]
+min_states = 10000
+  [[model.mutant]]
+  name = "skip-checkpoint"
+  violates = ["AcceptedNeverHidden"]
+  [[model.mutant]]
+  name = "forked-proceeds"
+  violates = ["NoSessionWhileForked"]
+  [[model.witness]]
+  invariant = "WitnessNoForkedOpen"
