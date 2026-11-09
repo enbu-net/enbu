@@ -169,7 +169,18 @@ func (p *parser) str() (Value, error) {
 			p.i++
 			return b.String(), nil
 		case c == '\\' && p.i+1 < len(p.s):
-			b.WriteByte(p.s[p.i+1])
+			c = p.s[p.i+1]
+			switch c {
+			case 'n':
+				c = '\n'
+			case 't':
+				c = '\t'
+			case 'f':
+				c = '\f'
+			case 'r':
+				c = '\r'
+			}
+			b.WriteByte(c)
 			p.i += 2
 		default:
 			b.WriteByte(c)
@@ -257,6 +268,13 @@ func Executable(t testing.TB) string {
 		t.Skip("model conformance runs with ENBU_REQUIRE_TLC=1 (task formal/conformance)")
 	}
 	if path := os.Getenv("ENBU_TLC"); path != "" {
+		if strings.ContainsAny(path, `/\`) {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return abs
+		}
 		return path
 	}
 	if path, err := exec.LookPath("tlc"); err == nil {

@@ -100,6 +100,10 @@ func CheckInvariants(path, specDir, root string) error {
 	if err != nil {
 		return err
 	}
+	enabled, err := enabledProperties(specDir, modules)
+	if err != nil {
+		return err
+	}
 	var problems []string
 	listed := map[string]bool{}
 	for _, inv := range invs {
@@ -112,6 +116,8 @@ func CheckInvariants(path, specDir, root string) error {
 			text, found := modules[model]
 			if !ok || !found || !regexp.MustCompile(`(?m)^`+regexp.QuoteMeta(prop)+`\b.*==`).MatchString(text) {
 				problems = append(problems, fmt.Sprintf("%s: TLA+ property %s does not exist", inv.ID, ref))
+			} else if !enabled[ref] {
+				problems = append(problems, fmt.Sprintf("%s: TLA+ property %s is not enabled by any runner configuration", inv.ID, ref))
 			}
 		}
 		for _, name := range inv.Go {
@@ -133,6 +139,71 @@ func CheckInvariants(path, specDir, root string) error {
 		return fmt.Errorf("%d problems:\n  %s", len(problems), strings.Join(problems, "\n  "))
 	}
 	return nil
+}
+
+// Follow the runners' selections, including generated mutant/witness jobs and
+// wrapper modules. Merely defining an operator is not evidence TLC checks it.
+func enabledProperties(specDir string, modules map[string]string) (map[string]bool, error) {
+	enabled := map[string]bool{}
+	extends := regexp.MustCompile(`(?m)^EXTENDS[ \t]+([^\n]+)`)
+	var add func(string, string, map[string]bool)
+	add = func(module, cfg string, seen map[string]bool) {
+		if seen[module] {
+			return
+		}
+		seen[module] = true
+		for _, d := range propertyDeclarations(cfg) {
+			for _, name := range d.names {
+				enabled[module+"."+name] = true
+			}
+		}
+		if m := extends.FindStringSubmatch(modules[module]); m != nil {
+			for _, parent := range strings.Split(m[1], ",") {
+				parent = strings.TrimSpace(parent)
+				if _, ok := modules[parent]; ok {
+					add(parent, cfg, seen)
+				}
+			}
+		}
+	}
+	manifest := filepath.Join(specDir, "checks.toml")
+	if _, err := os.Stat(manifest); err == nil {
+		m, err := Load(manifest)
+		if err != nil {
+			return nil, err
+		}
+		for _, model := range m.Model {
+			cfg, err := os.ReadFile(filepath.Join(specDir, model.Config))
+			if err != nil {
+				return nil, err
+			}
+			jobs, err := Plan(model, string(cfg))
+			if err != nil {
+				return nil, err
+			}
+			for _, job := range jobs {
+				add(strings.TrimSuffix(model.Module, ".tla"), job.Config, map[string]bool{})
+			}
+		}
+	} else if errors.Is(err, fs.ErrNotExist) {
+		// scripts/formal.py discovers every *.cfg in each Model directory.
+		for model := range modules {
+			paths, err := filepath.Glob(filepath.Join(specDir, model, "*.cfg"))
+			if err != nil {
+				return nil, err
+			}
+			for _, path := range paths {
+				cfg, err := os.ReadFile(path)
+				if err != nil {
+					return nil, err
+				}
+				add(model, string(cfg), map[string]bool{})
+			}
+		}
+	} else {
+		return nil, err
+	}
+	return enabled, nil
 }
 
 func goTestFuncs(root string) (map[string]bool, error) {

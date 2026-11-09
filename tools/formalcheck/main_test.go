@@ -22,6 +22,14 @@ func TestJudgePassRequiresCompletionCoverageAndStates(t *testing.T) {
 	if err := Judge(j, passOutput, nil); err != nil {
 		t.Fatalf("a complete run with allowed dead actions should pass: %v", err)
 	}
+	for _, out := range []string{
+		"Model checking completed. No error has been found.\n1,234 distinct states found",
+		"Model checking completed. No error has been found.\n1,234 distinct states found\n<Act line malformed>: 1:2",
+	} {
+		if err := Judge(j, out, nil); err == nil || !strings.Contains(err.Error(), "action coverage") {
+			t.Fatalf("missing or malformed coverage passed: %v", err)
+		}
+	}
 	j.Model.Uncovered = nil
 	if err := Judge(j, passOutput, nil); err == nil || !strings.Contains(err.Error(), "Idle") {
 		t.Fatalf("a dead action must fail the run, got %v", err)
@@ -102,6 +110,35 @@ func TestLoadRejectsIncompleteManifests(t *testing.T) {
 		}
 		if _, err := Load(path); err == nil {
 			t.Errorf("%s: manifest should be rejected", name)
+		}
+	}
+}
+
+func TestWitnessRemovesWholeMultilineDeclarations(t *testing.T) {
+	cfg := `CONSTANTS
+  Mutant = "none"
+  Label = "INVARIANTS not a declaration"
+INVARIANTS
+  Safe
+  (* PROPERTY Commented *) Other
+PROPERTIES Live
+  AlsoLive
+\* INVARIANT CommentedOut
+SPECIFICATION Spec
+CHECK_DEADLOCK FALSE
+`
+	jobs, err := Plan(Model{Witness: []Witness{{Invariant: "Witness"}}}, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := jobs[1].Config
+	decls := propertyDeclarations(w)
+	if len(decls) != 1 || strings.Join(decls[0].names, ",") != "Witness" {
+		t.Fatalf("witness retained other properties:\n%s", w)
+	}
+	for _, keep := range []string{`Label = "INVARIANTS not a declaration"`, "SPECIFICATION Spec", "CHECK_DEADLOCK FALSE"} {
+		if !strings.Contains(w, keep) {
+			t.Errorf("lost %q from witness config:\n%s", keep, w)
 		}
 	}
 }
@@ -198,6 +235,42 @@ func TestBothRepositoryInvariantTablesResolve(t *testing.T) {
 	}
 }
 
+func TestIndexedPropertiesMustBeEnabledBySelectedConfigs(t *testing.T) {
+	for _, layer := range []string{"protocol", "refinement"} {
+		t.Run(layer, func(t *testing.T) {
+			dir := t.TempDir()
+			write := func(name, body string) {
+				t.Helper()
+				path := filepath.Join(dir, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			model, cfg := "M/M.tla", "M/M.cfg"
+			if layer == "refinement" {
+				model, cfg = "M.tla", "M.cfg"
+				write("MC.tla", "---- MODULE MC ----\nEXTENDS M\n====\n")
+				write("checks.toml", "[[model]]\nname='m'\nmodule='MC.tla'\nconfig='M.cfg'\ntier='pr'\n")
+				write("orphan.cfg", "INVARIANT Safe\n")
+			}
+			write(model, "---- MODULE M ----\nSafe == TRUE\n====\n")
+			write("INVARIANTS.md", "| AUTH-1 | x | M.Safe | — |\n")
+			write(cfg, "SPECIFICATION Spec\n\\* INVARIANT Safe\n")
+			table := filepath.Join(dir, "INVARIANTS.md")
+			if err := CheckInvariants(table, dir, dir); err == nil || !strings.Contains(err.Error(), "not enabled") {
+				t.Fatalf("defined but disabled property passed: %v", err)
+			}
+			write(cfg, "INVARIANTS\n  Safe\nSPECIFICATION Spec\n")
+			if err := CheckInvariants(table, dir, dir); err != nil {
+				t.Fatalf("enabled indexed property failed: %v", err)
+			}
+		})
+	}
+}
+
 func TestRunExecutesEveryCheckOfATier(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skip("needs a POSIX shell for the fake TLC")
@@ -235,9 +308,14 @@ if grep -q '"bug"' run.cfg; then
 fi
 echo "Model checking completed. No error has been found."
 echo "3 states generated, 3 distinct states found, 0 states left on queue."
+echo "<Act line 2, col 1 to line 2, col 3 of module M>: 3:3"
 `, 0o700)
 	if err := Run(dir, "pr", "", tlc, 2, 1, time.Minute); err != nil {
 		t.Fatalf("pr tier: %v", err)
+	}
+	t.Chdir(dir)
+	if err := Run(dir, "pr", "", "./fake-tlc", 2, 1, time.Minute); err != nil {
+		t.Fatalf("relative TLC path must survive scratch execution: %v", err)
 	}
 	if err := Run(dir, "pr", "^nothing$", tlc, 2, 1, time.Minute); err == nil {
 		t.Fatal("selecting no model must fail")

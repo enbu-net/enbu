@@ -82,7 +82,6 @@ type Result struct {
 var (
 	reMutant    = regexp.MustCompile(`(?m)^(\s*Mutant\s*=\s*)"[^"]*"`)
 	reWitnessOn = regexp.MustCompile(`(?m)^(\s*Witnessing\s*=\s*)FALSE\b`)
-	reProperty  = regexp.MustCompile(`(?m)^\s*(INVARIANT|INVARIANTS|PROPERTY|PROPERTIES)\b.*$\n?`)
 	reViolated  = regexp.MustCompile(`Error: Invariant (\w+) is violated`)
 	reTemporal  = regexp.MustCompile(`Error: Temporal properties were violated`)
 	reDistinct  = regexp.MustCompile(`([\d,]+) distinct states found`)
@@ -230,7 +229,7 @@ func Plan(model Model, cfg string) ([]Job, error) {
 	for _, w := range model.Witness {
 		// A model may record what it reaches only when asked, so that the
 		// bookkeeping does not multiply the states of every other run.
-		stripped := reWitnessOn.ReplaceAllString(reProperty.ReplaceAllString(cfg, ""), "${1}TRUE")
+		stripped := reWitnessOn.ReplaceAllString(withoutProperties(cfg), "${1}TRUE")
 		jobs = append(jobs, Job{
 			Label:    fmt.Sprintf("%s / witness %s", model.Name, w.Invariant),
 			Model:    model,
@@ -278,6 +277,12 @@ func Execute(dir, tlc string, workers int, timeout time.Duration, j Job) Result 
 		args = append(args, j.Model.Module)
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
+		if strings.ContainsAny(tlc, `/\`) {
+			tlc, err = filepath.Abs(tlc)
+			if err != nil {
+				return err
+			}
+		}
 		cmd := exec.CommandContext(ctx, tlc, args...)
 		cmd.Dir = scratch
 		cmd.Env = aquaEnv(dir)
@@ -339,6 +344,9 @@ func Judge(j Job, out string, runErr error) error {
 			return fmt.Errorf("explored %d distinct states, fewer than min_states %d", n, j.Model.MinStates)
 		}
 		if j.Coverage {
+			if !reCoverage.MatchString(out) {
+				return errors.New("TLC output has no parseable action coverage")
+			}
 			if dead := DeadActions(out, j.Model.Uncovered); len(dead) > 0 {
 				return fmt.Errorf("actions never taken: %s", strings.Join(dead, ", "))
 			}

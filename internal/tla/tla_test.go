@@ -1,16 +1,61 @@
 package tla
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestExecutableResolvesRelativeOverride(t *testing.T) {
+	t.Setenv("ENBU_REQUIRE_TLC", "1")
+	for _, path := range []string{"./bin/tlc", "tlc"} {
+		t.Setenv("ENBU_TLC", path)
+		want := path
+		if path != "tlc" {
+			var err error
+			want, err = filepath.Abs(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := Executable(t); got != want {
+			t.Fatalf("override %q resolved to %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestDumpRunsRelativeExecutableInScratchDirectory(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("needs a POSIX shell for fake TLC")
+	}
+	script := filepath.Join(t.TempDir(), "fake-tlc")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntest -f run.cfg || exit 2\nprintf 'State 1:\\n/\\\\ x = 42\\n' > dump.txt.dump\necho 'No error has been found'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(cwd, script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ENBU_REQUIRE_TLC", "1")
+	t.Setenv("ENBU_TLC", rel)
+	states := Dump(t, "Founding.tla", "SPECIFICATION Spec")
+	if len(states) != 1 || Int(t, states[0]["x"]) != 42 {
+		t.Fatalf("unexpected fake dump: %v", states)
+	}
+}
 
 func TestParseValues(t *testing.T) {
 	cases := map[string]Value{
 		`42`:                       int64(42),
 		`-1`:                       int64(-1),
 		`"a \"b\""`:                `a "b"`,
+		`"a\nb\tc\rd\fe\\f\"g"`:    "a\nb\tc\rd\fe\\f\"g",
 		`TRUE`:                     true,
 		`{}`:                       Set(nil),
 		`{1, 2}`:                   Set{int64(1), int64(2)},
