@@ -174,6 +174,34 @@ func TestCorruptCheckpointFile(t *testing.T) {
 	}
 }
 
+// A version 3 file kept accepted heads per resource; its Control heads carry
+// over and its resources start empty instead of failing every operation.
+func TestVersion3CheckpointKeepsControlAndDropsStates(t *testing.T) {
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
+	old := `{"version":3,"control":["` + string(d("c")) + `"],"states":{"` + testResource + `":{"heads":["` + string(d("x")) + `"],"control":"` + string(d("c")) + `"}}}`
+	if err := os.WriteFile(cps.path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cps.Control(); err != nil || len(got) != 1 || got[0] != d("c") {
+		t.Fatalf("control = %v %v", got, err)
+	}
+	if got, err := cps.Generation(testResource); err != nil || got != 0 {
+		t.Fatalf("generation = %d %v", got, err)
+	}
+	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}})); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cps.Generation(testResource); err != nil || got != 2 {
+		t.Fatalf("generation after accept = %d %v", got, err)
+	}
+	if err := os.WriteFile(cps.path, []byte(`{"version":5}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cps.Control(); err == nil {
+		t.Fatal("a newer checkpoint format accepted")
+	}
+}
+
 func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
 	other := OpenCheckpoints(filepath.Dir(cps.path), testWorkspace, d("genesis"), clock.New())

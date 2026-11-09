@@ -19,7 +19,13 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+// checkpointVersion is the on-disk format. Version 3 kept accepted heads per
+// resource instead of a Generation: its Control heads carry over and its
+// resources start empty, like a file of an older format.
+const checkpointVersion = 4
+
 type checkpointFile struct {
+	Version int               `json:"version"`
 	Control []digest.Digest   `json:"control,omitempty"`
 	States  map[string]uint64 `json:"states,omitempty"` // accepted Generation per resource
 }
@@ -55,10 +61,23 @@ func OpenCheckpoints(dir, workspace string, genesis digest.Digest, c clock.Clock
 func (c *Checkpoints) read() (checkpointFile, error) {
 	b, err := os.ReadFile(c.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return checkpointFile{}, nil
+		return checkpointFile{Version: checkpointVersion}, nil
 	}
 	if err != nil {
 		return checkpointFile{}, err
+	}
+	var v struct {
+		Version int             `json:"version"`
+		Control []digest.Digest `json:"control"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil || v.Version < 1 || v.Version > checkpointVersion {
+		return checkpointFile{}, fmt.Errorf("corrupt checkpoint file %s", c.path)
+	}
+	switch {
+	case v.Version == 3:
+		return checkpointFile{Version: checkpointVersion, Control: v.Control}, nil
+	case v.Version < checkpointVersion:
+		return checkpointFile{Version: checkpointVersion}, nil
 	}
 	var f checkpointFile
 	if err := json.Unmarshal(b, &f); err != nil {
@@ -68,6 +87,7 @@ func (c *Checkpoints) read() (checkpointFile, error) {
 }
 
 func (c *Checkpoints) write(f checkpointFile) error {
+	f.Version = checkpointVersion
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
