@@ -18,13 +18,32 @@ const (
 	tokenKeyringAccount = "github-oauth"
 )
 
+// tokenBackend holds the token in the OS keyring, or in a file only when
+// ENBU_BACKEND=text asks for it. A missing or locked keyring is an error, never
+// a silent switch to a plaintext file.
 var tokenBackend = func() keystore.Backend {
 	b, err := keystore.New()
-	if err != nil || b == nil {
-		return &keystore.TextBackend{}
+	if err != nil {
+		return invalidBackend{err}
 	}
 	return b
 }()
+
+// invalidBackend reports an unusable ENBU_BACKEND on every operation.
+type invalidBackend struct{ err error }
+
+func (b invalidBackend) Store(string, string, []byte) error  { return b.err }
+func (b invalidBackend) Load(string, string) ([]byte, error) { return nil, b.err }
+func (b invalidBackend) Delete(string, string) error         { return b.err }
+
+// keyringError gives a locked OS keyring its own code, so the person is told
+// to unlock it rather than shown an internal error.
+func keyringError(op string, err error) error {
+	if errors.Is(err, keystore.ErrLocked) {
+		return apperr.Wrap(apperr.CodeKeyringLocked, op+": "+err.Error(), err, nil)
+	}
+	return fmt.Errorf("%s: %w", op, err)
+}
 
 type StoredToken struct {
 	AccessToken string `json:"access_token"`
@@ -41,7 +60,7 @@ func SaveToken(token *StoredToken) error {
 		return err
 	}
 	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, data); err != nil {
-		return fmt.Errorf("saving token: %w", err)
+		return keyringError("saving token", err)
 	}
 	stored, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
 	if err != nil || !bytes.Equal(stored, data) {
@@ -64,7 +83,7 @@ func LoadToken() (*StoredToken, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, notLoggedInError()
 		}
-		return nil, fmt.Errorf("loading token: %w", err)
+		return nil, keyringError("loading token", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -83,7 +102,7 @@ func LoadToken() (*StoredToken, error) {
 
 func DeleteToken() error {
 	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("removing token: %w", err)
+		return keyringError("removing token", err)
 	}
 	return nil
 }

@@ -18,13 +18,14 @@ func (s *Service) GetIdentity() (identity.PublicInfo, error) {
 // IdentityDiagnosis is what DiagnoseIdentity shows. The probes' reasons are OS
 // error text, so they go to the log and never to the screen.
 type IdentityDiagnosis struct {
-	Backend           string `json:"backend"`
-	Device            string `json:"device,omitempty"`
-	Available         bool   `json:"available"`
-	FallbackAvailable bool   `json:"fallback_available"`
-	// Fallback is the software backend a new key would use: keyring or
-	// systemd-creds.
-	Fallback string `json:"fallback,omitempty"`
+	Backend   string `json:"backend"`
+	Device    string `json:"device,omitempty"`
+	Available bool   `json:"available"`
+	// Denied is set when the hardware exists but this user may not use it.
+	Denied            bool `json:"denied"`
+	FallbackAvailable bool `json:"fallback_available"`
+	// KeyringLocked is set when the OS keyring exists but is locked.
+	KeyringLocked bool `json:"keyring_locked"`
 }
 
 // DiagnoseIdentity probes the hardware and the software key storage, as `enbu doctor`
@@ -37,8 +38,9 @@ func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 		Backend:           d.Backend,
 		Device:            d.Device,
 		Available:         d.Available,
+		Denied:            d.Denied,
 		FallbackAvailable: d.FallbackAvailable,
-		Fallback:          d.Fallback,
+		KeyringLocked:     d.KeyringLocked,
 	}
 }
 

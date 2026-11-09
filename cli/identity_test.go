@@ -35,8 +35,42 @@ func (*doctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{
 		Backend: "tpm", Reason: "no TPM",
 		KeyringAvailable:  true,
-		CredsReason:       "decryption failed",
-		FallbackAvailable: true, Fallback: "keyring",
+		FallbackAvailable: true,
+	}
+}
+
+type lockedDoctorKeyStore struct{ staticKeyStore }
+
+func (*lockedDoctorKeyStore) Doctor(context.Context) identity.Diagnosis {
+	return identity.Diagnosis{
+		Backend: "tpm", Reason: "permission denied", Denied: true,
+		KeyringReason: "OS keyring is locked", KeyringLocked: true,
+		FallbackReason: "the hardware exists but this user may not use it",
+	}
+}
+
+// A denied TPM and a locked keyring are each said in plain words, in the
+// text output and in the JSON, so the person knows what to fix.
+func TestDoctorReportsDeniedHardwareAndLockedKeyring(t *testing.T) {
+	a := &app.App{Identities: &lockedDoctorKeyStore{}, RepositoryDir: t.TempDir()}
+	cmd := NewWithApp("test", a)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"doctor"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Hardware access denied: true", "OS keyring locked: true", "Software fallback available: false",
+		"identity_backend: warn", "this user may not use it", "(identity_unavailable)",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in %q", want, out.String())
+		}
+	}
+	data := objectField(t, executeJSON(t, NewWithApp("test", a), "doctor", "--json"), "data")
+	if data["denied"] != true || data["keyring_locked"] != true || data["fallback_available"] != false {
+		t.Fatalf("diagnosis = %+v", data)
 	}
 }
 
@@ -51,9 +85,8 @@ func TestDoctorReportsEachBackend(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Hardware: tpm", "Available: false", "Reason: no TPM",
-		"OS keyring available: true", "systemd-creds available: false",
-		"systemd-creds reason: decryption failed", "Software fallback: keyring",
-		"config: skip", "Healthy: true",
+		"OS keyring available: true", "Software fallback available: true",
+		"identity_backend: ok", "config: skip", "Healthy: true",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("missing %q in %q", want, out.String())
@@ -64,7 +97,7 @@ func TestDoctorReportsEachBackend(t *testing.T) {
 	if data["healthy"] != true || len(data["checks"].([]any)) == 0 {
 		t.Fatalf("missing workspace diagnosis: %+v", data)
 	}
-	if data["keyring_available"] != true || data["creds_available"] != false || data["creds_reason"] != "decryption failed" {
+	if _, ok := data["creds_available"]; ok || data["keyring_available"] != true {
 		t.Fatalf("diagnosis = %+v", data)
 	}
 }

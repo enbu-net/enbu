@@ -11,6 +11,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -336,6 +337,9 @@ func identityError(err error) error {
 	var unavailable *identity.UnavailableError
 	if !errors.As(err, &unavailable) {
 		return err
+	}
+	if errors.Is(err, keystore.ErrLocked) {
+		return apperr.Wrap(apperr.CodeKeyringLocked, unavailable.Reason, err, nil)
 	}
 	return apperr.Wrap(apperr.CodeIdentityUnavailable,
 		"no usable identity backend on this device: "+unavailable.Reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": unavailable.Reason})

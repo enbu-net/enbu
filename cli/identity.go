@@ -78,14 +78,13 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 			if d.KeyringReason != "" {
 				cmd.Printf("OS keyring reason: %s\n", d.KeyringReason)
 			}
-			cmd.Printf("systemd-creds available: %t\n", d.CredsAvailable)
-			if d.CredsReason != "" {
-				cmd.Printf("systemd-creds reason: %s\n", d.CredsReason)
+			if d.KeyringLocked {
+				cmd.Printf("OS keyring locked: true\n")
+			}
+			if d.Denied {
+				cmd.Printf("Hardware access denied: true\n")
 			}
 			cmd.Printf("Software fallback available: %t\n", d.FallbackAvailable)
-			if d.Fallback != "" {
-				cmd.Printf("Software fallback: %s\n", d.Fallback)
-			}
 			if d.FallbackReason != "" {
 				cmd.Printf("Fallback: %s\n", d.FallbackReason)
 			}

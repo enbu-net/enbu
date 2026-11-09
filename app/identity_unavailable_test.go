@@ -7,6 +7,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
@@ -150,4 +151,17 @@ func TestIdentityInfoReportsAnUnreachableSigningKey(t *testing.T) {
 	a.Identities = unreachableSignerInfo{keys}
 	_, err := a.IdentityInfo()
 	requireIdentityUnavailable(t, err, "keyring unavailable")
+}
+
+// A locked OS keyring gets its own code, so the GUI asks the person to unlock
+// it instead of pointing at doctor for a missing backend.
+func TestLockedKeyringHasItsOwnCode(t *testing.T) {
+	cause := fmt.Errorf("%w: unlock it", keystore.ErrLocked)
+	err := identityError(&identity.UnavailableError{Reason: cause.Error(), Err: cause})
+	if !apperr.Is(err, apperr.CodeKeyringLocked) {
+		t.Fatalf("code = %v", apperr.CodeOf(err))
+	}
+	if err := identityError(&identity.UnavailableError{Reason: "no keyring"}); !apperr.Is(err, apperr.CodeIdentityUnavailable) {
+		t.Fatalf("code = %v", apperr.CodeOf(err))
+	}
 }

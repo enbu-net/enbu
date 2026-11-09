@@ -246,13 +246,13 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
-| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet）、なければ`systemd-creds --user` |
+| Linux | TPM 2.0（`/dev/tpmrm0`） | Secret Service（GNOME Keyring / KWallet） |
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
 | macOS | Secure Enclave（Apple silicon、またはT2チップのIntel Mac） | Keychain |
 
-Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けないため、グループ外のユーザーはkeyringにfallbackします。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。どちらになったかは`enbu doctor`で確認できます。
+fallbackはハードウェアがないときだけ使います。Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けません。グループ外のユーザーにはソフトウェア鍵を作らずエラーを返すので、権限の設定ミスで保護が弱くなることはありません。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。それでもOS keyringを使うときは`ENBU_IDENTITY_BACKEND=keyring`を設定します。
 
-サーバー、コンテナ、WSLでは、使えるTPMもSecret Serviceもないことがよくあります。その場合enbuはソフトウェア鍵を`systemd-creds --user`（systemd 256以降）で暗号化し、データディレクトリ内のファイルに保管します。鍵はユーザーとマシンのホスト鍵に、TPMがあればTPMにも結び付きます。ユーザーにTPMへのアクセス権は要りません。
+TPMがないLinuxでは、ロックが解除されたSecret Serviceが必要です。enbuは使う前に毎回D-Busで状態を確かめ、ロック解除のプロンプトを待ちません。ロックされたkeyring（プロンプトが出せないSSHなど）はすぐに`keyring_locked`で失敗し、keyringがない端末は`identity_unavailable`で失敗します。ファイルへのfallbackはありません。どれに当たるかは`enbu doctor`で確認できます。
 
 ```bash
 enbu doctor                   # 認証不要・永続鍵を作らず検査
@@ -260,7 +260,7 @@ enbu identity create          # 現在のリポジトリ用Identityを作成・�
 enbu identity show            # backend、algorithm、recipient、deviceを表示
 enbu identity upgrade         # この端末を耐量子ハイブリッド鍵へ移行
 export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
-# hardware: ハードウェア必須 / keyring: ソフトウェア鍵（OS keyring、なければsystemd-creds）
+# hardware: ハードウェア必須 / keyring: OS keyringのソフトウェア鍵
 export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の鍵（X25519 / P-256）を作る
 ```
 
@@ -286,6 +286,7 @@ version 1 metadataはenbuのローカルデータディレクトリの`identitie
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
 旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
 `ENBU_BACKEND`は認証トークン用の設定で、Identity backendの選択には使いません。
+トークンはOS keyringに保存します。平文ファイルに書くのは`ENBU_BACKEND=text`を指定したときだけで、黙って切り替えることはありません。
 
 Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtureを使い、3 OSで実行します。
 ロック解除済みOS keyringがある環境で`task identity/test/e2e`を実行できます。

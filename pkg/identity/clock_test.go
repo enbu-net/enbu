@@ -60,9 +60,6 @@ func TestManagerPassesClockToKeyStores(t *testing.T) {
 	if m.Vault.(*keystore.KeyringBackend).Clock != c {
 		t.Fatal("keyring received another clock")
 	}
-	if m.Creds != nil && m.Creds.(*keystore.CredsBackend).Clock != c {
-		t.Fatal("credentials received another clock")
-	}
 	if backend, ok := m.Hardware.(*TPMBackend); ok && backend.Clock != c {
 		t.Fatal("TPM received another clock")
 	}

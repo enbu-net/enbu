@@ -55,7 +55,9 @@ describe("DevicePanel", () => {
     mocked.diagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
+      denied: false,
       fallback_available: true,
+      keyring_locked: false,
     });
     await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
 
@@ -66,18 +68,20 @@ describe("DevicePanel", () => {
     expect(container.textContent).toContain("The OS keyring can hold keys.");
   });
 
-  it("says when systemd-creds holds keys instead of the OS keyring", async () => {
+  it("says when the TPM is denied and the keyring is locked", async () => {
     mocked.diagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
-      fallback_available: true,
-      fallback: "systemd-creds",
+      denied: true,
+      fallback_available: false,
+      keyring_locked: true,
     });
     await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
 
     await act(async () => queryButton("Check hardware")?.click());
     await settle();
 
-    expect(container.textContent).toContain("systemd-creds can hold keys.");
+    expect(container.textContent).toContain("this user may not use it");
+    expect(container.textContent).toContain("The OS keyring is locked.");
   });
 });

@@ -11,19 +11,13 @@ type Backend interface {
 	Delete(service, key string) error
 }
 
+// New returns the backend for the GitHub token: the OS keyring, or a file
+// when ENBU_BACKEND=text says so. It never falls back to a file on its own;
+// a keyring that is missing or locked fails each operation instead.
 func New() (Backend, error) {
-	backendType := os.Getenv("ENBU_BACKEND")
-	if backendType == "" {
-		backendType = "keyring"
-	}
-
-	switch backendType {
-	case "keyring":
-		kb := &KeyringBackend{}
-		if err := kb.probe(); err != nil {
-			return nil, fmt.Errorf("keystore unavailable: %w", err)
-		}
-		return kb, nil
+	switch backendType := os.Getenv("ENBU_BACKEND"); backendType {
+	case "", "keyring":
+		return &KeyringBackend{}, nil
 	case "text":
 		return &TextBackend{}, nil
 	default:

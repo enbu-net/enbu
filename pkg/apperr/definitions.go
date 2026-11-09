@@ -31,5 +31,6 @@ var definitions = map[Code]definition{
 	CodeReencryptIncomplete: {message: "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.", params: []string{}},
 	CodeTrustRootChanged:    {message: "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then accept the new root ('enbu init --accept-new-genesis').", params: []string{}},
 	CodeIdentityUnavailable: {message: "No usable identity backend on this device. Run 'enbu doctor' for details.", params: []string{}},
+	CodeKeyringLocked:       {message: "The OS keyring is locked. Unlock it (for example by logging in to the desktop) and try again.", params: []string{}},
 	CodeOutputUnreadable:    {message: "{file} is not a dotenv file enbu can read. Pull again and overwrite it to replace its content.", params: []string{"file"}},
 }

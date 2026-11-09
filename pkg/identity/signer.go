@@ -174,10 +174,10 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 	if mode != "keyring" {
 		hw, ok := m.Hardware.(SignerBackend)
 		reason := "hardware backend unavailable"
-		available := false
+		available, denied := false, false
 		if ok {
 			d := m.Hardware.Probe()
-			available, reason = d.Available, d.Reason
+			available, denied, reason = d.Available, d.Denied, d.Reason
 		}
 		if available {
 			s, md, err = hw.CreateSigner()
@@ -198,6 +198,9 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 		} else {
 			if mode == "hardware" {
 				return nil, info, "", unavailable("hardware signing key unavailable: "+reason, nil)
+			}
+			if denied {
+				return nil, info, "", deniedHardware("hardware signing key", reason)
 			}
 			warning = "Hardware signing key unavailable: " + reason
 		}

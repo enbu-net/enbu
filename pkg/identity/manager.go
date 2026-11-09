@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/enbu-net/enbu/pkg/fsutil"
 
@@ -62,18 +61,23 @@ type Metadata struct {
 }
 
 type Diagnosis struct {
-	KeyringAvailable  bool   `json:"keyring_available"`
-	KeyringReason     string `json:"keyring_reason,omitempty"`
-	CredsAvailable    bool   `json:"creds_available"`
-	CredsReason       string `json:"creds_reason,omitempty"`
-	Backend           string `json:"backend"`
-	Device            string `json:"device,omitempty"`
-	Available         bool   `json:"available"`
-	Reason            string `json:"reason,omitempty"`
+	KeyringAvailable bool   `json:"keyring_available"`
+	KeyringReason    string `json:"keyring_reason,omitempty"`
+	// KeyringLocked is set when the OS keyring exists but is locked: the
+	// person can unlock it, unlike a device without one.
+	KeyringLocked bool   `json:"keyring_locked,omitempty"`
+	Backend       string `json:"backend"`
+	Device        string `json:"device,omitempty"`
+	Available     bool   `json:"available"`
+	Reason        string `json:"reason,omitempty"`
+	// Denied is set when the hardware exists but this user may not use it,
+	// such as a TPM outside the tss group. A new key then fails instead of
+	// silently going to the OS keyring.
+	Denied bool `json:"denied,omitempty"`
+	// FallbackAvailable reports that the OS keyring can hold a software key.
+	// A new key goes there only when the hardware is absent, not Denied.
 	FallbackAvailable bool   `json:"fallback_available"`
-	// Fallback is the software backend that would hold a new key.
-	Fallback       string `json:"fallback,omitempty"`
-	FallbackReason string `json:"fallback_reason,omitempty"`
+	FallbackReason    string `json:"fallback_reason,omitempty"`
 }
 
 type HardwareBackend interface {
@@ -91,12 +95,9 @@ type SeedSealer interface {
 }
 
 type Manager struct {
-	Dir   string
-	Mode  string
-	Vault Vault
-	// Creds holds software keys where the OS keyring is unavailable: the
-	// systemd-creds backend on Linux, nil elsewhere.
-	Creds    Vault
+	Dir      string
+	Mode     string
+	Vault    Vault
 	Hardware HardwareBackend
 	// Classical makes Create generate the pre-hybrid keys (X25519, or P-256 on
 	// hardware), for a workspace whose other members still run an enbu that
@@ -112,46 +113,41 @@ const (
 	classicalFlag  = "ENBU_IDENTITY_CLASSICAL"
 
 	backendKeyring = "keyring"
-	backendCreds   = "systemd-creds"
 )
 
-// softwareBackend reports whether backend keeps a software key, in the OS
-// keyring or with systemd-creds.
-func softwareBackend(backend string) bool {
-	return backend == backendKeyring || backend == backendCreds
-}
+// softwareBackend reports whether backend keeps a software key in the OS
+// keyring. It is the only software backend: there is no file fallback.
+func softwareBackend(backend string) bool { return backend == backendKeyring }
 
 // vault is where a software backend keeps its keys.
-func (m *Manager) vault(backend string) Vault {
-	if backend == backendCreds {
-		return m.Creds
+func (m *Manager) vault(string) Vault { return m.Vault }
+
+// softwareVault returns the OS keyring for a new software key, or why it
+// cannot take one: missing, or locked until the person unlocks it.
+func (m *Manager) softwareVault() (string, Vault, error) {
+	if err := probeVault(context.Background(), m.Vault); err != nil {
+		return "", nil, keyringUnavailable(err)
 	}
-	return m.Vault
+	return backendKeyring, m.Vault, nil
 }
 
-// softwareVault picks where a new software key goes: the OS keyring, or
-// systemd-creds when the keyring is unavailable.
-func (m *Manager) softwareVault() (string, Vault, error) {
-	err := probeVault(context.Background(), m.Vault)
-	if err == nil {
-		return backendKeyring, m.Vault, nil
+// keyringUnavailable reports an OS keyring that cannot take a key. A locked
+// keyring keeps keystore.ErrLocked in the chain, so the caller can ask the
+// person to unlock it.
+func keyringUnavailable(err error) error {
+	if errors.Is(err, keystore.ErrLocked) {
+		return &UnavailableError{Reason: err.Error(), Err: err}
 	}
-	if m.Creds == nil {
-		return "", nil, unavailable("OS keyring unavailable", err)
-	}
-	credsErr := probeVault(context.Background(), m.Creds)
-	if credsErr == nil {
-		return backendCreds, m.Creds, nil
-	}
-	return "", nil, unavailable("OS keyring and systemd-creds unavailable", errors.Join(err, credsErr))
+	return unavailable("OS keyring unavailable", err)
 }
 
 // softwareName names a software backend in messages.
-func softwareName(backend string) string {
-	if backend == backendCreds {
-		return "systemd-creds"
-	}
-	return "OS keyring"
+func softwareName(string) string { return "OS keyring" }
+
+// deniedHardware refuses to replace hardware the user may not use with a
+// software key: a permission mistake must not quietly lower the protection.
+func deniedHardware(kind, reason string) error {
+	return unavailable(kind+" unavailable: "+reason+"; to use a software key in the OS keyring instead, set ENBU_IDENTITY_BACKEND=keyring", nil)
 }
 
 func probeVault(ctx context.Context, v Vault) error {
@@ -175,12 +171,8 @@ func probeVault(ctx context.Context, v Vault) error {
 func hardwareAlgorithm(alg string) bool { return alg == algP256 || alg == algMLKEMP256 }
 
 func New(c clock.Clock) *Manager {
-	m := &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
+	return &Manager{Dir: filepath.Join(config.DataDir(), "identities"), Mode: os.Getenv("ENBU_IDENTITY_BACKEND"),
 		Vault: &keystore.KeyringBackend{Clock: c}, Hardware: platformHardware(c), Classical: os.Getenv(classicalFlag) == "1"}
-	if runtime.GOOS == "linux" {
-		m.Creds = &keystore.CredsBackend{Clock: c, Dir: filepath.Join(config.DataDir(), "credentials")}
-	}
-	return m
 }
 
 func (m *Manager) mode() (string, error) {
@@ -365,6 +357,9 @@ func (m *Manager) create(path string, classical bool) (id Identity, info PublicI
 		} else {
 			if mode == "hardware" {
 				return nil, info, "", unavailable("hardware identity unavailable: "+d.Reason, nil)
+			}
+			if d.Denied {
+				return nil, info, "", deniedHardware("hardware identity", d.Reason)
 			}
 			warning = "Hardware identity unavailable: " + d.Reason
 		}
@@ -662,25 +657,14 @@ func (m *Manager) Doctor(ctx context.Context) Diagnosis {
 	d.KeyringAvailable = keyringErr == nil
 	if keyringErr != nil {
 		d.KeyringReason = keyringErr.Error()
+		d.KeyringLocked = errors.Is(keyringErr, keystore.ErrLocked)
 	}
-	credsErr := probeVault(ctx, m.Creds)
-	d.CredsAvailable = credsErr == nil
-	if credsErr != nil {
-		d.CredsReason = credsErr.Error()
-	}
-	if keyringErr == nil {
-		d.FallbackAvailable, d.Fallback = true, backendKeyring
-		return d
-	}
-	d.FallbackReason = "OS keyring unavailable: " + keyringErr.Error()
-	if m.Creds == nil {
-		return d
-	}
-	if credsErr != nil {
-		d.FallbackReason += "; systemd-creds unavailable: " + credsErr.Error()
-	} else {
-		d.FallbackAvailable, d.Fallback = true, backendCreds
-		d.FallbackReason += "; using systemd-creds"
+	d.FallbackAvailable = keyringErr == nil
+	switch {
+	case d.Denied:
+		d.FallbackReason = "the hardware exists but this user may not use it, so a new key will not fall back to the OS keyring; set ENBU_IDENTITY_BACKEND=keyring to use it anyway"
+	case keyringErr != nil:
+		d.FallbackReason = keyringUnavailable(keyringErr).(*UnavailableError).Reason
 	}
 	return d
 }

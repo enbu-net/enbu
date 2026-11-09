@@ -83,6 +83,11 @@ export enum Code {
      * the output file is not dotenv; pulling again with replace overwrites it
      */
     CodeOutputUnreadable = "output_unreadable",
+
+    /**
+     * the OS keyring exists but is locked; the person must unlock it
+     */
+    CodeKeyringLocked = "keyring_locked",
 };
 
 export type Params = { [_ in string]?: string };
