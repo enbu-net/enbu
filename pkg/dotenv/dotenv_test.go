@@ -41,8 +41,26 @@ func TestFormat(t *testing.T) {
 	if empty, err := Format(nil); err != nil || len(empty) != 0 {
 		t.Fatalf("empty Format = %q, %v", empty, err)
 	}
-	if _, err := Format(map[string]string{"A\nB": "x"}); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("newline key error = %v", err)
+	tooMany := map[string]string{}
+	for i := range MaxEntries + 1 {
+		tooMany[fmt.Sprintf("K%d", i)] = ""
+	}
+	for name, secrets := range map[string]map[string]string{
+		"newline key":   {"A\nB": "x"},
+		"equals key":    {"A=B": "x"},
+		"space key":     {"A B": "x"},
+		"comment key":   {"#x": "x"},
+		"dash key":      {"A-B": "x"},
+		"empty key":     {"": "x"},
+		"long key":      {"A" + strings.Repeat("B", MaxKeyBytes): "x"},
+		"NUL value":     {"A": "a\x00b"},
+		"invalid UTF-8": {"A": "\xff"},
+		"too many":      tooMany,
+		"too large":     {"A": strings.Repeat("x", MaxBytes)},
+	} {
+		if _, err := Format(secrets); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: Format error = %v, want ErrInvalid", name, err)
+		}
 	}
 }
 

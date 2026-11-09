@@ -62,6 +62,9 @@ func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (
 
 // encodeSecrets is the plaintext of every revision: a JSON object of strings.
 func encodeSecrets(secrets map[string]string) []byte {
+	if secrets == nil {
+		secrets = map[string]string{}
+	}
 	data, _ := json.Marshal(secrets)
 	return data
 }
@@ -70,6 +73,9 @@ func decodeSecrets(data []byte) (map[string]string, error) {
 	var secrets map[string]string
 	if err := json.Unmarshal(data, &secrets); err != nil {
 		return nil, fmt.Errorf("parsing secrets: %w", err)
+	}
+	if secrets == nil {
+		return nil, errors.New("parsing secrets: expected a JSON object")
 	}
 	return secrets, nil
 }
