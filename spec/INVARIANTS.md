@@ -44,7 +44,7 @@ A fork whose heads share no admin is never joined; see the examples below.
 | ID | Property | Enforced by | TLA+ | Go test |
 |----|----------|-------------|------|---------|
 | GEN-1 | A read never succeeds on a view that lost an accepted revision unless a currently trusted revision of at least its Generation stands in for it. A removed member's correctly numbered sibling is not freshness authority (F2b, ADR-28). | `Checkpoints.CheckState` / `AcceptState`, `StateView.shownGeneration` | `StateDAG.GEN_1_strict` | TestRemovedKeyCannotMaskARollback, TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration |
-| GEN-2 | A rollback is reported only when storage withheld a revision (F1). | `VerifyRevision` (an unknown Control is invalid, not a rollback) | `StateDAG.GEN_2` | TestReaderMatchesTheModel |
+| GEN-2 | Outside a removal race, a rollback is reported only when storage withheld a revision (F1). If an accepted write is later set aside by removal, F2b deliberately fails closed even with every revision present. The base model excludes that race (`RemovalRace = FALSE`); `StateDAG_finding_removal_race` demonstrates the exception. | `VerifyRevision` (an unknown Control is invalid, not a rollback); trusted-head freshness | `StateDAG.GEN_2` | TestReaderMatchesTheModel, TestAcceptanceEpochSmoke |
 | GEN-3 | The accepted Generation never goes down. | `Checkpoints.AcceptState` | `StateDAG.GEN_3` | TestStateCheckpointNeverLowersTheAcceptedGeneration |
 | GEN-4 | An honest write never publishes a revision readers must reject: above `MaxGeneration` it is a conflict (F3). | `writeState`, `State.validate` | `StateDAG.GEN_4` | TestNextGenerationNeverWraps |
 | GEN-5 | Every verified revision with all parents visible has generation 1 + their maximum. | `dropWrongGenerations` | `StateDAG.GEN_5` | TestLoadStatesChecksGenerationsAgainstPresentParents |
@@ -87,7 +87,7 @@ These hold below the models' abstraction (a signature is "who signed", a ciphert
 ## Examples and findings
 
 These configs check the implementation itself and are expected to produce a counterexample; `task formal/check` asserts that they still do, and the traces are in [tla/traces/](tla/traces/).
-An example pins a limit the design accepts; a finding is open and should become an ordinary invariant once fixed.
+An example pins a limit the design accepts; a finding is open and should become an ordinary invariant once fixed. The historical `StateDAG_finding_removed_sibling` filename is the exception: it now selects the fixed F2b regression mutant, not the implementation or an open finding.
 
 | Config | Kind | What TLC shows |
 |--------|------|----------------|

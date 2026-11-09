@@ -121,6 +121,9 @@ UnknownCtlStored == \E r \in stored : ~KnownCtl(r)
 
 ReadResult(d, V, T) ==
   IF Bug = "F1" /\ UnknownCtlStored THEN "rollback"
+  \* lower_checkpoint is a compound mutant: it also bypasses the locked
+  \* rollback rejection. Merely overwriting the checkpoint with a lower
+  \* generation cannot reach GEN_3 while that rejection remains intact.
   ELSE IF Bug \notin {"no_checkpoint", "lower_checkpoint"} /\ Shown(V, T) < cp[d] THEN "rollback"
   ELSE IF V = {} THEN "empty"
   ELSE IF T = {} THEN "untrusted"

@@ -38,6 +38,26 @@ jobs:
       - name: Model-check with TLC
         run: task formal/check/large -- --workers 2
 
+  formal-refinement:
+    name: Refinement model (${{ matrix.model }}, nightly bounds)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ControlDAG, StateDAG attacker, StateDAG honest writers, MemberChange, Founding]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      - name: Check the nightly refinement configuration
+        env:
+          MODEL: ${{ matrix.model }}
+        run: go run ./tools/formalcheck -tier nightly -run "^${MODEL} deep$" -jobs 1 -workers 2 -timeout 5h
+
   mutation:
     name: Mutation testing (all targets)
     runs-on: ubuntu-26.04

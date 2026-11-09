@@ -254,6 +254,9 @@ name = "MemberChange deep"
 module = "MemberChange.tla"
 config = "MemberChange_fork_deep.cfg"
 tier = "nightly"
+# As in the PR approval-race config, only the control-before-reencrypt mutant
+# enters done-ok. The fixed removal finishes directly in ARemove.
+uncovered = ["ADoneOk"]
 min_states = 1000000
 
 [[model]]

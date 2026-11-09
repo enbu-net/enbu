@@ -12,6 +12,52 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestNightlyWorkflowSelectsEveryRefinementModelOnce(t *testing.T) {
+	b, err := os.ReadFile("../../.github/workflows/verification.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Model []string `yaml:"model"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	job := wf.Jobs["formal-refinement"]
+	selected := map[string]int{}
+	for _, model := range job.Strategy.Matrix.Model {
+		selected[model+" deep"]++
+	}
+	m, err := Load("../../spec/conformance/checks.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, model := range m.Model {
+		if model.Tier == "nightly" {
+			if selected[model.Name] != 1 {
+				t.Errorf("nightly model %q selected %d times", model.Name, selected[model.Name])
+			}
+		}
+	}
+	if len(selected) != 5 {
+		t.Fatalf("expected five nightly configurations, got %v", selected)
+	}
+	if !slices.ContainsFunc(job.Steps, func(step struct {
+		Run string `yaml:"run"`
+	}) bool { return strings.Contains(step.Run, `-tier nightly -run "^${MODEL} deep$"`) }) {
+		t.Fatal("nightly matrix must execute its selected configuration")
+	}
+}
+
 // TestCIShardsCoverEveryPRModelOnce keeps the formal job's matrix in step with
 // checks.toml: a model no shard selects would silently stop being checked.
 func TestCIShardsCoverEveryPRModelOnce(t *testing.T) {

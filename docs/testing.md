@@ -122,7 +122,7 @@ validates both tables. Their ID namespaces are intentionally distinct.
 | Check | What it does | Task | Where it runs |
 |-------|--------------|------|---------------|
 | TLA+ models (`spec/tla`) | TLC explores every interleaving of small configurations: the Control DAG, the State DAG and its checkpoint, member removal racing writes and approvals, and founding with trust pins. Storage is an attacker, and devices crash. | `formal/check`, `formal/nightly` | every PR (`Formal models`), nightly with larger bounds |
-| Refinement checks (`spec/conformance`) | Each refinement model has mutants (a removed check, an old behavior) that TLC must catch through a named property. Witness invariants must be violated, which proves a configuration reaches what its properties are about. Every action must fire. | `formal/refinement` | every PR |
+| Refinement checks (`spec/conformance`) | Each refinement model has mutants (a removed check, an old behavior) that TLC must catch through a named property. Witness invariants must be violated, which proves a configuration reaches what its properties are about. Every action must fire. | `formal/refinement`; `formalcheck -tier nightly` | every PR; all five larger configurations in independent nightly jobs |
 | Model conformance | TLC enumerates every read and every store of Controls a configuration reaches. Go rebuilds each one with real keys and requires the app's reader (`loadResource`, `trustedHeads`, checkpoint) and `wsp.LoadControl` to decide what the model decided. | `formal/conformance` | every PR (`Model conformance`) |
 | Property tests | `rapid` generates inputs for the merge, signatures, device IDs, encryption and `.env`, and shrinks a failure to a minimal case. | `property/deep` (100000 cases) | every `go test` (100 cases), nightly |
 | Fuzzing | Every decoder of untrusted bytes and the local trust and checkpoint files. Go minimizes a failing input into `testdata/fuzz`, where it becomes a regression test. | `fuzz/run` | seeds in every `go test`, nightly 10 minutes per target |
@@ -134,6 +134,11 @@ JVM). Model conformance runs only with `ENBU_REQUIRE_TLC=1`, which the task
 sets; without TLC it fails rather than skips. `tools/formalcheck` runs TLC
 with a 2 GB heap per process (`-heap`); its fingerprints and queue spill to
 disk.
+
+The mutation gate is intentionally percentage-based, not a zero-survivor gate.
+Unlisted survivors remain in the efficacy denominator and are printed for
+follow-up; a passing threshold does not claim all mutants were killed. Only
+documented equivalent mutants are removed from that denominator.
 
 ### Adding to a model
 

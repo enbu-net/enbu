@@ -16,7 +16,7 @@ Each model lives in its own directory as `<Model>.tla` with these configs:
 - `<Model>.cfg`: the small config, run in CI. Every property must hold.
 - `<Model>.large.cfg`: the same properties over a larger state space.
 - `<Model>_<bug>.cfg`: a mutant. The constant `Bug` switches one rule of the model to a defect, pre-fix behaviour included, and the config's `\* expect: violation P` line names the property TLC must then report violated.
-- `<Model>_example_*.cfg` and `<Model>_finding_*.cfg`: the implementation itself (`Bug = "none"`), with a property TLC is expected to violate: a limit the design accepts, or an open finding.
+- `<Model>_example_*.cfg` and `<Model>_finding_*.cfg`: the implementation itself (`Bug = "none"`), with a property TLC is expected to violate: a limit the design accepts, or an open finding. Exception: the retained `StateDAG_finding_removed_sibling` filename now selects the fixed-regression mutant `Bug = "F2b"`.
 
 `scripts/formal.py` runs every config and fails when a config does not end as it expects.
 
@@ -69,6 +69,10 @@ Each model lives in its own directory as `<Model>.tla` with these configs:
 not an open finding: complete ancestry does not give a removed key freshness
 authority. Base configurations require `GEN_1_strict`. Removal-race availability
 findings remain; the fix fails closed rather than returning old secrets.
+
+`StateDAG_lower_checkpoint` is deliberately a compound mutant: it bypasses the
+rollback check as well as overwriting the checkpoint. Overwriting alone cannot
+reach the `GEN_3` counterexample while the locked rollback rejection is intact.
 
 The counterexamples of the pre-fix mutants (F1–F5) and of the examples and findings are kept in [traces/](traces/).
 

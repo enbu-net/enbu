@@ -229,7 +229,10 @@ TypeOK ==
     /\ rsession \in Nat \cup {-1}
     /\ snap \in [Honest -> SUBSET Nat]
 
-AttackerHoldsAdminKey == \E c \in ver, k \in Compromised : IsAdmin(c, k)
+\* Only an honestly granted admin right may relax the no-attacker authority
+\* property. A forged promotion must not disable the very check catching it.
+AttackerHoldsAdminKey ==
+    \E c \in store, k \in Compromised : c.id \in honestIds /\ IsAdmin(c, k)
 
 \* AUTH-1: storage access, member keys and forged signatures make no Control
 \* verify: every principal and admin right comes from an honest admin.
