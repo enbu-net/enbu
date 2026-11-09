@@ -77,6 +77,9 @@ func (m *Manager) readSigner(workspaceID string) (*SignerMetadata, error) {
 	if md.Version != 1 {
 		return nil, fmt.Errorf("unsupported signing key metadata version %d", md.Version)
 	}
+	if md.Backend == removedCredsBackend {
+		return nil, removedBackend(m.SignerPath(workspaceID))
+	}
 	if md.Backend == "" || md.PublicKey.Validate() != nil || md.DeviceID != md.PublicKey.DeviceID() {
 		return nil, errors.New("invalid signing key metadata")
 	}

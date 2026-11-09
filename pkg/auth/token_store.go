@@ -18,23 +18,9 @@ const (
 	tokenKeyringAccount = "github-oauth"
 )
 
-// tokenBackend holds the token in the OS keyring, or in a file only when
-// ENBU_BACKEND=text asks for it. A missing or locked keyring is an error, never
-// a silent switch to a plaintext file.
-var tokenBackend = func() keystore.Backend {
-	b, err := keystore.New()
-	if err != nil {
-		return invalidBackend{err}
-	}
-	return b
-}()
-
-// invalidBackend reports an unusable ENBU_BACKEND on every operation.
-type invalidBackend struct{ err error }
-
-func (b invalidBackend) Store(string, string, []byte) error  { return b.err }
-func (b invalidBackend) Load(string, string) ([]byte, error) { return nil, b.err }
-func (b invalidBackend) Delete(string, string) error         { return b.err }
+// tokenBackend holds the token in the OS keyring. A missing or locked keyring
+// is an error; there is no plaintext file to fall back to.
+var tokenBackend keystore.Backend = keystore.New()
 
 // keyringError gives a locked OS keyring its own code, so the person is told
 // to unlock it rather than shown an internal error.

@@ -2,20 +2,60 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/keystore"
 )
+
+// memoryBackend is an in-memory OS keyring.
+type memoryBackend map[string][]byte
+
+func (m memoryBackend) Store(service, key string, b []byte) error {
+	m[service+"/"+key] = append([]byte(nil), b...)
+	return nil
+}
+func (m memoryBackend) Load(service, key string) ([]byte, error) {
+	b, ok := m[service+"/"+key]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return b, nil
+}
+func (m memoryBackend) Delete(service, key string) error {
+	if _, ok := m[service+"/"+key]; !ok {
+		return fs.ErrNotExist
+	}
+	delete(m, service+"/"+key)
+	return nil
+}
 
 // stubBackend replaces tokenBackend with an in-memory store for the duration of the test.
 func stubBackend(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("ENBU_TEXT_BACKEND_DIR", dir)
+	t.Setenv("GITHUB_TOKEN", "")
 	orig := tokenBackend
-	tokenBackend = &keystore.TextBackend{}
+	tokenBackend = memoryBackend{}
 	t.Cleanup(func() { tokenBackend = orig })
+}
+
+// A locked keyring is reported with its own code on every token operation.
+func TestTokenStoreReportsALockedKeyring(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	orig := tokenBackend
+	tokenBackend = &errorBackend{err: fmt.Errorf("%w: test", keystore.ErrLocked)}
+	t.Cleanup(func() { tokenBackend = orig })
+	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
+		t.Fatalf("LoadToken = %v", err)
+	}
+	if err := SaveToken(&StoredToken{AccessToken: "t", Username: "u", UserID: 1}); !apperr.Is(err, apperr.CodeKeyringLocked) {
+		t.Fatalf("SaveToken = %v", err)
+	}
+	if err := DeleteToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
+		t.Fatalf("DeleteToken = %v", err)
+	}
 }
 
 func TestTokenStoreRoundTrip(t *testing.T) {

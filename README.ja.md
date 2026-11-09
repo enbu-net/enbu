@@ -285,8 +285,7 @@ macOSではSecure Enclave鍵をKeychainに保存しません。data-protection K
 version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
 旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
-`ENBU_BACKEND`は認証トークン用の設定で、Identity backendの選択には使いません。
-トークンはOS keyringに保存します。平文ファイルに書くのは`ENBU_BACKEND=text`を指定したときだけで、黙って切り替えることはありません。
+GitHubのトークンもOS keyringに保存します。平文ファイルには保存しません。使えるkeyringがなければ`enbu auth login`は失敗します。CIでは`GITHUB_TOKEN`を使います。
 
 Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtureを使い、3 OSで実行します。
 ロック解除済みOS keyringがある環境で`task identity/test/e2e`を実行できます。

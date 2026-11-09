@@ -141,6 +141,17 @@ func keyringUnavailable(err error) error {
 	return unavailable("OS keyring unavailable", err)
 }
 
+// removedCredsBackend is the systemd-creds backend, which earlier versions used
+// on Linux without a keyring. Its keys are not loaded any more.
+const removedCredsBackend = "systemd-creds"
+
+// removedBackend says how to replace a key saved with systemd-creds: there is
+// no migration, so the person creates a new key and has it approved.
+func removedBackend(path string) error {
+	return unavailable("this key was saved with systemd-creds, which enbu no longer supports; remove "+path+
+		" (and the credentials directory beside identities/) and run 'enbu init' to create a new key for an admin to approve", nil)
+}
+
 // softwareName names a software backend in messages.
 func softwareName(string) string { return "OS keyring" }
 
@@ -212,6 +223,9 @@ func (m *Manager) readPath(path string) (*Metadata, error) {
 	}
 	if md.Version != 1 {
 		return nil, fmt.Errorf("unsupported identity metadata version %d", md.Version)
+	}
+	if md.Backend == removedCredsBackend {
+		return nil, removedBackend(path)
 	}
 	if md.Backend == "" || md.Recipient == "" || len(md.PublicKey) == 0 {
 		return nil, errors.New("incomplete identity metadata")

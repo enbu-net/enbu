@@ -44,6 +44,9 @@ func probeSecretService(ctx context.Context) error {
 		if errors.As(err, &dbusErr) && dbusErr.Name == "org.freedesktop.DBus.Error.ServiceUnknown" {
 			return fmt.Errorf("%w: no Secret Service (install GNOME Keyring or KWallet)", ErrNoKeyring)
 		}
+		if ctx.Err() != nil {
+			return fmt.Errorf("%w: the Secret Service did not answer in time: %w", ErrNoKeyring, ctx.Err())
+		}
 		return fmt.Errorf("%w: Secret Service: %w", ErrNoKeyring, err)
 	}
 	path := dbus.ObjectPath("")

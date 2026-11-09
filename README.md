@@ -313,9 +313,8 @@ loaded; create the identity again.
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
 Old identities are not migrated or loaded. Plaintext Identity storage is removed.
-`ENBU_BACKEND` configures authentication token storage only and does not select an Identity backend.
-The token goes to the OS keyring; it is written to a plaintext file only with
-`ENBU_BACKEND=text`, never as a silent fallback.
+The GitHub token is kept in the OS keyring too. There is no plaintext file for it:
+without a usable keyring, `enbu auth login` fails, and CI uses `GITHUB_TOKEN`.
 
 Identity E2E runs on Linux, Windows and macOS with a pinned test-only vTPM SDK and
 local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring.

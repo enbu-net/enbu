@@ -2,9 +2,12 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/keystore"
@@ -98,5 +101,44 @@ func TestTPMProbeSeparatesDeniedFromMissing(t *testing.T) {
 				t.Fatalf("Probe = %+v", d)
 			}
 		})
+	}
+}
+
+// Keys saved with the removed systemd-creds backend are refused with a
+// message that names it and says how to replace the key, instead of being
+// taken for hardware keys.
+func TestRemovedCredsBackendIsNamed(t *testing.T) {
+	m := &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: &fakeHardware{}}
+	if _, _, _, err := m.Create("ws"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := m.CreateSigner("ws"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{m.Path("ws"), m.SignerPath("ws")} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var md map[string]any
+		if err := json.Unmarshal(b, &md); err != nil {
+			t.Fatal(err)
+		}
+		md["backend"] = "systemd-creds"
+		if b, err = json.Marshal(md); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := m.Load("ws"); !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "systemd-creds") {
+		t.Fatalf("Load = %v", err)
+	}
+	if _, err := m.LoadSigner("ws"); !errors.Is(err, ErrUnavailable) || !strings.Contains(err.Error(), "systemd-creds") {
+		t.Fatalf("LoadSigner = %v", err)
+	}
+	if _, err := m.Info("ws"); !strings.Contains(fmt.Sprint(err), m.Path("ws")) {
+		t.Fatalf("Info = %v, want the file to remove", err)
 	}
 }
