@@ -110,6 +110,57 @@ min_states = 10000
   name = "skip-continuity"
   violates = ["NoAttackerContentAdopted", "HonestNeverBuildsOnAttacker"]
 
+[[model]]
+name = "MemberChange removal races writers"
+module = "MemberChange.tla"
+config = "MemberChange.cfg"
+tier = "pr"
+uncovered = ["BApprove", "BSync", "Resolve", "Sync", "ADoneOk"]
+min_states = 5000
+  [[model.mutant]]
+  name = "control-before-reencrypt"
+  violates = ["NoLostUpdate"]
+  [[model.mutant]]
+  name = "reencrypt-for-everyone"
+  violates = ["SettledHeadsExcludeRemovedUnlessRaced"]
+  [[model.mutant]]
+  name = "forget-published"
+  violates = ["NoSelfConflict"]
+  [[model.witness]]
+  invariant = "WitnessNoRetry"
+  [[model.witness]]
+  invariant = "WitnessNoOverlap"
+  [[model.witness]]
+  invariant = "WitnessNotSettled"
+  # RCPT-3: a write racing the removal leaves a head still encrypted for the
+  # removed member until the next write or sync (documented limitation).
+  [[model.witness]]
+  invariant = "SettledHeadsExcludeRemoved"
+
+[[model]]
+name = "MemberChange removal races an approval"
+module = "MemberChange.tla"
+config = "MemberChange_fork.cfg"
+tier = "pr"
+uncovered = ["ADoneOk"]
+min_states = 5000
+  [[model.mutant]]
+  name = "moved-is-internal"
+  violates = ["NoInternalErrors"]
+  [[model.mutant]]
+  name = "skip-recheck-after-publish"
+  violates = ["SettledHeadsReadable"]
+  [[model.witness]]
+  invariant = "WitnessNoFork"
+  [[model.witness]]
+  invariant = "WitnessNoJoin"
+  [[model.witness]]
+  invariant = "WitnessNoRetry"
+  # F7: a write that gives up after publishing leaves a revision a member
+  # approved meanwhile cannot decrypt until the next write or sync.
+  [[model.witness]]
+  invariant = "SettledHeadsReadableStrict"
+
 # Nightly: the same properties with larger bounds.
 
 [[model]]
@@ -133,3 +184,10 @@ config = "StateDAG_honest_deep.cfg"
 tier = "nightly"
 uncovered = ["Attack"]
 min_states = 400000
+
+[[model]]
+name = "MemberChange deep"
+module = "MemberChange.tla"
+config = "MemberChange_fork_deep.cfg"
+tier = "nightly"
+min_states = 1000000
