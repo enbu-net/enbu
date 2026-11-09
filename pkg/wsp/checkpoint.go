@@ -30,7 +30,8 @@ type checkpointFile struct {
 // For the Control DAG, which is never deleted, it keeps the accepted heads: a
 // later view must still contain each of them. For a resource, whose old
 // revisions may be deleted, it keeps the highest Generation accepted: a later
-// view must show a verified revision of at least that Generation. Storage
+// view must show a head read as current, or a revision whose Generation the
+// view proves, of at least that Generation. Storage
 // hiding an accepted head behind a sibling branch of equal or higher
 // Generation is not detected; that branch still needs a member's signature.
 //
@@ -187,32 +188,35 @@ func (c *Checkpoints) AcceptControl(view *ControlView) error {
 	})
 }
 
-// CheckState rejects a view of resource whose verified revisions are all of a
-// lower Generation than this client accepted. sv may be nil for a resource
-// storage shows nothing of. It does not record anything.
-func (c *Checkpoints) CheckState(resource string, sv *StateView) error {
+// CheckState rejects a view of resource that shows a lower Generation than this
+// client accepted. trusted are the heads the caller reads as current; besides
+// them, only revisions whose Generation the view proves count (see
+// StateView.shownGeneration). sv may be nil for a resource storage shows
+// nothing of. It does not record anything.
+func (c *Checkpoints) CheckState(resource string, sv *StateView, trusted []*VerifiedState) error {
 	accepted, err := c.Generation(resource)
 	if err != nil {
 		return err
 	}
-	return rollbackBelow(resource, sv, accepted)
+	return rollbackBelow(resource, sv, trusted, accepted)
 }
 
-func rollbackBelow(resource string, sv *StateView, accepted uint64) error {
-	if shown := sv.MaxGeneration(); shown < accepted {
+func rollbackBelow(resource string, sv *StateView, trusted []*VerifiedState, accepted uint64) error {
+	if shown := sv.shownGeneration(trusted); shown < accepted {
 		return fmt.Errorf("%w: storage shows %s up to generation %d, below the accepted %d", ErrRollback, resource, shown, accepted)
 	}
 	return nil
 }
 
-// AcceptState raises the accepted Generation of resource to generation, the
-// highest Generation of the heads the caller read from sv. The check runs again
-// under the lock, so a view that became stale while the caller was working is
-// rejected rather than silently accepted.
-func (c *Checkpoints) AcceptState(resource string, sv *StateView, generation uint64) error {
+// AcceptState raises the accepted Generation of resource to the highest
+// Generation of trusted, the heads the caller read from sv as current. The
+// check runs again under the lock, so a view that became stale while the
+// caller was working is rejected rather than silently accepted.
+func (c *Checkpoints) AcceptState(resource string, sv *StateView, trusted []*VerifiedState) error {
+	generation := TopGeneration(trusted)
 	return c.update(func(f *checkpointFile) (bool, error) {
 		accepted := f.States[resource]
-		if err := rollbackBelow(resource, sv, accepted); err != nil {
+		if err := rollbackBelow(resource, sv, trusted, accepted); err != nil {
 			return false, err
 		}
 		if generation <= accepted {

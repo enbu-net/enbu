@@ -248,20 +248,30 @@ func resolution(t *testing.T, parents []*Verified, by actor, principals ...Princ
 	return blob, err
 }
 
-func TestResolutionMayOnlyKeepWhatTheHeadsListed(t *testing.T) {
+func TestResolutionMayOnlyKeepWhatEveryHeadListed(t *testing.T) {
 	alice, bob, carol, mallory := newActor(t, true), newActor(t, false), newActor(t, false), newActor(t, false)
 	_, a, b := forkedControls(t, alice, bob, carol)
 	parents := []*Verified{a, b}
 
-	adminBob := bob.p
-	adminBob.Admin = true
-	if _, err := resolution(t, parents, alice, alice.p, adminBob, carol.p); err != nil {
-		t.Fatalf("keeping everything the heads listed: %v", err)
+	// The honest resolution: the principals and admin rights both heads agree on.
+	if _, err := resolution(t, parents, alice, alice.p, bob.p); err != nil {
+		t.Fatalf("keeping what every head listed: %v", err)
 	}
 	if _, err := resolution(t, parents, alice, alice.p); err != nil {
 		t.Fatalf("dropping principals: %v", err)
 	}
-	if _, err := resolution(t, parents, alice, alice.p, bob.p, carol.p, mallory.p); !errors.Is(err, ErrInvalid) {
+	// carol joined on one branch only. A subset of the union of the heads used
+	// to pass, so a resolution could keep a member the other admin never saw.
+	if _, err := resolution(t, parents, alice, alice.p, bob.p, carol.p); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution kept a principal only one head listed: %v", err)
+	}
+	// bob is an admin on one branch only.
+	adminBob := bob.p
+	adminBob.Admin = true
+	if _, err := resolution(t, parents, alice, alice.p, adminBob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution kept an admin right only one head granted: %v", err)
+	}
+	if _, err := resolution(t, parents, alice, alice.p, bob.p, mallory.p); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("resolution added a principal: %v", err)
 	}
 	adminCarol := carol.p

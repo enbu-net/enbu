@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -137,13 +138,43 @@ func TestStateForOtherResourceOrWorkspaceRejected(t *testing.T) {
 	}
 }
 
-func TestStateNamingAControlStorageDoesNotShowIsARollback(t *testing.T) {
+// A State naming a Control the view does not hold cannot be verified. It used
+// to be reported as a rollback before its signature was checked, so one
+// unsigned object written by anyone with storage access blocked the resource.
+func TestStateNamingAnUnknownControlIsInvalidNotARollback(t *testing.T) {
 	f := newStateFixture(t)
 	s := f.state(f.bob)
 	s.Control = digest.FromString("a newer control")
 	blob, rev := signedState(t, s, f.bob)
-	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrRollback) {
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) || errors.Is(err, ErrRollback) {
 		t.Fatalf("state naming an unknown control: %v", err)
+	}
+}
+
+func TestLoadStatesSkipsAnUnsignedStateNamingAnUnknownControl(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	forged := f.state(f.bob, root)
+	forged.Control = digest.FromString("a control nobody signed")
+	body, err := encMode.Marshal(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := Signed{Body: body, Signature: []byte("not a signature")}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := digest.FromBytes(blob)
+	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: forged.Scope(), Rev: rev, Head: blob, Payload: []byte("junk")}); err != nil {
+		t.Fatal(err)
+	}
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatalf("one unsigned object blocked the resource: %v", err)
+	}
+	if sv.Skipped != 1 || sv.Graph.Has(rev) || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d", sv.Heads, sv.Skipped)
 	}
 }
 
@@ -457,6 +488,7 @@ func TestStateGenerationAndOpMustBeWellFormed(t *testing.T) {
 		"child at one":   func(s *State) { s.Parents = []digest.Digest{p}; s.Generation = 1 },
 		"unknown op":     func(s *State) { s.Op = "compact" },
 		"missing op":     func(s *State) { s.Op = "" },
+		"above max":      func(s *State) { s.Parents = []digest.Digest{p}; s.Generation = MaxGeneration + 1 },
 	} {
 		s := f.state(f.bob)
 		mutate(&s)
@@ -480,8 +512,8 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.MaxGeneration() != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
-		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.MaxGeneration())
+	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.shownGeneration(nil) != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
+		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
 	}
 
 	if err := f.store.Delete(ctx, storage.KindState, storage.StateScope(testWorkspace, testResource), root); err != nil {
@@ -491,8 +523,12 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sv.Graph.Has(child) || sv.Graph.Has(root) || sv.MaxGeneration() != 2 {
-		t.Fatalf("revision above a deleted parent: states %v max %d", sv.States, sv.MaxGeneration())
+	if !sv.Graph.Has(child) || sv.Graph.Has(root) || sv.shownGeneration(sv.Heads) != 2 {
+		t.Fatalf("revision above a deleted parent: states %v max %d", sv.States, sv.shownGeneration(sv.Heads))
+	}
+	// Above a deleted parent, only a head the reader trusts vouches for its Generation.
+	if got := sv.shownGeneration(nil); got != 0 {
+		t.Fatalf("unproven generation counted: %d", got)
 	}
 }
 
@@ -515,8 +551,8 @@ func TestLoadStatesDropsDescendantsOfAWrongGeneration(t *testing.T) {
 			t.Fatalf("revision %s above a wrong generation kept", rev)
 		}
 	}
-	if sv.Skipped != 3 || sv.MaxGeneration() != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
-		t.Fatalf("heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.MaxGeneration())
+	if sv.Skipped != 3 || sv.shownGeneration(nil) != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
 	}
 }
 
@@ -534,7 +570,121 @@ func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {
 		t.Fatal(err)
 	}
 	sv, err := LoadStates(ctx, f.store, load(t, f.store, f.genesis), testWorkspace, testResource)
-	if err != nil || sv.MaxGeneration() != 2 {
-		t.Fatalf("max generation = %d %v", sv.MaxGeneration(), err)
+	if err != nil || sv.shownGeneration(nil) != 2 {
+		t.Fatalf("shown generation = %d %v", sv.shownGeneration(nil), err)
+	}
+}
+
+// A removed member's key still verifies against the Control that listed it.
+// Above a parent storage does not hold, such a revision may claim any
+// Generation; counting it would let its holder mask storage hiding the newer
+// revisions a device accepted.
+func TestUnprovenGenerationOfAnUntrustedRevisionDoesNotMaskARollback(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	a := f.publish(t, f.state(f.alice, root), f.alice, "a")
+	f.publish(t, f.state(f.alice, a), f.alice, "b")
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, f.genesis, nil)
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cps.AcceptState(testResource, sv, sv.Heads); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateControl(ctx, f.store, f.view, f.alice.signer, func(c *Control) error {
+		c.Principals = []Principal{f.alice.p}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view := load(t, f.store, f.genesis)
+	head, _ := view.Head()
+	// bob, removed, signs under the Control that listed him: one revision
+	// above a parent that never existed, and a child above it.
+	planted := f.state(f.bob, digest.FromString("a parent nobody can produce"))
+	planted.Generation = 1 << 40
+	x := f.publish(t, planted, f.bob, "planted")
+	child := f.state(f.bob, x)
+	child.Generation = 1<<40 + 1
+	f.publish(t, child, f.bob, "planted child")
+
+	hidden := []digest.Digest{}
+	for d, gen := range f.gens {
+		if gen == 3 {
+			hidden = append(hidden, d)
+		}
+	}
+	rolledBack := storagetest.Wrap(f.store, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revs, err := next.Discover(ctx, kind, scope)
+			out := revs[:0:0]
+			for _, r := range revs {
+				if !slices.Contains(hidden, r) {
+					out = append(out, r)
+				}
+			}
+			return out, err
+		},
+	})
+	sv, err = LoadStates(ctx, rolledBack, view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sv.States) != 4 {
+		t.Fatalf("planted revisions not loaded: %d", len(sv.States))
+	}
+	var trusted []*VerifiedState
+	for _, h := range sv.Heads {
+		if AuthorIsCurrent(view, head, h) == nil {
+			trusted = append(trusted, h)
+		}
+	}
+	if err := cps.CheckState(testResource, sv, trusted); !errors.Is(err, ErrRollback) {
+		t.Fatalf("planted generation masked the rollback: %v", err)
+	}
+}
+
+// A member could sign Generation 2^64-1: its child's Generation wrapped to 0,
+// which no revision may carry, so nobody could write the resource again. Such
+// a revision is invalid and skipped.
+func TestLoadStatesSkipsAGenerationAboveTheMaximum(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	// Above a parent storage does not hold, nothing else checks the Generation.
+	huge := f.state(f.bob, digest.FromString("deleted history"))
+	huge.Generation = ^uint64(0)
+	body, err := encMode.Marshal(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := f.bob.signer.Sign(signing.DomainState, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := Signed{Body: body, Signature: sig}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := digest.FromBytes(blob)
+	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: huge.Scope(), Rev: rev, Head: blob, Payload: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("generation 2^64-1 verified: %v", err)
+	}
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil || sv.Skipped != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d: %v", sv.Heads, sv.Skipped, err)
+	}
+	if NextGeneration(sv.Heads) != 2 {
+		t.Fatalf("next generation = %d", NextGeneration(sv.Heads))
+	}
+	top := f.state(f.bob, root)
+	top.Generation = MaxGeneration
+	if _, err := SignState(top, f.bob.signer); err != nil {
+		t.Fatalf("the maximum itself is valid: %v", err)
 	}
 }

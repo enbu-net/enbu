@@ -11,9 +11,11 @@ import (
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/fxamacker/cbor/v2"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -158,6 +160,33 @@ func TestFakeSecretRejected(t *testing.T) {
 			t.Fatalf("unsigned state changed the secrets: %v %v", got, err)
 		}
 	})
+	// Naming a Control the verified DAG does not hold used to be reported as a
+	// rollback before the signature was checked, blocking the environment.
+	t.Run("unsigned state naming an unknown control", func(t *testing.T) {
+		st := wsp.State{Workspace: ws, Resource: resource, Parents: []digest.Digest{revisionsOf(t, alice, "default")[0]}, Generation: 2,
+			Op: wsp.OpWrite, Control: digest.FromString("no such control"), Ciphertext: digest.FromBytes(forged), Author: s.self()}
+		enc, err := cbor.CoreDetEncOptions().EncMode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := enc.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blob, err := wsp.Signed{Body: body, Signature: []byte("forged")}.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: forged}); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+			t.Fatalf("state naming an unknown control blocked reads: %v %v", got, err)
+		}
+		if err := alice.AddSecret(bg, "default", "BESIDE_UNKNOWN_CONTROL", "ok"); err != nil {
+			t.Fatalf("state naming an unknown control blocked writes: %v", err)
+		}
+	})
 	t.Run("state signed by a non-principal", func(t *testing.T) {
 		publishRevision(t, alice.Storage, attacker, ws, resource, s.head.Digest, forged, revisionsOf(t, alice, "default")[0])
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
@@ -289,6 +318,55 @@ func TestStateRollbackDetected(t *testing.T) {
 	fresh.Identities, fresh.CheckpointDir, fresh.Storage = alice.Identities, t.TempDir(), alice.Storage
 	if got, err := fresh.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
 		t.Fatalf("fresh client: %v %v", got, err)
+	}
+}
+
+// A removed member still holds a key the old Control lists. A revision it signs
+// above a parent storage does not hold can claim any Generation, so it must not
+// count as evidence that storage is fresh.
+func TestRemovedMembersInflatedGenerationDoesNotMaskARollback(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	bobsView, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bobsView.Close()
+	if err := alice.RemoveMember(bg, string(bobsView.self())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.ListSecrets(bg, "default"); err != nil { // accepts the re-encryption
+		t.Fatal(err)
+	}
+	cur, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := cur.readResource(bg, cur.resource("default"), nil, false)
+	cur.Close()
+	if err != nil || len(read.heads) != 1 {
+		t.Fatalf("read: %v", err)
+	}
+	newest := read.heads[0].Digest
+
+	signer, err := loadSigner(bob, bobsView.workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = signer.Close() }()
+	ciphertext := []byte("planted")
+	planted := wsp.State{Workspace: bobsView.workspace, Resource: bobsView.resource("default"), Parents: []digest.Digest{digest.FromString("never existed")},
+		Generation: 1 << 40, Op: wsp.OpWrite, Control: bobsView.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: signer.Public().DeviceID()}
+	blob, err := wsp.SignState(planted, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: planted.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+	alice.Storage = hide(alice.Storage, newest)
+	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeRollback) {
+		t.Fatalf("planted generation masked the rollback: %v", err)
 	}
 }
 
@@ -668,5 +746,100 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 	}
 	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
 		t.Fatal("retry changed workspace or root")
+	}
+}
+
+// publishGeneration signs, as author, a revision of env above parent carrying
+// generation, bypassing the checks SignState makes.
+func publishGeneration(t *testing.T, author *App, env string, parent digest.Digest, generation uint64) {
+	t.Helper()
+	s, err := author.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "v1"}), s.recipients())
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := wsp.State{Workspace: s.workspace, Resource: s.resource(env), Parents: []digest.Digest{parent}, Generation: generation,
+		Op: wsp.OpWrite, Control: s.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: s.self()}
+	enc, err := cbor.CoreDetEncOptions().EncMode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := enc.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := s.signer.Sign(signing.DomainState, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := wsp.Signed{Body: body, Signature: sig}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := author.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A member signing Generation 2^64-1 used to make every child wrap to 0, so
+// nobody could write the environment again. That revision is now skipped.
+func TestGenerationAboveTheMaximumDoesNotBlockWrites(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	// Above a parent storage does not hold, nothing checks the Generation.
+	publishGeneration(t, bob, "default", digest.FromString("deleted history"), ^uint64(0))
+	if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+		t.Fatalf("read beside generation 2^64-1: %v %v", got, err)
+	}
+	if err := alice.AddSecret(bg, "default", "AFTER", "ok"); err != nil {
+		t.Fatalf("write beside generation 2^64-1: %v", err)
+	}
+}
+
+// A revision at the maximum Generation is valid, but nothing can be written on
+// top of it: the write fails with a clear conflict instead of wrapping.
+func TestWritingAboveTheMaximumGenerationIsAConflict(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	// Above a parent storage does not hold, nothing checks the Generation.
+	publishGeneration(t, bob, "default", digest.FromString("deleted history"), wsp.MaxGeneration)
+	err := alice.AddSecret(bg, "default", "AFTER", "ok")
+	if !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("write above the maximum generation: %v", err)
+	}
+}
+
+// Members that keep changing exhaust the write's retries. That used to leave
+// as an unclassified internal error; it is a conflict the caller can retry.
+func TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging(t *testing.T) {
+	alice := newAlice(t)
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				s, err := (&App{Storage: base, Identities: alice.Identities, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}).openSession(ctx)
+				if err != nil {
+					t.Error(err)
+				} else {
+					defer s.Close()
+					extra := extraPrincipal(t)
+					if _, err := wsp.UpdateControl(ctx, base, s.view, s.signer, func(c *wsp.Control) error {
+						c.Principals = append(c.Principals, extra)
+						return nil
+					}); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.AddSecret(bg, "default", "NEW", "value")
+	if !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("members kept changing: %v", err)
 	}
 }

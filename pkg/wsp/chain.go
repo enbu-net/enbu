@@ -296,9 +296,10 @@ func UpdateControl(ctx context.Context, store storage.Store, view *ControlView, 
 }
 
 // ResolveFork publishes a Control that joins every head of a forked view. It
-// starts from the principals the heads list (an admin of any head stays one);
-// mutate may only remove principals or admin rights, because VerifyChild
-// refuses a resolution that adds anything. signer must be an admin of every head.
+// starts from the principals every head lists with the same keys, each an
+// admin only if an admin in every head; mutate may only remove principals or
+// admin rights, because VerifyChild refuses a resolution that keeps anything
+// more. signer must be an admin of every head.
 func ResolveFork(ctx context.Context, store storage.Store, view *ControlView, signer signing.Signer, mutate func(*Control) error) (*Verified, error) {
 	if !view.Forked() {
 		return nil, errors.New("the workspace control is not forked")
@@ -306,24 +307,25 @@ func ResolveFork(ctx context.Context, store storage.Store, view *ControlView, si
 	author := signer.Public().DeviceID()
 	next := Control{Workspace: view.Workspace, Author: author}
 	var maxHeight uint64
-	union := map[signing.DeviceID]Principal{}
 	for _, h := range view.Heads {
 		if a, ok := h.Principal(author); !ok || !a.Admin {
 			return nil, errors.New("only an admin of every competing control can resolve the fork")
 		}
 		next.Parents = append(next.Parents, h.Digest)
 		maxHeight = max(maxHeight, h.Height)
-		for _, p := range h.Principals {
-			if cur, ok := union[p.ID]; ok {
-				p.Admin = p.Admin || cur.Admin
-			}
-			union[p.ID] = p
-		}
 	}
 	sortDigests(next.Parents)
 	next.Height = maxHeight + 1
-	for _, p := range union {
-		next.Principals = append(next.Principals, p)
+	for _, p := range view.Heads[0].Principals {
+		inAll := true
+		for _, h := range view.Heads[1:] {
+			q, ok := h.Principal(p.ID)
+			inAll = inAll && ok && q.Signing.DeviceID() == p.Signing.DeviceID() && q.Recipient == p.Recipient
+			p.Admin = p.Admin && ok && q.Admin
+		}
+		if inAll {
+			next.Principals = append(next.Principals, p)
+		}
 	}
 	if err := mutate(&next); err != nil {
 		return nil, err

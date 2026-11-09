@@ -101,8 +101,8 @@ func TestMutationTargetsMatchLFAndCRLF(t *testing.T) {
 var mutationCases = []struct{ name, file, old, new, scenario string }{
 	{"contact-fetches-before-root-check", "pkg/wsp/trust.go", "pinned != (Root{}) && pinned != root {", "false && pinned != (Root{}) && pinned != root {", "TestFirstContactSmoke"},
 	{"control-view-forgets-checkpoint-witness", "pkg/wsp/checkpoint.go", "return f, nil", "f.Control = nil\n\treturn f, nil", "TestObserverControlEquivocationSmoke"},
-	{"decrypt-before-checkpoint-check", "app/resource.go", "err = s.cps.CheckState(resource, sv)", "err = nil", "TestObserverEquivocationSmoke/disjoint"},
-	{"reader-view-ignores-lower-generation", "pkg/wsp/checkpoint.go", "if shown := sv.MaxGeneration(); shown < accepted {", "if shown := sv.MaxGeneration(); false && shown < accepted {", "TestObserverEquivocationSmoke/disjoint"},
+	{"decrypt-before-checkpoint-check", "app/resource.go", "err = s.cps.CheckState(resource, sv, s.trustedHeads(sv))", "err = nil", "TestObserverEquivocationSmoke/disjoint"},
+	{"reader-view-ignores-lower-generation", "pkg/wsp/checkpoint.go", "if shown := sv.shownGeneration(trusted); shown < accepted {", "if shown := sv.shownGeneration(trusted); false && shown < accepted {", "TestObserverEquivocationSmoke/disjoint"},
 	{"lost-update", "app/secrets.go", "secrets[key] = value", "delete(secrets,key)", "TestScenarios/concurrent-keys"},
 	{"missed-conflict", "app/conflicts.go", "func conflictError(cs []merge.Conflict) error {", "func conflictError(cs []merge.Conflict) error { return nil;", "TestScenarios/conflicting-edits"},
 	{"privilege-escalation", "app/members.go", "if p, _ := s.head.Principal(s.self()); !p.Admin {", "if p, _ := s.head.Principal(s.self()); !p.Admin && false {", "TestScenarios/membership"},

@@ -157,16 +157,14 @@ func TestConcurrentUpdateForksAndIsResolvedByAnAdmin(t *testing.T) {
 	if _, err := ResolveFork(ctx, store, view, carol.signer, func(*Control) error { return nil }); err == nil {
 		t.Fatal("a member resolved the fork")
 	}
-	resolved, err := ResolveFork(ctx, store, view, alice.signer, func(c *Control) error {
-		kept := c.Principals[:0:0]
-		for _, p := range c.Principals {
-			if p.ID != dave.p.ID {
-				kept = append(kept, p)
-			}
-		}
-		c.Principals = kept
+	// Adding a principal, even one only a branch listed, is refused.
+	if _, err := ResolveFork(ctx, store, view, alice.signer, func(c *Control) error {
+		c.Principals = append(c.Principals, carol.p)
 		return nil
-	})
+	}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("resolution kept carol: %v", err)
+	}
+	resolved, err := ResolveFork(ctx, store, view, alice.signer, func(*Control) error { return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,8 +175,12 @@ func TestConcurrentUpdateForksAndIsResolvedByAnAdmin(t *testing.T) {
 	if _, ok := head.Principal(dave.p.ID); ok {
 		t.Fatal("dave survived the resolution")
 	}
-	if _, ok := head.Principal(carol.p.ID); !ok {
-		t.Fatal("carol was dropped")
+	// carol and dave were each added on one branch; only what both agree on stays.
+	if _, ok := head.Principal(carol.p.ID); ok {
+		t.Fatal("carol survived the resolution")
+	}
+	if _, ok := head.Principal(bob.p.ID); !ok {
+		t.Fatal("bob, listed by both heads, was dropped")
 	}
 	if _, err := ResolveFork(ctx, store, head2view(t, store, genesis), alice.signer, func(*Control) error { return nil }); err == nil {
 		t.Fatal("resolved a DAG that is not forked")

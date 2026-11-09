@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -50,6 +51,11 @@ func TopGeneration(states []*VerifiedState) uint64 {
 	return top
 }
 
+// MaxGeneration bounds Generation, far above any history people write, so a
+// child of a valid revision can always be counted without wrapping. A member
+// signing a larger one would otherwise leave a resource nobody can write on.
+const MaxGeneration = 1 << 53
+
 // NextGeneration is the Generation of a revision whose parents are parents.
 func NextGeneration(parents []*VerifiedState) uint64 { return TopGeneration(parents) + 1 }
 
@@ -70,6 +76,9 @@ func (s State) validate() error {
 	}
 	if len(s.Parents) > MaxParents {
 		return invalid("state has too many parents")
+	}
+	if s.Generation > MaxGeneration {
+		return invalid("state generation %d exceeds %d", s.Generation, uint64(MaxGeneration))
 	}
 	if s.Generation == 0 || (s.Generation == 1) != (len(s.Parents) == 0) {
 		return invalid("state generation %d does not fit %d parents", s.Generation, len(s.Parents))
@@ -125,9 +134,11 @@ func SignState(s State, signer signing.Signer) ([]byte, error) {
 // VerifyRevision checks one stored revision of workspace and resource against
 // the Control it names. The author must be a principal of that Control and the
 // signature must verify under the key it lists; a member removed since still
-// signed it validly. The named Control must be part of the verified DAG: one
-// that is not means storage showed an older Control DAG than the author saw,
-// which is reported as a rollback.
+// signed it validly. A State naming a Control the verified DAG does not hold
+// cannot be checked, so it is invalid like any other unverifiable object:
+// anyone able to write to storage can name an arbitrary Control, and treating
+// it as a rollback would let one unsigned object block a resource. A hidden
+// Control is detected by the Control checkpoint, a hidden State by Generation.
 //
 // It makes no claim about freshness or about whether the author is a member
 // now; see AuthorIsCurrent for revisions that become the head.
@@ -151,7 +162,7 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 	}
 	written, ok := view.Get(s.Control)
 	if !ok {
-		return nil, fmt.Errorf("%w: state names control %s that storage does not show", ErrRollback, s.Control)
+		return nil, invalid("state names control %s that is not part of the verified control", s.Control)
 	}
 	author, ok := written.Principal(s.Author)
 	if !ok {
@@ -186,13 +197,36 @@ type StateView struct {
 	Skipped int              // listed revisions that failed to fetch or verify
 }
 
-// MaxGeneration is the highest Generation of the verified revisions in the
-// view, whoever wrote them, or 0 for an empty view. It measures how fresh the
-// view is, not what may be read: see Checkpoints.
-func (sv *StateView) MaxGeneration() uint64 {
-	var top uint64
-	if sv != nil {
-		for _, st := range sv.States {
+// shownGeneration is how fresh the view shows the resource to be, or 0 for an
+// empty view. It measures freshness, not what may be read: see Checkpoints.
+//
+// It counts the Generation of trusted, the heads the caller reads as current,
+// and of every revision whose Generation the view proves: all its ancestors
+// back to a first revision are present, so each step was checked. Whoever
+// wrote such a revision cannot have inflated its Generation. A revision above
+// a missing parent proves nothing, because anyone holding a signing key that a
+// Control once listed, a removed member's included, can sign one with any
+// Generation and mask storage hiding newer revisions.
+func (sv *StateView) shownGeneration(trusted []*VerifiedState) uint64 {
+	top := TopGeneration(trusted)
+	if sv == nil {
+		return top
+	}
+	// A present parent has a lower Generation (dropWrongGenerations), so
+	// visiting by Generation reaches every parent before its children.
+	states := make([]*VerifiedState, 0, len(sv.States))
+	for _, st := range sv.States {
+		states = append(states, st)
+	}
+	sort.Slice(states, func(i, j int) bool { return states[i].Generation < states[j].Generation })
+	proven := make(map[digest.Digest]bool, len(states))
+	for _, st := range states {
+		ok := true
+		for _, p := range st.Parents {
+			ok = ok && proven[p]
+		}
+		if ok {
+			proven[st.Digest] = true
 			top = max(top, st.Generation)
 		}
 	}
@@ -280,9 +314,6 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 			totalBytes += len(f.head)
 			st, err := VerifyRevision(view, workspace, resource, rev, f.head)
 			if err != nil {
-				if errors.Is(err, ErrRollback) {
-					return nil, err
-				}
 				sv.Skipped++
 				continue
 			}
