@@ -25,13 +25,8 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 // whichever reads next merges them. Before publishing it looks once more, so a
 // head that appeared during the edit is merged now rather than left for later.
 func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[string]merge.Choice, seen []string, change func(map[string]string) error) error {
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
-		return err
-	}
-	resolved, err := s.environment(env)
-	if err != nil {
-		s.Close()
 		return err
 	}
 	return a.changeResource(ctx, s, s.resource(resolved.Name), op, choices, seen, change)
