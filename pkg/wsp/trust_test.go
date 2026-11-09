@@ -104,6 +104,43 @@ func TestTrustRejectsACorruptFileUnlessReplaced(t *testing.T) {
 	}
 }
 
+// Confirming one workspace's new root repairs its own pin only. A file that
+// also holds another corrupt pin, or is not a trust file at all, is not reset.
+func TestTrustReplaceKeepsOtherPins(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trust.json")
+	tr := OpenTrust(dir, clock.New())
+	other := root("other", "o")
+	file := `{"workspaces":{"ws":"nope","other":"` + string(other.Genesis) + `"},"repositories":{"/b/enbu.toml":"other"}}`
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.Pin(root("ws", "g"), "/a/enbu.toml", PinReplace); err != nil {
+		t.Fatalf("replace could not repair its own pin: %v", err)
+	}
+	if got, err := tr.Pinned("other"); err != nil || got != other {
+		t.Fatalf("another workspace's pin: %v %v", got, err)
+	}
+	if got, err := tr.Repository("/b/enbu.toml"); err != nil || got != other {
+		t.Fatalf("another checkout's pin: %v %v", got, err)
+	}
+
+	for name, file := range map[string]string{
+		"another corrupt pin": `{"workspaces":{"ws":"nope","other":"nope"}}`,
+		"not a trust file":    `{`,
+	} {
+		if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tr.Pin(root("ws", "g"), "", PinReplace); err == nil {
+			t.Fatalf("%s: replace reset the file", name)
+		}
+		if b, err := os.ReadFile(path); err != nil || string(b) != file {
+			t.Fatalf("%s: the file changed: %s %v", name, b, err)
+		}
+	}
+}
+
 func TestTrustRejectsAnInvalidRoot(t *testing.T) {
 	tr := OpenTrust(t.TempDir(), clock.New())
 	if _, err := tr.Pin(Root{Workspace: "ws", Genesis: "sha256:short"}, "", PinFirst); !errors.Is(err, ErrInvalid) {
