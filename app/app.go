@@ -16,8 +16,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
-	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 type App struct {
