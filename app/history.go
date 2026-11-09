@@ -132,7 +132,6 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 		}
 		return err == nil, err
 	}
-	revisions := map[digest.Digest]*wsp.VerifiedState{}
 	var listed []digest.Digest
 	// Stable traversal makes external reads and failure locations reproducible.
 	for _, d := range slices.Sorted(maps.Keys(h.states)) {
@@ -158,7 +157,6 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 		if !f.Readable {
 			continue
 		}
-		revisions[d] = h.states[d]
 		if !f.Repeats {
 			listed = append(listed, d)
 		}
@@ -168,7 +166,9 @@ func (h *historyView) load(ctx context.Context, resource string) error {
 	for _, d := range listed {
 		keep[d] = true
 	}
-	for _, d := range chronological(revisions) {
+	// An unreadable key epoch still links its readable ancestors and
+	// descendants. Filter visibility after sorting the complete verified DAG.
+	for _, d := range chronological(h.states) {
 		if keep[d] {
 			st := h.states[d]
 			h.entries = append(h.entries, HistoryEntry{Index: len(h.entries) + 1, Timestamp: time.Unix(st.CreatedAt, 0).UTC(), Tag: d.Encoded()})

@@ -1,27 +1,29 @@
 name: Setup coverage toolchain
-description: Install Go, aqua tools, Tobari, and Vite+ for a coverage job
+description: Install only Go, workload tools and Tobari for Go coverage
 
 runs:
   using: composite
   steps:
-    - uses: actions/setup-go@v7.0.0
-      with:
-        go-version-file: go.mod
-        cache: true
+    - uses: $/.github/actions/setup-go
 
-    - uses: aquaproj/aqua-installer@v4.1.1
-      with:
-        aqua_version: v2.66.0
+    - uses: $/.github/actions/setup-tools
 
-    - uses: goccy/tobari-action/setup@v1.3.0
+    # tobari-action downloads the CLI from GitHub Releases without retrying;
+    # give a 504 burst one delayed retry, as setup-tools does for aqua.
+    - id: tobari
+      uses: goccy/tobari-action/setup@v1.3.0
+      continue-on-error: true
       with:
         # The tobari CLI must match the github.com/goccy/tobari module in go.mod:
         # a mismatch fails the test link with "fingerprint mismatch". Renovate
         # updates both together (customManagers in renovate.json).
         version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
-
-    - uses: voidzero-dev/setup-vp@v1.22.0
+    - name: Wait before retrying Tobari
+      if: steps.tobari.outcome == 'failure'
+      shell: bash
+      run: sleep 90
+    - name: Retry Tobari
+      if: steps.tobari.outcome == 'failure'
+      uses: goccy/tobari-action/setup@v1.3.0
       with:
-        run-install: false
-        package-manager: false
-        node-manager: false
+        version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari

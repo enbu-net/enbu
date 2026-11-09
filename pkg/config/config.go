@@ -16,6 +16,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 const currentVersion = "v1alpha2"
@@ -84,6 +85,9 @@ func ParseProject(content string) (*ProjectConfig, error) {
 	if cfg.Version != currentVersion {
 		return nil, fmt.Errorf("enbu.toml: unsupported version %q (run 'enbu init' to recreate)", cfg.Version)
 	}
+	if err := ValidateProjectOutputs(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
@@ -98,15 +102,40 @@ func DecodeProject(content string) (*ProjectConfig, error) {
 }
 
 func ValidateProjectOutputs(cfg *ProjectConfig) error {
-	for name, env := range cfg.Environments {
+	names := make([]string, 0, len(cfg.Environments))
+	for name := range cfg.Environments {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	seen := make(map[string]bool, len(names))
+	outputs := make([]string, 0, len(names))
+	for _, name := range names {
+		if !ValidEnvironmentName(name) || seen[strings.ToLower(name)] {
+			return fmt.Errorf("invalid or ambiguous environment name %q", name)
+		}
+		seen[strings.ToLower(name)] = true
+		env := cfg.Environments[name]
 		output := strings.TrimSpace(env.Output)
+		// Shared configuration must mean the same relative path on every OS.
+		// Backslashes, drive prefixes and NTFS alternate streams are not portable.
+		if output != env.Output || strings.ContainsAny(output, "\\:") {
+			return fmt.Errorf("environment %q output must use a portable relative path", name)
+		}
 		if output == "" {
-			continue
+			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
-		if filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		// A leading slash is rooted on Windows even without a drive letter,
+		// where filepath.IsAbs alone would accept a nonportable configuration.
+		if strings.HasPrefix(output, "/") || filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("environment %q output must stay within the repository", name)
 		}
+		for _, previous := range outputs {
+			if strings.EqualFold(previous, clean) {
+				return fmt.Errorf("environment %q output collides with another environment", name)
+			}
+		}
+		outputs = append(outputs, clean)
 	}
 	return nil
 }
@@ -115,17 +144,48 @@ func SaveProject(cfg *ProjectConfig) error {
 	return SaveProjectTo("", cfg)
 }
 
+// SaveProjectTo honors an explicit destination. Only an implicit destination
+// searches ancestors, so a fresh explicit workspace cannot overwrite a parent.
 func SaveProjectTo(dir string, cfg *ProjectConfig) error {
-	path, err := findProjectConfigFrom(dir)
-	if err != nil {
-		path = filepath.Join(baseDir(dir), "enbu.toml")
+	path := filepath.Join(baseDir(dir), "enbu.toml")
+	if dir == "" {
+		if found, err := findProjectConfigFrom(""); err == nil {
+			path = found
+		}
 	}
 
 	content, err := MarshalProject(cfg)
 	if err != nil {
 		return fmt.Errorf("encoding enbu.toml: %w", err)
 	}
-	return os.WriteFile(path, content, 0o644)
+	// A failed write must leave the shared workspace definition intact. Keep
+	// existing regular-file permissions; new configurations remain private.
+	mode := os.FileMode(0o600)
+	previous, statErr := os.Lstat(path)
+	if statErr == nil {
+		if previous.Mode().IsRegular() {
+			mode = previous.Mode().Perm()
+		}
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return statErr
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if err = preserveProjectOwner(tmp, previous); err == nil {
+		err = tmp.Chmod(mode)
+	}
+	if err == nil {
+		if _, err = tmp.Write(content); err == nil {
+			err = tmp.Sync()
+		}
+	}
+	if err = errors.Join(err, tmp.Close()); err != nil {
+		return err
+	}
+	return fsutil.Rename(tmp.Name(), path)
 }
 
 // MarshalProject emits the compact, canonical enbu.toml layout. Encoding the
@@ -263,7 +323,7 @@ func (cfg *ProjectConfig) AddEnvironmentWithID(name string, newID func() string)
 		cfg.Environments["default"] = EnvironmentConfig{Output: DefaultOutput("default")}
 		cfg.DefaultEnv = "default"
 	}
-	if _, exists := cfg.Environments[name]; exists {
+	if cfg.hasEnvironmentFold(name, "") {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", name), apperr.Params{"name": name})
 	}
 	cfg.Environments[name] = EnvironmentConfig{Output: DefaultOutput(name), Incarnation: newID()}
@@ -289,7 +349,7 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 	if !exists {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", oldName), apperr.Params{"name": oldName})
 	}
-	if _, exists := cfg.Environments[newName]; exists {
+	if oldName == newName || cfg.hasEnvironmentFold(newName, oldName) {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", newName), apperr.Params{"name": newName})
 	}
 	delete(cfg.Environments, oldName)
@@ -324,6 +384,15 @@ func (cfg *ProjectConfig) Resource(env string) string {
 func (cfg *ProjectConfig) HasEnvironment(name string) bool {
 	_, exists := cfg.Environments[name]
 	return exists
+}
+
+func (cfg *ProjectConfig) hasEnvironmentFold(name, except string) bool {
+	for existing := range cfg.Environments {
+		if existing != except && strings.EqualFold(existing, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func (cfg *ProjectConfig) Environment(name string) (EnvironmentConfig, error) {
@@ -369,7 +438,7 @@ func DefaultOutput(name string) string {
 }
 
 func ValidEnvironmentName(name string) bool {
-	if name == "" || len(name) > 100 {
+	if name == "" || len(name) > 100 || strings.HasSuffix(name, ".") {
 		return false
 	}
 	for _, r := range name {

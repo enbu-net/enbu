@@ -38,11 +38,22 @@ func (c *CredsBackend) command() string {
 	return "systemd-creds"
 }
 
-// Probe encrypts a throwaway value, which fails before systemd 256, without
-// the user's credential service, or without a host key.
-func (c *CredsBackend) Probe() error {
-	_, err := c.run([]byte("probe"), "encrypt", "--name=enbu-probe", "-", "-")
-	return err
+// Probe encrypts and decrypts a throwaway value without saving a credential.
+// It fails before systemd 256, without the user's credential service, or
+// without a host key.
+func (c *CredsBackend) Probe(ctx context.Context) error {
+	sealed, err := c.runContext(ctx, []byte("probe"), "encrypt", "--name=enbu-probe", "-", "-")
+	if err != nil {
+		return err
+	}
+	plain, err := c.runContext(ctx, sealed, "decrypt", "--name=enbu-probe", "-", "-")
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(plain, []byte("probe")) {
+		return errors.New("systemd-creds probe did not round-trip")
+	}
+	return nil
 }
 
 func (c *CredsBackend) Store(service, key string, secret []byte) error {
@@ -103,17 +114,24 @@ func (c *CredsBackend) path(service, key string) string {
 func credName(service, key string) string { return service + "." + sanitizeKey(key) }
 
 func (c *CredsBackend) run(stdin []byte, args ...string) ([]byte, error) {
+	return c.runContext(context.Background(), stdin, args...)
+}
+
+func (c *CredsBackend) runContext(parent context.Context, stdin []byte, args ...string) ([]byte, error) {
 	cClock := c.Clock
 	if cClock == nil {
 		cClock = clock.New()
 	}
-	ctx, cancel := clock.WithTimeout(context.Background(), cClock, credsTimeout)
+	ctx, cancel := clock.WithTimeout(parent, cClock, credsTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, c.command(), append([]string{"--user"}, args...)...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("systemd-creds %s: %w", args[0], ctx.Err())
+		}
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return nil, fmt.Errorf("systemd-creds %s: %w: %s", args[0], err, msg)
 		}

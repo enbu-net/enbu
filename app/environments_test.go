@@ -1,12 +1,39 @@
 package app
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 )
+
+func TestEnvironmentChangesRejectOutputCollisionWithoutWritingConfig(t *testing.T) {
+	for _, operation := range []string{"create", "rename"} {
+		t.Run(operation, func(t *testing.T) {
+			dir := t.TempDir()
+			before := []byte("version = 'v1alpha2'\ndefault_env = 'prod'\n[env.prod]\noutput = '.ENV.blocked'\n[env.staging]\n")
+			if err := os.WriteFile(dir+"/enbu.toml", before, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a := &App{RepositoryDir: dir}
+			var err error
+			if operation == "create" {
+				err = a.CreateEnvironment("blocked")
+			} else {
+				err = a.RenameEnvironment("staging", "blocked")
+			}
+			if !apperr.Is(err, apperr.CodeInvalidArgument) {
+				t.Fatalf("environment operation accepted an output collision: %v", err)
+			}
+			after, err := os.ReadFile(dir + "/enbu.toml")
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("rejected operation changed configuration: %v", err)
+			}
+		})
+	}
+}
 
 // SwitchEnvironment should not panic when no local state exists
 func TestSwitchEnvironmentWithoutLocalFile(t *testing.T) {

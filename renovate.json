@@ -12,72 +12,129 @@
   "minimumReleaseAge": "3 days",
   "automerge": true,
   "platformAutomerge": false,
-  "postUpdateOptions": ["gomodTidy"],
+  "postUpdateOptions": [
+    "gomodTidy",
+    "gomodUpdateImportPaths"
+  ],
   "customManagers": [
     {
       "customType": "regex",
       "description": "tobari CLI pinned for tobari-action; it must match the go module version",
-      "managerFilePatterns": ["/^\\.github/actions/setup-coverage/action\\.yaml$/"],
+      "managerFilePatterns": [
+        "/^\\.github/actions/setup-coverage/action\\.yaml$/"
+      ],
       "matchStrings": [
         "version:\\s*(?<currentValue>v?\\d+\\.\\d+\\.\\d+)\\s*#\\s*renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned CI validators",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.*\\.yaml$/"
+      ],
+      "matchStrings": [
+        "RENOVATE_VERSION: (?<currentValue>[^\\s]+) # renovate: datasource=(?<datasource>npm) depName=(?<depName>renovate)"
       ]
     }
   ],
   "packageRules": [
     {
       "description": "Use actions.lock for actions; keep external reusable workflows SHA pinned",
-      "matchManagers": ["github-actions"],
-      "matchDepTypes": ["action"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "action"
+      ],
       "pinDigests": false
     },
     {
       "description": "External reusable workflows are outside actions.lock coverage",
-      "matchManagers": ["github-actions"],
-      "matchDepTypes": ["workflow"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepTypes": [
+        "workflow"
+      ],
       "pinDigests": true
     },
     {
       "description": "Update coverage-v8 manually with Vite+'s bundled Vitest; independent updates break coverage collection",
-      "matchManagers": ["npm"],
-      "matchPackageNames": ["@vitest/coverage-v8"],
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@vitest/coverage-v8"
+      ],
       "enabled": false
     },
     {
       "description": "@types/vscode must not be newer than engines.vscode in vscode/package.json; raise both by hand",
-      "matchManagers": ["npm"],
-      "matchPackageNames": ["@types/vscode"],
+      "matchManagers": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "@types/vscode"
+      ],
       "enabled": false
     },
     {
-      "matchPackageNames": ["aquaproj/aqua-registry"],
-      "extends": ["schedule:earlyMondays"]
+      "matchPackageNames": [
+        "aquaproj/aqua-registry"
+      ],
+      "extends": [
+        "schedule:earlyMondays"
+      ]
     },
     {
       "description": "Update the tobari module and the tobari CLI in one PR so their versions never diverge",
-      "matchPackageNames": ["github.com/goccy/tobari"],
+      "matchPackageNames": [
+        "github.com/goccy/tobari"
+      ],
       "groupName": "tobari"
     },
     {
       "description": "Update Wails, the wails3 CLI and the JS runtime together; run task gui/bindings and commit web/src/bindings",
-      "matchPackageNames": ["github.com/wailsapp/wails/v3", "@wailsio/runtime"],
+      "matchPackageNames": [
+        "github.com/wailsapp/wails/v3",
+        "@wailsio/runtime"
+      ],
       "groupName": "wails",
       "automerge": false
     },
     {
       "description": "Major updates - block automerge",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "automerge": false,
-      "labels": ["renovate", "renovate:major"]
+      "labels": [
+        "renovate",
+        "renovate:major"
+      ]
     },
     {
       "description": "Minor updates",
-      "matchUpdateTypes": ["minor"],
-      "labels": ["renovate", "renovate:minor"]
+      "matchUpdateTypes": [
+        "minor"
+      ],
+      "labels": [
+        "renovate",
+        "renovate:minor"
+      ]
     },
     {
       "description": "Patch updates",
-      "matchUpdateTypes": ["patch", "pin", "digest"],
-      "labels": ["renovate", "renovate:patch"]
+      "matchUpdateTypes": [
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "labels": [
+        "renovate",
+        "renovate:patch"
+      ]
     }
   ]
 }

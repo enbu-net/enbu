@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
@@ -13,7 +14,7 @@ type IdentityStore interface {
 	Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
 	Load(workspaceID string) (identity.Identity, error)
 	Info(workspaceID string) (identity.PublicInfo, error)
-	Doctor() identity.Diagnosis
+	Doctor(context.Context) identity.Diagnosis
 	// The signing key is a separate keypair from the encryption identity.
 	CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error)
 	LoadSigner(workspaceID string) (signing.Signer, error)

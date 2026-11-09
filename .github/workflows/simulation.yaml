@@ -1,0 +1,166 @@
+name: Deterministic simulation
+
+on:
+  push:
+  schedule:
+    - cron: '0 17 * * *' # 02:00 Asia/Tokyo
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Scheduled full exploration must not be cancelled by an incremental push.
+concurrency:
+  group: simulation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+jobs:
+  plan:
+    name: Select affected DST
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      mode: ${{ steps.plan.outputs.mode }}
+      tests: ${{ steps.plan.outputs.tests }}
+      mutation: ${{ steps.plan.outputs.mutation }}
+      merge: ${{ steps.plan.outputs.merge }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select affected tests or daily full exploration
+        id: plan
+        run: python3 scripts/dst_plan.py
+
+  simulation:
+    name: Simulation (${{ matrix.platform.target }}, group ${{ matrix.group.id }})
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: ${{ needs.plan.outputs.mode == 'full' && 360 || 80 }}
+    strategy:
+      fail-fast: false
+      # Reserve runner capacity for normal PR checks while the nightly is large.
+      max-parallel: ${{ needs.plan.outputs.mode == 'full' && 10 || 5 }}
+      matrix:
+        # Full keeps the same 1,024 seeds, spread over eight runners per OS.
+        # Each runner still owns only four native parallel steps. With four
+        # runners, every Windows lane hit the 330m limit at about 56 of its 64
+        # seeds (run 42446542441), since FlushFileBuffers dominates there.
+        # Incremental keeps one runner per OS to avoid queue/setup overhead.
+        group: ${{ fromJSON(needs.plan.outputs.mode == 'full' && '[{"id":0,"lanes":[0,1,2,3]},{"id":1,"lanes":[4,5,6,7]},{"id":2,"lanes":[8,9,10,11]},{"id":3,"lanes":[12,13,14,15]},{"id":4,"lanes":[16,17,18,19]},{"id":5,"lanes":[20,21,22,23]},{"id":6,"lanes":[24,25,26,27]},{"id":7,"lanes":[28,29,30,31]}]' || '[{"id":0,"lanes":[0,1,2,3]}]') }}
+        platform:
+          - target: linux-amd64
+            runner: ubuntu-26.04
+          - target: linux-arm64
+            runner: ubuntu-26.04-arm
+          - target: darwin-arm64
+            runner: macos-15
+          - target: windows-amd64
+            runner: windows-2025
+          - target: windows-arm64
+            runner: windows-11-arm
+    env:
+      CGO_ENABLED: '0'
+      ENBU_SIM_EXPLORE: '1'
+      ENBU_SIM_EXHAUSTIVE: ${{ needs.plan.outputs.mode == 'full' && '1' || '0' }}
+      ENBU_SIM_CASE_STRIDE: ${{ needs.plan.outputs.mode == 'full' && '1' || '8' }}
+      ENBU_SIM_SEEDS: ${{ needs.plan.outputs.mode == 'full' && '32' || '2' }}
+      ENBU_SIM_STEPS: ${{ needs.plan.outputs.mode == 'full' && '256' || '32' }}
+      ENBU_SIM_SHARDS: ${{ needs.plan.outputs.mode == 'full' && '32' || '4' }}
+      ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation
+      DST_TESTS: ${{ needs.plan.outputs.tests }}
+      DST_MUTATION: ${{ needs.plan.outputs.mutation }}
+      # Native Windows FlushFileBuffers makes the sampled 32-device matrix take
+      # about 12 minutes by itself. The previous 30m lane budget expired while
+      # later membership cases were still progressing (run 42360724179).
+      # Keep every sampled case and allow time for mutations and artifact upload.
+      DST_TIMEOUT: ${{ needs.plan.outputs.mode == 'full' && '330m' || '55m' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-go
+      - name: Test affected merge rules
+        if: needs.plan.outputs.merge == 'true'
+        run: go test -count=1 ./pkg/merge
+      # Actions owns concurrency; lanes have disjoint seeds and artifact paths.
+      # Retain and shrink the first failure instead of exhausting the nightly
+      # timeout minimizing more failures from an already failing exploration.
+      - parallel:
+          - name: Explore and replay (lane 0)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[0] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[0] }}
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
+              if [ "$DST_MUTATION" = true ]; then
+                ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
+              fi
+          - name: Explore and replay (lane 1)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[1] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[1] }}
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
+              if [ "$DST_MUTATION" = true ]; then
+                ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
+              fi
+          - name: Explore and replay (lane 2)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[2] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[2] }}
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
+              if [ "$DST_MUTATION" = true ]; then
+                ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
+              fi
+          - name: Explore and replay (lane 3)
+            shell: bash
+            env:
+              ENBU_SIM_SHARD: ${{ matrix.group.lanes[3] }}
+              ENBU_SIM_ARTIFACTS: ${{ github.workspace }}/.tmp/simulation/lane-${{ matrix.group.lanes[3] }}
+            run: |
+              mkdir -p "$ENBU_SIM_ARTIFACTS"
+              go test -failfast -count=1 -p=1 -parallel=1 -timeout="$DST_TIMEOUT" -coverpkg=./app -coverprofile="$ENBU_SIM_ARTIFACTS/coverage.out" -run "$DST_TESTS" -v ./test/simulation
+              if [ "$DST_MUTATION" = true ]; then
+                ENBU_SIM_MUTATION=1 ENBU_SIM_CASE_STRIDE=1 go test -count=1 -p=1 -parallel=1 -timeout=15m -v ./test/simulation -run '^TestOracleMutationExperiments$'
+              fi
+      - name: Upload coverage and failure recordings
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: simulation-${{ matrix.platform.target }}-${{ matrix.group.id }}
+          path: ${{ github.workspace }}/.tmp/simulation
+          if-no-files-found: ignore
+          retention-days: 14
+
+  simulation-status:
+    name: Simulation
+    # An always() job can keep a superseded push holding workflow concurrency.
+    if: ${{ !cancelled() }}
+    needs: [plan, simulation]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require the plan and every selected platform to succeed
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SHOULD_RUN: ${{ needs.plan.outputs.run }}
+          RESULT: ${{ needs.simulation.result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          if [ "$SHOULD_RUN" = true ]; then
+            test "$RESULT" = success
+          else
+            test "$RESULT" = skipped
+          fi
