@@ -32,6 +32,11 @@ dbus-run-session -- sh -eu -c '
 '
 ```
 
+`pkg/keystore` has tests against a real Secret Service. They lock the keyring,
+so run them last: `ENBU_TEST_SECRET_SERVICE=unlocked` inside such a session, and
+`ENBU_TEST_SECRET_SERVICE=absent` inside a `dbus-run-session` whose bus has no
+Secret Service (CI passes a bus configuration without service directories).
+
 Individual tasks:
 
 | Task | Coverage |

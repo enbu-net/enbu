@@ -45,6 +45,33 @@ func (r *DoctorReport) add(name, env, status, message string, err error) {
 	r.Checks = append(r.Checks, c)
 }
 
+// addIdentityBackend says where a new identity would go, or what the person
+// must fix first: hardware they may not use, a locked keyring, or none. It
+// follows ENBU_IDENTITY_BACKEND: hardware never falls back, keyring never uses
+// the hardware.
+func (r *DoctorReport) addIdentityBackend() {
+	hardware := r.Mode != "keyring" && r.Available
+	keyring := r.Mode != "hardware" && (r.Mode == "keyring" || !r.Denied) && r.FallbackAvailable
+	switch {
+	case hardware:
+		r.add("identity_backend", "", "ok", "New identities use the hardware ("+r.Backend+").", nil)
+	case keyring:
+		r.add("identity_backend", "", "ok", "New identities use a software key in the OS keyring.", nil)
+	case r.Mode == "hardware":
+		r.add("identity_backend", "", "warn", "ENBU_IDENTITY_BACKEND=hardware, but the hardware ("+r.Backend+") is unavailable: "+r.Reason+".",
+			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
+	case r.Mode != "keyring" && r.Denied:
+		r.add("identity_backend", "", "warn", "The hardware ("+r.Backend+") exists but this user may not use it, and enbu does not fall back to a software key: "+r.Reason+". Or set ENBU_IDENTITY_BACKEND=keyring to use the OS keyring.",
+			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
+	case r.KeyringLocked:
+		r.add("identity_backend", "", "warn", "The OS keyring is locked. Unlock it (log in to the desktop, or run gnome-keyring-daemon --unlock) and retry.",
+			apperr.New(apperr.CodeKeyringLocked, r.KeyringReason, nil))
+	default:
+		r.add("identity_backend", "", "warn", "No usable hardware and no OS keyring. Install and unlock a Secret Service (GNOME Keyring or KWallet) to keep a software key.",
+			apperr.New(apperr.CodeIdentityUnavailable, r.KeyringReason, nil))
+	}
+}
+
 // Diagnose checks all configured environments without publishing data,
 // creating keys, promoting keys, or advancing trust pins and checkpoints.
 // Successful execution produces a report even when individual checks fail.
@@ -60,9 +87,7 @@ func (a *App) diagnose(ctx context.Context, validateToken func(context.Context, 
 	r := DoctorReport{Healthy: true, Checks: []DiagnosticCheck{}}
 	if a.Identities != nil {
 		r.Diagnosis = a.DiagnoseIdentity(ctx)
-		if !r.Available && !r.FallbackAvailable {
-			r.add("identity_backend", "", "warn", "No backend is available for creating a new identity.", nil)
-		}
+		r.addIdentityBackend()
 	}
 	cfg, err := a.loadProject()
 	if err != nil {

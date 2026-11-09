@@ -77,6 +77,9 @@ func (m *Manager) readSigner(workspaceID string) (*SignerMetadata, error) {
 	if md.Version != 1 {
 		return nil, fmt.Errorf("unsupported signing key metadata version %d", md.Version)
 	}
+	if md.Backend == removedCredsBackend {
+		return nil, removedBackend(m.SignerPath(workspaceID))
+	}
 	if md.Backend == "" || md.PublicKey.Validate() != nil || md.DeviceID != md.PublicKey.DeviceID() {
 		return nil, errors.New("invalid signing key metadata")
 	}
@@ -174,10 +177,10 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 	if mode != "keyring" {
 		hw, ok := m.Hardware.(SignerBackend)
 		reason := "hardware backend unavailable"
-		available := false
+		available, denied := false, false
 		if ok {
 			d := m.Hardware.Probe()
-			available, reason = d.Available, d.Reason
+			available, denied, reason = d.Available, d.Denied, d.Reason
 		}
 		if available {
 			s, md, err = hw.CreateSigner()
@@ -198,6 +201,9 @@ func (m *Manager) CreateSigner(workspaceID string) (s signing.Signer, info Signe
 		} else {
 			if mode == "hardware" {
 				return nil, info, "", unavailable("hardware signing key unavailable: "+reason, nil)
+			}
+			if denied {
+				return nil, info, "", deniedHardware("hardware signing key", reason)
 			}
 			warning = "Hardware signing key unavailable: " + reason
 		}

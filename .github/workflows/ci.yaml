@@ -128,6 +128,20 @@ jobs:
         run: task identity/test/e2e
       - name: Identity package tests
         run: go test -v ./pkg/identity
+      # Locks the keyring at the end, so it runs after the steps that need it unlocked.
+      - name: Secret Service probe (unlocked, then locked)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- sh -eu -c '
+            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
+            ENBU_TEST_SECRET_SERVICE=unlocked go test -count=1 -v -run SecretService ./pkg/keystore
+          '
+      - name: Secret Service probe (no Secret Service on the bus)
+        if: runner.os == 'Linux'
+        run: |
+          conf="$RUNNER_TEMP/no-services.conf"
+          printf '%s' '<busconfig><type>session</type><listen>unix:tmpdir=/tmp</listen><policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy></busconfig>' > "$conf"
+          dbus-run-session --config-file="$conf" -- env ENBU_TEST_SECRET_SERVICE=absent go test -count=1 -v -run SecretService ./pkg/keystore
       - name: Storage unit tests
         run: go test -v -race ./pkg/storage
 

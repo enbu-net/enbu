@@ -58,10 +58,10 @@ pkg/config/              → enbu.toml (shared), per-user local state, XDG data 
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
 pkg/wsp/                 → workspace security protocol: signed Control DAG, SignedState DAG, join requests, local checkpoints
 pkg/merge/               → 3-way merge of concurrent revisions, conflicts
-pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or a software key in the OS keyring (systemd-creds on Linux without one), plus the signing key
+pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or a software key in the OS keyring, plus the signing key
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
-pkg/keystore/            → OS keyring access, systemd-creds (`--user`) files for Linux without a keyring; ENBU_BACKEND=text stores the GitHub token in a file (tokens only, never an Identity)
+pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
 pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
 pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
@@ -85,7 +85,7 @@ test/                    → scenario tests (build tag: scenario)
 - `sync` command re-encrypts for all recipients and merges any concurrent heads; the app re-checks storage just before publishing and retries a few times if heads keep changing
 - Environments are named in storage by the incarnation in `enbu.toml`, so a rename keeps history and re-creating a name starts fresh. Revisions are never trimmed automatically; an admin removes old ones with `enbu history compact --keep N`, which publishes a signed compaction record first so other devices do not see a rollback (ADR-15), and reclaims a whole environment with `enbu switch --delete NAME --purge` (GHCR deletes through the GitHub Packages API)
 - The trust root is the `control_genesis` digest in `enbu.toml`. `WriteConfig` (the desktop settings editor) refuses to change `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`)
-- Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring, or on Linux without one in files encrypted by `systemd-creds --user`. There is no plaintext Identity backend and no SSH key support
+- Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring. Hardware that exists but this user may not open (a TPM outside the `tss` group) is an error, not a fallback. There is no file-based or plaintext Identity backend and no SSH key support
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
 - Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`

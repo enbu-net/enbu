@@ -255,13 +255,17 @@ export class IdentityDiagnosis {
     "backend": string;
     "device"?: string;
     "available": boolean;
+
+    /**
+     * Denied is set when the hardware exists but this user may not use it.
+     */
+    "denied": boolean;
     "fallback_available": boolean;
 
     /**
-     * Fallback is the software backend a new key would use: keyring or
-     * systemd-creds.
+     * KeyringLocked is set when the OS keyring exists but is locked.
      */
-    "fallback"?: string;
+    "keyring_locked": boolean;
 
     /** Creates a new IdentityDiagnosis instance. */
     constructor($$source: Partial<IdentityDiagnosis> = {}) {
@@ -271,8 +275,14 @@ export class IdentityDiagnosis {
         if (!("available" in $$source)) {
             this["available"] = false;
         }
+        if (!("denied" in $$source)) {
+            this["denied"] = false;
+        }
         if (!("fallback_available" in $$source)) {
             this["fallback_available"] = false;
+        }
+        if (!("keyring_locked" in $$source)) {
+            this["keyring_locked"] = false;
         }
 
         Object.assign(this, $$source);

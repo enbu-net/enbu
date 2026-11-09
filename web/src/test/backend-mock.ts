@@ -60,7 +60,9 @@ export function createBackendMock() {
     diagnoseIdentity: vi.fn(async () => ({
       backend: "tpm",
       available: false,
+      denied: false,
       fallback_available: true,
+      keyring_locked: false,
     })),
     upgradeIdentity: vi.fn(async () => ({
       backend: "keyring",

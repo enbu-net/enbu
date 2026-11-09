@@ -7,6 +7,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
@@ -150,4 +151,39 @@ func TestIdentityInfoReportsAnUnreachableSigningKey(t *testing.T) {
 	a.Identities = unreachableSignerInfo{keys}
 	_, err := a.IdentityInfo()
 	requireIdentityUnavailable(t, err, "keyring unavailable")
+}
+
+// A locked OS keyring gets its own code, so the GUI asks the person to unlock
+// it instead of pointing at doctor for a missing backend.
+func TestLockedKeyringHasItsOwnCode(t *testing.T) {
+	cause := fmt.Errorf("%w: unlock it", keystore.ErrLocked)
+	err := identityError(&identity.UnavailableError{Reason: cause.Error(), Err: cause})
+	if !apperr.Is(err, apperr.CodeKeyringLocked) {
+		t.Fatalf("code = %v", apperr.CodeOf(err))
+	}
+	if err := identityError(&identity.UnavailableError{Reason: "no keyring"}); !apperr.Is(err, apperr.CodeIdentityUnavailable) {
+		t.Fatalf("code = %v", apperr.CodeOf(err))
+	}
+}
+
+// The identity_backend check follows ENBU_IDENTITY_BACKEND: keyring mode is
+// judged by the keyring alone, hardware mode by the hardware alone.
+func TestDoctorIdentityBackendFollowsTheMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		d      identity.Diagnosis
+		status string
+	}{
+		"keyring mode with hardware and a locked keyring": {identity.Diagnosis{Mode: "keyring", Available: true, KeyringLocked: true}, "warn"},
+		"hardware mode without hardware":                  {identity.Diagnosis{Mode: "hardware", FallbackAvailable: true}, "warn"},
+		"keyring mode with a denied TPM":                  {identity.Diagnosis{Mode: "keyring", Denied: true, FallbackAvailable: true}, "ok"},
+		"auto without hardware":                           {identity.Diagnosis{Mode: "auto", FallbackAvailable: true}, "ok"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := DoctorReport{Diagnosis: tc.d, Healthy: true}
+			r.addIdentityBackend()
+			if got := r.Checks[0].Status; got != tc.status {
+				t.Fatalf("status = %s (%s), want %s", got, r.Checks[0].Message, tc.status)
+			}
+		})
+	}
 }

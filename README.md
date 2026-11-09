@@ -260,18 +260,23 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
-| Linux | TPM 2.0 (`/dev/tpmrm0`) | Secret Service (GNOME Keyring / KWallet), else `systemd-creds --user` |
+| Linux | TPM 2.0 (`/dev/tpmrm0`) | Secret Service (GNOME Keyring / KWallet) |
 | Windows | TPM 2.0 through TBS | Credential Manager |
 | macOS | Secure Enclave (Apple silicon, or Intel with a T2 chip) | Keychain |
 
-On Linux, `/dev/tpmrm0` belongs to the `tss` group on most distributions, so a
-user outside it gets the keyring fallback. `sudo usermod -aG tss $USER`, then log
-in again, lets enbu use the TPM; `enbu doctor` reports which one it found.
+In `auto` mode the fallback is used when there is no usable hardware (none, or a TPM
+that lacks a required command); set `ENBU_IDENTITY_BACKEND=hardware` to refuse it.
+Hardware this user may not open is never replaced. On Linux, `/dev/tpmrm0`
+belongs to the `tss` group on most distributions; a user outside it gets an error
+rather than a software key, so a permission mistake never lowers the protection.
+`sudo usermod -aG tss $USER`, then log in again, lets enbu use the TPM. To use the
+OS keyring anyway, set `ENBU_IDENTITY_BACKEND=keyring`.
 
-A server, container or WSL often has neither a usable TPM nor a Secret Service. There
-enbu keeps the software keys in files under its data directory, encrypted with
-`systemd-creds --user` (systemd 256 or later), which binds them to the user and to the
-machine's host key, and to the TPM when one exists. The user does not need TPM access.
+Without a TPM, Linux needs an unlocked Secret Service. enbu checks it over D-Bus
+before every use and never waits for an unlock prompt: a locked keyring (for
+example over SSH, where no prompt can appear) fails at once with
+`keyring_locked`, and a device without one fails with `identity_unavailable`.
+There is no file-based fallback. `enbu doctor` reports which case applies.
 
 ```bash
 enbu doctor                  # No authentication or persistent key creation
@@ -279,7 +284,7 @@ enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
 enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
-# Other choices: hardware (required), keyring (software key: OS keyring, or systemd-creds without one)
+# Other choices: hardware (required), keyring (software key in the OS keyring)
 export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
@@ -310,7 +315,8 @@ loaded; create the identity again.
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
 Old identities are not migrated or loaded. Plaintext Identity storage is removed.
-`ENBU_BACKEND` configures authentication token storage only and does not select an Identity backend.
+The GitHub token is kept in the OS keyring too. There is no plaintext file for it:
+without a usable keyring, `enbu auth login` fails, and CI uses `GITHUB_TOKEN`.
 
 Identity E2E runs on Linux, Windows and macOS with a pinned test-only vTPM SDK and
 local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring.

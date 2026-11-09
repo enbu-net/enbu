@@ -5,6 +5,7 @@ import (
 	"crypto/ecdh"
 	"errors"
 	"fmt"
+	"io/fs"
 	"math/big"
 	"sync"
 
@@ -62,6 +63,9 @@ func (b *TPMBackend) Probe() Diagnosis {
 	t, err := b.Open()
 	if err != nil {
 		d.Reason = err.Error()
+		// A TPM this user may not open is still a TPM: falling back to a
+		// software key would lower the protection over a permission mistake.
+		d.Denied = errors.Is(err, fs.ErrPermission)
 		return d
 	}
 	defer func() { _ = t.Close() }()

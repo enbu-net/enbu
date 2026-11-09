@@ -410,7 +410,9 @@ export const mockBackend: Backend = {
     return {
       backend: "tpm",
       available: false,
+      denied: false,
       fallback_available: true,
+      keyring_locked: false,
     };
   },
   async upgradeIdentity(): Promise<KeyUpdateResult> {

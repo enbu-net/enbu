@@ -130,7 +130,9 @@ tasks:
       - defer: docker compose -p enbu-e2e -f test/e2e/compose.yaml down --volumes --remove-orphans
       - curl --fail --silent --show-error --retry-all-errors --retry 50 --retry-delay 0 --retry-connrefused --retry-max-time 30 http://localhost:5001/v2/
       - aqua exec -- atago list test/e2e
-      - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts test/e2e
+      - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts --skip-tag auth test/e2e
+      # The auth scenarios share the one OS keyring that holds the token, so they run one at a time.
+      - aqua exec -- atago run --ci --report gha --artifacts-dir .tmp/atago-artifacts --tag auth --parallel 1 test/e2e
 
   identity/test/e2e:
     desc: Run Identity CLI E2E with local OCI and persistent vTPM (real OS keyring required)

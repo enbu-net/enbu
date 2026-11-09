@@ -18,13 +18,21 @@ const (
 	tokenKeyringAccount = "github-oauth"
 )
 
-var tokenBackend = func() keystore.Backend {
-	b, err := keystore.New()
-	if err != nil || b == nil {
-		return &keystore.TextBackend{}
+// tokenBackend holds the token in the OS keyring. A missing or locked keyring
+// is an error; there is no plaintext file to fall back to.
+var tokenBackend keystore.Backend = keystore.New()
+
+// keyringError tells the person what to fix instead of showing an internal
+// error: a locked OS keyring gets its own code, a missing one is unavailable.
+func keyringError(op string, err error) error {
+	switch {
+	case errors.Is(err, keystore.ErrLocked):
+		return apperr.Wrap(apperr.CodeKeyringLocked, op+": "+err.Error(), err, nil)
+	case errors.Is(err, keystore.ErrNoKeyring):
+		return apperr.Wrap(apperr.CodeUnavailable, op+": "+err.Error(), err, nil)
 	}
-	return b
-}()
+	return fmt.Errorf("%s: %w", op, err)
+}
 
 type StoredToken struct {
 	AccessToken string `json:"access_token"`
@@ -41,10 +49,13 @@ func SaveToken(token *StoredToken) error {
 		return err
 	}
 	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, data); err != nil {
-		return fmt.Errorf("saving token: %w", err)
+		return keyringError("saving token", err)
 	}
 	stored, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
-	if err != nil || !bytes.Equal(stored, data) {
+	if err != nil {
+		return keyringError("verifying saved token", err)
+	}
+	if !bytes.Equal(stored, data) {
 		return errors.New("verifying saved token failed")
 	}
 	return nil
@@ -64,7 +75,7 @@ func LoadToken() (*StoredToken, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, notLoggedInError()
 		}
-		return nil, fmt.Errorf("loading token: %w", err)
+		return nil, keyringError("loading token", err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -83,7 +94,7 @@ func LoadToken() (*StoredToken, error) {
 
 func DeleteToken() error {
 	if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("removing token: %w", err)
+		return keyringError("removing token", err)
 	}
 	return nil
 }

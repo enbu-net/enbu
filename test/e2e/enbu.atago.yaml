@@ -203,6 +203,11 @@ scenarios:
           exit_code: 2
           stdout:
             json: {path: "$.error.code", equals: invalid_argument}
+      # The token went to the OS keyring, which every scenario shares.
+      - run:
+          command: enbu auth logout
+      - assert:
+          exit_code: 0
 
   - name: init creates workspace config ignore rules identity and recipient
     tags: [init, registry]

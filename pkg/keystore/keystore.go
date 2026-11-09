@@ -1,32 +1,12 @@
 package keystore
 
-import (
-	"fmt"
-	"os"
-)
-
 type Backend interface {
 	Store(service, key string, secret []byte) error
 	Load(service, key string) ([]byte, error)
 	Delete(service, key string) error
 }
 
-func New() (Backend, error) {
-	backendType := os.Getenv("ENBU_BACKEND")
-	if backendType == "" {
-		backendType = "keyring"
-	}
-
-	switch backendType {
-	case "keyring":
-		kb := &KeyringBackend{}
-		if err := kb.probe(); err != nil {
-			return nil, fmt.Errorf("keystore unavailable: %w", err)
-		}
-		return kb, nil
-	case "text":
-		return &TextBackend{}, nil
-	default:
-		return nil, fmt.Errorf("unknown backend type: %s (supported: keyring, text)", backendType)
-	}
-}
+// New returns the backend for the GitHub token: the OS keyring. There is no
+// plaintext file backend; a keyring that is missing or locked fails each
+// operation instead.
+func New() Backend { return &KeyringBackend{} }
