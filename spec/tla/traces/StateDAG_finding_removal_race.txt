@@ -1,0 +1,103 @@
+# StateDAG/StateDAG_finding_removal_race.cfg: TLC counterexample
+
+Error: Invariant GEN_2 is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {}
+/\ hidden = {}
+/\ rev = <<>>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 2: <Write(a) line 189, col 3 to line 200, col 66 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {1})
+/\ cp = (a :> 1)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a]>>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 3: <ReencryptForRemoval line 216, col 3 to line 225, col 62 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {1, 2})
+/\ cp = (a :> 2)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {1, 2}
+/\ hidden = {}
+/\ rev = << [gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a],
+   [gen |-> 2, parents |-> {1}, ctl |-> 1, author |-> a] >>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 4: <MWrite line 258, col 3 to line 264, col 85 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {1, 2})
+/\ cp = (a :> 2)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {1, 2, 3}
+/\ hidden = {}
+/\ rev = << [gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a],
+   [gen |-> 2, parents |-> {1}, ctl |-> 1, author |-> a],
+   [gen |-> 3, parents |-> {2}, ctl |-> 1, author |-> m] >>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 5: <Compact line 241, col 3 to line 248, col 66 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {1, 2, 3})
+/\ cp = (a :> 3)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {3}
+/\ hidden = {}
+/\ rev = << [gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a],
+   [gen |-> 2, parents |-> {1}, ctl |-> 1, author |-> a],
+   [gen |-> 3, parents |-> {2}, ctl |-> 1, author |-> m] >>
+/\ ctlHead = 1
+/\ adv = 1
+
+State 6: <PublishRemoval line 228, col 3 to line 230, col 80 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {1, 2, 3})
+/\ cp = (a :> 3)
+/\ tampered = FALSE
+/\ removal = "done"
+/\ stored = {3}
+/\ hidden = {}
+/\ rev = << [gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a],
+   [gen |-> 2, parents |-> {1}, ctl |-> 1, author |-> a],
+   [gen |-> 3, parents |-> {2}, ctl |-> 1, author |-> m] >>
+/\ ctlHead = 2
+/\ adv = 1
+
+State 7: <Read(a) line 166, col 3 to line 171, col 79 of module StateDAG>
+/\ bad = {"GEN_2", "GEN_2_strict"}
+/\ forged = FALSE
+/\ accepted = (a :> {1, 2, 3})
+/\ cp = (a :> 3)
+/\ tampered = FALSE
+/\ removal = "done"
+/\ stored = {3}
+/\ hidden = {}
+/\ rev = << [gen |-> 1, parents |-> {}, ctl |-> 1, author |-> a],
+   [gen |-> 2, parents |-> {1}, ctl |-> 1, author |-> a],
+   [gen |-> 3, parents |-> {2}, ctl |-> 1, author |-> m] >>
+/\ ctlHead = 2
+/\ adv = 1

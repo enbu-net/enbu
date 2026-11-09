@@ -15,6 +15,29 @@ tasks:
       - vscode/test
       - scripts/test
       - simulation/smoke
+      - formal/check
+
+  formal/check:
+    desc: Check the TLA+ models' small configs and that every mutant yields a counterexample
+    cmds:
+      - uv run --project scripts python scripts/formal.py
+
+  formal/check/large:
+    desc: Check the TLA+ models' large configs (slow; nightly)
+    cmds:
+      - uv run --project scripts python scripts/formal.py --large
+
+  formal/model:
+    desc: Check one TLA+ model's small configs and mutants, e.g. task formal/model MODEL=StateDAG
+    requires:
+      vars: [MODEL]
+    cmds:
+      - uv run --project scripts python scripts/formal.py --model {{.MODEL}}
+
+  formal/traces:
+    desc: Save the counterexamples of the configs naming a trace file to spec/tla/traces
+    cmds:
+      - uv run --project scripts python scripts/formal.py --write-traces
 
   simulation/smoke:
     desc: Run bounded deterministic simulation regressions

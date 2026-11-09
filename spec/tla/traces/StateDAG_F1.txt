@@ -1,0 +1,42 @@
+# StateDAG/StateDAG_F1.cfg: TLC counterexample
+
+Error: Invariant GEN_2 is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {}
+/\ hidden = {}
+/\ rev = <<>>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 2: <Junk line 282, col 3 to line 286, col 80 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 1, parents |-> {}, ctl |-> 99, author |-> x]>>
+/\ ctlHead = 1
+/\ adv = 1
+
+State 3: <Read(a) line 166, col 3 to line 171, col 79 of module StateDAG>
+/\ bad = {"GEN_2", "GEN_2_strict"}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 1, parents |-> {}, ctl |-> 99, author |-> x]>>
+/\ ctlHead = 1
+/\ adv = 1

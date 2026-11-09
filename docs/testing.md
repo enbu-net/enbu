@@ -92,3 +92,20 @@ rendering and before `os.Exit`, so error paths are included. Abrupt termination
 (e.g. SIGKILL) cannot flush a child report. Native hardware tests still require
 real devices and are skipped on ordinary hosted runners. The coverage report
 is Linux-specific; the existing native OS CI matrix remains separate.
+
+# Formal models
+
+The protocol is also specified as TLA+ models in `spec/tla/`, checked with TLC
+(`yashikota/tlc-static`, installed by `aqua i`). `spec/INVARIANTS.md` lists the
+properties by ID with the code that enforces each one.
+
+```sh
+task formal/check                 # small configs, and every mutant must fail
+task formal/model MODEL=StateDAG  # one model
+task formal/check/large           # large configs (minutes)
+```
+
+A mutant config switches one rule of a model to a defect, pre-fix behaviour
+included, and names the property TLC must report violated; `task formal/check`
+fails if a base config finds a violation or a mutant does not. CI runs one job
+per model. See `spec/tla/README.md` for the models and their abstractions.

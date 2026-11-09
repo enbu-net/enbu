@@ -1,0 +1,81 @@
+# StateDAG/StateDAG_finding_member_poison.cfg: TLC counterexample
+
+Error: Invariant GEN_2_strict is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "none"
+/\ stored = {}
+/\ hidden = {}
+/\ rev = <<>>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 2: <ReencryptForRemoval line 216, col 3 to line 225, col 62 of module StateDAG>
+/\ bad = {}
+/\ forged = FALSE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {}
+/\ hidden = {}
+/\ rev = <<>>
+/\ ctlHead = 1
+/\ adv = 2
+
+State 3: <MSign line 271, col 3 to line 278, col 74 of module StateDAG>
+/\ bad = {}
+/\ forged = TRUE
+/\ accepted = (a :> {})
+/\ cp = (a :> 0)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 2, parents |-> {0}, ctl |-> 1, author |-> m]>>
+/\ ctlHead = 1
+/\ adv = 1
+
+State 4: <Read(a) line 166, col 3 to line 171, col 79 of module StateDAG>
+/\ bad = {}
+/\ forged = TRUE
+/\ accepted = (a :> {1})
+/\ cp = (a :> 2)
+/\ tampered = FALSE
+/\ removal = "reencrypted"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 2, parents |-> {0}, ctl |-> 1, author |-> m]>>
+/\ ctlHead = 1
+/\ adv = 1
+
+State 5: <PublishRemoval line 228, col 3 to line 230, col 80 of module StateDAG>
+/\ bad = {}
+/\ forged = TRUE
+/\ accepted = (a :> {1})
+/\ cp = (a :> 2)
+/\ tampered = FALSE
+/\ removal = "done"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 2, parents |-> {0}, ctl |-> 1, author |-> m]>>
+/\ ctlHead = 2
+/\ adv = 1
+
+State 6: <Read(a) line 166, col 3 to line 171, col 79 of module StateDAG>
+/\ bad = {"GEN_2_strict"}
+/\ forged = TRUE
+/\ accepted = (a :> {1})
+/\ cp = (a :> 2)
+/\ tampered = FALSE
+/\ removal = "done"
+/\ stored = {1}
+/\ hidden = {}
+/\ rev = <<[gen |-> 2, parents |-> {0}, ctl |-> 1, author |-> m]>>
+/\ ctlHead = 2
+/\ adv = 1
