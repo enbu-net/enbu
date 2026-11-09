@@ -413,5 +413,5 @@ jobs:
           node-version: '26'
       - name: Validate Renovate configuration
         env:
-          RENOVATE_VERSION: 44.219.0 # renovate: datasource=npm depName=renovate
+          RENOVATE_VERSION: 44.221.5 # renovate: datasource=npm depName=renovate
         run: npx --yes --package "renovate@$RENOVATE_VERSION" renovate-config-validator --strict renovate.json
