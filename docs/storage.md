@@ -140,8 +140,11 @@ revision found late needs its merge base.
 Every revision carries a signed *generation*: 1 + the highest generation of its
 parents, 1 without parents. Readers check it against the parents storage still
 shows. Each device keeps, per environment, the highest generation it read; storage
-showing only lower generations is a rollback. A parent missing from storage is
-deleted history: the DAG simply ends there.
+showing only lower generations is a rollback. Only generations that something
+vouches for count: a head the device reads as current, or a revision whose every
+ancestor storage still shows, so each step was checked. A revision above a missing
+parent, signed by someone who is no longer a member, could claim any generation.
+A parent missing from storage is deleted history: the DAG simply ends there.
 
 `enbu history compact --keep N` (admin only) deletes an environment's revisions
 older than the latest N. The revision N-1 steps behind the head, following first

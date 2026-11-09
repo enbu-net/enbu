@@ -86,5 +86,5 @@ func (s *session) acceptPublished(ctx context.Context, resource string, st *wsp.
 }
 
 func (s *session) acceptView(resource string, sv *wsp.StateView) error {
-	return s.cps.AcceptState(resource, sv, wsp.TopGeneration(s.trustedHeads(sv)))
+	return s.cps.AcceptState(resource, sv, s.trustedHeads(sv))
 }

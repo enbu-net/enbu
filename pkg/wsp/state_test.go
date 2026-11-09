@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -510,8 +511,8 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.MaxGeneration() != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
-		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.MaxGeneration())
+	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.shownGeneration(nil) != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
+		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
 	}
 
 	if err := f.store.Delete(ctx, storage.KindState, storage.StateScope(testWorkspace, testResource), root); err != nil {
@@ -521,8 +522,12 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !sv.Graph.Has(child) || sv.Graph.Has(root) || sv.MaxGeneration() != 2 {
-		t.Fatalf("revision above a deleted parent: states %v max %d", sv.States, sv.MaxGeneration())
+	if !sv.Graph.Has(child) || sv.Graph.Has(root) || sv.shownGeneration(sv.Heads) != 2 {
+		t.Fatalf("revision above a deleted parent: states %v max %d", sv.States, sv.shownGeneration(sv.Heads))
+	}
+	// Above a deleted parent, only a head the reader trusts vouches for its Generation.
+	if got := sv.shownGeneration(nil); got != 0 {
+		t.Fatalf("unproven generation counted: %d", got)
 	}
 }
 
@@ -540,7 +545,78 @@ func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {
 		t.Fatal(err)
 	}
 	sv, err := LoadStates(ctx, f.store, load(t, f.store, f.genesis), testWorkspace, testResource)
-	if err != nil || sv.MaxGeneration() != 2 {
-		t.Fatalf("max generation = %d %v", sv.MaxGeneration(), err)
+	if err != nil || sv.shownGeneration(nil) != 2 {
+		t.Fatalf("shown generation = %d %v", sv.shownGeneration(nil), err)
+	}
+}
+
+// A removed member's key still verifies against the Control that listed it.
+// Above a parent storage does not hold, such a revision may claim any
+// Generation; counting it would let its holder mask storage hiding the newer
+// revisions a device accepted.
+func TestUnprovenGenerationOfAnUntrustedRevisionDoesNotMaskARollback(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	a := f.publish(t, f.state(f.alice, root), f.alice, "a")
+	f.publish(t, f.state(f.alice, a), f.alice, "b")
+	cps := OpenCheckpoints(t.TempDir(), testWorkspace, f.genesis, nil)
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cps.AcceptState(testResource, sv, sv.Heads); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := UpdateControl(ctx, f.store, f.view, f.alice.signer, func(c *Control) error {
+		c.Principals = []Principal{f.alice.p}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view := load(t, f.store, f.genesis)
+	head, _ := view.Head()
+	// bob, removed, signs under the Control that listed him: one revision
+	// above a parent that never existed, and a child above it.
+	planted := f.state(f.bob, digest.FromString("a parent nobody can produce"))
+	planted.Generation = 1 << 40
+	x := f.publish(t, planted, f.bob, "planted")
+	child := f.state(f.bob, x)
+	child.Generation = 1<<40 + 1
+	f.publish(t, child, f.bob, "planted child")
+
+	hidden := []digest.Digest{}
+	for d, gen := range f.gens {
+		if gen == 3 {
+			hidden = append(hidden, d)
+		}
+	}
+	rolledBack := storagetest.Wrap(f.store, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revs, err := next.Discover(ctx, kind, scope)
+			out := revs[:0:0]
+			for _, r := range revs {
+				if !slices.Contains(hidden, r) {
+					out = append(out, r)
+				}
+			}
+			return out, err
+		},
+	})
+	sv, err = LoadStates(ctx, rolledBack, view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sv.States) != 4 {
+		t.Fatalf("planted revisions not loaded: %d", len(sv.States))
+	}
+	var trusted []*VerifiedState
+	for _, h := range sv.Heads {
+		if AuthorIsCurrent(view, head, h) == nil {
+			trusted = append(trusted, h)
+		}
+	}
+	if err := cps.CheckState(testResource, sv, trusted); !errors.Is(err, ErrRollback) {
+		t.Fatalf("planted generation masked the rollback: %v", err)
 	}
 }

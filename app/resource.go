@@ -40,7 +40,7 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 		if err != nil {
 			return nil, wspError(err)
 		}
-		err = s.cps.CheckState(resource, sv)
+		err = s.cps.CheckState(resource, sv, s.trustedHeads(sv))
 		if err == nil && sv.Graph.Len() == 0 {
 			return nil, storageError(storage.ErrNotFound)
 		}
@@ -88,7 +88,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 		}
 		r, err := s.mergeResource(ctx, resource, sv, choices)
 		if err == nil && record {
-			if err = s.cps.AcceptState(resource, sv, wsp.TopGeneration(r.heads)); err != nil {
+			if err = s.cps.AcceptState(resource, sv, r.heads); err != nil {
 				err = wspError(err)
 			}
 		}

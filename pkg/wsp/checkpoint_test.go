@@ -37,13 +37,18 @@ func stateView(edges map[string][]string) *StateView {
 	return sv
 }
 
+// checkView checks sv as a reader that trusts every head of it.
+func checkView(c *Checkpoints, resource string, sv *StateView) error {
+	return c.CheckState(resource, sv, sv.Heads)
+}
+
 func acceptView(c *Checkpoints, sv *StateView) error {
-	return c.AcceptState(testResource, sv, TopGeneration(sv.Heads))
+	return c.AcceptState(testResource, sv, sv.Heads)
 }
 
 func TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration(t *testing.T) {
 	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
-	if err := cps.CheckState(testResource, nil); err != nil {
+	if err := cps.CheckState(testResource, nil, nil); err != nil {
 		t.Fatalf("nothing accepted yet: %v", err)
 	}
 	if err := acceptView(cps, stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"a"}})); err != nil {
@@ -53,10 +58,10 @@ func TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration(t *testing.T) {
 		t.Fatalf("accepted generation = %d %v", got, err)
 	}
 	// Storage hides the newest revision: the view tops out at generation 2.
-	if err := cps.CheckState(testResource, stateView(map[string][]string{"root": nil, "a": {"root"}})); !errors.Is(err, ErrRollback) {
+	if err := checkView(cps, testResource, stateView(map[string][]string{"root": nil, "a": {"root"}})); !errors.Is(err, ErrRollback) {
 		t.Fatalf("hidden newer generation: %v", err)
 	}
-	if err := cps.CheckState(testResource, nil); !errors.Is(err, ErrRollback) {
+	if err := cps.CheckState(testResource, nil, nil); !errors.Is(err, ErrRollback) {
 		t.Fatalf("everything hidden: %v", err)
 	}
 	if err := acceptView(cps, stateView(map[string][]string{"root": nil})); !errors.Is(err, ErrRollback) {
@@ -69,11 +74,11 @@ func TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration(t *testing.T) {
 	delete(compacted.States, d("a"))
 	compacted.Graph = NewGraph()
 	compacted.Graph.Add(d("b"), []digest.Digest{d("a")})
-	if err := cps.CheckState(testResource, compacted); err != nil {
+	if err := cps.CheckState(testResource, compacted, compacted.Heads); err != nil {
 		t.Fatalf("deleted old revisions: %v", err)
 	}
 	// Resources have separate checkpoints.
-	if err := cps.CheckState("secrets/prod", stateView(map[string][]string{"x": nil})); err != nil {
+	if err := checkView(cps, "secrets/prod", stateView(map[string][]string{"x": nil})); err != nil {
 		t.Fatalf("other resource: %v", err)
 	}
 }
@@ -91,7 +96,7 @@ func TestStateCheckpointDoesNotDetectAHiddenHeadBehindASiblingOfEqualGeneration(
 		"equal":  {"root": nil, "sibling": {"root"}},
 		"higher": {"root": nil, "sibling": {"root"}, "later": {"sibling"}},
 	} {
-		if err := cps.CheckState(testResource, stateView(sibling)); err != nil {
+		if err := checkView(cps, testResource, stateView(sibling)); err != nil {
 			t.Fatalf("%s sibling branch hiding the accepted head was detected: %v", name, err)
 		}
 	}
@@ -104,7 +109,7 @@ func TestStateCheckpointNeverLowersTheAcceptedGeneration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A read that used an older trusted head of the same view keeps the higher value.
-	if err := cps.AcceptState(testResource, view, 1); err != nil {
+	if err := cps.AcceptState(testResource, view, []*VerifiedState{view.States[d("root")]}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := cps.Generation(testResource); got != 3 {
@@ -200,7 +205,7 @@ func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 		t.Fatalf("generation = %v %v", got, err)
 	}
 	// Whatever won, the checkpoint never holds something a later view must lose.
-	if err := cps.CheckState(testResource, views[2]); err != nil {
+	if err := cps.CheckState(testResource, views[2], views[2].Heads); err != nil {
 		t.Fatalf("newest view rejected: %v", err)
 	}
 }

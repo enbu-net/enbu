@@ -312,6 +312,55 @@ func TestStateRollbackDetected(t *testing.T) {
 	}
 }
 
+// A removed member still holds a key the old Control lists. A revision it signs
+// above a parent storage does not hold can claim any Generation, so it must not
+// count as evidence that storage is fresh.
+func TestRemovedMembersInflatedGenerationDoesNotMaskARollback(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	bobsView, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer bobsView.Close()
+	if err := alice.RemoveMember(bg, string(bobsView.self())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.ListSecrets(bg, "default"); err != nil { // accepts the re-encryption
+		t.Fatal(err)
+	}
+	cur, err := alice.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := cur.readResource(bg, cur.resource("default"), nil, false)
+	cur.Close()
+	if err != nil || len(read.heads) != 1 {
+		t.Fatalf("read: %v", err)
+	}
+	newest := read.heads[0].Digest
+
+	signer, err := loadSigner(bob, bobsView.workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = signer.Close() }()
+	ciphertext := []byte("planted")
+	planted := wsp.State{Workspace: bobsView.workspace, Resource: bobsView.resource("default"), Parents: []digest.Digest{digest.FromString("never existed")},
+		Generation: 1 << 40, Op: wsp.OpWrite, Control: bobsView.head.Digest, Ciphertext: digest.FromBytes(ciphertext), Author: signer.Public().DeviceID()}
+	blob, err := wsp.SignState(planted, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: planted.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: ciphertext}); err != nil {
+		t.Fatal(err)
+	}
+	alice.Storage = hide(alice.Storage, newest)
+	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeRollback) {
+		t.Fatalf("planted generation masked the rollback: %v", err)
+	}
+}
+
 func TestControlRollbackDetected(t *testing.T) {
 	alice := newAlice(t)
 	bob := newDevice(t, alice)
