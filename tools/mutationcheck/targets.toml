@@ -22,10 +22,6 @@ min_efficacy = 95
   at = "signing.go:151:34"
   type = "ARITHMETIC_BASE"
   reason = "only the capacity of the message buffer changes, not its contents"
-  [[target.equivalent]]
-  at = "signing.go:177:25"
-  type = "CONDITIONALS_BOUNDARY"
-  reason = "a valid signature with s exactly half the group order cannot be produced (probability 2^-255)"
 
 [[target]]
 package = "pkg/age"

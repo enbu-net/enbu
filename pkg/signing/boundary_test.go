@@ -2,10 +2,40 @@ package signing
 
 import (
 	"crypto/elliptic"
+	"crypto/sha256"
 	"math/big"
 	"strings"
 	"testing"
 )
+
+func TestVerifyAcceptsSignatureAtHalfOrder(t *testing.T) {
+	curve := elliptic.P256()
+	n := curve.Params().N
+	body := []byte("half-order boundary")
+	hash := sha256.Sum256(Message(DomainState, body))
+	z := new(big.Int).SetBytes(hash[:])
+	s := halfOrder()
+	r := new(big.Int).Mod(curve.Params().Gx, n)
+	// Choose R = G, then solve the verification equation sR = zG + rQ
+	// for Q. This constructs a valid boundary signature without needing the
+	// astronomically unlikely result of randomly signing with s = floor(N/2).
+	sx, sy := curve.ScalarBaseMult(s.Bytes())
+	zx, zy := curve.ScalarBaseMult(z.Bytes())
+	zy.Neg(zy).Mod(zy, curve.Params().P)
+	ax, ay := curve.Add(sx, sy, zx, zy)
+	qx, qy := curve.ScalarMult(ax, ay, new(big.Int).ModInverse(r, n).Bytes())
+	key := PublicKey{Alg: P256, Bytes: elliptic.MarshalCompressed(curve, qx, qy)}
+	sig := make([]byte, p256SigSize)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:])
+	if err := Verify(key, DomainState, body, sig); err != nil {
+		t.Fatalf("valid signature at floor(N/2) was rejected: %v", err)
+	}
+	new(big.Int).Sub(n, s).FillBytes(sig[32:])
+	if err := Verify(key, DomainState, body, sig); err == nil {
+		t.Fatal("the mathematically valid high-S counterpart was accepted")
+	}
+}
 
 // Boundaries that mutation testing showed no test pinned down.
 
