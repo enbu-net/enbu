@@ -11,6 +11,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/keystore"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 const (
@@ -19,8 +20,21 @@ const (
 )
 
 // tokenBackend holds the token in the OS keyring. A missing or locked keyring
-// is an error; there is no plaintext file to fall back to.
-var tokenBackend keystore.Backend = keystore.New()
+// is an error; there is no plaintext file to fall back to. Inside WSL it is
+// the Windows keyring, through enbu.exe, so Windows and every distribution
+// share one sign-in.
+var tokenBackend = newTokenBackend()
+
+func newTokenBackend() keystore.Backend {
+	if winbridge.InWSL() {
+		return winbridge.Shared().Keyring()
+	}
+	return keystore.New()
+}
+
+// TokenKeyringEntry is the OS keyring entry of the GitHub token, which the
+// Windows enbu.exe shares with WSL.
+func TokenKeyringEntry() (service, key string) { return tokenKeyringService, tokenKeyringAccount }
 
 // keyringError tells the person what to fix instead of showing an internal
 // error: a locked OS keyring gets its own code, a missing one is unavailable.

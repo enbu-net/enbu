@@ -53,16 +53,22 @@ func (r *DoctorReport) addIdentityBackend() {
 	hardware := r.Mode != "keyring" && r.Available
 	keyring := r.Mode != "hardware" && (r.Mode == "keyring" || !r.Denied) && r.FallbackAvailable
 	switch {
+	case r.WSL != nil && r.WSL.Error != "":
+		r.add("identity_backend", "", "warn", "Inside WSL, enbu keeps its keys in Windows, and the Windows enbu.exe cannot be used: "+r.WSL.Error,
+			apperr.New(apperr.CodeIdentityUnavailable, r.WSL.Error, nil))
 	case hardware:
-		r.add("identity_backend", "", "ok", "New identities use the hardware ("+r.Backend+").", nil)
+		r.add("identity_backend", "", "ok", "New identities use the hardware ("+r.Backend+")"+inWindows(r)+".", nil)
 	case keyring:
-		r.add("identity_backend", "", "ok", "New identities use a software key in the OS keyring.", nil)
+		r.add("identity_backend", "", "ok", "New identities use a software key in the OS keyring"+inWindows(r)+".", nil)
 	case r.Mode == "hardware":
 		r.add("identity_backend", "", "warn", "ENBU_IDENTITY_BACKEND=hardware, but the hardware ("+r.Backend+") is unavailable: "+r.Reason+".",
 			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
 	case r.Mode != "keyring" && r.Denied:
 		r.add("identity_backend", "", "warn", "The hardware ("+r.Backend+") exists but this user may not use it, and enbu does not fall back to a software key: "+r.Reason+". Or set ENBU_IDENTITY_BACKEND=keyring to use the OS keyring.",
 			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
+	case r.WSL != nil:
+		r.add("identity_backend", "", "warn", "Windows has no usable hardware and no Credential Manager for a software key: "+r.KeyringReason+". Run enbu.exe doctor in Windows.",
+			apperr.New(apperr.CodeIdentityUnavailable, r.KeyringReason, nil))
 	case r.KeyringLocked:
 		r.add("identity_backend", "", "warn", "The OS keyring is locked. Unlock it (log in to the desktop, or run gnome-keyring-daemon --unlock) and retry.",
 			apperr.New(apperr.CodeKeyringLocked, r.KeyringReason, nil))
@@ -70,6 +76,14 @@ func (r *DoctorReport) addIdentityBackend() {
 		r.add("identity_backend", "", "warn", "No usable hardware and no OS keyring. Install and unlock a Secret Service (GNOME Keyring or KWallet) to keep a software key.",
 			apperr.New(apperr.CodeIdentityUnavailable, r.KeyringReason, nil))
 	}
+}
+
+// inWindows names the Windows side when WSL hands its keys to enbu.exe.
+func inWindows(r *DoctorReport) string {
+	if r.WSL == nil {
+		return ""
+	}
+	return " of Windows, through " + r.WSL.Exe
 }
 
 // Diagnose checks all configured environments without publishing data,

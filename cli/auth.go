@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +21,9 @@ type authLoginDeps struct {
 	browserLogin func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	deviceLogin  func(context.Context, string, auth.DevicePrompter) (*auth.StoredToken, error)
 	openBrowser  auth.BrowserOpener
+	// windows runs the login in the Windows enbu.exe instead, inside WSL:
+	// the token goes to the Windows keyring and Windows opens the browser.
+	windows func(ctx context.Context, cmd *cobra.Command, args ...string) error
 }
 
 type authStatusDeps struct {
@@ -44,11 +51,31 @@ func newAuthCommand(a *app.App) *cobra.Command {
 
 func newAuthLoginCommand() *cobra.Command {
 	client := auth.Client{Clock: clock.New()}
-	return newAuthLoginCommandWithDeps(authLoginDeps{
+	deps := authLoginDeps{
 		browserLogin: client.Login,
 		deviceLogin:  client.LoginDevice,
 		openBrowser:  auth.OpenBrowser,
-	})
+	}
+	if inWSL() {
+		deps.windows = runInWindows
+	}
+	return newAuthLoginCommandWithDeps(deps)
+}
+
+// runInWindows runs an enbu command in the Windows enbu.exe on this terminal.
+// Windows prints its own errors, so a failure only carries the exit status.
+// An enbu.exe that is missing or cannot start is identity_unavailable, as for
+// every other key operation inside WSL.
+func runInWindows(ctx context.Context, cmd *cobra.Command, args ...string) error {
+	err := winbridge.RunWindows(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args...)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return &apperr.ExitError{Code: exit.ExitCode()}
+	}
+	if err != nil {
+		return apperr.Wrap(apperr.CodeIdentityUnavailable, "Inside WSL, enbu signs in through the Windows enbu.exe, which could not run: "+err.Error()+". Run enbu doctor.", err, nil)
+	}
+	return nil
 }
 
 func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
@@ -62,6 +89,16 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 			}
 
 			ctx := cmd.Context()
+			if deps.windows != nil {
+				args := []string{"auth", "login"}
+				if deviceFlow {
+					args = append(args, "--device")
+				}
+				if jsonEnabled(cmd) {
+					args = append(args, "--json")
+				}
+				return deps.windows(ctx, cmd, args...)
+			}
 
 			humanPrintf(cmd, "Initiating GitHub authentication...\n")
 			var token *auth.StoredToken

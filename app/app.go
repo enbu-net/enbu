@@ -17,6 +17,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/identity"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 type App struct {
@@ -224,10 +225,19 @@ func New(c clock.Clock) *App {
 	return &App{
 		TokenProvider: &defaultTokenProvider{},
 		Runtime:       &Runtime{Clock: c},
-		Identities:    identity.New(c),
+		Identities:    identityStore(c),
 		RepoDetector:  &defaultRepoDetector{git: gitClient},
 		Git:           gitClient,
 	}
+}
+
+// identityStore keeps keys in this OS, or inside WSL in Windows: WSL never
+// uses the Linux keystore, so its keys get the Windows TPM and Hello.
+func identityStore(c clock.Clock) IdentityStore {
+	if winbridge.InWSL() {
+		return winbridge.Shared()
+	}
+	return identity.New(c)
 }
 
 type defaultTokenProvider struct{}

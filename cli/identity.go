@@ -23,8 +23,9 @@ func printIdentity(cmd *cobra.Command, info identity.PublicInfo, warning string)
 	return nil
 }
 
-func newIdentityCommand(a *app.App) *cobra.Command {
+func newIdentityCommand(version string, a *app.App) *cobra.Command {
 	cmd := &cobra.Command{Use: "identity", Short: "Manage this repository's local Identity"}
+	cmd.AddCommand(newIdentityBridgeCommand(version, a))
 	cmd.AddCommand(&cobra.Command{Use: "create", Short: "Create or reuse a local Identity without registration", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, warning, err := a.CreateIdentity()
@@ -69,6 +70,20 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 			d := a.Diagnose(cmd.Context())
 			if jsonEnabled(cmd) {
 				return writeJSON(cmd, d)
+			}
+			if d.WSL != nil {
+				exe := d.WSL.Exe
+				if exe == "" {
+					exe = "(not found)"
+				}
+				cmd.Printf("WSL: keys are kept in Windows\nWindows enbu: %s", exe)
+				if d.WSL.Version != "" {
+					cmd.Printf(" (%s)", d.WSL.Version)
+				}
+				cmd.Println()
+				if d.WSL.Error != "" {
+					cmd.Printf("Windows enbu error: %s\n", d.WSL.Error)
+				}
 			}
 			cmd.Printf("Hardware: %s\nDevice: %s\nAvailable: %t\n", d.Backend, d.Device, d.Available)
 			if d.Reason != "" {
