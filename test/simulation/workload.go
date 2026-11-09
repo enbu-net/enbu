@@ -9,6 +9,7 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
@@ -61,6 +62,39 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 	for _, member := range initialMembers {
 		membership[member.DeviceID] = member.Admin
 	}
+	// written holds environments this workload has successfully written, so a
+	// later empty history is a lost revision rather than an expected absence.
+	written := map[string]bool{}
+	// selected is each person's own environment choice, keyed by the local
+	// state directory (devices of one person share it). Scenarios may already
+	// have chosen one, so start from what is stored; afterwards only modelled
+	// switch/create/rename change it. The effective current environment falls
+	// back to the team default when the chosen name is gone, exactly as a
+	// user's stale choice does.
+	selected := map[string]string{}
+	defaultEnv := "default"
+	for _, d := range w.Devices {
+		cfg, err := config.LoadProjectFrom(d.App.RepositoryDir)
+		if err != nil {
+			return err
+		}
+		if cfg.DefaultEnv != "" {
+			defaultEnv = cfg.DefaultEnv
+		}
+		local, err := config.LoadLocalStateFrom(d.App.Runtime.LocalStateDir, cfg.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		selected[d.App.Runtime.LocalStateDir] = local.Current
+	}
+	current := func(person string) string {
+		if name := selected[person]; name != "" {
+			if _, ok := w.Model[name]; ok {
+				return name
+			}
+		}
+		return defaultEnv
+	}
 	for step, op := range actions {
 		d := w.Devices[op.Device]
 		a := d.App
@@ -82,7 +116,12 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			if err != nil {
 				return err
 			}
-			hasRevision = len(history) > 0
+			if written[env] && len(history) == 0 {
+				return &Violation{Kind: "history/lost/" + op.Kind, Detail: fmt.Errorf("step %d: %s was written but has no history", step, env)}
+			}
+			// Revisions published only by sync or re-encryption are not modelled;
+			// history may add them, but can never remove a modelled write.
+			hasRevision = written[env] || len(history) > 0
 		}
 		_, exists := m[op.Key]
 		expected := ""
@@ -108,6 +147,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 				expected = string(apperr.CodeSecretExists)
 			} else {
 				m[op.Key] = op.Value
+				written[env] = written[env] || e == nil
 			}
 		case "edit":
 			e = a.EditSecret(ctx, env, op.Key, op.Value)
@@ -118,6 +158,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 				}
 			} else {
 				m[op.Key] = op.Value
+				written[env] = written[env] || e == nil
 			}
 		case "delete":
 			e = a.DeleteSecret(ctx, env, op.Key)
@@ -125,6 +166,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 		case "import":
 			out, e = a.ImportSecrets(ctx, env, map[string]string{op.Key: op.Value}, true)
 			m[op.Key] = op.Value
+			written[env] = written[env] || e == nil
 		case "read":
 			out, e = a.ListSecrets(ctx, env)
 		case "sync":
@@ -137,7 +179,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			out = data
 			if e == nil {
 				if !reflect.DeepEqual(data.Secrets, m) {
-					return fmt.Errorf("pull reference mismatch")
+					return &Violation{Kind: "pull/reference/" + env, Detail: fmt.Errorf("step %d: pulled %v want %v", step, data.Secrets, m)}
 				}
 			}
 			if !hasRevision {
@@ -152,6 +194,9 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			e = a.CreateEnvironment(env)
 			if !present && e == nil {
 				w.Model[env] = map[string]string{}
+				// Re-creating a name starts a new incarnation with no history.
+				delete(written, env)
+				selected[d.App.Runtime.LocalStateDir] = env
 			}
 			if e == nil {
 				e = w.Share(op.Device)
@@ -160,6 +205,8 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			e = a.SwitchEnvironment(env)
 			if !present {
 				expected = string(apperr.CodeEnvironmentMissing)
+			} else if e == nil {
+				selected[d.App.Runtime.LocalStateDir] = env
 			}
 		case "rename-env":
 			target := env + "_renamed"
@@ -173,21 +220,31 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			if e == nil {
 				w.Model[target] = m
 				delete(w.Model, env)
+				written[target] = written[env]
+				delete(written, env)
+				// Only the renaming user's own choice follows the rename.
+				if selected[d.App.Runtime.LocalStateDir] == env {
+					selected[d.App.Runtime.LocalStateDir] = target
+				}
 				e = w.Share(op.Device)
 			}
 		case "delete-env":
-			current, err := a.CurrentEnvironment()
+			actual, err := a.CurrentEnvironment()
 			if err != nil {
 				return err
 			}
+			if want := current(d.App.Runtime.LocalStateDir); actual != want {
+				return &Violation{Kind: "environment/current", Detail: fmt.Errorf("step %d: device %d is on %q want %q", step, op.Device, actual, want)}
+			}
 			_, e = a.DeleteEnvironment(ctx, env, false)
-			if current == env {
+			if actual == env {
 				expected = string(apperr.CodeInvalidArgument)
 			} else if !present {
 				expected = string(apperr.CodeEnvironmentMissing)
 			}
 			if e == nil {
 				delete(w.Model, env)
+				delete(written, env)
 				e = w.Share(op.Device)
 			}
 		case "compact":

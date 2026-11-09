@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/enbu-net/enbu/app"
@@ -65,7 +66,13 @@ func ErrorCode(e error) string {
 	if errors.Is(e, context.Canceled) {
 		return "canceled"
 	}
-	return fmt.Sprintf("%T", e)
+	// Record the wrapping chain of types (never messages, which may contain
+	// temporary paths), so different unclassified failures stay distinct.
+	types := []string{}
+	for cause := e; cause != nil && len(types) < 8; cause = errors.Unwrap(cause) {
+		types = append(types, fmt.Sprintf("%T", cause))
+	}
+	return strings.Join(types, "<")
 }
 func (w *World) Observe(name string, input, output any, e error) error {
 	if te := w.Tape.Observe("operation", []any{name, input}, []any{output, ErrorCode(e)}); te != nil {
@@ -130,8 +137,13 @@ func (w *World) Check(ctx context.Context, env string) error {
 			e = nil
 			got = map[string]string{}
 		}
-		if e := w.Observe("check", []any{i, env, want}, got, e); e != nil {
-			return e
+		if te := w.Tape.Observe("operation", []any{"check", []any{i, env, want}}, []any{got, ErrorCode(e)}); te != nil {
+			return fmt.Errorf("observing check (operation error: %v): %w", e, te)
+		}
+		if e != nil {
+			// A member failing to read the modelled state is an oracle failure, so
+			// it must be shrinkable like any other violation.
+			return &Violation{Kind: "check/read/" + env + "/" + ErrorCode(e), Detail: fmt.Errorf("device %d: %w", i, e)}
 		}
 		if !reflect.DeepEqual(got, want) {
 			kind := "model/" + env

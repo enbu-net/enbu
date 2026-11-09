@@ -173,7 +173,7 @@ succeed, and the observer must be able to publish a fresh change.
 
 - `ENBU_SIM_EXPLORE=1`: enable complete finite matrices; DST CI and `task simulation/test` set it explicitly.
 - `ENBU_SIM_SEEDS`, `ENBU_SIM_STEPS`: generated sequences per shard and sequence length.
-- `ENBU_SIM_SHARDS`, `ENBU_SIM_SHARD`: reproducible disjoint seed ranges and operation fault matrices.
+- `ENBU_SIM_SHARDS`, `ENBU_SIM_SHARD`: reproducible disjoint seed ranges and operation fault matrices. Every partitioned test reads them through one helper; more than one shard without `ENBU_SIM_SHARD`, or an out-of-range shard, fails instead of letting every lane run lane 0's cases.
 - `ENBU_SIM_EXHAUSTIVE=1`: inject at every observed external-call occurrence;
   otherwise test first and last occurrence for each method.
 - `ENBU_SIM_ARTIFACTS`: recording output directory; failed runs are always saved.
@@ -195,7 +195,7 @@ selects its tests directly. Changes to shared or unknown application/protocol
 code conservatively broaden the selection; frontend/provider adapters and docs
 without simulation dependencies do not run DST. The planner prints the changed
 paths and selected tests in the Actions summary. Push exploration uses two seeds
-per lane, 32 actions and representative fault positions. Finite matrices execute one deterministic eighth of their named cases, selected by the commit SHA; scenario smoke cases and generated seed workloads are never sampled. The upper hash bits select samples independently of lane assignment. Daily/manual full mode and mutation controls force stride 1, so every finite case remains enabled there.
+per lane, 32 actions and representative fault positions. Finite matrices execute one deterministic eighth of their named cases, selected by the commit SHA; scenario smoke cases and generated seed workloads are never sampled. The upper hash bits select samples independently of lane assignment. A fault matrix's measurement run (`baseline`) is never sampled; only its child cases are, so each child is in exactly one sample instead of only when the parent and child names share one. Daily/manual full mode and mutation controls force stride 1, so every finite case remains enabled there.
 
 Full exploration runs daily at **02:00 Asia/Tokyo (17:00 UTC)** and on manual
 dispatch. It uses all tests, exhaustive fault positions, and 1,024 seeds × 256
