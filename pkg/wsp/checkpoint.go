@@ -30,8 +30,9 @@ type checkpointFile struct {
 // For the Control DAG, which is never deleted, it keeps the accepted heads: a
 // later view must still contain each of them. For a resource, whose old
 // revisions may be deleted, it keeps the highest Generation accepted: a later
-// view must show a head read as current, or a revision whose Generation the
-// view proves, of at least that Generation. Storage
+// view must show a head read as current of at least that Generation. An old
+// member's historical signature cannot vouch for freshness, even with fully
+// present ancestry. Storage
 // hiding an accepted head behind a sibling branch of equal or higher
 // Generation is not detected; that branch still needs a member's signature.
 //
@@ -189,10 +190,9 @@ func (c *Checkpoints) AcceptControl(view *ControlView) error {
 }
 
 // CheckState rejects a view of resource that shows a lower Generation than this
-// client accepted. trusted are the heads the caller reads as current; besides
-// them, only revisions whose Generation the view proves count (see
-// StateView.shownGeneration). sv may be nil for a resource storage shows
-// nothing of. It does not record anything.
+// client accepted. Only trusted, the heads the caller reads as current, may
+// vouch for freshness (see StateView.shownGeneration). sv may be nil for a
+// resource storage shows nothing of. It does not record anything.
 func (c *Checkpoints) CheckState(resource string, sv *StateView, trusted []*VerifiedState) error {
 	accepted, err := c.Generation(resource)
 	if err != nil {

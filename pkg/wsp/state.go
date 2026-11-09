@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -197,40 +196,17 @@ type StateView struct {
 	Skipped int              // listed revisions that failed to fetch or verify
 }
 
-// shownGeneration is how fresh the view shows the resource to be, or 0 for an
-// empty view. It measures freshness, not what may be read: see Checkpoints.
+// shownGeneration counts only the heads the caller may read as current.
+// Complete ancestry proves arithmetic, not freshness authority: a removed
+// member can still sign a correctly numbered child of an old parent under its
+// historical Control. Counting that child would let storage hide an accepted
+// newer revision while returning the old parent as content (F2b).
 //
-// It counts the Generation of trusted, the heads the caller reads as current,
-// and of every revision whose Generation the view proves: all its ancestors
-// back to a first revision are present, so each step was checked. Whoever
-// wrote such a revision cannot have inflated its Generation. A revision above
-// a missing parent proves nothing, because anyone holding a signing key that a
-// Control once listed, a removed member's included, can sign one with any
-// Generation and mask storage hiding newer revisions.
+// Consequently a removal racing an already accepted write can cause a rollback
+// error until a current member publishes a sufficiently recent trusted head.
+// Fail closed rather than silently serving the old parent's secrets.
 func (sv *StateView) shownGeneration(trusted []*VerifiedState) uint64 {
-	top := TopGeneration(trusted)
-	if sv == nil {
-		return top
-	}
-	// A present parent has a lower Generation (dropWrongGenerations), so
-	// visiting by Generation reaches every parent before its children.
-	states := make([]*VerifiedState, 0, len(sv.States))
-	for _, st := range sv.States {
-		states = append(states, st)
-	}
-	sort.Slice(states, func(i, j int) bool { return states[i].Generation < states[j].Generation })
-	proven := make(map[digest.Digest]bool, len(states))
-	for _, st := range states {
-		ok := true
-		for _, p := range st.Parents {
-			ok = ok && proven[p]
-		}
-		if ok {
-			proven[st.Digest] = true
-			top = max(top, st.Generation)
-		}
-	}
-	return top
+	return TopGeneration(trusted)
 }
 
 // StateResource reads the workspace and resource a stored state names, without

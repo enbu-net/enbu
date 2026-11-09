@@ -109,9 +109,10 @@ func TestStateCheckpointNeverLowersTheAcceptedGeneration(t *testing.T) {
 	if err := acceptView(cps, view); err != nil {
 		t.Fatal(err)
 	}
-	// A read that used an older trusted head of the same view keeps the higher value.
-	if err := cps.AcceptState(testResource, view, []*VerifiedState{view.States[d("root")]}); err != nil {
-		t.Fatal(err)
+	// A newer untrusted revision elsewhere in the view cannot justify
+	// accepting an older trusted head (F2b). The checkpoint stays put.
+	if err := cps.AcceptState(testResource, view, []*VerifiedState{view.States[d("root")]}); !errors.Is(err, ErrRollback) {
+		t.Fatalf("an older trusted head was not refused: %v", err)
 	}
 	if got, _ := cps.Generation(testResource); got != 3 {
 		t.Fatalf("accepted generation lowered to %d", got)

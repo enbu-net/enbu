@@ -13,7 +13,7 @@ They are not a replacement for the protocol specification.
 - `StateDAG` records each read's input, checkpoint and expected output.
   `TestReaderMatchesTheModel` compares these with the application's reader.
   The default oracle asserts the stronger rollback protection; `count-proven`
-  describes the current implementation and exhibits the known removed-key
+  describes the pre-F2b implementation and exhibits its removed-key
   rollback finding. A failure against the stronger oracle must not be hidden
   by selecting `count-proven` in required CI.
 - `MemberChange` checks more finely interleaved writes during removal and
@@ -30,5 +30,6 @@ The refinement table's IDs are a separate namespace from protocol IDs in
 
 Known counterexamples from the protocol models remain under `../tla/traces`.
 In particular, `StateDAG_finding_removed_sibling` and the refinement finding
-F2b describe the same remaining weakness, reproduced in Go by
+F2b describe the same weakness, now fixed by trusting only current heads as
+freshness evidence and retained as seeded regressions. The Go regression is
 `TestRemovedKeyCannotMaskARollback`.

@@ -43,10 +43,11 @@ A fork whose heads share no admin is never joined; see the examples below.
 
 | ID | Property | Enforced by | TLA+ | Go test |
 |----|----------|-------------|------|---------|
-| GEN-1 | A read never succeeds on a view that lost a revision the device accepted, unless a present revision of at least its Generation stands in for it (one a current member signed, or one whose Generation is honest) (F2). | `Checkpoints.CheckState` / `AcceptState`, `StateView.shownGeneration`, `dropWrongGenerations` | `StateDAG.GEN_1` | TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration |
+| GEN-1 | A read never succeeds on a view that lost an accepted revision unless a currently trusted revision of at least its Generation stands in for it. A removed member's correctly numbered sibling is not freshness authority (F2b, ADR-28). | `Checkpoints.CheckState` / `AcceptState`, `StateView.shownGeneration` | `StateDAG.GEN_1_strict` | TestRemovedKeyCannotMaskARollback, TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration |
 | GEN-2 | A rollback is reported only when storage withheld a revision (F1). | `VerifyRevision` (an unknown Control is invalid, not a rollback) | `StateDAG.GEN_2` | TestReaderMatchesTheModel |
 | GEN-3 | The accepted Generation never goes down. | `Checkpoints.AcceptState` | `StateDAG.GEN_3` | TestStateCheckpointNeverLowersTheAcceptedGeneration |
 | GEN-4 | An honest write never publishes a revision readers must reject: above `MaxGeneration` it is a conflict (F3). | `writeState`, `State.validate` | `StateDAG.GEN_4` | TestNextGenerationNeverWraps |
+| GEN-5 | Every verified revision with all parents visible has generation 1 + their maximum. | `dropWrongGenerations` | `StateDAG.GEN_5` | TestLoadStatesChecksGenerationsAgainstPresentParents |
 
 ## Trust roots
 
@@ -93,7 +94,7 @@ An example pins a limit the design accepts; a finding is open and should become 
 | `ControlDAG_example_permanent` | example | A fork whose heads share no admin (two admins removing each other) is never joined. |
 | `ControlDAG_finding_removed_admin` | finding | An admin that was removed still signs children of the Controls that listed it, and they verify: it can fork the Control after its removal. |
 | `ControlDAG_finding_removed_admin_drops` | finding | Through such a fork a removed admin drops another member: the honest resolution keeps the intersection, so the admin who removed it is out. With no admin common to both heads the fork is permanent instead. |
-| `StateDAG_finding_removed_sibling` | finding | `GEN_1_strict`: a removed member signs a child of a present revision with the honest Generation; it is set aside as a head, but its proven Generation still counts in `shownGeneration`, so storage can hide a newer accepted revision behind it. |
+| `StateDAG_finding_removed_sibling` | fixed regression mutant F2b | The pre-fix rule counted a removed member's proven Generation, allowing storage to hide a newer accepted revision. `Bug = "F2b"` must still violate `GEN_1_strict`; the fixed base configuration now requires that property. |
 | `StateDAG_finding_removal_race` | finding | `GEN_2`, all members honest: a member writes between its removal's re-encryption and the Control that drops it; that head is never re-encrypted and is set aside once the Control is published. A compaction meanwhile deletes the history proving its Generation, so a device that read it reports a rollback, and with no trusted head left the environment cannot be read or written. |
 | `StateDAG_finding_member_poison` | finding | `GEN_2_strict`: in the same window a member signs a head above a missing parent; devices that read it accept its Generation and report a rollback once it is set aside. |
 | `MemberChange_example_removal_window` | example | `RCPT_4_strict`: a revision published in the same window stays encrypted for the removed member until the next write (it was written while it was still a member; RCPT-2 holds). |

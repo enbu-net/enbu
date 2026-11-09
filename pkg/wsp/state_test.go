@@ -512,8 +512,8 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.shownGeneration(nil) != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
-		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
+	if sv.Graph.Has(wrong) || sv.Skipped != 1 || sv.shownGeneration(sv.Heads) != 2 || len(sv.Heads) != 1 || sv.Heads[0].Digest != child {
+		t.Fatalf("inflated generation kept: heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(sv.Heads))
 	}
 
 	if err := f.store.Delete(ctx, storage.KindState, storage.StateScope(testWorkspace, testResource), root); err != nil {
@@ -551,14 +551,14 @@ func TestLoadStatesDropsDescendantsOfAWrongGeneration(t *testing.T) {
 			t.Fatalf("revision %s above a wrong generation kept", rev)
 		}
 	}
-	if sv.Skipped != 3 || sv.shownGeneration(nil) != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
-		t.Fatalf("heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
+	if sv.Skipped != 3 || sv.shownGeneration(sv.Heads) != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(sv.Heads))
 	}
 }
 
-// A revision by a member removed since still counts as evidence of how fresh
-// storage is, though it is no longer read as current.
-func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {
+// Historical signature validity does not grant freshness authority after
+// removal, even when the revision's ancestry is entirely present (F2b).
+func TestRemovedAuthorsRevisionDoesNotCountForFreshness(t *testing.T) {
 	ctx := context.Background()
 	f := newStateFixture(t)
 	root := f.publish(t, f.state(f.alice), f.alice, "root")
@@ -570,8 +570,14 @@ func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {
 		t.Fatal(err)
 	}
 	sv, err := LoadStates(ctx, f.store, load(t, f.store, f.genesis), testWorkspace, testResource)
-	if err != nil || sv.shownGeneration(nil) != 2 {
-		t.Fatalf("shown generation = %d %v", sv.shownGeneration(nil), err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sv.shownGeneration(nil); got != 0 {
+		t.Fatalf("removed author's revision counted for freshness: %d", got)
+	}
+	if got := sv.shownGeneration([]*VerifiedState{sv.States[root]}); got != 1 {
+		t.Fatalf("the surviving trusted parent shows generation %d, want 1", got)
 	}
 }
 

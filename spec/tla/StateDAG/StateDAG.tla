@@ -25,7 +25,7 @@ CONSTANTS Writers, A, M, Outsider, MaxRevs, MaxGen, MaxAdv, Bug,
 
 ASSUME A \in Writers /\ M \notin Writers
 
-Bugs == {"none", "F1", "F2", "F3", "skip_gen_check", "lower_checkpoint",
+Bugs == {"none", "F1", "F2", "F2b", "F3", "skip_gen_check", "lower_checkpoint",
          "no_rejoin_check", "no_checkpoint"}
 ASSUME Bug \in Bugs
 
@@ -108,17 +108,20 @@ TrustedHeads(V) ==
 RECURSIVE Proven(_, _)
 Proven(r, V) == rev[r].parents \subseteq V /\ \A p \in rev[r].parents : Proven(p, V)
 
-\* shownGeneration; before F2 every verified revision counted.
+\* shownGeneration: only current trusted heads vouch for freshness. Complete
+\* ancestry proves arithmetic, not the authority of a removed signing key.
+\* F2 counted every verified revision; F2b counted every proven revision too.
 Shown(V, T) ==
   IF Bug = "F2" THEN Max({Gen(r) : r \in V})
-  ELSE Max({Gen(t) : t \in T} \cup {Gen(r) : r \in {q \in V : Proven(q, V)}})
+  ELSE IF Bug = "F2b" THEN Max({Gen(t) : t \in T} \cup {Gen(r) : r \in {q \in V : Proven(q, V)}})
+  ELSE Max({Gen(t) : t \in T})
 
 \* Before F1 a State naming an unknown Control was reported as a rollback.
 UnknownCtlStored == \E r \in stored : ~KnownCtl(r)
 
 ReadResult(d, V, T) ==
   IF Bug = "F1" /\ UnknownCtlStored THEN "rollback"
-  ELSE IF Bug # "no_checkpoint" /\ Shown(V, T) < cp[d] THEN "rollback"
+  ELSE IF Bug \notin {"no_checkpoint", "lower_checkpoint"} /\ Shown(V, T) < cp[d] THEN "rollback"
   ELSE IF V = {} THEN "empty"
   ELSE IF T = {} THEN "untrusted"
   ELSE "ok"
@@ -141,6 +144,13 @@ Covered(r, V, weak) ==
   \/ r \in V
   \/ \E s \in V : r \in RealAnc(s)
   \/ \E s \in V : Gen(s) >= Gen(r) /\ (Trusted(s) \/ (weak /\ HonestGen(s)))
+
+\* A fully visible parent set must justify every verified Generation. This
+\* remains independently necessary even when removed signatures no longer
+\* count for freshness (F2b); rollback alone is no oracle for arithmetic.
+GEN_5 ==
+  LET V == LoadV(stored) IN
+  \A r \in V : rev[r].parents \subseteq V => Gen(r) = NextGen(rev[r].parents)
 
 \* The names of the properties a successful read of V, reading T, violates.
 ReadViolations(d, V, T) ==

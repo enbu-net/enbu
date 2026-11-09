@@ -44,7 +44,7 @@ Each model lives in its own directory as `<Model>.tla` with these configs:
 | `StateDAG_F1` | pre-fix F1: a State naming an unknown Control is a rollback | GEN_2 |
 | `StateDAG_F2` | pre-fix F2: every verified revision counts towards the rollback check | GEN_1 |
 | `StateDAG_F3` | pre-fix F3: no Generation bound, a child of the largest wraps | GEN_4 |
-| `StateDAG_skip_gen_check` | `dropWrongGenerations` skipped | GEN_1 |
+| `StateDAG_skip_gen_check` | `dropWrongGenerations` skipped | GEN_5 |
 | `StateDAG_no_checkpoint` | the checkpoint is not compared with the view | GEN_1 |
 | `StateDAG_lower_checkpoint` | `AcceptState` may lower the checkpoint | GEN_3 |
 | `StateDAG_no_rejoin_check` | `AuthorIsCurrent` checks only the current Control | REJOIN_1 |
@@ -64,6 +64,11 @@ Each model lives in its own directory as `<Model>.tla` with these configs:
 | `Founding_no_find_genesis` | a retry does not look for its own genesis | TRUST_4 |
 | `Founding_founding_repins` | a pinned device founds again and re-pins | TRUST_1 |
 | `Founding_no_repo_pin` | the repository pin is not checked | TRUST_5 |
+
+`StateDAG_finding_removed_sibling` is now a fixed-regression mutant (`Bug = "F2b"`),
+not an open finding: complete ancestry does not give a removed key freshness
+authority. Base configurations require `GEN_1_strict`. Removal-race availability
+findings remain; the fix fails closed rather than returning old secrets.
 
 The counterexamples of the pre-fix mutants (F1–F5) and of the examples and findings are kept in [traces/](traces/).
 

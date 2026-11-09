@@ -91,14 +91,6 @@ min_efficacy = 85
   type = "CONDITIONALS_BOUNDARY"
   reason = "the digests sorted are distinct, so < and <= order them alike"
   [[target.equivalent]]
-  at = "state.go:221:71"
-  type = "CONDITIONALS_BOUNDARY"
-  reason = "a present parent has a strictly lower Generation, so revisions of equal Generation never depend on each other's order"
-  [[target.equivalent]]
-  at = "state.go:292:5"
-  type = "INVERT_LOOPCTRL"
-  reason = "stopping a batch at an already tried digest leaves the rest queued for the next batch"
-  [[target.equivalent]]
   at = "chain.go:127:4"
   type = "INVERT_LOOPCTRL"
   reason = "break inside the switch only leaves the switch; the empty blob then fails to decode and the loop continues"
