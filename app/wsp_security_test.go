@@ -483,6 +483,66 @@ func TestFoundingRefusesAnotherDevicesGenesis(t *testing.T) {
 	}
 }
 
+// A device with no pin for the genesis enbu.toml names, signed by someone
+// else, has not founded it: its repository pin must not move to it.
+func TestAnotherDevicesConfiguredGenesisIsNotAdopted(t *testing.T) {
+	alice := newAlice(t)
+	shared := alice.Storage
+	bob := newDevice(t, alice)
+	cfg, err := bob.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := cfg
+	own.WorkspaceID = "44444444-4444-4444-8444-444444444444"
+	own.ControlGenesis = ""
+	if err := config.SaveProjectTo(bob.RepositoryDir, own); err != nil {
+		t.Fatal(err)
+	}
+	bob.Storage = newMemRegistry()
+	if _, err := bob.InitializeRepository(bg); err != nil {
+		t.Fatalf("bob founding his own workspace: %v", err)
+	}
+	before, err := bob.trust().Repository(bob.repositoryKey())
+	if err != nil || before.Workspace != own.WorkspaceID {
+		t.Fatalf("repository pin: %+v %v", before, err)
+	}
+
+	bob.Storage = shared
+	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+		t.Fatalf("alice's genesis treated as bob's founding: %v", err)
+	}
+	if after, err := bob.trust().Repository(bob.repositoryKey()); err != nil || after != before {
+		t.Fatalf("the repository pin moved: %+v %v", after, err)
+	}
+}
+
+// A storage failure while looking for this device's own genesis is returned,
+// even when the next read would succeed, and pins nothing.
+func TestConfiguredGenesisLookupFailureIsReturned(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	failed := false
+	bob.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			if !failed {
+				failed = true
+				return nil, storage.ErrCorrupt
+			}
+			return next.FetchHead(ctx, kind, scope, rev)
+		},
+	})
+	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("lookup failure: %v", err)
+	}
+	if pinned, err := bob.trust().Pinned(mustWorkspace(t, bob)); err != nil || pinned != (wsp.Root{}) {
+		t.Fatalf("pinned after a failed lookup: %+v %v", pinned, err)
+	}
+}
+
 // History written by a member who has since been removed is still history.
 func TestHistoryByARemovedMemberCanBeDiffedAndRestored(t *testing.T) {
 	alice := newAlice(t)
