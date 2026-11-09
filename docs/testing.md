@@ -1,8 +1,8 @@
 # Test coverage
 
 The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React.
-It runs every Go package with unit tests, including `pkg/`, `desktop/`, the root
-command, and repository tools. Separate suites cover the Go scenarios and
+It runs every Go package with unit tests, including `pkg/`, `desktop/`, `internal/`,
+the root command, and repository tools. Separate suites cover the Go scenarios and
 Identity E2E (vTPM, systemd credentials on Linux, and OS keyring).
 
 The Go report instruments all production packages and tools. Each test binary

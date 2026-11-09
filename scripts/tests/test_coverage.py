@@ -16,6 +16,12 @@ def test_discovers_all_packages_with_tests(monkeypatch):
     assert coverage.packages({}) == ["b/a", "b/z"]
 
 
+def test_internal_test_helpers_are_instrumented():
+    # internal/tla has no dependency on the app packages. Without this pattern
+    # its real report has null metadata and Tobari cannot merge the suite.
+    assert f"{coverage.MODULE}/internal/..." in coverage.COVERPKG.split(",")
+
+
 def test_collect_isolates_packages_and_preserves_failed_test_data(
     tmp_path, monkeypatch
 ):
@@ -40,6 +46,7 @@ def test_collect_isolates_packages_and_preserves_failed_test_data(
         env = kwargs["env"]
         destinations.append(env["TOBARI_COVERDIR"])
         assert "-coverpkg=" in env["GOFLAGS"]
+        assert f"{coverage.MODULE}/internal/..." in env["GOFLAGS"]
         assert env["ENBU_TEST_COVERAGE_DIR"] == str(tmp_path / "unit" / "processes")
         report = Path(env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
         report.parent.mkdir(parents=True)
