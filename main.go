@@ -25,6 +25,13 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// The first interrupt cancels ctx; a second one ends the process, even
+	// when a call that ignores ctx (such as a Windows enbu.exe stuck on a
+	// prompt) is still running.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 
 	service := app.New(clock.New())
 	command := enbucli.NewWithApp(getVersion(), service)
