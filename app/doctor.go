@@ -46,18 +46,25 @@ func (r *DoctorReport) add(name, env, status, message string, err error) {
 }
 
 // addIdentityBackend says where a new identity would go, or what the person
-// must fix first: hardware they may not use, a locked keyring, or none.
+// must fix first: hardware they may not use, a locked keyring, or none. It
+// follows ENBU_IDENTITY_BACKEND: hardware never falls back, keyring never uses
+// the hardware.
 func (r *DoctorReport) addIdentityBackend() {
+	hardware := r.Mode != "keyring" && r.Available
+	keyring := r.Mode != "hardware" && (r.Mode == "keyring" || !r.Denied) && r.FallbackAvailable
 	switch {
-	case r.Available:
+	case hardware:
 		r.add("identity_backend", "", "ok", "New identities use the hardware ("+r.Backend+").", nil)
-	case r.Denied:
+	case keyring:
+		r.add("identity_backend", "", "ok", "New identities use a software key in the OS keyring.", nil)
+	case r.Mode == "hardware":
+		r.add("identity_backend", "", "warn", "ENBU_IDENTITY_BACKEND=hardware, but the hardware ("+r.Backend+") is unavailable: "+r.Reason+".",
+			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
+	case r.Mode != "keyring" && r.Denied:
 		r.add("identity_backend", "", "warn", "The hardware ("+r.Backend+") exists but this user may not use it, and enbu does not fall back to a software key: "+r.Reason+". Or set ENBU_IDENTITY_BACKEND=keyring to use the OS keyring.",
 			apperr.New(apperr.CodeIdentityUnavailable, r.Reason, nil))
-	case r.FallbackAvailable:
-		r.add("identity_backend", "", "ok", "No usable hardware; new identities use a software key in the OS keyring.", nil)
 	case r.KeyringLocked:
-		r.add("identity_backend", "", "warn", "No usable hardware, and the OS keyring is locked. Unlock it (log in to the desktop, or run gnome-keyring-daemon --unlock) and retry.",
+		r.add("identity_backend", "", "warn", "The OS keyring is locked. Unlock it (log in to the desktop, or run gnome-keyring-daemon --unlock) and retry.",
 			apperr.New(apperr.CodeKeyringLocked, r.KeyringReason, nil))
 	default:
 		r.add("identity_backend", "", "warn", "No usable hardware and no OS keyring. Install and unlock a Secret Service (GNOME Keyring or KWallet) to keep a software key.",

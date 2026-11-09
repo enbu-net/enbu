@@ -264,7 +264,9 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 | Windows | TPM 2.0 through TBS | Credential Manager |
 | macOS | Secure Enclave (Apple silicon, or Intel with a T2 chip) | Keychain |
 
-The fallback is used only when there is no hardware. On Linux, `/dev/tpmrm0`
+In `auto` mode the fallback is used when there is no usable hardware (none, or a TPM
+that lacks a required command); set `ENBU_IDENTITY_BACKEND=hardware` to refuse it.
+Hardware this user may not open is never replaced. On Linux, `/dev/tpmrm0`
 belongs to the `tss` group on most distributions; a user outside it gets an error
 rather than a software key, so a permission mistake never lowers the protection.
 `sudo usermod -aG tss $USER`, then log in again, lets enbu use the TPM. To use the

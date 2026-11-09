@@ -165,3 +165,25 @@ func TestLockedKeyringHasItsOwnCode(t *testing.T) {
 		t.Fatalf("code = %v", apperr.CodeOf(err))
 	}
 }
+
+// The identity_backend check follows ENBU_IDENTITY_BACKEND: keyring mode is
+// judged by the keyring alone, hardware mode by the hardware alone.
+func TestDoctorIdentityBackendFollowsTheMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		d      identity.Diagnosis
+		status string
+	}{
+		"keyring mode with hardware and a locked keyring": {identity.Diagnosis{Mode: "keyring", Available: true, KeyringLocked: true}, "warn"},
+		"hardware mode without hardware":                  {identity.Diagnosis{Mode: "hardware", FallbackAvailable: true}, "warn"},
+		"keyring mode with a denied TPM":                  {identity.Diagnosis{Mode: "keyring", Denied: true, FallbackAvailable: true}, "ok"},
+		"auto without hardware":                           {identity.Diagnosis{Mode: "auto", FallbackAvailable: true}, "ok"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := DoctorReport{Diagnosis: tc.d, Healthy: true}
+			r.addIdentityBackend()
+			if got := r.Checks[0].Status; got != tc.status {
+				t.Fatalf("status = %s (%s), want %s", got, r.Checks[0].Message, tc.status)
+			}
+		})
+	}
+}

@@ -61,6 +61,8 @@ type Metadata struct {
 }
 
 type Diagnosis struct {
+	// Mode is ENBU_IDENTITY_BACKEND: auto, hardware or keyring.
+	Mode             string `json:"mode,omitempty"`
 	KeyringAvailable bool   `json:"keyring_available"`
 	KeyringReason    string `json:"keyring_reason,omitempty"`
 	// KeyringLocked is set when the OS keyring exists but is locked: the
@@ -667,6 +669,7 @@ func (m *Manager) Doctor(ctx context.Context) Diagnosis {
 	if m.Hardware != nil {
 		d = m.Hardware.Probe()
 	}
+	d.Mode, _ = m.mode()
 	keyringErr := probeVault(ctx, m.Vault)
 	d.KeyringAvailable = keyringErr == nil
 	if keyringErr != nil {

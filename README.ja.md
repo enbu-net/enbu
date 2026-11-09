@@ -250,7 +250,7 @@ TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEM
 | Windows | TBS経由のTPM 2.0 | Credential Manager |
 | macOS | Secure Enclave（Apple silicon、またはT2チップのIntel Mac） | Keychain |
 
-fallbackはハードウェアがないときだけ使います。Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けません。グループ外のユーザーにはソフトウェア鍵を作らずエラーを返すので、権限の設定ミスで保護が弱くなることはありません。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。それでもOS keyringを使うときは`ENBU_IDENTITY_BACKEND=keyring`を設定します。
+`auto`ではハードウェアが使えないとき（ない、または必要なコマンドに対応していないTPM）にfallbackします。fallbackさせないときは`ENBU_IDENTITY_BACKEND=hardware`を設定します。権限がなくて開けないハードウェアをソフトウェア鍵で置き換えることはしません。Linuxの多くのディストリビューションでは`/dev/tpmrm0`を`tss`グループしか開けません。グループ外のユーザーにはソフトウェア鍵を作らずエラーを返すので、権限の設定ミスで保護が弱くなることはありません。`sudo usermod -aG tss $USER`のあと再ログインするとTPMを使えます。それでもOS keyringを使うときは`ENBU_IDENTITY_BACKEND=keyring`を設定します。
 
 TPMがないLinuxでは、ロックが解除されたSecret Serviceが必要です。enbuは使う前に毎回D-Busで状態を確かめ、ロック解除のプロンプトを待ちません。ロックされたkeyring（プロンプトが出せないSSHなど）はすぐに`keyring_locked`で失敗し、keyringがない端末は`identity_unavailable`で失敗します。ファイルへのfallbackはありません。どれに当たるかは`enbu doctor`で確認できます。
 

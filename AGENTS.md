@@ -61,7 +61,7 @@ pkg/merge/               → 3-way merge of concurrent revisions, conflicts
 pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or a software key in the OS keyring, plus the signing key
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
-pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (missing, or locked → `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
+pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
 pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
 pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence

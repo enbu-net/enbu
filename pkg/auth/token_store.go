@@ -22,11 +22,14 @@ const (
 // is an error; there is no plaintext file to fall back to.
 var tokenBackend keystore.Backend = keystore.New()
 
-// keyringError gives a locked OS keyring its own code, so the person is told
-// to unlock it rather than shown an internal error.
+// keyringError tells the person what to fix instead of showing an internal
+// error: a locked OS keyring gets its own code, a missing one is unavailable.
 func keyringError(op string, err error) error {
-	if errors.Is(err, keystore.ErrLocked) {
+	switch {
+	case errors.Is(err, keystore.ErrLocked):
 		return apperr.Wrap(apperr.CodeKeyringLocked, op+": "+err.Error(), err, nil)
+	case errors.Is(err, keystore.ErrNoKeyring):
+		return apperr.Wrap(apperr.CodeUnavailable, op+": "+err.Error(), err, nil)
 	}
 	return fmt.Errorf("%s: %w", op, err)
 }
@@ -49,7 +52,10 @@ func SaveToken(token *StoredToken) error {
 		return keyringError("saving token", err)
 	}
 	stored, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
-	if err != nil || !bytes.Equal(stored, data) {
+	if err != nil {
+		return keyringError("verifying saved token", err)
+	}
+	if !bytes.Equal(stored, data) {
 		return errors.New("verifying saved token failed")
 	}
 	return nil
