@@ -744,3 +744,34 @@ func TestWritingAboveTheMaximumGenerationIsAConflict(t *testing.T) {
 		t.Fatalf("write above the maximum generation: %v", err)
 	}
 }
+
+// Members that keep changing exhaust the write's retries. That used to leave
+// as an unclassified internal error; it is a conflict the caller can retry.
+func TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging(t *testing.T) {
+	alice := newAlice(t)
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				s, err := (&App{Storage: base, Identities: alice.Identities, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}).openSession(ctx)
+				if err != nil {
+					t.Error(err)
+				} else {
+					defer s.Close()
+					extra := extraPrincipal(t)
+					if _, err := wsp.UpdateControl(ctx, base, s.view, s.signer, func(c *wsp.Control) error {
+						c.Principals = append(c.Principals, extra)
+						return nil
+					}); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.AddSecret(bg, "default", "NEW", "value")
+	if !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("members kept changing: %v", err)
+	}
+}
