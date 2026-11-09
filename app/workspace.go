@@ -160,8 +160,11 @@ const forkRetries = 3
 // admin of every head.
 func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 	d, err := loadDevice(a.Identities, s.workspace)
+	if apperr.Is(err, apperr.CodeNotInitialized) {
+		return false, nil // a device without keys cannot join the heads; it reports the fork
+	}
 	if err != nil {
-		return false, nil // a device without its keys cannot join the heads; it reports the fork
+		return false, err
 	}
 	defer func() { _ = d.Close() }()
 	author := d.Signer.Public().DeviceID()
@@ -198,7 +201,9 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 		return false, err
 	}
 	// The resolution may have dropped members the existing ciphertext is still
-	// encrypted for, so it re-encrypts exactly as a removal does.
+	// encrypted for, so it re-encrypts exactly as a removal does. A failure
+	// fails the operation that joined, even a read: the join is published and
+	// is not retried, so this is the only moment that tells the admin to sync.
 	if err := a.reencryptAll(ctx, ""); err != nil {
 		return false, apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}

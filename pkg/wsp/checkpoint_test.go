@@ -2,11 +2,12 @@ package wsp
 
 import (
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	digest "github.com/opencontainers/go-digest"
 )
@@ -174,6 +175,8 @@ func TestCorruptCheckpointFile(t *testing.T) {
 	}
 }
 
+// A version 3 file kept accepted heads per resource; its Control heads carry
+// over and its resources start empty instead of failing every operation.
 func TestConcurrentAcceptsKeepTheNewestView(t *testing.T) {
 	cps := OpenCheckpoints(t.TempDir(), testWorkspace, d("genesis"), clock.New())
 	other := OpenCheckpoints(filepath.Dir(cps.path), testWorkspace, d("genesis"), clock.New())
