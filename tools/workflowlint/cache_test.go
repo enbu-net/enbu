@@ -93,40 +93,58 @@ func TestAquaCacheUsesTheSameIsolatedRootOnWindowsAndUnix(t *testing.T) {
 	}
 }
 
-func TestAquaInstallSkipsCachedAquaAndRetriesOnce(t *testing.T) {
-	root := readYAML(t, "../../.github/actions/setup-tools/action.yaml")
+// GitHub Releases answers 504 for minutes at a time, so every download from
+// it gets one retry after a pause.
+func requireOneDelayedRetry(t *testing.T, path, action, versionKey string, check func(with *yaml.Node)) {
+	t.Helper()
+	root := readYAML(t, path)
 	var first, version string
-	retries := 0
+	waited, retries := false, 0
 	for _, step := range field(field(root, "runs"), "steps").Content {
 		uses := field(step, "uses")
-		if uses == nil || !strings.HasPrefix(uses.Value, "aquaproj/aqua-installer@") {
+		if uses == nil || !strings.HasPrefix(uses.Value, action+"@") {
+			if first != "" && retries == 0 && field(step, "run") != nil && strings.HasPrefix(field(step, "run").Value, "sleep ") {
+				waited = field(step, "if").Value == "steps."+first+".outcome == 'failure'"
+			}
 			continue
 		}
-		// aqua-installer skips only when aqua is already on PATH, so a cold
-		// cache still installs it.
 		with := field(step, "with")
-		if field(with, "skip_install_aqua").Value != "true" {
-			t.Fatal("aqua is downloaded again although the cache restored it")
+		if check != nil {
+			check(with)
 		}
 		if first == "" {
-			version = field(with, "aqua_version").Value
 			if field(step, "continue-on-error").Value != "true" {
-				t.Fatal("a failed first install does not reach the retry")
+				t.Fatalf("%s: a failed first install does not reach the retry", path)
 			}
 			first = field(step, "id").Value
+			version = field(with, versionKey).Value
 			continue
 		}
 		if field(step, "if").Value != "steps."+first+".outcome == 'failure'" {
-			t.Fatal("the retry does not run only after a failed first install")
+			t.Fatalf("%s: the retry does not run only after a failed first install", path)
 		}
-		if field(with, "aqua_version").Value != version {
-			t.Fatal("the retry installs a different aqua version")
+		if field(with, versionKey).Value != version {
+			t.Fatalf("%s: the retry installs a different version", path)
 		}
 		retries++
 	}
-	if first == "" || retries != 1 {
-		t.Fatalf("want one install and one retry, got first=%q retries=%d", first, retries)
+	if first == "" || retries != 1 || !waited {
+		t.Fatalf("%s: want one install, a wait and one retry, got first=%q waited=%t retries=%d", path, first, waited, retries)
 	}
+}
+
+func TestAquaInstallSkipsCachedAquaAndRetriesOnce(t *testing.T) {
+	requireOneDelayedRetry(t, "../../.github/actions/setup-tools/action.yaml", "aquaproj/aqua-installer", "aqua_version", func(with *yaml.Node) {
+		// aqua-installer skips only when aqua is already on PATH, so a cold
+		// cache still installs it.
+		if field(with, "skip_install_aqua").Value != "true" {
+			t.Fatal("aqua is downloaded again although the cache restored it")
+		}
+	})
+}
+
+func TestTobariInstallRetriesOnce(t *testing.T) {
+	requireOneDelayedRetry(t, "../../.github/actions/setup-coverage/action.yaml", "goccy/tobari-action/setup", "version", nil)
 }
 
 func TestFullDSTRunnerGroupsCoverEveryLogicalLaneOnce(t *testing.T) {
