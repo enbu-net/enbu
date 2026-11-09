@@ -157,23 +157,7 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 			return false, nil
 		}
 	}
-	v, err := wsp.ResolveFork(ctx, s.store, s.view, d.Signer, func(c *wsp.Control) error {
-		kept := c.Principals[:0:0]
-		for _, p := range c.Principals {
-			inAll, adminInAll := true, true
-			for _, h := range s.view.Heads {
-				q, ok := h.Principal(p.ID)
-				inAll = inAll && ok
-				adminInAll = adminInAll && ok && q.Admin
-			}
-			if inAll {
-				p.Admin = adminInAll
-				kept = append(kept, p)
-			}
-		}
-		c.Principals = kept
-		return nil
-	})
+	v, err := wsp.ResolveFork(ctx, s.store, s.view, d.Signer, func(*wsp.Control) error { return nil })
 	var fork *wsp.ForkError
 	if errors.As(err, &fork) {
 		return true, nil // another admin joined it at the same time; join again

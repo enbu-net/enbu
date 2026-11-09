@@ -189,8 +189,8 @@ func VerifyGenesis(workspace string, blob []byte, trusted digest.Digest) (*Verif
 // VerifyChild verifies blob as a Control whose parents are all verified. Its
 // legitimacy comes from them: the author must be an admin of every parent and
 // the signature must verify under that admin's key. A Control with several
-// parents resolves a fork, so it may only keep principals the parents already
-// listed and may not make anyone an admin who was not already one.
+// parents resolves a fork, so it may only keep principals every parent lists
+// with the same keys, and only those an admin in every parent may be admins.
 func VerifyChild(parents []*Verified, blob []byte) (*Verified, error) {
 	if len(parents) == 0 {
 		return nil, invalid("control has no parent")
@@ -243,23 +243,22 @@ func VerifyChild(parents []*Verified, blob []byte) (*Verified, error) {
 	return &Verified{Control: c, Digest: digest.FromBytes(blob)}, nil
 }
 
+// checkResolution requires a resolution to grant nothing a single branch did
+// not agree on: a principal one branch added, or an admin right one branch
+// granted, is kept only by a normal update after the fork is joined.
 func checkResolution(parents []*Verified, c Control) error {
 	for _, p := range c.Principals {
-		listed, wasAdmin := false, false
 		for _, parent := range parents {
-			if old, ok := parent.Principal(p.ID); ok {
-				if old.Signing.DeviceID() != p.Signing.DeviceID() || old.Recipient != p.Recipient {
-					return invalid("resolution changes principal %s", p.ID)
-				}
-				listed = true
-				wasAdmin = wasAdmin || old.Admin
+			old, ok := parent.Principal(p.ID)
+			if !ok {
+				return invalid("resolution keeps principal %s that parent %s does not list", p.ID, parent.Digest)
 			}
-		}
-		if !listed {
-			return invalid("resolution adds principal %s", p.ID)
-		}
-		if p.Admin && !wasAdmin {
-			return invalid("resolution makes %s an admin", p.ID)
+			if old.Signing.DeviceID() != p.Signing.DeviceID() || old.Recipient != p.Recipient {
+				return invalid("resolution changes principal %s", p.ID)
+			}
+			if p.Admin && !old.Admin {
+				return invalid("resolution makes %s an admin that parent %s does not", p.ID, parent.Digest)
+			}
 		}
 	}
 	return nil
