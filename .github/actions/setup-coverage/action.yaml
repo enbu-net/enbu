@@ -8,9 +8,22 @@ runs:
 
     - uses: $/.github/actions/setup-tools
 
-    - uses: goccy/tobari-action/setup@v1.3.0
+    # tobari-action downloads the CLI from GitHub Releases without retrying;
+    # give a 504 burst one delayed retry, as setup-tools does for aqua.
+    - id: tobari
+      uses: goccy/tobari-action/setup@v1.3.0
+      continue-on-error: true
       with:
         # The tobari CLI must match the github.com/goccy/tobari module in go.mod:
         # a mismatch fails the test link with "fingerprint mismatch". Renovate
         # updates both together (customManagers in renovate.json).
+        version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
+    - name: Wait before retrying Tobari
+      if: steps.tobari.outcome == 'failure'
+      shell: bash
+      run: sleep 90
+    - name: Retry Tobari
+      if: steps.tobari.outcome == 'failure'
+      uses: goccy/tobari-action/setup@v1.3.0
+      with:
         version: v0.14.0 # renovate: datasource=go depName=github.com/goccy/tobari
