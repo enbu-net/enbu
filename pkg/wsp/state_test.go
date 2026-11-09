@@ -137,13 +137,43 @@ func TestStateForOtherResourceOrWorkspaceRejected(t *testing.T) {
 	}
 }
 
-func TestStateNamingAControlStorageDoesNotShowIsARollback(t *testing.T) {
+// A State naming a Control the view does not hold cannot be verified. It used
+// to be reported as a rollback before its signature was checked, so one
+// unsigned object written by anyone with storage access blocked the resource.
+func TestStateNamingAnUnknownControlIsInvalidNotARollback(t *testing.T) {
 	f := newStateFixture(t)
 	s := f.state(f.bob)
 	s.Control = digest.FromString("a newer control")
 	blob, rev := signedState(t, s, f.bob)
-	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrRollback) {
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) || errors.Is(err, ErrRollback) {
 		t.Fatalf("state naming an unknown control: %v", err)
+	}
+}
+
+func TestLoadStatesSkipsAnUnsignedStateNamingAnUnknownControl(t *testing.T) {
+	ctx := context.Background()
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	forged := f.state(f.bob, root)
+	forged.Control = digest.FromString("a control nobody signed")
+	body, err := encMode.Marshal(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := Signed{Body: body, Signature: []byte("not a signature")}.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev := digest.FromBytes(blob)
+	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: forged.Scope(), Rev: rev, Head: blob, Payload: []byte("junk")}); err != nil {
+		t.Fatal(err)
+	}
+	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatalf("one unsigned object blocked the resource: %v", err)
+	}
+	if sv.Skipped != 1 || sv.Graph.Has(rev) || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d", sv.Heads, sv.Skipped)
 	}
 }
 
