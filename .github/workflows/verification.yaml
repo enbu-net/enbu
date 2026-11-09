@@ -36,7 +36,7 @@ jobs:
           - uses: $/.github/actions/setup-go
           - uses: $/.github/actions/setup-tools
       - name: Model-check with TLC
-        run: task formal/nightly -- -jobs 2 -workers 2 -heap 6g
+        run: task formal/check/large -- --workers 2
 
   mutation:
     name: Mutation testing (all targets)

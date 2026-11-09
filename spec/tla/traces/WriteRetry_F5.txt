@@ -1,0 +1,195 @@
+# WriteRetry/WriteRetry_F5.cfg: TLC counterexample
+
+Error: Invariant SYNC_4 is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {} @@ w2 :> {})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "read" @@ w2 :> "read")
+/\ listed = {}
+/\ applied = (w1 :> {} @@ w2 :> {})
+/\ rev = <<>>
+/\ ctlv = 0
+/\ published = (w1 :> {} @@ w2 :> {})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 2: <Read(w1) line 92, col 3 to line 97, col 71 of module WriteRetry>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "publish" @@ w2 :> "read")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {})
+/\ rev = <<>>
+/\ ctlv = 0
+/\ published = (w1 :> {} @@ w2 :> {})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 3: <Publish(w1) line 114, col 3 to line 121, col 54 of module WriteRetry>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "check" @@ w2 :> "read")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {})
+/\ rev = <<[content |-> {w1}, applied |-> {w1}, parents |-> {}]>>
+/\ ctlv = 0
+/\ published = (w1 :> {1} @@ w2 :> {})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 4: <Read(w2) line 92, col 3 to line 97, col 71 of module WriteRetry>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "check" @@ w2 :> "publish")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {w2})
+/\ rev = <<[content |-> {w1}, applied |-> {w1}, parents |-> {}]>>
+/\ ctlv = 0
+/\ published = (w1 :> {1} @@ w2 :> {})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 5: <Publish(w2) line 114, col 3 to line 121, col 54 of module WriteRetry>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "check" @@ w2 :> "check")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 0
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 6: <MoveControl line 135, col 3 to line 137, col 92 of module WriteRetry>
+/\ sess = (w1 :> 0 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "check" @@ w2 :> "check")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 1
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 0 @@ w2 :> 0)
+
+State 7: <Check(w1) line 125, col 3 to line 131, col 70 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "read" @@ w2 :> "check")
+/\ listed = {}
+/\ applied = (w1 :> {w1} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 1
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 1 @@ w2 :> 0)
+
+State 8: <Read(w1) line 92, col 3 to line 97, col 71 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {1} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "recheck" @@ w2 :> "check")
+/\ listed = {}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 1
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 1 @@ w2 :> 0)
+
+State 9: <MoveControl line 135, col 3 to line 137, col 92 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {1} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "recheck" @@ w2 :> "check")
+/\ listed = {}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 1 @@ w2 :> 0)
+
+State 10: <List line 141, col 3 to line 143, col 92 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {1} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "recheck" @@ w2 :> "check")
+/\ listed = {2}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 1 @@ w2 :> 0)
+
+State 11: <Recheck(w1) line 102, col 3 to line 110, col 71 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1} @@ w2 :> {w2})
+/\ cur = (w1 :> {1} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "read" @@ w2 :> "check")
+/\ listed = {2}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 2 @@ w2 :> 0)
+
+State 12: <Read(w1) line 92, col 3 to line 97, col 71 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1, w2} @@ w2 :> {w2})
+/\ cur = (w1 :> {1, 2} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "recheck" @@ w2 :> "check")
+/\ listed = {2}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 2 @@ w2 :> 0)
+
+State 13: <Recheck(w1) line 102, col 3 to line 110, col 71 of module WriteRetry>
+/\ sess = (w1 :> 1 @@ w2 :> 0)
+/\ content = (w1 :> {w1, w2} @@ w2 :> {w2})
+/\ cur = (w1 :> {1, 2} @@ w2 :> {})
+/\ outcome = (w1 :> "" @@ w2 :> "")
+/\ pc = (w1 :> "publish" @@ w2 :> "check")
+/\ listed = {2}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 2 @@ w2 :> 0)
+
+State 14: <Publish(w1) line 114, col 3 to line 121, col 54 of module WriteRetry>
+/\ sess = (w1 :> 2 @@ w2 :> 0)
+/\ content = (w1 :> {w1, w2} @@ w2 :> {w2})
+/\ cur = (w1 :> {1, 2} @@ w2 :> {})
+/\ outcome = (w1 :> "internal" @@ w2 :> "")
+/\ pc = (w1 :> "end" @@ w2 :> "check")
+/\ listed = {2}
+/\ applied = (w1 :> {} @@ w2 :> {w2})
+/\ rev = << [content |-> {w1}, applied |-> {w1}, parents |-> {}],
+   [content |-> {w2}, applied |-> {w2}, parents |-> {}] >>
+/\ ctlv = 2
+/\ published = (w1 :> {1} @@ w2 :> {2})
+/\ attempt = (w1 :> 2 @@ w2 :> 0)

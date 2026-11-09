@@ -1,0 +1,137 @@
+# ControlDAG/ControlDAG_example_permanent.cfg: TLC counterexample
+
+Error: Temporal property EveryForkJoined was violated.
+
+Error: The following behavior constitutes a counter-example:
+
+State 1: <Initial predicate>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ] >>
+/\ cp = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ stored = {1}
+/\ acc = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "idle" @@ a2 :> "idle" @@ m :> "idle")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 2
+
+State 2: <EvilFork line 210, col 3 to line 215, col 70 of module ControlDAG>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 1 @@ a2 :> 0 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, e} ] >>
+/\ cp = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ stored = {1, 2}
+/\ acc = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "idle" @@ a2 :> "idle" @@ m :> "idle")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 1
+
+State 3: <EvilFork line 210, col 3 to line 215, col 70 of module ControlDAG>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 1 @@ a2 :> 0 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 0 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a2, e} ] >>
+/\ cp = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ stored = {1, 2, 3}
+/\ acc = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "idle" @@ a2 :> "idle" @@ m :> "idle")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 0
+
+State 4: <Open(a1) line 137, col 3 to line 168, col 49 of module ControlDAG>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 1 @@ a2 :> 0 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 0 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a2, e} ] >>
+/\ cp = (a1 :> {2, 3} @@ a2 :> {} @@ m :> {})
+/\ stored = {1, 2, 3}
+/\ acc = (a1 :> {1, 2, 3} @@ a2 :> {} @@ m :> {})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "forked" @@ a2 :> "idle" @@ m :> "idle")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 0
+
+State 5: <Open(a2) line 137, col 3 to line 168, col 49 of module ControlDAG>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 1 @@ a2 :> 0 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 0 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a2, e} ] >>
+/\ cp = (a1 :> {2, 3} @@ a2 :> {2, 3} @@ m :> {})
+/\ stored = {1, 2, 3}
+/\ acc = (a1 :> {1, 2, 3} @@ a2 :> {1, 2, 3} @@ m :> {})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "forked" @@ a2 :> "forked" @@ m :> "idle")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 0
+
+State 6: <Open(m) line 137, col 3 to line 168, col 49 of module ControlDAG>
+/\ ctl = << [ parents |-> {},
+     author |-> a1,
+     signer |-> a1,
+     mem |-> (a1 :> 1 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, a2, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 1 @@ a2 :> 0 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a1, e} ],
+   [ parents |-> {1},
+     author |-> e,
+     signer |-> e,
+     mem |-> (a1 :> 0 @@ a2 :> 1 @@ e :> 1 @@ m :> 1 @@ x :> 0),
+     adm |-> {a2, e} ] >>
+/\ cp = (a1 :> {2, 3} @@ a2 :> {2, 3} @@ m :> {2, 3})
+/\ stored = {1, 2, 3}
+/\ acc = (a1 :> {1, 2, 3} @@ a2 :> {1, 2, 3} @@ m :> {1, 2, 3})
+/\ okView = (a1 :> {} @@ a2 :> {} @@ m :> {})
+/\ status = (a1 :> "forked" @@ a2 :> "forked" @@ m :> "forked")
+/\ seen = (a1 :> 0 @@ a2 :> 0)
+/\ budget = 0
+
+State 7: Stuttering
+Finished checking temporal properties in 00s at 2026-11-09 15:33:11

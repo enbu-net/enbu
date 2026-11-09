@@ -1,4 +1,5 @@
-// formalcheck runs the TLA+ models in spec/tla with TLC and checks more than
+// formalcheck runs the implementation-refinement models in spec/conformance
+// with TLC and checks more than
 // "no error": every seeded bug (mutant) must be caught by the property that
 // names it, every reachability witness must be violated so the model is known
 // to reach the situation its properties are about, and every action must fire
@@ -27,7 +28,7 @@ import (
 // tlcHeap is the -Xmx of every TLC process; several run at once.
 var tlcHeap = "2g"
 
-// Manifest is spec/tla/checks.toml.
+// Manifest is spec/conformance/checks.toml.
 type Manifest struct {
 	Model []Model `toml:"model"`
 }
@@ -90,7 +91,7 @@ var (
 )
 
 func main() {
-	dir := flag.String("dir", "spec/tla", "directory of the models and checks.toml")
+	dir := flag.String("dir", "spec/conformance", "directory of the refinement models and checks.toml")
 	tier := flag.String("tier", "pr", "tier to run: pr, nightly or all")
 	run := flag.String("run", "", "only models whose name matches this regular expression")
 	tlc := flag.String("tlc", "tlc", "TLC executable")

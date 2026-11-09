@@ -34,11 +34,11 @@ func TestCIShardsCoverEveryPRModelOnce(t *testing.T) {
 	if err := yaml.Unmarshal(b, &wf); err != nil {
 		t.Fatal(err)
 	}
-	shards := wf.Jobs["formal"].Strategy.Matrix.Models
+	shards := wf.Jobs["formal-refinement"].Strategy.Matrix.Models
 	if len(shards) == 0 {
-		t.Fatal("ci.yaml has no formal job with a models matrix")
+		t.Fatal("ci.yaml has no formal-refinement job with a models matrix")
 	}
-	m, err := Load("../../spec/tla/checks.toml")
+	m, err := Load("../../spec/conformance/checks.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,5 +146,52 @@ func TestNightlyFuzzMatrixMatchesTheTaskfile(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(want, got) {
 		t.Fatalf("nightly fuzz matrix %v differs from FUZZ_TARGETS %v", got, want)
+	}
+}
+
+// The primary protocol model matrix is independent of the refinement matrix.
+// Every protocol model directory must get exactly one required CI job.
+func TestCIProtocolMatrixCoversEveryModelOnce(t *testing.T) {
+	b, err := os.ReadFile("../../.github/workflows/ci.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Model []string `yaml:"model"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &wf); err != nil {
+		t.Fatal(err)
+	}
+	models := wf.Jobs["formal"].Strategy.Matrix.Model
+	seen := map[string]int{}
+	for _, model := range models {
+		seen[model]++
+		if _, err := os.Stat(filepath.Join("../../spec/tla", model, model+".tla")); err != nil {
+			t.Errorf("CI selects missing protocol model %s: %v", model, err)
+		}
+	}
+	entries, err := os.ReadDir("../../spec/tla")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join("../../spec/tla", entry.Name(), entry.Name()+".tla")); err != nil {
+			continue // saved traces, not a protocol model
+		}
+		if seen[entry.Name()] != 1 {
+			t.Errorf("protocol model %s selected %d times, want exactly once", entry.Name(), seen[entry.Name()])
+		}
+	}
+	if len(models) != 5 {
+		t.Fatalf("expected the five integrated protocol models, got %v", models)
 	}
 }

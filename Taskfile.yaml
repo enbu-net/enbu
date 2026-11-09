@@ -31,14 +31,36 @@ tasks:
       - formal/conformance
 
   formal/check:
-    desc: Model-check the TLA+ models (PR tier) with seeded bugs, witnesses and coverage
+    desc: Check the five protocol models, mutants, examples and findings
+    cmds:
+      - uv run --project scripts python scripts/formal.py {{.CLI_ARGS}}
+
+  formal/refinement:
+    desc: Check implementation-refinement models with seeded bugs, witnesses and action coverage
     cmds:
       - go run ./tools/formalcheck -tier pr {{.CLI_ARGS}}
 
-  formal/nightly:
-    desc: Model-check the TLA+ models with the nightly bounds
+  formal/check/large:
+    desc: Check the protocol models with nightly bounds
     cmds:
-      - go run ./tools/formalcheck -tier nightly -timeout 5h {{.CLI_ARGS}}
+      - uv run --project scripts python scripts/formal.py --large {{.CLI_ARGS}}
+
+  formal/model:
+    desc: Check one protocol model and its mutants
+    requires:
+      vars: [MODEL]
+    cmds:
+      - uv run --project scripts python scripts/formal.py --model {{.MODEL}}
+
+  formal/traces:
+    desc: Save the protocol models' counterexamples under spec/tla/traces
+    cmds:
+      - uv run --project scripts python scripts/formal.py --write-traces
+
+  formal/nightly:
+    desc: Check the protocol models with nightly bounds
+    cmds:
+      - task: formal/check/large
 
   formal/conformance:
     desc: Check the reader and the Control verifier against every state the TLA+ models reach (needs TLC)
@@ -68,9 +90,10 @@ tasks:
         cmd: go test -run '^$' -fuzz '^{{splitList ":" .ITEM | last}}$' -fuzztime {{.FUZZTIME}} ./{{splitList ":" .ITEM | first}}
 
   formal/invariants:
-    desc: Check that every invariant in spec/INVARIANTS.md has existing TLA+ properties and Go tests
+    desc: Check the implementation invariant table against refinement models and Go tests
     cmds:
-      - go run ./tools/formalcheck -invariants spec/INVARIANTS.md
+      - go run ./tools/formalcheck -invariants spec/IMPLEMENTATION_INVARIANTS.md
+      - go run ./tools/formalcheck -dir spec/tla -invariants spec/INVARIANTS.md
 
   simulation/smoke:
     desc: Run bounded deterministic simulation regressions

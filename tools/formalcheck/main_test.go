@@ -107,18 +107,18 @@ func TestLoadRejectsIncompleteManifests(t *testing.T) {
 }
 
 func TestTheRepositoryManifestIsValid(t *testing.T) {
-	m, err := Load("../../spec/tla/checks.toml")
+	m, err := Load("../../spec/conformance/checks.toml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	tiers := map[string]int{}
 	for _, model := range m.Model {
 		tiers[model.Tier]++
-		cfg, err := os.ReadFile(filepath.Join("../../spec/tla", model.Config))
+		cfg, err := os.ReadFile(filepath.Join("../../spec/conformance", model.Config))
 		if err != nil {
 			t.Fatalf("%s: %v", model.Name, err)
 		}
-		if _, err := os.Stat(filepath.Join("../../spec/tla", model.Module)); err != nil {
+		if _, err := os.Stat(filepath.Join("../../spec/conformance", model.Module)); err != nil {
 			t.Fatalf("%s: %v", model.Name, err)
 		}
 		if _, err := Plan(model, string(cfg)); err != nil {
@@ -172,6 +172,29 @@ func TestInvariantsTable(t *testing.T) {
 	write(table, text+"| MERGE-1 | z | M.Missing | — |\n")
 	if err := CheckInvariants(table, spec, dir); err == nil || !strings.Contains(err.Error(), "M.Missing does not exist") {
 		t.Fatalf("a missing TLA+ property must be reported, got %v", err)
+	}
+}
+
+func TestProtocolInvariantTableHasEnforcementColumn(t *testing.T) {
+	text := "| AUTH-1 | Parent authority | `VerifyChild` | `ControlDAG.AUTH_1` | TestA |\n" +
+		"| CRYPTO-1 | PQ only | `ParseRecipient` | assumed (`signer` field) | TestB |\n"
+	invs, err := ParseInvariants(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(invs) != 2 || len(invs[0].TLA) != 1 || invs[0].TLA[0] != "ControlDAG.AUTH_1" || invs[0].Go[0] != "TestA" || len(invs[1].TLA) != 0 {
+		t.Fatalf("protocol table parsed incorrectly: %+v", invs)
+	}
+}
+
+func TestBothRepositoryInvariantTablesResolve(t *testing.T) {
+	for _, layer := range []struct{ table, models string }{
+		{"../../spec/INVARIANTS.md", "../../spec/tla"},
+		{"../../spec/IMPLEMENTATION_INVARIANTS.md", "../../spec/conformance"},
+	} {
+		if err := CheckInvariants(layer.table, layer.models, "../.."); err != nil {
+			t.Errorf("%s: %v", layer.table, err)
+		}
 	}
 }
 

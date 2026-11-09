@@ -1,4 +1,4 @@
-// Package tla runs TLC on the models in spec/tla and reads the states it
+// Package tla runs TLC on the refinement models in spec/conformance and reads the states it
 // dumps, so Go tests can check the implementation against what a model
 // decided (model conformance).
 package tla
@@ -228,7 +228,7 @@ func ParseDump(text string) ([]State, error) {
 	return states, nil
 }
 
-// SpecDir is spec/tla of this repository, found from the calling test's
+// SpecDir is spec/conformance of this repository, found from the calling test's
 // working directory.
 func SpecDir(t testing.TB) string {
 	t.Helper()
@@ -237,12 +237,12 @@ func SpecDir(t testing.TB) string {
 		t.Fatal(err)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "spec", "tla", "checks.toml")); err == nil {
-			return filepath.Join(dir, "spec", "tla")
+		if _, err := os.Stat(filepath.Join(dir, "spec", "conformance", "checks.toml")); err == nil {
+			return filepath.Join(dir, "spec", "conformance")
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("spec/tla not found above the test directory")
+			t.Fatal("spec/conformance not found above the test directory")
 		}
 		dir = parent
 	}

@@ -1,0 +1,447 @@
+# MemberChange/MemberChange_example_removal_window.cfg: TLC counterexample
+
+Error: Invariant RCPT_4_strict is violated.
+Error: The behavior up to this point is:
+State 1: <Initial predicate>
+/\ ctl = <<[parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1]>>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 0)
+/\ wleft = 1
+/\ before = 0
+/\ attempts = 0
+/\ pc = (r1 :> "start" @@ r2 :> "start" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ] >>
+/\ read = {}
+
+State 2: <ApprovePublish line 143, col 3 to line 147, col 59 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 0)
+/\ wleft = 1
+/\ before = 0
+/\ attempts = 0
+/\ pc = (r1 :> "start" @@ r2 :> "reencrypt" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ] >>
+/\ read = {}
+
+State 3: <RemoveOpen line 106, col 3 to line 109, col 56 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 0)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "reencrypt" @@ r2 :> "reencrypt" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ] >>
+/\ read = {}
+
+State 4: <RemoveReencrypt line 114, col 3 to line 120, col 59 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 0)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "reencrypt" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ] >>
+/\ read = {}
+
+State 5: <ApproveReencrypt line 150, col 3 to line 153, col 59 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 0)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {}
+
+State 6: <WOpen line 174, col 3 to line 180, col 52 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "recheck")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {3}
+
+State 7: <WRecheck line 184, col 3 to line 186, col 54 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "publish")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {3}
+
+State 8: <WPublish line 190, col 3 to line 196, col 49 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "check")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {3}
+
+State 9: <WCheck line 199, col 3 to line 203, col 54 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 1
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "done")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {3}
+
+State 10: <WNext line 207, col 3 to line 211, col 47 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "start")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {3}
+
+State 11: <WOpen line 174, col 3 to line 180, col 52 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "recheck")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {4}
+
+State 12: <WRecheck line 184, col 3 to line 186, col 54 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "publish")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {4}
+
+State 13: <WPublish line 190, col 3 to line 196, col 49 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "check")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {4},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {4}
+
+State 14: <WCheck line 199, col 3 to line 203, col 54 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "publish" @@ r2 :> "done" @@ w :> "done")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {4},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {4}
+
+State 15: <RemovePublish line 125, col 3 to line 129, col 59 of module MemberChange>
+/\ ctl = << [parents |-> {}, mem |-> {r1, r2, w, m}, author |-> r1],
+   [parents |-> {1}, mem |-> {r1, r2, w, m, n}, author |-> r2],
+   [parents |-> {2}, mem |-> {r1, r2, w, n}, author |-> r1] >>
+/\ sess = (r1 :> 0 @@ r2 :> 0 @@ w :> 2)
+/\ wleft = 0
+/\ before = 2
+/\ attempts = 0
+/\ pc = (r1 :> "done" @@ r2 :> "done" @@ w :> "done")
+/\ rev = << [ ctl |-> 1,
+     parents |-> {},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m},
+     cur |-> {1},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {1},
+     author |-> r1,
+     rcpt |-> {r1, r2, w, n},
+     cur |-> {2},
+     win |-> FALSE ],
+   [ ctl |-> 2,
+     parents |-> {2},
+     author |-> r2,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {3},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ],
+   [ ctl |-> 2,
+     parents |-> {4},
+     author |-> w,
+     rcpt |-> {r1, r2, w, m, n},
+     cur |-> {2},
+     win |-> TRUE ] >>
+/\ read = {4}

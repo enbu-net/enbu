@@ -95,16 +95,24 @@ is Linux-specific; the existing native OS CI matrix remains separate.
 
 ## Formal models
 
-The security properties enbu must keep are listed, with IDs, in
-[spec/INVARIANTS.md](../spec/INVARIANTS.md). Several kinds of check refer to
-the same IDs, and `task formal/invariants` (part of `task all/check`) fails
-when an ID has no check or names a TLA+ property or Go test that does not
-exist.
+The five authoritative protocol models from `test/formal-tla` live under
+`spec/tla/<Model>/`; [spec/INVARIANTS.md](../spec/INVARIANTS.md) links their
+properties to Go tests. `task formal/check` runs their small configurations,
+mutants and documented findings; `task formal/check/large` runs larger bounds.
+`task formal/model MODEL=WriteRetry` selects one model and `task formal/traces`
+regenerates the saved counterexamples.
+
+The executable implementation-refinement models live separately under
+`spec/conformance/`. Their own property IDs and tests are indexed in
+[spec/IMPLEMENTATION_INVARIANTS.md](../spec/IMPLEMENTATION_INVARIANTS.md).
+They supply state dumps for the Go conformance tests; they do not replace
+the protocol specification. `task formal/invariants` (part of `all/check`)
+validates both tables. Their ID namespaces are intentionally distinct.
 
 | Check | What it does | Task | Where it runs |
 |-------|--------------|------|---------------|
 | TLA+ models (`spec/tla`) | TLC explores every interleaving of small configurations: the Control DAG, the State DAG and its checkpoint, member removal racing writes and approvals, and founding with trust pins. Storage is an attacker, and devices crash. | `formal/check`, `formal/nightly` | every PR (`Formal models`), nightly with larger bounds |
-| Seeded bugs | Each model has mutants (a removed check, an old behavior) that TLC must catch through a named property. Witness invariants must be violated, which proves a configuration reaches what its properties are about. Every action must fire. | `formal/check` | every PR |
+| Refinement checks (`spec/conformance`) | Each refinement model has mutants (a removed check, an old behavior) that TLC must catch through a named property. Witness invariants must be violated, which proves a configuration reaches what its properties are about. Every action must fire. | `formal/refinement` | every PR |
 | Model conformance | TLC enumerates every read and every store of Controls a configuration reaches. Go rebuilds each one with real keys and requires the app's reader (`loadResource`, `trustedHeads`, checkpoint) and `wsp.LoadControl` to decide what the model decided. | `formal/conformance` | every PR (`Model conformance`) |
 | Property tests | `rapid` generates inputs for the merge, signatures, device IDs, encryption and `.env`, and shrinks a failure to a minimal case. | `property/deep` (100000 cases) | every `go test` (100 cases), nightly |
 | Fuzzing | Every decoder of untrusted bytes and the local trust and checkpoint files. Go minimizes a failing input into `testdata/fuzz`, where it becomes a regression test. | `fuzz/run` | seeds in every `go test`, nightly 10 minutes per target |
@@ -121,8 +129,9 @@ disk.
 
 - A new property needs an ID in `spec/INVARIANTS.md`, a TLA+ property or a Go
   test, and preferably both.
-- A new protocol check should come with a mutant that removes it, listed in
-  `spec/tla/checks.toml` with the property that catches it.
+- A new protocol check should come with a mutant configuration in the same
+  model directory; see `spec/tla/README.md`. Refinement checks instead list
+  their mutants and witnesses in `spec/conformance/checks.toml`.
 - A configuration that should reach a new situation needs a witness.
 - Keep the PR tier within a few minutes; larger bounds belong to the nightly
   tier, which checks the same properties.

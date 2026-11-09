@@ -1,91 +1,99 @@
-# Security invariants
+# Invariants
 
-This file lists the properties enbu must keep, each with an ID, and where each is checked.
-The TLA+ models in `spec/tla` and the Go tests refer to these IDs.
-`go run ./tools/formalcheck -invariants` fails when an ID below has no check, or when a named TLA+ property or Go test does not exist.
+The properties enbu's protocol must keep, each with the code that enforces it and the check that tests it.
+TLA+ names refer to the models in [tla/](tla/README.md): `Model.PROPERTY` is checked by the model's small and large configs, and every mutant config must break the property it names.
+The Go test column links these protocol properties to executable tests.
+The implementation-refinement models and their additional tests are indexed separately in [IMPLEMENTATION_INVARIANTS.md](IMPLEMENTATION_INVARIANTS.md); IDs in that table are local to that refinement layer and must not be conflated with the protocol IDs here.
 
-How the checks fit together is described in [docs/testing.md](../docs/testing.md#formal-models).
+Threat model shared by every model: storage is untrusted (it hides, deletes, replays and accepts anything anyone writes), anyone may write storage, a member's key may sign anything, and a removed member keeps its key.
+Nobody can sign with a key they do not hold.
 
-## Threat model
+## Membership and authority
 
-- Storage is untrusted.
-  Anyone with write access can publish, hide, delete and replay any object, and show each device a different subset.
-  Listings may be stale.
-- The attacker may hold the signing key of a removed member, of a member, or of an admin (the last only where stated).
-  It may claim any author with a signature that does not verify.
-- Anyone who can commit to the repository can change `enbu.toml`.
-- Before a device first pins a trust root, `enbu.toml` is trusted on first use.
-- Devices crash at any point; local files are replaced atomically.
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| AUTH-1 | Authority flows only from the parents: every accepted Control but the genesis is signed by its author, an admin of every parent. | `pkg/wsp/control.go` `VerifyChild`; `pkg/wsp/chain.go` `LoadControl` | `ControlDAG.AUTH_1` | TestControlVerifierMatchesTheModel |
+| AUTH-2 | Storage write access grants nothing: an outsider never becomes a principal, a member never makes itself an admin. | `VerifyGenesis`, `VerifyChild`, `LoadControl` | `ControlDAG.AUTH_2` | TestMemberCannotSignControl, TestOutsiderCannotSignControl |
+| AUTH-3 | Content from a non-member is never read as current. | `pkg/wsp/state.go` `VerifyRevision`, `AuthorIsCurrent`; `app/resource.go` `trustedHeads` | `StateDAG.AUTH_3` | TestReaderMatchesTheModel |
+| REJOIN-1 | Once a member was removed, nothing it signed under a Control from before the removal is read as current, even after it is approved again. | `AuthorIsCurrent`, `ControlView.MembershipUnbroken` | `StateDAG.REJOIN_1` | TestReadmittedMemberCannotReviveOldState |
+| CP-1 | Storage hiding an accepted Control is detected: a device proceeds only on a view holding every Control it accepted. | `LoadControl` (checkpoint heads), `Checkpoints.AcceptControl` | `ControlDAG.CP_1` | TestLoadControlDetectsAHiddenAcceptedControl |
 
-## Table
+## Control forks
 
-The TLA+ column names `Model.Property`.
-The Go column names test functions.
-A property stated only in Go (for example arithmetic limits) has `—` in the TLA+ column.
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| FORK-1 | A fork resolution keeps only the principals every head lists with the same keys, and admin rights every head grants (F4). | `checkResolution`, `ResolveFork` | `ControlDAG.FORK_1` | TestResolveForkIsTheIntersectionInAnyHeadOrder |
+| FORK-2 | No device proceeds on a forked Control. | `ControlView.Head`; `app/session.go` `openControl` | `ControlDAG.FORK_2` | TestControlForkStopsAnAdminDemotedOnOneSide |
+| FORK-3 | Liveness: a fork does not last while an honest admin of every head opens the workspace, unless storage withholds a Control. | `openControl`, `resolveFork` | `ControlDAG.FORK_3` | TestControlForkIsJoinedByAnAdminsNextOperation |
+| FORK-4 | Joining a fork re-encrypts every head under the joined Control. | `resolveFork` → `reencryptAll` | `MemberChange.RESOLVE_1` | TestResolvingAControlForkReencryptsForTheSurvivors |
 
-| ID | Property | TLA+ | Go |
-|----|----------|------|----|
-| AUTH-1 | Storage access, member keys and forged signatures make no Control verify; every principal and admin right comes from an honest admin. | ControlDAG.OnlyHonestControlsVerify | TestMemberCannotSignControl, TestOutsiderCannotSignControl, TestForgedControlIgnored, TestControlVerifierMatchesTheModel |
-| AUTH-2 | Only an admin of every parent can sign a verified child Control. | ControlDAG.ChildrenSignedByAdminsOfEveryParent | TestMemberCannotChangeControl, TestControlVerifierMatchesTheModel |
-| AUTH-3 | Only an admin changes members, compacts history, or deletes an environment's revisions; a member's attempt changes nothing. | — | TestMemberCannotApprove, TestCompactionChecks, TestMemberCannotPurge |
-| FORK-1 | A verified resolution keeps only principals and admin rights its parents listed. | ControlDAG.ResolutionsStayInsideParents | TestControlVerifierMatchesTheModel |
-| FORK-2 | No session runs on a forked Control; a device that is not an admin of every head stops with `control_forked`. | ControlDAG.NoSessionWhileForked | TestControlForkStopsAnAdminDemotedOnOneSide |
-| FORK-3 | Whenever an honest device is an admin of every head, its join verifies and leaves one head. | ControlDAG.ForkCanBeJoined | TestControlForkIsJoinedByAnAdminsNextOperation |
-| FORK-4 | An honest join keeps exactly what every head agrees on. | ControlDAG.HonestResolutionIsIntersection | TestControlForkIsJoinedByAnAdminsNextOperation |
-| FORK-5 | A concurrent approval never revives a removed member. | MemberChange.RemovedStaysRemoved | TestResolvingAControlForkReencryptsForTheSurvivors |
-| CP-1 | A session's Control view contains every Control the device accepted. | ControlDAG.AcceptedNeverHidden | TestLoadControlDetectsAHiddenAcceptedControl, TestControlRollbackDetected |
-| CP-2 | The checkpoint names only Controls that verified. | ControlDAG.CheckpointOnlyVerified | TestOpenControlIgnoresForgedControl |
-| STATE-1 | A read never adopts a revision the attacker wrote: no forgery, no revision of a removed member. | StateDAG.NoAttackerContentAdopted | TestRemovedMemberIsHistoricalButNotCurrent, TestReaderMatchesTheModel |
-| STATE-2 | Honest members never build on what the attacker wrote. | StateDAG.HonestNeverBuildsOnAttacker | TestRemovedMemberCannotWrite |
-| REJOIN-1 | A readmitted member cannot revive a revision it wrote before it was removed (ADR-19). | StateDAG.NoAttackerContentAdopted | TestReadmittedMemberCannotReviveOldState, TestSessionSetsAsideAHeadOfAMemberRemovedBeforeItWasAccepted |
-| GEN-1 | An honest revision carries 1 + the highest Generation of its parents. | StateDAG.HonestGenerations | TestStateGenerationAndOpMustBeWellFormed, TestLoadStatesChecksGenerationsAgainstPresentParents |
-| GEN-2 | A successful read never goes back behind a revision the device adopted whose author is still trusted. | StateDAG.NoUndetectedRollback | TestHidingANewerGenerationIsARollback, TestSessionDetectsStateRollback, TestReaderMatchesTheModel |
-| GEN-5 | Accepted limitation: hiding an adopted head behind a branch of equal or higher Generation is not detected. | StateDAG.NoUndetectedRollback | TestStateCheckpointDoesNotDetectAHiddenHeadBehindASiblingOfEqualGeneration |
-| GEN-6 | A removed member's key cannot vouch for freshness, so it cannot mask a rollback (F2, F2b). | StateDAG.NoUndetectedRollback | TestRemovedKeyCannotMaskARollback, TestReaderMatchesTheModel |
-| GEN-7 | Generation never wraps: no revision makes the next one impossible to write (F3). | — | TestNextGenerationNeverWraps, FuzzStateCodec |
-| AVAIL-1 | Objects without a valid signature or naming an unknown Control change nothing a read decides (F1). | StateDAG.JunkDoesNotInterfere | TestReaderMatchesTheModel |
-| AVAIL-2 | A read shown a trusted author's revision is not refused for lack of a trusted head. | StateDAG.TrustedContentReadable | TestRemovalKeepsRemainingMembersReading |
-| AVAIL-3 | Once concurrent operations settle, every current member can decrypt every head, unless a write gave up after publishing (F7). | MemberChange.SettledHeadsReadable | TestNewMemberMergesWithoutHistoricalDecryptionKey |
-| AVAIL-4 | Without an attacker, founding ends with a working session whatever crashes happen. | Founding.HonestFoundingSucceeds | TestLostPublishReplyAdoptsTheOwnGenesisOnRetry, TestFoundingRecoversWhenThePinWriteFails |
-| RCPT-1 | Every revision is encrypted only for members of the Control it names. | MemberChange.RecipientsWithinControl | TestSessionEncryptsForControlMembersOnly, TestRecipientInjection |
-| RCPT-2 | A write that begins after the Control removing a member was published never encrypts for it. | MemberChange.NoNewCiphertextForRemoved | TestRemoveMemberReencryptsWithoutThem, TestWriteRestartsWhenTheMembersChangeMidway |
-| RCPT-3 | After a removal settles, a head is still encrypted for the removed member only if another device's write overlapped the removal. | MemberChange.SettledHeadsExcludeRemovedUnlessRaced | TestRemovalTakesOverWhatTheRemovedMemberWrote |
-| SYNC-1 | A write that reported success is never lost, and a removal takes over what the removed member wrote before it began. | MemberChange.NoLostUpdate | TestStaleListingMakesAForkNotALostUpdate, TestRemovalTakesOverWhatTheRemovedMemberWrote |
-| SYNC-2 | Success is reported only for a write storage holds. | MemberChange.NoFalseSuccess | TestPublishedAddSurvivesMembershipRetry |
-| SYNC-3 | A write never fails because of its own earlier attempt. | MemberChange.NoSelfConflict | TestPublishedAddSurvivesMembershipRetry |
-| ERR-1 | Running out of attempts because members kept changing is a `conflict`, never `internal` (F5). | MemberChange.NoInternalErrors | TestMembersChangingOnEveryAttemptIsAConflict |
-| TRUST-1 | Once a device pinned an honest root, it never runs on a root the attacker made, and a session always runs on the pinned root. | Founding.NoAttackerRootAfterPin, Founding.SessionOnPinnedRoot | TestChangedGenesisStopsEveryOperation, TestChangedWorkspaceAndGenesisStillStops, TestAcceptNewGenesisReplacesThePin |
-| TRUST-2 | Founding adopts only a genesis this device signed, and never proceeds when its check found another workspace in storage. | Founding.FoundedIsOwn, Founding.NeverFoundOverOthers | TestFindGenesisRecognisesOnlyTheAuthorsGenesis, TestFoundingRefusesAnotherDevicesGenesis, TestPinnedDeviceDoesNotFoundTheWorkspaceAgain |
-| TRUST-3 | A device pins only a genesis that verified in storage. | Founding.OnlyVerifiedPinned | TestUnverifiedGenesisIsNotPinned |
-| TRUST-4 | `enbu.toml` names a new genesis only after its publish returned. | Founding.TomlNamesPublished | TestFailedPublishFoundsAgainOnRetry |
-| TRUST-5 | The settings editor never changes `workspace_id`, `control_genesis`, or where an existing environment is stored (`config_protected`). | — | TestWriteConfigProtectsTrustAndStorageLineage |
-| CRYPTO-1 | A signature verifies only for its domain, key and exact body; changing any bit refuses it. | — | TestSignaturesRejectEveryBitFlip, FuzzVerifyNeverAcceptsAlteredBodies |
-| CRYPTO-2 | A ciphertext decrypts only for its recipients and only to the encrypted plaintext; a changed ciphertext fails. | — | TestEncryptionRoundTripsOnlyForRecipients |
-| CRYPTO-3 | A device ID names exactly one signing key. | — | TestDeviceIDIsInjective |
-| INPUT-1 | Decoding untrusted bytes never panics, respects its size limits, and accepts only canonical encodings, so one object has one digest. | — | FuzzSignedEnvelope, FuzzControlCodec, FuzzStateCodec, FuzzJoinRequestCodec |
-| INPUT-2 | Local files (`trust.json`, checkpoints, `enbu.toml`) that fail to parse are refused, never read as empty trust. | — | FuzzTrustFile, FuzzCheckpointFile, TestTrustRejectsACorruptFileUnlessReplaced |
-| INPUT-3 | `.env` parsing and rendering round-trip. | — | FuzzRoundTrip, TestDotenvRoundTripsGeneratedEnvironments |
-| MERGE-1 | A 3-way merge does not depend on the order of heads, keeps one-sided changes, and reports every key changed differently as a conflict. | — | TestExhaustiveThreeWayValueMatrix, TestMergeProperties |
+A fork whose heads share no admin is never joined; see the examples below.
 
-## Findings
+## Recipients
 
-These came out of the models and the review that wrote them.
-The fixes are on `fix/protocol-findings`; each model keeps a mutant with the code's old behavior, which must stay caught.
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| RCPT-1 | The recipients of a revision come only from the verified Control it names. | `session.recipients`, `Control.Recipients` | `MemberChange.RCPT_1` | TestSessionEncryptsForControlMembersOnly |
+| RCPT-2 | Nothing published after a removal is encrypted for the removed member: a revision's recipients are members of every Control head current when it is published. | `app/publish.go` `controlUnchanged` before and after `Publish` | `MemberChange.RCPT_2` | TestWriteRestartsWhenTheMembersChangeMidway |
+| RCPT-3 | A removal whose re-encryption fails leaves the Control unchanged. | `app/members.go` `RemoveMember` (re-encrypt, then publish the Control) | `MemberChange.RCPT_3` | TestRemovalThatCannotReencryptChangesNothing |
+| RCPT-4 | Once member changes settle, no head is encrypted for a non-member, except a revision published while a removal was between its re-encryption and its Control. | `reencryptHeads` with `session.removing`; `resolveFork` | `MemberChange.RCPT_4` | TestRemoveMemberReencryptsWithoutThem |
+| RCPT-5 | Once member changes settle without a failure, every member can read every head. | `changeMembers` → `reencryptAll` | `MemberChange.APPROVE_1` | TestJoinApproveAndShareSecrets |
 
-| ID | Finding | Status | Checked by |
-|----|---------|--------|------------|
-| F1 | `VerifyRevision` returned `ErrRollback` for a State naming an unknown Control before checking its signature, and `LoadStates` aborted on it: one unsigned object blocked a resource. | fixed (fdca35d) | StateDAG mutant `abort-on-unknown-control`, AVAIL-1 |
-| F2 | Revisions of untrusted authors counted for freshness, so a removed member's key (with storage hiding the newest revisions) masked a rollback. | partly fixed (5981f6e), see F2b | StateDAG mutant `count-untrusted`, GEN-6 |
-| F2b | The F2 fix counts every revision whose ancestry is present. A removed member's key still signs such a revision: a child of an older revision storage shows, with the Generation of the newest one it hides. The reader then goes back without noticing (TLC, 7 steps; `TestRemovedKeyCannotMaskARollback`). Counting only revisions of trusted authors detects it. Its cost is a false `rollback_detected` when a removed member's write raced its removal and was accepted; a sync after the removal's Control (see F6) clears it. | **open** | StateDAG mutant `count-proven`, GEN-6 |
-| F3 | A member could publish `Generation = 2^64-1`; the next write's Generation wrapped to 0 and was refused forever. | fixed (349cddf) | GEN-7 |
-| F4 | The verifier accepted any subset of the heads' union as a join, while honest clients publish the intersection. | fixed (8f74c05) | ControlDAG mutant `union-resolution`, FORK-1 |
-| F5 | A write that ran out of attempts because members kept changing returned `internal`. | fixed (c706130) | MemberChange mutant `moved-is-internal`, ERR-1 |
-| F6 | A write that overlaps a removal (published after the remover took the heads to re-encrypt) stays the current head, still encrypted for the removed member, until the next write or sync. Its content predates the removal. A sync after the removal's Control would close it. | open, documented | MemberChange witness `SettledHeadsExcludeRemoved`, RCPT-3 |
-| F7 | A write that gives up after publishing (members kept changing) leaves a revision a member approved meanwhile cannot decrypt until the next write or sync. | open, documented | MemberChange witness `SettledHeadsReadableStrict`, AVAIL-3 |
+## Generations and rollback
 
-## Assumptions the models make explicit
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| GEN-1 | A read never succeeds on a view that lost a revision the device accepted, unless a present revision of at least its Generation stands in for it (one a current member signed, or one whose Generation is honest) (F2). | `Checkpoints.CheckState` / `AcceptState`, `StateView.shownGeneration`, `dropWrongGenerations` | `StateDAG.GEN_1` | TestStateCheckpointRejectsAViewBelowTheAcceptedGeneration |
+| GEN-2 | A rollback is reported only when storage withheld a revision (F1). | `VerifyRevision` (an unknown Control is invalid, not a rollback) | `StateDAG.GEN_2` | TestReaderMatchesTheModel |
+| GEN-3 | The accepted Generation never goes down. | `Checkpoints.AcceptState` | `StateDAG.GEN_3` | TestStateCheckpointNeverLowersTheAcceptedGeneration |
+| GEN-4 | An honest write never publishes a revision readers must reject: above `MaxGeneration` it is a conflict (F3). | `writeState`, `State.validate` | `StateDAG.GEN_4` | TestNextGenerationNeverWraps |
 
-- A removal is effective for a device only once it sees the Control without the member.
-  Storage that keeps that Control from a writer which never accepted it can make the writer encrypt for the removed member (MemberChange assumes current listings; ControlDAG shows the checkpoint only protects what a device already accepted).
-- Two devices can found the same workspace in one storage at once, because storage has no compare-and-swap.
-  Each `enbu.toml` then names its own genesis (Founding witness `WitnessNoConcurrentFounding`).
+## Trust roots
+
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| TRUST-1 | A pinned genesis is never replaced without `--accept-new-genesis`. | `pkg/wsp/trust.go` `Pin`, `Check`; `app/init.go` `ensureControl` | `Founding.TRUST_1` | TestChangedGenesisStopsEveryOperation |
+| TRUST-2 | Founding never adopts a genesis someone else signed. | `FindGenesis` (author), `ensureControl` (`founded`), `PinFounded` | `Founding.TRUST_2` | TestFindGenesisRecognisesOnlyTheAuthorsGenesis |
+| TRUST-3 | `enbu.toml` names a genesis only after its publish returned. | `foundGenesis`, `ensureControl` | `Founding.TRUST_3` | TestFailedPublishFoundsAgainOnRetry |
+| TRUST-4 | A founding retry after a crash or a lost reply is never refused for storage holding only its own genesis. | `foundGenesis` → `FindGenesis` | `Founding.TRUST_4` | TestLostPublishReplyAdoptsTheOwnGenesisOnRetry |
+| TRUST-5 | A repository pin never moves to a workspace this device did not found. | `trustFile.conflict` (repository pin) | `Founding.TRUST_5` | TestRepositoryPinModes |
+
+## Writes
+
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| SYNC-1 | No lost update: once every write returned, the merged content holds every change whose write succeeded. | `app/write.go` `changeResource` (parents = heads read, look again before publishing), `pkg/merge` | `WriteRetry.SYNC_1` | TestStaleListingMakesAForkNotALostUpdate, TestMergeProperties |
+| SYNC-2 | A change is applied by one revision at most, across retries. | `changeResource` (`published`, `publishedInRead`) | `WriteRetry.SYNC_2` | TestPublishedAddSurvivesMembershipRetry |
+| SYNC-3 | Retries are bounded. | `changeResource` (`maxRetries`) | `WriteRetry.SYNC_3` | TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging |
+| SYNC-4 | Members that keep changing end a write as a conflict, never an internal error (F5). | `changeResource` (`errControlMoved`) | `WriteRetry.SYNC_4` | TestMembersChangingOnEveryAttemptIsAConflict |
+| SYNC-5 | Liveness: every write returns. | `changeResource` | `WriteRetry.SYNC_5` | TestContentionClocks |
+
+## Cryptography and input
+
+These hold below the models' abstraction (a signature is "who signed", a ciphertext is "who can read"); the Go tests check them.
+
+| ID | Property | Enforced by | TLA+ | Go test |
+|----|----------|-------------|------|---------|
+| CRYPTO-1 | Secrets are encrypted only to post-quantum hybrid recipients; classical recipients are refused. | `pkg/age` `ParseRecipient`, `EncryptForPublicKeys` | assumed | TestOnlyPostQuantumRecipientsAreAccepted, TestEncryptionRoundTripsOnlyForRecipients |
+| CRYPTO-2 | A signature verifies only for its key, domain and exact body; any changed bit is refused. | `pkg/signing` `Verify`, `Message` | assumed (`signer` field) | TestSignaturesRejectEveryBitFlip, FuzzVerifyNeverAcceptsAlteredBodies |
+| CRYPTO-3 | A device ID names exactly one signing key. | `PublicKey.DeviceID`, `Control.Validate` | assumed | TestDeviceIDIsInjective |
+| CRYPTO-4 | A ciphertext is used only if it is the one the signed State names. | `wsp.ReadCiphertext` | assumed | TestReadCiphertextChecksTheBlobAgainstTheSignedState |
+| INPUT-1 | Signed envelopes, Controls, States and join requests decode only in canonical form and within the size limits. | `pkg/wsp/codec.go` `decodeCanonical`, `DecodeSigned`; `maxControls`, `maxRevisions` | n/a | FuzzSignedEnvelope, FuzzControlCodec, FuzzStateCodec, FuzzJoinRequestCodec |
+| INPUT-2 | A damaged checkpoint or trust file is refused, never read as empty. | `Checkpoints.read`, `Trust.load` | n/a | FuzzTrustFile, FuzzCheckpointFile |
+| INPUT-3 | `.env` content round-trips, and content that cannot is refused. | `pkg/dotenv` `Parse`, `Format` | n/a | TestDotenvRoundTripsGeneratedEnvironments, FuzzRoundTrip |
+| INPUT-4 | `enbu.toml` parses to what was written, and its protected fields cannot be changed by the settings editor. | `pkg/config` `ParseProject`; `WriteConfig` | n/a | TestReadWriteConfig, TestWriteConfigProtectsTrustAndStorageLineage |
+
+## Examples and findings
+
+These configs check the implementation itself and are expected to produce a counterexample; `task formal/check` asserts that they still do, and the traces are in [tla/traces/](tla/traces/).
+An example pins a limit the design accepts; a finding is open and should become an ordinary invariant once fixed.
+
+| Config | Kind | What TLC shows |
+|--------|------|----------------|
+| `ControlDAG_example_permanent` | example | A fork whose heads share no admin (two admins removing each other) is never joined. |
+| `ControlDAG_finding_removed_admin` | finding | An admin that was removed still signs children of the Controls that listed it, and they verify: it can fork the Control after its removal. |
+| `ControlDAG_finding_removed_admin_drops` | finding | Through such a fork a removed admin drops another member: the honest resolution keeps the intersection, so the admin who removed it is out. With no admin common to both heads the fork is permanent instead. |
+| `StateDAG_finding_removed_sibling` | finding | `GEN_1_strict`: a removed member signs a child of a present revision with the honest Generation; it is set aside as a head, but its proven Generation still counts in `shownGeneration`, so storage can hide a newer accepted revision behind it. |
+| `StateDAG_finding_removal_race` | finding | `GEN_2`, all members honest: a member writes between its removal's re-encryption and the Control that drops it; that head is never re-encrypted and is set aside once the Control is published. A compaction meanwhile deletes the history proving its Generation, so a device that read it reports a rollback, and with no trusted head left the environment cannot be read or written. |
+| `StateDAG_finding_member_poison` | finding | `GEN_2_strict`: in the same window a member signs a head above a missing parent; devices that read it accept its Generation and report a rollback once it is set aside. |
+| `MemberChange_example_removal_window` | example | `RCPT_4_strict`: a revision published in the same window stays encrypted for the removed member until the next write (it was written while it was still a member; RCPT-2 holds). |

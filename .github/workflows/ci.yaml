@@ -334,6 +334,24 @@ jobs:
         run: task cli/test/scenario
 
   formal:
+    name: Formal model (${{ matrix.model }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [ControlDAG, StateDAG, MemberChange, WriteRetry, Founding]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-tools
+      - name: Check the protocol model and its mutants
+        env:
+          MODEL: ${{ matrix.model }}
+        run: task formal/model MODEL="$MODEL"
+
+  formal-refinement:
     name: Formal models (${{ matrix.models.name }})
     runs-on: ubuntu-26.04
     timeout-minutes: 20
@@ -341,7 +359,7 @@ jobs:
       fail-fast: false
       matrix:
         # Two shards of about the same TLC time; together they cover every
-        # PR-tier model in spec/tla/checks.toml (formal-shards checks that).
+        # PR-tier model in spec/conformance/checks.toml (formal-shards checks that).
         models:
           - name: control, members, founding
             run: ^(ControlDAG|MemberChange|Founding)
@@ -402,7 +420,7 @@ jobs:
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, formal-conformance, mutation, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, formal-refinement, formal-conformance, mutation, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}

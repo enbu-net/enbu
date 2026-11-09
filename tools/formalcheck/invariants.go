@@ -19,7 +19,7 @@ type Invariant struct {
 }
 
 var (
-	reRow     = regexp.MustCompile(`^\|\s*([A-Z]+-\d+)\s*\|[^|]*\|([^|]*)\|([^|]*)\|\s*$`)
+	reRow     = regexp.MustCompile(`^\|\s*([A-Z]+-\d+)\s*\|[^|]*\|(?:[^|]*\|)?([^|]*)\|([^|]*)\|\s*$`)
 	reID      = regexp.MustCompile(`\b((?:AUTH|FORK|CP|STATE|REJOIN|GEN|AVAIL|RCPT|SYNC|ERR|TRUST|CRYPTO|INPUT|MERGE)-\d+)\b`)
 	reGoFunc  = regexp.MustCompile(`(?m)^func ((?:Test|Fuzz)\w+)\(`)
 	skipDirs  = []string{".git", "node_modules", ".tmp", "dist", "web", "vscode"}
@@ -49,8 +49,8 @@ func ParseInvariants(text string) ([]Invariant, error) {
 }
 
 func splitNames(cell string) []string {
-	cell = strings.TrimSpace(cell)
-	if cell == "" || cell == noneCheck {
+	cell = strings.TrimSpace(strings.ReplaceAll(cell, "`", ""))
+	if cell == "" || cell == noneCheck || cell == "n/a" || strings.HasPrefix(cell, "assumed") {
 		return nil
 	}
 	var out []string
@@ -85,6 +85,15 @@ func CheckInvariants(path, specDir, root string) error {
 				return err
 			}
 			modules[strings.TrimSuffix(e.Name(), ".tla")] = string(t)
+		} else if e.IsDir() {
+			// Protocol models live in Model/Model.tla; refinement models
+			// live directly under spec/conformance.
+			path := filepath.Join(specDir, e.Name(), e.Name()+".tla")
+			if b, err := os.ReadFile(path); err == nil {
+				modules[e.Name()] = string(b)
+			} else if !errors.Is(err, fs.ErrNotExist) {
+				return err
+			}
 		}
 	}
 	funcs, err := goTestFuncs(root)
@@ -114,7 +123,7 @@ func CheckInvariants(path, specDir, root string) error {
 	for model, text := range modules {
 		for _, m := range reID.FindAllStringSubmatch(text, -1) {
 			if !listed[m[1]] {
-				problems = append(problems, fmt.Sprintf("%s.tla mentions %s, which spec/INVARIANTS.md does not list", model, m[1]))
+				problems = append(problems, fmt.Sprintf("%s.tla mentions %s, which %s does not list", model, m[1], path))
 			}
 		}
 	}
