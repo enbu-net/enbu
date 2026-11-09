@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -153,15 +154,17 @@ func TestControlForkStopsAnAdminDemotedOnOneSide(t *testing.T) {
 	}
 }
 
-// Resolving a fork can drop a member who could read the existing secrets. The
-// ciphertext must then be re-encrypted without them, exactly as a removal does.
-func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
-	alice := newAlice(t)
+// forkDroppingDave forks the Control: alice adds carol while bob, an admin
+// from the older head, removes dave, a plain member who can read KEY. Either
+// admin's next operation joins the fork, dropping dave.
+func forkDroppingDave(t *testing.T) (alice, dave *App) {
+	t.Helper()
+	alice = newAlice(t)
 	bob := approved(t, alice)
 	if err := alice.SetAdmin(bg, mustMember(t, alice, bob).DeviceID, true); err != nil {
 		t.Fatal(err)
 	}
-	dave := approved(t, alice) // a plain member who can read KEY today
+	dave = approved(t, alice)
 	carol := newDevice(t, alice)
 	requestJoin(t, carol)
 	carolEntry := principalOf(t, carol)
@@ -183,7 +186,6 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// bob, from the older head, removes dave.
 	if _, err := wsp.UpdateControl(bg, bs.store, bs.view, bs.signer, func(c *wsp.Control) error {
 		kept := c.Principals[:0:0]
 		for _, p := range c.Principals {
@@ -196,16 +198,13 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 	}); !apperr.Is(wspError(err), apperr.CodeControlForked) {
 		t.Fatalf("the concurrent change must report the fork: %v", err)
 	}
+	return alice, dave
+}
 
-	// alice's next operation joins the fork.
-	if got := listOK(t, alice); got["KEY"] != "v1" {
-		t.Fatalf("alice after resolving: %v", got)
-	}
-	// dave was not on one of the sides, so the resolution drops him and he can
-	// no longer decrypt what is stored now.
-	if _, err := dave.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
-		t.Fatalf("a dropped member still reads: %v", err)
-	}
+// requireUnreadableBy checks that the current revision of default is signed
+// under the current control and that dave can no longer decrypt it.
+func requireUnreadableBy(t *testing.T, alice, dave *App) {
+	t.Helper()
 	cur, err := alice.openSession(bg)
 	if err != nil {
 		t.Fatal(err)
@@ -230,4 +229,55 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 	if read.heads[0].Control != cur.head.Digest {
 		t.Fatal("the revision was not re-signed under the resolved control")
 	}
+}
+
+// Resolving a fork can drop a member who could read the existing secrets. The
+// ciphertext must then be re-encrypted without them, exactly as a removal does.
+func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
+	alice, dave := forkDroppingDave(t)
+
+	// alice's next operation joins the fork.
+	if got := listOK(t, alice); got["KEY"] != "v1" {
+		t.Fatalf("alice after resolving: %v", got)
+	}
+	// dave was not on one of the sides, so the resolution drops him and he can
+	// no longer decrypt what is stored now.
+	if _, err := dave.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeNotMember) {
+		t.Fatalf("a dropped member still reads: %v", err)
+	}
+	requireUnreadableBy(t, alice, dave)
+}
+
+// The operation that joined the fork fails, even a read, when re-encryption
+// does not finish: the join is not retried, so this is the only moment the
+// admin learns to run sync. Sync then finishes the re-encryption.
+func TestResolvingAControlForkReportsIncompleteReencryption(t *testing.T) {
+	alice, dave := forkDroppingDave(t)
+	base := alice.Storage
+	alice.Storage = failStatePublishes(base, nil)
+	if _, err := alice.ListSecrets(bg, "default"); !apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("a read that joined the fork without re-encrypting: %v", err)
+	}
+	alice.Storage = base
+	cur, err := alice.openControlView(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur.Close()
+	if cur.head == nil {
+		t.Fatal("the join was not published")
+	}
+	if err := alice.SyncSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+	requireUnreadableBy(t, alice, dave)
+}
+
+// An admin whose keys cannot be loaded learns why instead of only seeing the
+// fork it could otherwise have joined.
+func TestControlForkReportsAnAdminsUnusableKeys(t *testing.T) {
+	alice, _ := forkDroppingDave(t)
+	alice.Identities = lostBackend{alice.Identities.(*apptest.Identities)}
+	_, err := alice.ListMembers(bg)
+	requireIdentityUnavailable(t, err, "keyring unavailable")
 }

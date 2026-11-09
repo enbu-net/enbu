@@ -229,7 +229,12 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		// A genesis this device signed and has not pinned yet is its own
 		// founding, left by an attempt that stopped before pinning it. Only
 		// its signing key can sign one, so this hands trust to nobody else.
+		// A genesis storage lacks falls through to verifyControl, which reports
+		// it; any other storage failure is returned so it can be retried.
 		blob, err := s.store.FetchHead(ctx, storage.KindControl, "", digest.Digest(s.cfg.ControlGenesis))
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return storageError(err)
+		}
 		if err == nil {
 			v, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis))
 			s.founded = err == nil && v.Author == s.self()

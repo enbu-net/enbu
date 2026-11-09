@@ -11,15 +11,11 @@ var errNoChange = fmt.Errorf("secret unchanged")
 
 func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]string, err error) {
 	defer apperr.NormalizeInto(&err)
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	resolved, err := s.environment(env)
-	if err != nil {
-		return nil, err
-	}
 	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
 		return map[string]string{}, nil

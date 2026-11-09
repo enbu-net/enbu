@@ -44,15 +44,11 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 }
 
 func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	resolved, err := s.environment(env)
-	if err != nil {
-		return nil, err
-	}
 	a.emitStepProgress("pull", "pull_secrets", "start")
 	a.emitStepProgress("pull", "decrypt", "start")
 	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
@@ -148,15 +144,11 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 // marker apart from a person's: a key the environment once stored and no
 // longer does was deleted from enbu.
 func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, error) {
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	resolved, err := s.environment(env)
-	if err != nil {
-		return nil, err
-	}
 	resource := s.resource(resolved.Name)
 	sv, err := s.loadResource(ctx, resource)
 	if err != nil {
