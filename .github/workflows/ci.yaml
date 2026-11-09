@@ -410,7 +410,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: '24'
+          node-version: '26'
       - name: Validate Renovate configuration
         env:
           RENOVATE_VERSION: 44.219.0 # renovate: datasource=npm depName=renovate
