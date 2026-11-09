@@ -95,19 +95,47 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 	if c.Control == "demote-admin" {
 		stopped = append(stopped, 1)
 	}
-	for _, i := range stopped {
-		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
-			return fmt.Errorf("control fork failed to block device %d: %v", i, err)
+	// The re-encryption that follows b's approval is itself an operation of an
+	// admin of every head, so on some schedules it has already joined the fork
+	// when the batch returns; the stopped devices then see the merged Control.
+	forked := false
+	for n, i := range stopped {
+		_, err := w.Devices[i].App.ListSecrets(ctx, "default")
+		if n == 0 {
+			forked = ErrorCode(err) == string(apperr.CodeControlForked)
 		}
-		if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, map[string]app.SecretChoice{"K": {Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
-			return err
+		if forked {
+			if err := requireCode(err, apperr.CodeControlForked); err != nil {
+				return fmt.Errorf("control fork failed to block device %d: %w", i, err)
+			}
+			if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, map[string]app.SecretChoice{"K": {Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
+				return err
+			}
+			continue
+		}
+		// Joined: the removed writer is out, and a remaining member sees only
+		// the unresolved data conflict.
+		want := apperr.CodeSecretConflict
+		if i == 2 && c.Control == "remove-writer" {
+			want = apperr.CodeNotMember
+		}
+		if err := requireCode(err, want); err != nil {
+			return fmt.Errorf("device %d after the fork was joined: %w", i, err)
 		}
 	}
-	// a's next operation joins the fork. Control resolution commits first; data
-	// re-encryption must report the unresolved data conflict rather than
-	// treating it as a successful full repair.
-	if _, err := a.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeReencryptIncomplete) != nil {
-		return fmt.Errorf("joining the fork: %v", err)
+	if err := w.Tape.Observe("compound-forked", c.Control, forked); err != nil {
+		return err
+	}
+	// a's next operation joins the fork if it is still open. Control
+	// resolution commits first; data re-encryption must report the unresolved
+	// data conflict rather than treating it as a successful full repair. If
+	// the fork was already joined, the data conflict remains.
+	want := apperr.CodeReencryptIncomplete
+	if !forked {
+		want = apperr.CodeSecretConflict
+	}
+	if _, err := a.ListSecrets(ctx, "default"); requireCode(err, want) != nil {
+		return fmt.Errorf("a after the control update (forked=%t): %w", forked, err)
 	}
 	members, err := a.ListMembers(ctx)
 	if err != nil {
