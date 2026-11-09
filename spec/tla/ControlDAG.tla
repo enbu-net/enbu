@@ -119,7 +119,12 @@ Init ==
     /\ rview = {}
     /\ rsession = -1
 
+\* Storage names objects by digest and signatures are deterministic, so a
+\* Control with the same content as one in storage is that same object.
+Fresh(c) == ~\E k \in store : [k EXCEPT !.id = 0] = [c EXCEPT !.id = 0]
+
 Publish(c) ==
+    /\ Fresh(c)
     /\ store' = store \cup {c}
     /\ ver' = Verified(store \cup {c})
     /\ nextId' = nextId + 1

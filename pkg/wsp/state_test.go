@@ -28,7 +28,7 @@ type stateFixture struct {
 }
 
 // newStateFixture founds a workspace with alice (admin) and bob (member).
-func newStateFixture(t *testing.T) stateFixture {
+func newStateFixture(t testing.TB) stateFixture {
 	t.Helper()
 	store, alice, genesis := workspace(t)
 	bob := newActor(t, false)
@@ -62,7 +62,7 @@ func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) di
 	return rev
 }
 
-func signedState(t *testing.T, s State, by actor) ([]byte, digest.Digest) {
+func signedState(t testing.TB, s State, by actor) ([]byte, digest.Digest) {
 	t.Helper()
 	blob, err := SignState(s, by.signer)
 	if err != nil {

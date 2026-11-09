@@ -29,6 +29,7 @@ CONSTANTS
     MaxGen,         \* highest Generation the attacker writes
     Compaction,     \* whether an admin deletes old revisions
     Witnessing,     \* whether reads record what they reached (witness runs only)
+    Conformance,    \* whether each read records its input and outcome (Go tests)
     Mutant          \* "none" or a seeded bug, see Mutants
 
 Devices == Writers \cup Compromised
@@ -36,7 +37,12 @@ Ghost == -1         \* a parent digest no revision has
 UnknownControl == Len(Members) + 1
 
 Mutants == {"none", "count-untrusted", "abort-on-unknown-control", "skip-continuity",
-            "trust-every-signed", "skip-checkpoint", "no-fallback", "skip-generation"}
+            "trust-every-signed", "skip-checkpoint", "no-fallback", "skip-generation",
+            "before-fixes"}
+
+\* before-fixes is the reader before F1 and F2 were fixed; Go conformance
+\* tests use it to show the harness matches that code exactly.
+Bug(m) == Mutant = m \/ (Mutant = "before-fixes" /\ m \in {"count-untrusted", "abort-on-unknown-control"})
 
 ASSUME Reader \in Writers /\ Writers \cap Compromised = {}
 ASSUME \A i \in 1..Len(Members) : Reader \in Members[i]
@@ -50,9 +56,12 @@ VARIABLES
     cp,         \* Reader's accepted Generation (its checkpoint)
     seen,       \* every revision Reader ever adopted as a head
     violated,   \* names of the read properties some read broke (normally {})
-    reached     \* situations reads reached, for the reachability witnesses
+    reached,    \* situations reads reached, for the reachability witnesses
+    lastRead    \* with Conformance: the last read's view, checkpoint and outcome
 
-vars == <<now, store, live, attacks, cp, seen, violated, reached>>
+vars == <<now, store, live, attacks, cp, seen, violated, reached, lastRead>>
+
+NoRead == [now |-> 0, view |-> {}, cpBefore |-> 0, res |-> "none", heads |-> {}, cpAfter |-> 0]
 
 Ids(S) == {s.id : s \in S}
 ById(I) == {s \in store : s.id \in I}
@@ -80,8 +89,11 @@ GenerationOK(s, V) ==
     LET P == {p \in V : p.id \in s.parents} IN
     Ids(P) # s.parents \/ s.gen = TopGen(P) + 1 \/ Mutant = "skip-generation"
 
+\* State.validate: Generation 1 exactly when there are no parents.
+WellFormed(s) == (s.gen = 1) = (s.parents = {})
+
 Verified(S) ==
-    LET V == {s \in S : Signed(s)} IN {s \in V : GenerationOK(s, V)}
+    LET V == {s \in S : WellFormed(s) /\ Signed(s)} IN {s \in V : GenerationOK(s, V)}
 
 Heads(V) == {s \in V : ~\E k \in V : s.id \in k.parents}
 
@@ -113,15 +125,15 @@ TrustedHeads(V) ==
 \* revisions storage shows. Only revisions of trusted authors count; a removed
 \* member's key must not vouch for freshness (F2).
 Freshness(V) ==
-    IF Mutant = "count-untrusted" THEN TopGen(V) ELSE TopGen({s \in V : Trusted(s)})
+    IF Bug("count-untrusted") THEN TopGen(V) ELSE TopGen({s \in V : Trusted(s)})
 
 \* The outcome of reading what storage shows, without the checkpoint update.
 Outcome(S) ==
-    IF Mutant = "abort-on-unknown-control" /\ \E s \in S : ~Known(s.ctl)
+    IF Bug("abort-on-unknown-control") /\ \E s \in S : WellFormed(s) /\ ~Known(s.ctl)
     THEN [res |-> "rollback_detected", heads |-> {}]
     ELSE LET V == Verified(S) T == TrustedHeads(V) IN
-         IF V = {} THEN [res |-> "artifact_not_found", heads |-> {}]
-         ELSE IF Freshness(V) < cp /\ Mutant # "skip-checkpoint" THEN [res |-> "rollback_detected", heads |-> {}]
+         IF Freshness(V) < cp /\ Mutant # "skip-checkpoint" THEN [res |-> "rollback_detected", heads |-> {}]
+         ELSE IF V = {} THEN [res |-> "artifact_not_found", heads |-> {}]
          ELSE IF T = {} THEN [res |-> "untrusted_state", heads |-> {}]
          ELSE [res |-> "ok", heads |-> T]
 
@@ -135,6 +147,7 @@ Init ==
     /\ seen = {}
     /\ violated = {}
     /\ reached = {}
+    /\ lastRead = NoRead
 
 NextId == Cardinality(store)
 
@@ -156,13 +169,13 @@ Write(w, H0) ==
                     author |-> w, sig |-> TRUE, evil |-> FALSE, anc |-> Anc(Ids(T))] IN
           /\ store' = store \cup {s}
           /\ live' = live \cup {s.id}
-    /\ UNCHANGED <<now, attacks, cp, seen, violated, reached>>
+    /\ UNCHANGED <<now, attacks, cp, seen, violated, reached, lastRead>>
 
 \* The next Control of the chain is published.
 ControlStep ==
     /\ now < Len(Members)
     /\ now' = now + 1
-    /\ UNCHANGED <<store, live, attacks, cp, seen, violated, reached>>
+    /\ UNCHANGED <<store, live, attacks, cp, seen, violated, reached, lastRead>>
 
 \* history compact: an admin deletes a revision that is not a head.
 Compact(i) ==
@@ -170,7 +183,7 @@ Compact(i) ==
     /\ i \in live
     /\ \E k \in ById(live) : i \in k.parents
     /\ live' = live \ {i}
-    /\ UNCHANGED <<now, store, attacks, cp, seen, violated, reached>>
+    /\ UNCHANGED <<now, store, attacks, cp, seen, violated, reached, lastRead>>
 
 \* The attacker signs with a removed member's key under a Control that still
 \* listed it (one it was removed from since), forges an honest author's
@@ -194,7 +207,7 @@ Attack ==
          /\ store' = store \cup {s}
          /\ live' = live \cup {s.id}
          /\ attacks' = attacks + 1
-    /\ UNCHANGED <<now, cp, seen, violated, reached>>
+    /\ UNCHANGED <<now, cp, seen, violated, reached, lastRead>>
 
 \* GEN-2 / GEN-6: a revision h adopted now covers a revision a adopted before
 \* when it is a, descends from a, or is a branch a does not descend from with
@@ -232,6 +245,10 @@ Read(S) ==
     LET o == Outcome(S) IN
     /\ violated' = violated \cup ReadViolations(S, o)
     /\ reached' = IF Witnessing THEN reached \cup ReadReached(o) ELSE reached
+    /\ lastRead' = IF Conformance
+                   THEN [now |-> now, view |-> Ids(S), cpBefore |-> cp, res |-> o.res, heads |-> Ids(o.heads),
+                         cpAfter |-> IF o.res = "ok" THEN MaxOf({cp, TopGen(o.heads)}) ELSE cp]
+                   ELSE lastRead
     /\ IF o.res = "ok" THEN
           /\ seen' = seen \cup Ids(o.heads)
           /\ cp' = MaxOf({cp, TopGen(o.heads)})

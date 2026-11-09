@@ -12,7 +12,7 @@ import (
 )
 
 // workspace creates a store whose genesis is founded by alice.
-func workspace(t *testing.T) (storage.Store, actor, digest.Digest) {
+func workspace(t testing.TB) (storage.Store, actor, digest.Digest) {
 	t.Helper()
 	store := storagetest.NewMemory()
 	alice := newActor(t, true)
@@ -23,7 +23,7 @@ func workspace(t *testing.T) (storage.Store, actor, digest.Digest) {
 	return store, alice, v.Digest
 }
 
-func load(t *testing.T, store storage.Store, genesis digest.Digest) *ControlView {
+func load(t testing.TB, store storage.Store, genesis digest.Digest) *ControlView {
 	t.Helper()
 	view, err := LoadControl(context.Background(), store, testWorkspace, genesis, nil)
 	if err != nil {
@@ -32,7 +32,7 @@ func load(t *testing.T, store storage.Store, genesis digest.Digest) *ControlView
 	return view
 }
 
-func addMember(t *testing.T, store storage.Store, genesis digest.Digest, by, who actor) *Verified {
+func addMember(t testing.TB, store storage.Store, genesis digest.Digest, by, who actor) *Verified {
 	t.Helper()
 	v, err := UpdateControl(context.Background(), store, load(t, store, genesis), by.signer, func(c *Control) error {
 		c.Principals = append(c.Principals, who.p)

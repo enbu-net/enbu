@@ -24,6 +24,9 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// tlcHeap is the -Xmx of every TLC process; several run at once.
+var tlcHeap = "2g"
+
 // Manifest is spec/tla/checks.toml.
 type Manifest struct {
 	Model []Model `toml:"model"`
@@ -94,6 +97,7 @@ func main() {
 	jobs := flag.Int("jobs", max(1, runtime.NumCPU()/4), "TLC processes at once")
 	workers := flag.Int("workers", 4, "TLC workers per process")
 	timeout := flag.Duration("timeout", 30*time.Minute, "limit for one TLC run")
+	heap := flag.String("heap", "2g", "Java heap of one TLC process (its fingerprints and queue spill to disk)")
 	invariants := flag.String("invariants", "", "check this invariants table (spec/INVARIANTS.md) against the models and Go tests instead of running TLC")
 	flag.Parse()
 	if *invariants != "" {
@@ -104,6 +108,7 @@ func main() {
 		fmt.Println("every invariant is checked")
 		return
 	}
+	tlcHeap = *heap
 	if err := Run(*dir, *tier, *run, *tlc, *jobs, *workers, *timeout); err != nil {
 		fmt.Fprintln(os.Stderr, "formalcheck:", err)
 		os.Exit(1)
@@ -265,7 +270,7 @@ func Execute(dir, tlc string, workers int, timeout time.Duration, j Job) Result 
 		if err := os.WriteFile(filepath.Join(scratch, "run.cfg"), []byte(j.Config), 0o600); err != nil {
 			return err
 		}
-		args := []string{"-workers", fmt.Sprint(workers), "-noGenerateSpecTE", "-metadir", filepath.Join(scratch, "states"), "-config", "run.cfg"}
+		args := []string{"-Xmx" + tlcHeap, "-workers", fmt.Sprint(workers), "-noGenerateSpecTE", "-metadir", filepath.Join(scratch, "states"), "-config", "run.cfg"}
 		if j.Coverage {
 			args = append(args, "-coverage", "1440")
 		}
@@ -274,6 +279,7 @@ func Execute(dir, tlc string, workers int, timeout time.Duration, j Job) Result 
 		defer cancel()
 		cmd := exec.CommandContext(ctx, tlc, args...)
 		cmd.Dir = scratch
+		cmd.Env = aquaEnv(dir)
 		var out bytes.Buffer
 		cmd.Stdout, cmd.Stderr = &out, &out
 		runErr := cmd.Run()
@@ -285,6 +291,21 @@ func Execute(dir, tlc string, workers int, timeout time.Duration, j Job) Result 
 	}()
 	r.Duration = time.Since(start)
 	return r
+}
+
+// aquaEnv lets an aqua proxy for tlc find the repository's aqua.yaml although
+// TLC runs in a scratch directory outside it.
+func aquaEnv(specDir string) []string {
+	env := os.Environ()
+	if os.Getenv("AQUA_CONFIG") != "" {
+		return env
+	}
+	if abs, err := filepath.Abs(filepath.Join(specDir, "..", "..", "aqua.yaml")); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			env = append(env, "AQUA_CONFIG="+abs)
+		}
+	}
+	return env
 }
 
 func distinctStates(out string) int64 {

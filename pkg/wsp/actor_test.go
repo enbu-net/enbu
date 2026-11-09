@@ -16,7 +16,7 @@ type actor struct {
 	p      Principal
 }
 
-func newActor(t *testing.T, admin bool) actor {
+func newActor(t testing.TB, admin bool) actor {
 	t.Helper()
 	_, k, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
