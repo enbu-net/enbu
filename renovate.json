@@ -13,7 +13,8 @@
   "automerge": true,
   "platformAutomerge": false,
   "postUpdateOptions": [
-    "gomodTidy"
+    "gomodTidy",
+    "gomodUpdateImportPaths"
   ],
   "customManagers": [
     {

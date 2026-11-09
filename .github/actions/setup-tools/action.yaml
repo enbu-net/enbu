@@ -14,6 +14,22 @@ runs:
       with:
         path: ${{ runner.temp }}/enbu-aqua
         key: v3-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-scope }}-${{ hashFiles('aqua.yaml', '.github/actions/setup-tools/action.yaml') }}
-    - uses: aquaproj/aqua-installer@v4.1.1
+    # A cached root already holds this aqua version, so only a cold cache
+    # downloads from GitHub Releases. Those downloads fail with 504 for minutes
+    # at a time; one delayed retry keeps an outage from failing the job.
+    - id: aqua
+      uses: aquaproj/aqua-installer@v4.1.1
+      continue-on-error: true
       with:
         aqua_version: v2.66.1
+        skip_install_aqua: "true"
+    - name: Wait before retrying aqua
+      if: steps.aqua.outcome == 'failure'
+      shell: bash
+      run: sleep 90
+    - name: Retry aqua
+      if: steps.aqua.outcome == 'failure'
+      uses: aquaproj/aqua-installer@v4.1.1
+      with:
+        aqua_version: v2.66.1
+        skip_install_aqua: "true"

@@ -93,6 +93,35 @@ func TestAquaCacheUsesTheSameIsolatedRootOnWindowsAndUnix(t *testing.T) {
 	}
 }
 
+func TestAquaInstallSkipsCachedAquaAndRetriesOnce(t *testing.T) {
+	root := readYAML(t, "../../.github/actions/setup-tools/action.yaml")
+	var first string
+	retries := 0
+	for _, step := range field(field(root, "runs"), "steps").Content {
+		uses := field(step, "uses")
+		if uses == nil || !strings.HasPrefix(uses.Value, "aquaproj/aqua-installer@") {
+			continue
+		}
+		if field(field(step, "with"), "skip_install_aqua").Value != "true" {
+			t.Fatal("aqua is downloaded again although the cache restored it")
+		}
+		if first == "" {
+			if field(step, "continue-on-error").Value != "true" {
+				t.Fatal("a failed first install does not reach the retry")
+			}
+			first = field(step, "id").Value
+			continue
+		}
+		if field(step, "if").Value != "steps."+first+".outcome == 'failure'" {
+			t.Fatal("the retry does not run only after a failed first install")
+		}
+		retries++
+	}
+	if first == "" || retries != 1 {
+		t.Fatalf("want one install and one retry, got first=%q retries=%d", first, retries)
+	}
+}
+
 func TestFullDSTRunnerGroupsCoverEveryLogicalLaneOnce(t *testing.T) {
 	job := statusJob(t, "simulation.yaml", "simulation")
 	matrix := field(field(job, "strategy"), "matrix")
