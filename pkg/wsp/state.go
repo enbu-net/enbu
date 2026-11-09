@@ -331,25 +331,36 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 }
 
 // dropWrongGenerations removes revisions whose parents are all present but
-// whose Generation is not the one they imply. Missing parents were deleted, so
-// their generations cannot be checked.
+// whose Generation is not the one they imply, and every descendant of one: a
+// child checked against a forged Generation proves nothing. Missing parents
+// were deleted, so their generations cannot be checked.
 func (sv *StateView) dropWrongGenerations() {
-	var wrong []digest.Digest
-	for d, st := range sv.States {
-		parents := make([]*VerifiedState, 0, len(st.Parents))
-		for _, p := range st.Parents {
-			if ps, ok := sv.States[p]; ok {
-				parents = append(parents, ps)
+	dropped := map[digest.Digest]bool{}
+	for changed := true; changed; {
+		changed = false
+		for d, st := range sv.States {
+			if dropped[d] {
+				continue
+			}
+			parents := make([]*VerifiedState, 0, len(st.Parents))
+			bad := false
+			for _, p := range st.Parents {
+				if dropped[p] {
+					bad = true
+				} else if ps, ok := sv.States[p]; ok {
+					parents = append(parents, ps)
+				}
+			}
+			if bad || (len(parents) == len(st.Parents) && st.Generation != NextGeneration(parents)) {
+				dropped[d] = true
+				changed = true
 			}
 		}
-		if len(parents) == len(st.Parents) && st.Generation != NextGeneration(parents) {
-			wrong = append(wrong, d)
-		}
 	}
-	if len(wrong) == 0 {
+	if len(dropped) == 0 {
 		return
 	}
-	for _, d := range wrong {
+	for d := range dropped {
 		delete(sv.States, d)
 		sv.Skipped++
 	}

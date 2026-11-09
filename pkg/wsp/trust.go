@@ -73,23 +73,51 @@ func OpenTrust(dir string, c clock.Clock) *Trust {
 }
 
 func (t *Trust) read() (trustFile, error) {
+	f, bad, err := t.load()
+	if err == nil && !bad.empty() {
+		err = fmt.Errorf("corrupt trust file %s", t.path)
+	}
+	return f, err
+}
+
+// invalidPins names the entries of a trust file that do not hold a pin.
+type invalidPins struct {
+	workspaces   []string
+	repositories []string
+}
+
+func (b invalidPins) empty() bool { return len(b.workspaces) == 0 && len(b.repositories) == 0 }
+
+// only reports whether every invalid entry is the pin of workspace or of the
+// enbu.toml at repo.
+func (b invalidPins) only(workspace, repo string) bool {
+	for _, ws := range b.workspaces {
+		if ws != workspace {
+			return false
+		}
+	}
+	for _, r := range b.repositories {
+		if repo == "" || r != repo {
+			return false
+		}
+	}
+	return true
+}
+
+// load reads the trust file, setting aside the entries that do not hold a
+// valid pin. A file that is not a trust file at all is an error.
+func (t *Trust) load() (trustFile, invalidPins, error) {
 	f := trustFile{Workspaces: map[string]digest.Digest{}, Repositories: map[string]string{}}
+	var bad invalidPins
 	b, err := os.ReadFile(t.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return f, nil
+		return f, bad, nil
 	}
 	if err != nil {
-		return f, err
+		return f, bad, err
 	}
-	corrupt := json.Unmarshal(b, &f) != nil
-	for ws, g := range f.Workspaces {
-		corrupt = corrupt || ws == "" || validDigest(g) != nil
-	}
-	for repo, ws := range f.Repositories {
-		corrupt = corrupt || repo == "" || ws == ""
-	}
-	if corrupt {
-		return trustFile{}, fmt.Errorf("corrupt trust file %s", t.path)
+	if json.Unmarshal(b, &f) != nil {
+		return trustFile{}, bad, fmt.Errorf("corrupt trust file %s", t.path)
 	}
 	if f.Workspaces == nil {
 		f.Workspaces = map[string]digest.Digest{}
@@ -97,7 +125,19 @@ func (t *Trust) read() (trustFile, error) {
 	if f.Repositories == nil {
 		f.Repositories = map[string]string{}
 	}
-	return f, nil
+	for ws, g := range f.Workspaces {
+		if ws == "" || validDigest(g) != nil {
+			bad.workspaces = append(bad.workspaces, ws)
+			delete(f.Workspaces, ws)
+		}
+	}
+	for repo, ws := range f.Repositories {
+		if repo == "" || ws == "" {
+			bad.repositories = append(bad.repositories, repo)
+			delete(f.Repositories, repo)
+		}
+	}
+	return f, bad, nil
 }
 
 // Pinned returns the root pinned for workspace, or a zero Root.
@@ -178,13 +218,14 @@ func (t *Trust) Pin(root Root, repo string, mode PinMode) (Root, error) {
 		return Root{}, err
 	}
 	defer release()
-	f, err := t.read()
+	f, bad, err := t.load()
 	if err != nil {
-		if mode != PinReplace {
-			return Root{}, err
-		}
-		// Confirming a new root also repairs a file nobody can read.
-		f = trustFile{Workspaces: map[string]digest.Digest{}, Repositories: map[string]string{}}
+		return Root{}, err
+	}
+	if !bad.empty() && (mode != PinReplace || !bad.only(root.Workspace, repo)) {
+		// Confirming a new root repairs only its own pins: the pins of other
+		// workspaces and checkouts are not reset along with it.
+		return Root{}, fmt.Errorf("corrupt trust file %s", t.path)
 	}
 	if pinned := f.conflict(root, repo, mode); pinned != (Root{}) {
 		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}

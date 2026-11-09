@@ -532,6 +532,30 @@ func TestLoadStatesChecksGenerationsAgainstPresentParents(t *testing.T) {
 	}
 }
 
+// A revision built on a forged Generation proves nothing either, so it goes
+// with it rather than becoming a head above a missing parent.
+func TestLoadStatesDropsDescendantsOfAWrongGeneration(t *testing.T) {
+	f := newStateFixture(t)
+	root := f.publish(t, f.state(f.alice), f.alice, "root")
+	forged := f.state(f.bob, root)
+	forged.Generation = 1000
+	mid := f.publish(t, forged, f.bob, "forged")
+	child := f.publish(t, f.state(f.bob, mid), f.bob, "child")
+	grandchild := f.publish(t, f.state(f.alice, child), f.alice, "grandchild")
+	sv, err := LoadStates(context.Background(), f.store, f.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rev := range []digest.Digest{mid, child, grandchild} {
+		if sv.Graph.Has(rev) {
+			t.Fatalf("revision %s above a wrong generation kept", rev)
+		}
+	}
+	if sv.Skipped != 3 || sv.shownGeneration(nil) != 1 || len(sv.Heads) != 1 || sv.Heads[0].Digest != root {
+		t.Fatalf("heads %v skipped %d max %d", sv.Heads, sv.Skipped, sv.shownGeneration(nil))
+	}
+}
+
 // A revision by a member removed since still counts as evidence of how fresh
 // storage is, though it is no longer read as current.
 func TestRemovedAuthorsRevisionStillCountsForFreshness(t *testing.T) {

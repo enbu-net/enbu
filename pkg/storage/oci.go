@@ -102,6 +102,9 @@ type ociBlob struct {
 	data []byte
 }
 
+// maxOCILayers is the most layers a manifest has: the head and an optional payload.
+const maxOCILayers = 2
+
 // manifestFor builds the canonical manifest of an object: no timestamps and a
 // fixed layer order (the head, then the payload), so publishing the same
 // object twice is byte-identical. It returns every blob the manifest names.
@@ -110,7 +113,7 @@ func manifestFor(o Object) (blobs []ociBlob, body []byte, desc ocispec.Descripto
 	if len(o.Payload) > 0 {
 		blobs = append(blobs, ociBlob{blobDescriptor(ociPayloadMediaType, o.Payload), o.Payload})
 	}
-	layers := []ocispec.Descriptor{}
+	layers := make([]ocispec.Descriptor, 0, maxOCILayers)
 	for _, b := range blobs[1:] {
 		layers = append(layers, b.desc)
 	}
@@ -141,6 +144,21 @@ const publishAttempts = 3
 
 // errBlobGone is a blob missing from the registry after publishing.
 var errBlobGone = errors.New("blob is missing after publish")
+
+// blobUnknown reports a registry refusing a manifest because it lacks a blob
+// the manifest names.
+func blobUnknown(err error) bool {
+	var resp *errcode.ErrorResponse
+	if !errors.As(err, &resp) {
+		return false
+	}
+	for _, e := range resp.Errors {
+		if e.Code == errcode.ErrorCodeManifestBlobUnknown || e.Code == errcode.ErrorCodeBlobUnknown {
+			return true
+		}
+	}
+	return false
+}
 
 func (s ociStore) Publish(ctx context.Context, o Object) error {
 	if err := ValidateObject(o); err != nil {
@@ -181,6 +199,9 @@ func (s ociStore) publishOnce(ctx context.Context, name string, o Object) error 
 	}
 	if err != nil { // not published yet
 		if err := s.repo.PushReference(ctx, md, bytes.NewReader(body), name); err != nil {
+			if blobUnknown(err) {
+				return fmt.Errorf("%w: %w", errBlobGone, err)
+			}
 			return remoteError(err)
 		}
 	}
@@ -242,7 +263,7 @@ func (s ociStore) manifest(ctx context.Context, kind Kind, scope string, rev dig
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return ocispec.Manifest{}, "", fmt.Errorf("%w: manifest: %v", ErrCorrupt, err)
 	}
-	if len(m.Layers) == 0 || len(m.Layers) > 2 || m.Layers[0].MediaType != ociHeadMediaType || m.Layers[0].Digest != rev {
+	if len(m.Layers) == 0 || len(m.Layers) > maxOCILayers || m.Layers[0].MediaType != ociHeadMediaType || m.Layers[0].Digest != rev {
 		return ocispec.Manifest{}, "", fmt.Errorf("%w: manifest of %s does not match its name", ErrCorrupt, name)
 	}
 	return m, name, nil
@@ -261,7 +282,7 @@ func (s ociStore) OpenPayload(ctx context.Context, kind Kind, scope string, rev 
 	if err != nil {
 		return nil, err
 	}
-	if len(m.Layers) != 2 || m.Layers[1].MediaType != ociPayloadMediaType {
+	if len(m.Layers) != maxOCILayers || m.Layers[1].MediaType != ociPayloadMediaType {
 		return nil, fmt.Errorf("%w: %s has no payload", ErrNotFound, name)
 	}
 	layer := m.Layers[1]
