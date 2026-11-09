@@ -40,15 +40,11 @@ type ConflictSet struct {
 // ListConflicts returns the keys of env that are waiting for a decision.
 func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, err error) {
 	defer apperr.NormalizeInto(&err)
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
 	defer s.Close()
-	resolved, err := s.environment(env)
-	if err != nil {
-		return nil, err
-	}
 	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
 		return &ConflictSet{Environment: resolved.Name, Heads: []string{}, Conflicts: []SecretConflict{}}, nil

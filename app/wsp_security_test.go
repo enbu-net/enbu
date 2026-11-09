@@ -36,6 +36,14 @@ func TestJoinApproveAndShareSecrets(t *testing.T) {
 	if err := bob.AddSecret(bg, "default", "BOB", "x"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("pending device wrote secrets: %v", err)
 	}
+	// An unknown environment needs only the local enbu.toml, so it is reported
+	// before membership is checked.
+	if _, err := bob.ListSecrets(bg, "missing"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device read an unknown environment: %v", err)
+	}
+	if err := bob.AddSecret(bg, "missing", "BOB", "x"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device wrote an unknown environment: %v", err)
+	}
 	// Alice picks bob from the list.
 	reqs, err := alice.ListJoinRequests(bg)
 	if err != nil || len(reqs) != 1 || reqs[0].DeviceID != res.DeviceID || reqs[0].Fingerprint != res.Fingerprint {
