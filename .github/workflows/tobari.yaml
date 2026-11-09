@@ -107,7 +107,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
 
       - name: Collect Identity E2E coverage
+        env:
+          ENBU_TEST_KEYRING: '1'
         run: |
+          sudo systemd-creds setup
           dbus-run-session -- sh -eu -c '
             printf "\n" | gnome-keyring-daemon --unlock --components=secrets
             task identity/test/coverage

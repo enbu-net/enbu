@@ -19,6 +19,7 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/zalando/go-keyring"
 )
 
@@ -229,43 +230,77 @@ func TestIdentityCLI(t *testing.T) {
 			t.Fatal("replaced corrupt identity")
 		}
 	})
-	t.Run("OSKeyringFallbackAndReload", func(t *testing.T) {
-		h := newHarness(t, binary, "auto")
-		h.env["ENBU_TEST_TPM_URL"] = "http://127.0.0.1:1"
-		created := h.run("identity", "create") // Mandatory real keyring, no mocks.
-		if created["backend"] != "keyring" || created["algorithm"] != "MLKEM768-X25519" {
-			t.Fatalf("fallback: %+v", created)
+	for _, backend := range []string{"systemd-creds", "keyring"} {
+		name := "SystemdCredsFallbackAndReload"
+		if backend == "keyring" {
+			name = "OSKeyringFallbackAndReload"
 		}
-		recipient := created["recipient"].(string)
-		if shown := h.run("identity", "show"); shown["recipient"] != recipient {
-			t.Fatal("keyring reload changed recipient")
-		}
-		if again := h.run("identity", "create"); again["recipient"] != recipient {
-			t.Fatal("keyring creation did not reuse")
-		}
-		m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
-		b, err := os.ReadFile(m.Path(h.workspaceID))
-		if err != nil {
-			t.Fatal(err)
-		}
-		var md identity.Metadata
-		if err := json.Unmarshal(b, &md); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = keyring.Delete("enbu-identity-v1", md.Reference) })
-		h.run("init")
-		h.run("add", "DATABASE_URL", "first")
-		h.run("sync")
-		assertSecret(t, h.run("pull"), "first")
-		h.env["ENBU_IDENTITY_BACKEND"] = "hardware"
-		h.fails("identity", "show")
-		h.env["ENBU_IDENTITY_BACKEND"] = "keyring"
-		if err := keyring.Set("enbu-identity-v1", md.Reference, "corrupt"); err != nil {
-			t.Fatal(err)
-		}
-		h.fails("pull")
-		h.fails("identity", "create")
-	})
+		t.Run(name, func(t *testing.T) {
+			if backend == "systemd-creds" && runtime.GOOS != "linux" {
+				t.Skip("systemd credentials are Linux-only")
+			}
+			// Headless Linux must exercise the real fallback, not require a
+			// desktop session. CI separately requires the Secret Service path.
+			if backend == "keyring" && runtime.GOOS == "linux" && os.Getenv("ENBU_TEST_KEYRING") != "1" {
+				t.Skip("set ENBU_TEST_KEYRING=1 in an unlocked Secret Service session")
+			}
+			h := newHarness(t, binary, "auto")
+			h.env["ENBU_TEST_TPM_URL"] = "http://127.0.0.1:1"
+			if backend == "systemd-creds" {
+				// Disable only Secret Service; leave the real systemd user
+				// credential service available. No fake executable or vault.
+				h.env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + filepath.Join(h.dir, "no-session-bus")
+				if err := (&keystore.CredsBackend{}).Probe(context.Background()); err != nil {
+					t.Fatalf("real systemd-creds --user encrypt/decrypt is required: %v", err)
+				}
+			}
+			created := h.run("identity", "create")
+			if created["backend"] != backend || created["algorithm"] != "MLKEM768-X25519" {
+				t.Fatalf("fallback: %+v", created)
+			}
+			recipient := created["recipient"].(string)
+			if shown := h.run("identity", "show"); shown["recipient"] != recipient {
+				t.Fatal("software backend reload changed recipient")
+			}
+			if again := h.run("identity", "create"); again["recipient"] != recipient {
+				t.Fatal("software backend creation did not reuse")
+			}
+			m := &identity.Manager{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "identities")}
+			b, err := os.ReadFile(m.Path(h.workspaceID))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var md identity.Metadata
+			if err := json.Unmarshal(b, &md); err != nil {
+				t.Fatal(err)
+			}
+			if md.Backend != backend {
+				t.Fatalf("persisted backend = %q, want %q", md.Backend, backend)
+			}
+			h.run("init")
+			h.run("add", "DATABASE_URL", "first")
+			h.run("sync")
+			assertSecret(t, h.run("pull"), "first")
+			h.env["ENBU_IDENTITY_BACKEND"] = "hardware"
+			h.fails("identity", "show")
+			h.env["ENBU_IDENTITY_BACKEND"] = "keyring"
+			if backend == "keyring" {
+				if err := keyring.Set("enbu-identity-v1", md.Reference, "corrupt"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				creds := &keystore.CredsBackend{Dir: filepath.Join(h.env["XDG_DATA_HOME"], "enbu", "credentials")}
+				if err := creds.Store("enbu-identity-v1", md.Reference, []byte("corrupt")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.fails("pull")
+			h.fails("identity", "create")
+			if after, err := os.ReadFile(m.Path(h.workspaceID)); err != nil || !bytes.Equal(b, after) {
+				t.Fatalf("replaced software identity after corruption: %v", err)
+			}
+		})
+	}
 	t.Run("ProductionBuildExcludesSoftwareTransport", func(t *testing.T) {
 		production := buildCLI(t, host, false)
 		h := newHarness(t, production, "hardware")

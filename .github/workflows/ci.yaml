@@ -116,12 +116,20 @@ jobs:
       - uses: $/.github/actions/setup-tools
         if: runner.os == 'Windows'
 
+      - name: Identity E2E with Linux systemd credentials
+        if: runner.os == 'Linux'
+        run: |
+          systemd-creds --version
+          sudo systemd-creds setup
+          task identity/test/e2e
       - name: Identity E2E with unlocked Linux keyring
         if: runner.os == 'Linux'
+        env:
+          ENBU_TEST_KEYRING: '1'
         run: |
           dbus-run-session -- sh -eu -c '
             printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            task identity/test/e2e
+            go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e -run "^TestIdentityCLI/OSKeyringFallbackAndReload$"
           '
       - name: Identity E2E with native OS keyring
         if: runner.os != 'Linux'

@@ -3,7 +3,7 @@
 The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React.
 It runs every Go package with unit tests, including `pkg/`, `desktop/`, the root
 command, and repository tools. Separate suites cover the Go scenarios and
-Identity E2E (vTPM and OS keyring).
+Identity E2E (vTPM, systemd credentials on Linux, and OS keyring).
 
 The Go report instruments all production packages and tools. Each test binary
 writes to its own directory, preventing package reports from overwriting each
@@ -13,8 +13,10 @@ included in these names.
 
 ## Run locally
 
-Install the pinned tool, then run the tasks with Docker and an unlocked OS
-keyring available. The frontend and Python dependencies use the existing Vite+
+Install the pinned tool, then run the tasks with Docker and a working software
+key backend: Linux requires systemd 256+ with working `systemd-creds --user`
+encryption/decryption; macOS and Windows require an unlocked OS keyring.
+The frontend and Python dependencies use the existing Vite+
 and uv setup.
 
 ```sh
@@ -22,12 +24,20 @@ go install github.com/goccy/tobari/cmd/tobari@v0.13.0
 task all/coverage
 ```
 
-On Linux, a dedicated Secret Service session can be used as in CI:
+On Linux, Identity E2E deliberately disables Secret Service for the systemd
+fallback case and requires a real encrypt/decrypt probe to succeed (no mocks
+or skip on missing prerequisites). If the host credential key has not been
+initialized, an administrator can run `sudo systemd-creds setup`.
+CI uses an Ubuntu VM, not a container job; the CLI version alone does not prove
+that the user credential service is available.
+
+To additionally require the real keyring path on Linux, use a dedicated Secret
+Service session and opt in explicitly, as CI and coverage do:
 
 ```sh
 dbus-run-session -- sh -eu -c '
   printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-  task all/coverage
+  ENBU_TEST_KEYRING=1 task all/coverage
 '
 ```
 

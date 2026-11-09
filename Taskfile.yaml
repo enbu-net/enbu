@@ -194,7 +194,7 @@ tasks:
       - go test -v -shuffle=on ./pkg/config/... ./pkg/dotenv/... ./pkg/storage/... ./pkg/wsp/...
 
   identity/test/e2e:
-    desc: Run Identity CLI E2E with local OCI and persistent vTPM (real OS keyring required)
+    desc: Run Identity CLI E2E with local OCI and persistent vTPM (Linux requires systemd-creds; ENBU_TEST_KEYRING=1 adds Secret Service)
     cmds:
       - go test -v -count=1 -tags=fixture,identitye2e ./test/identitye2e
 
