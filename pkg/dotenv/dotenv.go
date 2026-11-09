@@ -122,12 +122,19 @@ func parseQuoted(text string) (string, string, error) {
 	return "", "", fmt.Errorf("%w: unterminated quoted value", ErrInvalid)
 }
 
-// Format renders sorted, double-quoted assignments that Parse reads back.
+// Format renders sorted, double-quoted assignments that Parse reads back. It
+// refuses secrets Parse would reject, so a written file can always be read again.
 func Format(secrets map[string]string) ([]byte, error) {
+	if len(secrets) > MaxEntries {
+		return nil, fmt.Errorf("%w: too many entries", ErrInvalid)
+	}
 	keys := make([]string, 0, len(secrets))
-	for key := range secrets {
-		if strings.ContainsAny(key, "\n\r") {
-			return nil, fmt.Errorf("%w: key contains a newline", ErrInvalid)
+	for key, value := range secrets {
+		if len(key) > MaxKeyBytes || !namePattern.MatchString(key) {
+			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalid)
+		}
+		if !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
+			return nil, fmt.Errorf("%w: invalid value", ErrInvalid)
 		}
 		keys = append(keys, key)
 	}
@@ -135,6 +142,9 @@ func Format(secrets map[string]string) ([]byte, error) {
 	var result strings.Builder
 	for _, key := range keys {
 		fmt.Fprintf(&result, "%s=\"%s\"\n", key, escaper.Replace(secrets[key]))
+		if result.Len() > MaxBytes {
+			return nil, fmt.Errorf("%w: output too large", ErrInvalid)
+		}
 	}
 	return []byte(result.String()), nil
 }
