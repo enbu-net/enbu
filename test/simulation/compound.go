@@ -99,19 +99,28 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 	// admin of every head, so on some schedules it has already joined the fork
 	// when the batch returns; the stopped devices then see the merged Control.
 	forked := false
-	for _, i := range stopped {
+	for n, i := range stopped {
 		_, err := w.Devices[i].App.ListSecrets(ctx, "default")
-		if ErrorCode(err) == string(apperr.CodeControlForked) {
-			forked = true
+		if n == 0 {
+			forked = ErrorCode(err) == string(apperr.CodeControlForked)
 		}
-		if !forked {
+		if forked {
+			if err := requireCode(err, apperr.CodeControlForked); err != nil {
+				return fmt.Errorf("control fork failed to block device %d: %w", i, err)
+			}
+			if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, map[string]app.SecretChoice{"K": {Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
+				return err
+			}
 			continue
 		}
-		if err := requireCode(err, apperr.CodeControlForked); err != nil {
-			return fmt.Errorf("control fork failed to block device %d: %w", i, err)
+		// Joined: the removed writer is out, and a remaining member sees only
+		// the unresolved data conflict.
+		want := apperr.CodeSecretConflict
+		if i == 2 && c.Control == "remove-writer" {
+			want = apperr.CodeNotMember
 		}
-		if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, map[string]app.SecretChoice{"K": {Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
-			return err
+		if err := requireCode(err, want); err != nil {
+			return fmt.Errorf("device %d after the fork was joined: %w", i, err)
 		}
 	}
 	if err := w.Tape.Observe("compound-forked", c.Control, forked); err != nil {
@@ -119,12 +128,14 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 	}
 	// a's next operation joins the fork if it is still open. Control
 	// resolution commits first; data re-encryption must report the unresolved
-	// data conflict rather than treating it as a successful full repair.
-	if _, err := a.ListSecrets(ctx, "default"); forked && requireCode(err, apperr.CodeReencryptIncomplete) != nil {
-		return fmt.Errorf("joining the fork: %v", err)
-	} else if !forked && requireCode(err, apperr.CodeSecretConflict) != nil {
-		// The earlier join already re-encrypted; the data conflict remains.
-		return fmt.Errorf("after the fork was joined: %v", err)
+	// data conflict rather than treating it as a successful full repair. If
+	// the fork was already joined, the data conflict remains.
+	want := apperr.CodeReencryptIncomplete
+	if !forked {
+		want = apperr.CodeSecretConflict
+	}
+	if _, err := a.ListSecrets(ctx, "default"); requireCode(err, want) != nil {
+		return fmt.Errorf("a after the control update (forked=%t): %w", forked, err)
 	}
 	members, err := a.ListMembers(ctx)
 	if err != nil {
