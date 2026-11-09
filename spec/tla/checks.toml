@@ -56,3 +56,80 @@ min_states = 10000
   violates = ["NoSessionWhileForked"]
   [[model.witness]]
   invariant = "WitnessNoForkedOpen"
+
+[[model]]
+name = "StateDAG attacker"
+module = "MCStateDAG.tla"
+config = "StateDAG.cfg"
+tier = "pr"
+min_states = 50000
+  [[model.mutant]]
+  name = "count-untrusted"
+  violates = ["NoUndetectedRollback"]
+  [[model.mutant]]
+  name = "abort-on-unknown-control"
+  violates = ["JunkDoesNotInterfere"]
+  [[model.mutant]]
+  name = "trust-every-signed"
+  violates = ["NoAttackerContentAdopted", "HonestNeverBuildsOnAttacker"]
+  [[model.mutant]]
+  name = "skip-checkpoint"
+  violates = ["NoUndetectedRollback"]
+  [[model.mutant]]
+  name = "no-fallback"
+  violates = ["TrustedContentReadable"]
+  [[model.witness]]
+  invariant = "WitnessNoRollbackRefused"
+  [[model.witness]]
+  invariant = "WitnessNoSetAside"
+
+[[model]]
+name = "StateDAG honest writers"
+module = "MCStateDAG.tla"
+config = "StateDAG_honest.cfg"
+tier = "pr"
+uncovered = ["Attack"]
+min_states = 10000
+  [[model.mutant]]
+  name = "skip-checkpoint"
+  violates = ["NoUndetectedRollback"]
+  [[model.witness]]
+  invariant = "WitnessNoAdoption"
+  [[model.witness]]
+  invariant = "WitnessNoConcurrentHeads"
+  [[model.witness]]
+  invariant = "WitnessNoCompaction"
+
+[[model]]
+name = "StateDAG readmission"
+module = "MCStateDAG.tla"
+config = "StateDAG_rejoin.cfg"
+tier = "pr"
+min_states = 10000
+  [[model.mutant]]
+  name = "skip-continuity"
+  violates = ["NoAttackerContentAdopted", "HonestNeverBuildsOnAttacker"]
+
+# Nightly: the same properties with larger bounds.
+
+[[model]]
+name = "ControlDAG deep"
+module = "MCControlDAG.tla"
+config = "ControlDAG_deep.cfg"
+tier = "nightly"
+min_states = 1000000
+
+[[model]]
+name = "StateDAG attacker deep"
+module = "MCStateDAG.tla"
+config = "StateDAG_deep.cfg"
+tier = "nightly"
+min_states = 500000
+
+[[model]]
+name = "StateDAG honest writers deep"
+module = "MCStateDAG.tla"
+config = "StateDAG_honest_deep.cfg"
+tier = "nightly"
+uncovered = ["Attack"]
+min_states = 400000

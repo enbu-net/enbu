@@ -77,6 +77,7 @@ type Result struct {
 
 var (
 	reMutant    = regexp.MustCompile(`(?m)^(\s*Mutant\s*=\s*)"[^"]*"`)
+	reWitnessOn = regexp.MustCompile(`(?m)^(\s*Witnessing\s*=\s*)FALSE\b`)
 	reProperty  = regexp.MustCompile(`(?m)^\s*(INVARIANT|INVARIANTS|PROPERTY|PROPERTIES)\b.*$\n?`)
 	reViolated  = regexp.MustCompile(`Error: Invariant (\w+) is violated`)
 	reTemporal  = regexp.MustCompile(`Error: Temporal properties were violated`)
@@ -212,7 +213,9 @@ func Plan(model Model, cfg string) ([]Job, error) {
 		})
 	}
 	for _, w := range model.Witness {
-		stripped := reProperty.ReplaceAllString(cfg, "")
+		// A model may record what it reaches only when asked, so that the
+		// bookkeeping does not multiply the states of every other run.
+		stripped := reWitnessOn.ReplaceAllString(reProperty.ReplaceAllString(cfg, ""), "${1}TRUE")
 		jobs = append(jobs, Job{
 			Label:    fmt.Sprintf("%s / witness %s", model.Name, w.Invariant),
 			Model:    model,
