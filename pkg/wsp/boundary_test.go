@@ -441,3 +441,55 @@ func TestControlPrincipalLimitAtTheBoundary(t *testing.T) {
 		t.Fatal("more than MaxPrincipals principals were accepted")
 	}
 }
+
+func TestSortVerifiedSortsEveryOrder(t *testing.T) {
+	names := []string{"a", "b", "c", "d"}
+	var perms func(int)
+	vs := make([]*Verified, len(names))
+	for i, n := range names {
+		vs[i] = &Verified{Digest: d(n)}
+	}
+	perms = func(k int) {
+		if k == len(vs) {
+			in := slices.Clone(vs)
+			sortVerified(in)
+			if !slices.IsSortedFunc(in, func(a, b *Verified) int { return compareDigests(a.Digest, b.Digest) }) {
+				t.Fatalf("not sorted: %v", in)
+			}
+			return
+		}
+		for i := k; i < len(vs); i++ {
+			vs[k], vs[i] = vs[i], vs[k]
+			perms(k + 1)
+			vs[k], vs[i] = vs[i], vs[k]
+		}
+	}
+	perms(0)
+}
+
+// A wrong Generation takes every descendant with it, however the map orders
+// the revisions between passes.
+func TestAWrongGenerationDropsItsWholeLineage(t *testing.T) {
+	for range 100 {
+		sv := stateView(map[string][]string{"root": nil, "a": {"root"}, "b": {"a"}, "c": {"b"}, "e": {"c"}, "f": {"e"}})
+		sv.States[d("a")].Generation = 9
+		sv.dropWrongGenerations()
+		if len(sv.States) != 1 || sv.Skipped != 5 {
+			t.Fatalf("left %d revisions and skipped %d, want only the root and 5 skipped", len(sv.States), sv.Skipped)
+		}
+	}
+}
+
+// A listed revision storage cannot produce counts once as skipped, and the
+// revisions after it are read.
+func TestAMissingListedStateIsSkippedOnce(t *testing.T) {
+	fx := newStateFixture(t)
+	valid := fx.publish(t, fx.state(fx.bob), fx.bob, "valid")
+	sv, err := LoadStates(context.Background(), listing(fx.store, storage.KindState, lowDigest), fx.view, testWorkspace, testResource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := sv.States[valid]; !ok || sv.Skipped != 1 {
+		t.Fatalf("valid read %v, skipped %d; want the valid revision and 1 skipped", ok, sv.Skipped)
+	}
+}

@@ -98,3 +98,15 @@ min_efficacy = 85
   at = "state.go:292:5"
   type = "INVERT_LOOPCTRL"
   reason = "stopping a batch at an already tried digest leaves the rest queued for the next batch"
+  [[target.equivalent]]
+  at = "chain.go:127:4"
+  type = "INVERT_LOOPCTRL"
+  reason = "break inside the switch only leaves the switch; the empty blob then fails to decode and the loop continues"
+  [[target.equivalent]]
+  at = "trust.go:183:40"
+  type = "INVERT_LOGICAL"
+  reason = "without a repository entry the conflicting root is the zero Root, which reports no conflict"
+  [[target.equivalent]]
+  at = "trust.go:237:40"
+  type = "INVERT_LOGICAL"
+  reason = "without a repository entry the previous root is the zero Root, the same as no previous root"
