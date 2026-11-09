@@ -1,5 +1,17 @@
 version: '3'
 
+vars:
+  # Every fuzz target, as package:Function (tools/formalcheck checks the list).
+  FUZZ_TARGETS: >-
+    pkg/wsp:FuzzSignedEnvelope
+    pkg/wsp:FuzzStateCodec
+    pkg/wsp:FuzzControlCodec
+    pkg/wsp:FuzzJoinRequestCodec
+    pkg/wsp:FuzzTrustFile
+    pkg/wsp:FuzzCheckpointFile
+    pkg/signing:FuzzVerifyNeverAcceptsAlteredBodies
+    pkg/dotenv:FuzzRoundTrip
+
 tasks:
   default:
     desc: List all available tasks
@@ -16,6 +28,7 @@ tasks:
       - scripts/test
       - simulation/smoke
       - formal/check
+      - formal/conformance
 
   formal/check:
     desc: Model-check the TLA+ models (PR tier) with seeded bugs, witnesses and coverage
@@ -26,6 +39,33 @@ tasks:
     desc: Model-check the TLA+ models with the nightly bounds
     cmds:
       - go run ./tools/formalcheck -tier nightly -timeout 5h {{.CLI_ARGS}}
+
+  formal/conformance:
+    desc: Check the reader and the Control verifier against every state the TLA+ models reach (needs TLC)
+    env:
+      ENBU_REQUIRE_TLC: '1'
+    cmds:
+      - go test -tags fixture -count=1 -timeout 90m -run 'MatchesTheModel|TestDumpRunsTLC' ./app ./pkg/wsp ./internal/tla
+
+  mutation/check:
+    desc: Mutation-test the security packages with gremlins; CLI_ARGS may add -changed-since REV
+    deps:
+      - tools/gremlins
+    cmds:
+      - go run ./tools/mutationcheck {{.CLI_ARGS}}
+
+  property/deep:
+    desc: Run the property tests with many more generated cases
+    cmds:
+      - go test -count=1 -timeout 60m -run 'Properties|RoundTrips|Refuses|Injective|OnlyForRecipients' ./pkg/merge ./pkg/signing ./pkg/age ./pkg/dotenv -rapid.checks={{.CHECKS | default "100000"}}
+
+  fuzz/run:
+    desc: Fuzz every target for FUZZTIME (default 1m); failures are minimized into testdata/fuzz
+    vars:
+      FUZZTIME: '{{.FUZZTIME | default "1m"}}'
+    cmds:
+      - for: {var: FUZZ_TARGETS}
+        cmd: go test -run '^$' -fuzz '^{{splitList ":" .ITEM | last}}$' -fuzztime {{.FUZZTIME}} ./{{splitList ":" .ITEM | first}}
 
   formal/invariants:
     desc: Check that every invariant in spec/INVARIANTS.md has existing TLA+ properties and Go tests
@@ -270,6 +310,17 @@ tasks:
     dir: desktop/wails
     cmds:
       - ../../.tmp/bin/wails3{{exeExt}} generate bindings -silent -ts -names -d ../../web/src/bindings .
+
+  tools/gremlins:
+    internal: true
+    run: once
+    sources:
+      - tools/gremlins/go.mod
+      - tools/gremlins/go.sum
+    generates:
+      - .tmp/bin/gremlins{{exeExt}}
+    cmds:
+      - go build -C tools/gremlins -o ../../.tmp/bin/gremlins{{exeExt}} github.com/go-gremlins/gremlins/cmd/gremlins
 
   tools/wails3:
     internal: true

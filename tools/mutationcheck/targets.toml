@@ -1,0 +1,48 @@
+# Mutation testing targets (task mutation/check). Efficacy is killed over
+# killed and lived, timed-out mutants counting as killed. A surviving mutant
+# is either a missing test or listed here as equivalent, with the reason no
+# test can tell it apart.
+
+[[target]]
+package = "pkg/merge"
+min_efficacy = 95
+  [[target.equivalent]]
+  at = "merge.go:143:22"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "candidates are deduplicated before sorting, so no two compare equal and < and <= order them alike"
+
+[[target]]
+package = "pkg/signing"
+min_efficacy = 95
+  [[target.equivalent]]
+  at = "signing.go:130:12"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "a device ID is 64 hex characters, so Fingerprint never sees exactly 20"
+  [[target.equivalent]]
+  at = "signing.go:151:34"
+  type = "ARITHMETIC_BASE"
+  reason = "only the capacity of the message buffer changes, not its contents"
+  [[target.equivalent]]
+  at = "signing.go:177:25"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "a valid signature with s exactly half the group order cannot be produced (probability 2^-255)"
+
+[[target]]
+package = "pkg/age"
+min_efficacy = 95
+
+[[target]]
+package = "pkg/dotenv"
+min_efficacy = 95
+  [[target.equivalent]]
+  at = "dotenv.go:32:75"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "a NUL at offset 0 is not trimmed, so the line's key starts with NUL and is refused as an invalid name"
+  [[target.equivalent]]
+  at = "dotenv.go:51:13"
+  type = "CONDITIONALS_BOUNDARY"
+  reason = "an = at offset 0 leaves an empty key, which is refused as an invalid name"
+
+[[target]]
+package = "pkg/wsp"
+min_efficacy = 85

@@ -92,3 +92,47 @@ rendering and before `os.Exit`, so error paths are included. Abrupt termination
 (e.g. SIGKILL) cannot flush a child report. Native hardware tests still require
 real devices and are skipped on ordinary hosted runners. The coverage report
 is Linux-specific; the existing native OS CI matrix remains separate.
+
+## Formal models
+
+The security properties enbu must keep are listed, with IDs, in
+[spec/INVARIANTS.md](../spec/INVARIANTS.md). Several kinds of check refer to
+the same IDs, and `task formal/invariants` (part of `task all/check`) fails
+when an ID has no check or names a TLA+ property or Go test that does not
+exist.
+
+| Check | What it does | Task | Where it runs |
+|-------|--------------|------|---------------|
+| TLA+ models (`spec/tla`) | TLC explores every interleaving of small configurations: the Control DAG, the State DAG and its checkpoint, member removal racing writes and approvals, and founding with trust pins. Storage is an attacker, and devices crash. | `formal/check`, `formal/nightly` | every PR (`Formal models`), nightly with larger bounds |
+| Seeded bugs | Each model has mutants (a removed check, an old behavior) that TLC must catch through a named property. Witness invariants must be violated, which proves a configuration reaches what its properties are about. Every action must fire. | `formal/check` | every PR |
+| Model conformance | TLC enumerates every read and every store of Controls a configuration reaches. Go rebuilds each one with real keys and requires the app's reader (`loadResource`, `trustedHeads`, checkpoint) and `wsp.LoadControl` to decide what the model decided. | `formal/conformance` | every PR (`Model conformance`) |
+| Property tests | `rapid` generates inputs for the merge, signatures, device IDs, encryption and `.env`, and shrinks a failure to a minimal case. | `property/deep` (100000 cases) | every `go test` (100 cases), nightly |
+| Fuzzing | Every decoder of untrusted bytes and the local trust and checkpoint files. Go minimizes a failing input into `testdata/fuzz`, where it becomes a regression test. | `fuzz/run` | seeds in every `go test`, nightly 10 minutes per target |
+| Mutation testing | gremlins changes the code of the security packages; the tests must notice. `tools/mutationcheck` reads gremlins' report and requires each target's efficacy; a surviving mutant is either a missing test or listed as equivalent with a reason. | `mutation/check` | PRs (changed packages), nightly (all) |
+| Deterministic simulation | The app end to end against its own oracle, with 33 oracle mutation experiments (see `test/simulation`). | `simulation/test` | see `.github/workflows/simulation.yaml` |
+
+TLC comes from aqua (`yashikota/tlc-static`, a native build that needs no
+JVM). Model conformance runs only with `ENBU_REQUIRE_TLC=1`, which the task
+sets; without TLC it fails rather than skips. `tools/formalcheck` runs TLC
+with a 2 GB heap per process (`-heap`); its fingerprints and queue spill to
+disk.
+
+### Adding to a model
+
+- A new property needs an ID in `spec/INVARIANTS.md`, a TLA+ property or a Go
+  test, and preferably both.
+- A new protocol check should come with a mutant that removes it, listed in
+  `spec/tla/checks.toml` with the property that catches it.
+- A configuration that should reach a new situation needs a witness.
+- Keep the PR tier within a few minutes; larger bounds belong to the nightly
+  tier, which checks the same properties.
+
+### Reading a failure
+
+- TLC prints the shortest trace to a violation (breadth-first search).
+  `formalcheck` shows it from TLC's first error line.
+- A conformance failure prints the model's and the code's decision for the
+  same read, with every revision of the read.
+- `rapid` prints the minimal failing case and a seed; replay it with
+  `-rapid.seed`.
+- A fuzz failure leaves the minimized input under `testdata/fuzz/<Fuzz>/`.

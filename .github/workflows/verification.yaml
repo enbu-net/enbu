@@ -1,0 +1,123 @@
+name: Verification
+
+# The deep end of the checks every pull request runs: the TLA+ models with
+# larger bounds, mutation testing of every security package, long fuzzing
+# and property tests with many more cases. Nobody waits for it; a failure
+# uploads what reproduces it (TLC's trace in the log, minimized fuzz inputs).
+on:
+  schedule:
+    - cron: '30 17 * * *' # 02:30 Asia/Tokyo, after the simulation
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Time per fuzz target
+        default: 10m
+
+permissions:
+  contents: read
+
+env:
+  AQUA_GITHUB_TOKEN: ${{ github.token }}
+
+concurrency:
+  group: verification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  formal:
+    name: Formal models (nightly bounds)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      - name: Model-check with TLC
+        run: task formal/nightly -- -jobs 2 -workers 2 -heap 6g
+
+  mutation:
+    name: Mutation testing (all targets)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      - name: Mutation-test every security package
+        run: task mutation/check
+
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirrors FUZZ_TARGETS in Taskfile.yaml (tools/formalcheck checks it).
+        target:
+          - pkg/wsp:FuzzSignedEnvelope
+          - pkg/wsp:FuzzStateCodec
+          - pkg/wsp:FuzzControlCodec
+          - pkg/wsp:FuzzJoinRequestCodec
+          - pkg/wsp:FuzzTrustFile
+          - pkg/wsp:FuzzCheckpointFile
+          - pkg/signing:FuzzVerifyNeverAcceptsAlteredBodies
+          - pkg/dotenv:FuzzRoundTrip
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-go
+      - name: Fuzz
+        env:
+          TARGET: ${{ matrix.target }}
+          FUZZTIME: ${{ inputs.fuzztime || '10m' }}
+        run: |
+          pkg="${TARGET%%:*}"
+          fn="${TARGET##*:}"
+          go test -run '^$' -fuzz "^${fn}\$" -fuzztime "$FUZZTIME" "./$pkg"
+      # Go minimizes a failing input and writes it under testdata/fuzz;
+      # committing it makes it a regression test of every go test run.
+      - name: Upload the minimized failing input
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: fuzz-${{ strategy.job-index }}
+          path: '**/testdata/fuzz/**'
+          if-no-files-found: ignore
+          retention-days: 30
+
+  property:
+    name: Property tests (many cases)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      # rapid shrinks a failure to a minimal case and prints the seed to
+      # replay it with -rapid.seed.
+      - name: Run the property tests with 100000 cases each
+        run: task property/deep
+
+  verification-status:
+    name: Verification
+    if: always()
+    needs: [formal, mutation, fuzz, property]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every verification job to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'

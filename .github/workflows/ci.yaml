@@ -359,6 +359,41 @@ jobs:
           MODELS: ${{ matrix.models.run }}
         run: go run ./tools/formalcheck -tier pr -run "$MODELS" -jobs 2 -workers 2
 
+  formal-conformance:
+    name: Model conformance
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      # TLC enumerates every read and Control store of small model
+      # configurations; the reader and the verifier must decide the same.
+      - name: Check the implementation against the TLA+ models
+        run: task formal/conformance
+
+  mutation:
+    name: Mutation testing (changed packages)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - parallel:
+          - uses: $/.github/actions/setup-go
+          - uses: $/.github/actions/setup-tools
+      # Pull requests mutate the target packages they change; a push to main
+      # the ones its commits change. The nightly verification runs them all.
+      - name: Mutation-test the changed security packages
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: task mutation/check -- -changed-since "$BASE"
+
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
   # every job above has passed. always() makes a failed, cancelled or skipped
@@ -367,7 +402,7 @@ jobs:
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, check, test, desktop, scenario, formal, formal-conformance, mutation, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
