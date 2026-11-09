@@ -1,6 +1,7 @@
 package signing
 
 import (
+	"crypto/ecdh"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"math/big"
@@ -19,12 +20,16 @@ func TestVerifyAcceptsSignatureAtHalfOrder(t *testing.T) {
 	// Choose R = G, then solve the verification equation sR = zG + rQ
 	// for Q. This constructs a valid boundary signature without needing the
 	// astronomically unlikely result of randomly signing with s = floor(N/2).
-	sx, sy := curve.ScalarBaseMult(s.Bytes())
-	zx, zy := curve.ScalarBaseMult(z.Bytes())
-	zy.Neg(zy).Mod(zy, curve.Params().P)
-	ax, ay := curve.Add(sx, sy, zx, zy)
-	qx, qy := curve.ScalarMult(ax, ay, new(big.Int).ModInverse(r, n).Bytes())
-	key := PublicKey{Alg: P256, Bytes: elliptic.MarshalCompressed(curve, qx, qy)}
+	d := new(big.Int).Sub(s, z)
+	d.Mul(d, new(big.Int).ModInverse(r, n)).Mod(d, n)
+	private, err := ecdh.P256().NewPrivateKey(d.FillBytes(make([]byte, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := P256FromUncompressed(private.PublicKey().Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
 	sig := make([]byte, p256SigSize)
 	r.FillBytes(sig[:32])
 	s.FillBytes(sig[32:])

@@ -205,7 +205,7 @@ type StateView struct {
 // Consequently a removal racing an already accepted write can cause a rollback
 // error until a current member publishes a sufficiently recent trusted head.
 // Fail closed rather than silently serving the old parent's secrets.
-func (_ *StateView) shownGeneration(trusted []*VerifiedState) uint64 {
+func (*StateView) shownGeneration(trusted []*VerifiedState) uint64 {
 	return TopGeneration(trusted)
 }
 
