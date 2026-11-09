@@ -5,8 +5,10 @@ enbu desktop app. Run **enbu: Open enbu** from the Command Palette.
 
 The extension runs `enbu rpc --stdio` on this machine and shows the desktop
 app's UI in a webview. enbu decrypts with this device's identity, so the
-extension works only in local, trusted workspaces: not in Remote - SSH, WSL,
-Dev Containers, Codespaces, or vscode.dev.
+extension works only in local and WSL, trusted workspaces: not in Remote - SSH,
+Dev Containers, Codespaces, or vscode.dev. In a WSL window the enbu inside WSL
+keeps its keys in Windows, so install enbu on Windows too (see the WSL section
+of the enbu README).
 
 ## Install
 

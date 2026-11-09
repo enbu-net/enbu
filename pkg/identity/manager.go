@@ -80,6 +80,18 @@ type Diagnosis struct {
 	// A new key goes there only when the hardware is absent, not Denied.
 	FallbackAvailable bool   `json:"fallback_available"`
 	FallbackReason    string `json:"fallback_reason,omitempty"`
+	// WSL is set inside WSL, where the Windows enbu.exe keeps the keys and
+	// the rest of the diagnosis is the Windows side's.
+	WSL *WSLStatus `json:"wsl,omitempty"`
+}
+
+// WSLStatus describes the Windows enbu.exe that WSL hands key operations to.
+// Error says why it cannot be used: not found, interop disabled, or another
+// version.
+type WSLStatus struct {
+	Exe     string `json:"exe,omitempty"`
+	Version string `json:"version,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 type HardwareBackend interface {

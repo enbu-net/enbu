@@ -263,6 +263,7 @@ have upgraded. Members on an enbu that predates hybrid keys must update enbu fir
 | Linux | TPM 2.0 (`/dev/tpmrm0`) | Secret Service (GNOME Keyring / KWallet) |
 | Windows | TPM 2.0 through TBS | Credential Manager |
 | macOS | Secure Enclave (Apple silicon, or Intel with a T2 chip) | Keychain |
+| WSL | Windows' TPM, through the Windows enbu.exe (see [WSL](#wsl)) | Windows' Credential Manager |
 
 In `auto` mode the fallback is used when there is no usable hardware (none, or a TPM
 that lacks a required command); set `ENBU_IDENTITY_BACKEND=hardware` to refuse it.
@@ -328,6 +329,28 @@ On a real Linux or Windows TPM, run the complete CLI lifecycle against local HTT
 fixtures with `ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`.
 This uses a production CLI build, temporary repository data and the host TPM,
 covering init/add/pull/edit/sync/history and Identity reload between CLI processes.
+
+### WSL
+
+Inside WSL (1 or 2), enbu keeps no keys in Linux. It starts the Windows enbu.exe
+once per command (`enbu.exe identity bridge --stdio`) and asks it only to create
+keys, decrypt file keys, sign, and keep the GitHub token. The private keys, the
+TPM and Windows Hello stay in Windows, so WSL gets the same protection as Windows,
+and Windows and every distribution are one device with one sign-in. Storage, git,
+`.env` files and `enbu run` stay in WSL; no file path crosses over.
+
+Install enbu on Windows too, the same version as in WSL. enbu finds `enbu.exe` on
+the PATH that WSL adds from Windows, or at `ENBU_WINDOWS_EXE`. Without it, or with
+interop turned off (`[interop] enabled=false` in `/etc/wsl.conf`), enbu stops with
+`identity_unavailable` and says which; it never falls back to a Linux keyring.
+`enbu auth login` runs in Windows, which opens the browser there.
+`enbu doctor` shows the Windows enbu.exe, its version, and the Windows side's
+TPM and keyring. The VS Code extension works in a WSL window the same way.
+
+Windows reads its own environment, not WSL's: `ENBU_IDENTITY_BACKEND` and the like
+take effect in WSL only when passed through `WSLENV`. Any Linux user in the
+distribution can start enbu.exe as the same Windows user, as with any Windows
+program; Windows Hello adds an approval when it is enabled.
 
 ## JSON output
 
