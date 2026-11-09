@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"filippo.io/age"
 	enbuage "github.com/enbu-net/enbu/pkg/age"
@@ -64,8 +65,27 @@ func Exec(path string) (*Conn, error) {
 	}
 	return &Conn{R: r, W: w, Close: func() error {
 		_ = w.Close()
-		return cmd.Wait()
+		return waitOrKill(cmd, closeGrace)
 	}}, nil
+}
+
+// closeGrace is how long enbu.exe gets to exit after its stdin closes. One
+// stuck on a Windows Hello prompt or a hung TPM call is killed after it, so
+// the WSL command can always end.
+var closeGrace = 5 * time.Second
+
+func waitOrKill(cmd *exec.Cmd, grace time.Duration) error {
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		return err
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		return <-done
+	}
 }
 
 func (c *Client) dial() (*Conn, error) {

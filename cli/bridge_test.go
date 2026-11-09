@@ -6,12 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/spf13/cobra"
 )
 
@@ -70,6 +75,7 @@ func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
 	}{
 		{nil, "auth login"},
 		{[]string{"--device"}, "auth login --device"},
+		{[]string{"--json"}, "auth login --json"},
 	} {
 		var got []string
 		deps := authLoginDeps{
@@ -84,10 +90,12 @@ func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
 				return nil
 			},
 		}
-		cmd := newAuthLoginCommandWithDeps(deps)
-		cmd.SetOut(&bytes.Buffer{})
-		cmd.SetArgs(tc.args)
-		if err := cmd.ExecuteContext(context.Background()); err != nil {
+		root := &cobra.Command{Use: "enbu"}
+		root.PersistentFlags().Bool("json", false, "")
+		root.AddCommand(newAuthLoginCommandWithDeps(deps))
+		root.SetOut(&bytes.Buffer{})
+		root.SetArgs(append([]string{"login"}, tc.args...))
+		if err := root.ExecuteContext(context.Background()); err != nil {
 			t.Fatal(err)
 		}
 		if strings.Join(got, " ") != tc.want {
@@ -151,3 +159,22 @@ func (v identityMemVault) Load(_, key string) ([]byte, error) {
 }
 
 func (v identityMemVault) Delete(_, key string) error { delete(v, key); return nil }
+
+// A failed Windows login keeps its exit status and adds no second message.
+func TestRunInWindowsKeepsTheExitStatus(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as enbu.exe")
+	}
+	script := filepath.Join(t.TempDir(), "enbu.exe")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 4\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(winbridge.ExeEnv, script)
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	err := runInWindows(context.Background(), cmd, "auth", "login")
+	var exit *apperr.ExitError
+	if !errors.As(err, &exit) || exit.Code != 4 {
+		t.Fatalf("runInWindows = %v, want exit status 4", err)
+	}
+}

@@ -24,7 +24,13 @@ const (
 	exe    = "enbu.exe"
 )
 
-var procVersion = "/proc/version"
+var (
+	procVersion = "/proc/version"
+	// interopFiles exist in a WSL 2 distribution that can start Windows
+	// programs. A Linux container on a WSL 2 kernel (Docker Desktop, a
+	// devcontainer) shares /proc/version but not these.
+	interopFiles = []string{"/proc/sys/fs/binfmt_misc/WSLInterop", "/proc/sys/fs/binfmt_misc/WSLInterop-late"}
+)
 
 // interopHint is added when enbu.exe cannot start: WSL runs Windows programs
 // only while interop is on.
@@ -32,10 +38,12 @@ const interopHint = "WSL starts Windows programs only with interop on; check tha
 
 // InWSL reports whether this process runs inside WSL 1 or 2. It checks what
 // WSL itself sets, like Git Credential Manager: WSL_INTEROP (WSL 2) or
-// WSL_DISTRO_NAME, then "microsoft" in /proc/version.
-var InWSL = sync.OnceValue(func() bool { return detect(os.Getenv, procVersion) })
+// WSL_DISTRO_NAME, then "microsoft" in /proc/version. A WSL 2 kernel counts
+// only with interop registered, so a Linux container on Docker Desktop keeps
+// its own keystore.
+var InWSL = sync.OnceValue(func() bool { return detect(os.Getenv, procVersion, interopFiles) })
 
-func detect(getenv func(string) string, versionFile string) bool {
+func detect(getenv func(string) string, versionFile string, interop []string) bool {
 	if runtime.GOOS != "linux" {
 		return false
 	}
@@ -43,7 +51,19 @@ func detect(getenv func(string) string, versionFile string) bool {
 		return true
 	}
 	b, err := os.ReadFile(versionFile)
-	return err == nil && bytes.Contains(bytes.ToLower(b), []byte("microsoft"))
+	version := bytes.ToLower(b)
+	if err != nil || !bytes.Contains(version, []byte("microsoft")) {
+		return false
+	}
+	if !bytes.Contains(version, []byte("wsl2")) {
+		return true // WSL 1, which runs no containers
+	}
+	for _, f := range interop {
+		if _, err := os.Stat(f); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // Locate finds the Windows enbu.exe: ENBU_WINDOWS_EXE, else enbu.exe on PATH

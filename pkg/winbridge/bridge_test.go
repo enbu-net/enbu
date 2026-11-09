@@ -7,11 +7,13 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	enbuage "github.com/enbu-net/enbu/pkg/age"
@@ -341,16 +343,20 @@ func TestTheProcessBridge(t *testing.T) {
 
 func TestDetect(t *testing.T) {
 	dir := t.TempDir()
-	plain := filepath.Join(dir, "linux")
-	wsl := filepath.Join(dir, "wsl")
-	if err := os.WriteFile(plain, []byte("Linux version 6.8.0-45-generic (buildd@lcy02)"), 0o600); err != nil {
-		t.Fatal(err)
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
 	}
-	if err := os.WriteFile(wsl, []byte("Linux version 5.15.153.1-microsoft-standard-WSL2"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	plain := write("linux", "Linux version 6.8.0-45-generic (buildd@lcy02)")
+	wsl2 := write("wsl2", "Linux version 5.15.153.1-microsoft-standard-WSL2")
+	wsl1 := write("wsl1", "Linux version 4.4.0-19041-Microsoft (Microsoft@Microsoft.com)")
+	interop := []string{write("WSLInterop", "enabled")}
+	noInterop := []string{filepath.Join(dir, "missing")}
 	none := func(string) string { return "" }
-	interop := func(k string) string {
+	withInterop := func(k string) string {
 		if k == "WSL_INTEROP" {
 			return "/run/WSL/1_interop"
 		}
@@ -358,18 +364,72 @@ func TestDetect(t *testing.T) {
 	}
 	linux := runtime.GOOS == "linux"
 	for _, tc := range []struct {
-		name   string
-		getenv func(string) string
-		file   string
-		want   bool
+		name    string
+		getenv  func(string) string
+		file    string
+		interop []string
+		want    bool
 	}{
-		{"plain Linux", none, plain, false},
-		{"WSL by /proc/version", none, wsl, linux},
-		{"WSL by WSL_INTEROP", interop, plain, linux},
+		{"plain Linux", none, plain, interop, false},
+		{"WSL 2 with interop", none, wsl2, interop, linux},
+		{"WSL 1", none, wsl1, noInterop, linux},
+		{"WSL_INTEROP", withInterop, plain, noInterop, linux},
+		// Docker Desktop and devcontainers share the WSL 2 kernel but have no
+		// interop: they keep their own keystore.
+		{"container on a WSL 2 kernel", none, wsl2, noInterop, false},
 	} {
-		if got := detect(tc.getenv, tc.file); got != tc.want {
+		if got := detect(tc.getenv, tc.file, tc.interop); got != tc.want {
 			t.Errorf("%s: detect = %t, want %t", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestLocate(t *testing.T) {
+	t.Setenv(ExeEnv, "/mnt/c/tools/enbu.exe")
+	if p, err := Locate(); err != nil || p != "/mnt/c/tools/enbu.exe" {
+		t.Fatalf("Locate = %q, %v, want the %s path", p, err, ExeEnv)
+	}
+	t.Setenv(ExeEnv, "")
+	t.Setenv("PATH", t.TempDir())
+	if _, err := Locate(); err == nil || !strings.Contains(err.Error(), "not found on PATH") || !strings.Contains(err.Error(), ExeEnv) {
+		t.Fatalf("Locate = %v, want a not-found message naming %s", err, ExeEnv)
+	}
+}
+
+func TestRunWindowsPassesTheTerminal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as enbu.exe")
+	}
+	script := filepath.Join(t.TempDir(), "enbu.exe")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nread line\necho \"$* $line\"\necho oops >&2\nexit 3\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(ExeEnv, script)
+	var out, errOut strings.Builder
+	err := RunWindows(context.Background(), strings.NewReader("typed\n"), &out, &errOut, "auth", "login")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("RunWindows = %v, want exit status 3", err)
+	}
+	if out.String() != "auth login typed\n" || errOut.String() != "oops\n" {
+		t.Fatalf("stdout %q, stderr %q", out.String(), errOut.String())
+	}
+	t.Setenv(ExeEnv, filepath.Join(t.TempDir(), "missing.exe"))
+	if err := RunWindows(context.Background(), nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "interop") {
+		t.Fatalf("RunWindows = %v, want a start failure naming interop", err)
+	}
+}
+
+func TestCloseKillsAStuckExe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses sleep")
+	}
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Skip("no sleep: ", err)
+	}
+	if err := waitOrKill(cmd, 10*time.Millisecond); err == nil {
+		t.Fatal("a stuck process exited cleanly")
 	}
 }
 
