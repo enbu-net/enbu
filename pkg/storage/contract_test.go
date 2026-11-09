@@ -188,6 +188,9 @@ type fakeRegistry struct {
 	// lose drops a blob when it is looked up after its upload, as a registry
 	// GC would, as many times as it says.
 	lose map[string]int
+	// loseBeforeManifest drops a blob just before a manifest naming it is
+	// pushed, as many times as it says.
+	loseBeforeManifest map[string]int
 	// unknownWhenEmpty answers tags/list of a repository nothing was pushed to
 	// with 404 NAME_UNKNOWN, as zot and GHCR do.
 	unknownWhenEmpty bool
@@ -252,8 +255,14 @@ func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		for _, d := range append([]ocispec.Descriptor{m.Config}, m.Layers...) {
+			if r.loseBeforeManifest[d.Digest.String()] > 0 {
+				r.loseBeforeManifest[d.Digest.String()]--
+				delete(r.blobs, d.Digest.String())
+			}
 			if _, ok := r.blobs[d.Digest.String()]; !ok {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"errors":[{"code":"MANIFEST_BLOB_UNKNOWN","message":"blob unknown to registry"}]}`))
 				return
 			}
 		}
@@ -382,6 +391,18 @@ func TestOCIPublishUploadsADisappearedBlobAgain(t *testing.T) {
 	r.mu.Unlock()
 	if err := s.Publish(ctx, other); err != nil {
 		t.Fatalf("publish after one lost blob: %v", err)
+	}
+
+	// A blob dropped between its upload and the manifest push is uploaded again.
+	early := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state-4", "ciphertext-4")
+	r.mu.Lock()
+	r.loseBeforeManifest = map[string]int{digest.FromBytes(early.Payload).String(): 1}
+	r.mu.Unlock()
+	if err := s.Publish(ctx, early); err != nil {
+		t.Fatalf("publish after a blob lost before the manifest: %v", err)
+	}
+	if got, err := storage.ReadPayload(ctx, s, early.Kind, early.Scope, early.Rev, storage.MaxPayloadBytes); err != nil || !bytes.Equal(got, early.Payload) {
+		t.Fatalf("payload after a blob lost before the manifest: %q %v", got, err)
 	}
 
 	// A blob the registry keeps dropping fails the publish, and never as a
