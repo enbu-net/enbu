@@ -53,7 +53,9 @@ func TestNightlyWorkflowSelectsEveryRefinementModelOnce(t *testing.T) {
 	}
 	if !slices.ContainsFunc(job.Steps, func(step struct {
 		Run string `yaml:"run"`
-	}) bool { return strings.Contains(step.Run, `-tier nightly -run "^${MODEL} deep$"`) }) {
+	}) bool {
+		return strings.Contains(step.Run, `-tier nightly -run "^${MODEL} deep$"`)
+	}) {
 		t.Fatal("nightly matrix must execute its selected configuration")
 	}
 }
