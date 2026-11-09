@@ -105,6 +105,7 @@ name = "StateDAG readmission"
 module = "MCStateDAG.tla"
 config = "StateDAG_rejoin.cfg"
 tier = "pr"
+uncovered = ["CompactStep"]
 min_states = 10000
   [[model.mutant]]
   name = "skip-continuity"
@@ -161,6 +162,60 @@ min_states = 5000
   [[model.witness]]
   invariant = "SettledHeadsReadableStrict"
 
+[[model]]
+name = "Founding against an attacker"
+module = "Founding.tla"
+config = "Founding.cfg"
+tier = "pr"
+uncovered = ["OtherFound", "Confirm", "AcceptNew", "SaveEarly", "PinRepo"]
+min_states = 5000
+  [[model.mutant]]
+  name = "split-pin"
+  violates = ["NoAttackerRootAfterPin"]
+  [[model.mutant]]
+  name = "found-over-others"
+  violates = ["NeverFoundOverOthers"]
+  [[model.mutant]]
+  name = "adopt-any-genesis"
+  violates = ["FoundedIsOwn", "NoAttackerRootAfterPin"]
+  [[model.mutant]]
+  name = "pin-before-verify"
+  violates = ["OnlyVerifiedPinned"]
+  [[model.mutant]]
+  name = "founded-without-author-check"
+  violates = ["NoAttackerRootAfterPin", "FoundedIsOwn"]
+  [[model.witness]]
+  invariant = "WitnessNoSession"
+  [[model.witness]]
+  invariant = "WitnessNoRefusal"
+  [[model.witness]]
+  invariant = "WitnessNoConcurrentFounding"
+
+[[model]]
+name = "Founding concurrent and re-founded"
+module = "Founding.tla"
+config = "Founding_refound.cfg"
+tier = "pr"
+uncovered = ["EditStep", "AttackPublish", "AttackRequest", "SaveEarly", "PinRepo"]
+min_states = 500
+  [[model.witness]]
+  invariant = "WitnessNoReplace"
+  [[model.witness]]
+  invariant = "WitnessNoConcurrentFounding"
+
+[[model]]
+name = "Founding with crashes"
+module = "Founding.tla"
+config = "Founding_crash.cfg"
+tier = "pr"
+uncovered = ["EditStep", "AttackPublish", "AttackRequest", "OtherFound", "Confirm", "AcceptNew", "SaveEarly", "PinRepo"]
+min_states = 50
+  [[model.mutant]]
+  name = "toml-before-publish"
+  violates = ["TomlNamesPublished", "HonestFoundingSucceeds"]
+  [[model.witness]]
+  invariant = "WitnessNoLostReply"
+
 # Nightly: the same properties with larger bounds.
 
 [[model]]
@@ -191,3 +246,11 @@ module = "MemberChange.tla"
 config = "MemberChange_fork_deep.cfg"
 tier = "nightly"
 min_states = 1000000
+
+[[model]]
+name = "Founding deep"
+module = "Founding.tla"
+config = "Founding_deep.cfg"
+tier = "nightly"
+uncovered = ["OtherFound", "Confirm", "AcceptNew", "SaveEarly", "PinRepo"]
+min_states = 20000
