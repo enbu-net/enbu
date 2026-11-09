@@ -3,6 +3,8 @@ package wsp
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/json"
 	"math"
 	"os"
@@ -11,10 +13,12 @@ import (
 	"testing"
 	"time"
 
+	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -22,6 +26,44 @@ import (
 // panics, accepts only canonical encodings, and whatever it accepts satisfies
 // the protocol's invariants. The fuzzed body is signed with a real key where a
 // signature is needed, so mutations reach the checks behind it.
+
+// Fuzz workers and the coordinator must reconstruct identical keys and
+// Control digests: seed bodies are serialized in one process and verified in
+// another. This public test-only key must never be used outside fixtures.
+func fuzzActor(t testing.TB, name string, admin bool) actor {
+	t.Helper()
+	seed := sha256.Sum256([]byte("enbu fuzz actor: " + name))
+	signer := signing.NewEd25519Signer(ed25519.NewKeyFromSeed(seed[:]))
+	id, err := agecrypto.ParseHybridIdentity("AGE-SECRET-KEY-PQ-1ZZGCXQJ2TR74VL3MWR32NCQ5W82K9CD3CGWZZEQYHPQ7N9V0D93Q6KTYVC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return actor{signer: signer, p: Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: id.Recipient().String(), Admin: admin}}
+}
+
+func fuzzStateFixture(t testing.TB) stateFixture {
+	t.Helper()
+	store := storagetest.NewMemory()
+	alice, bob := fuzzActor(t, "alice", true), fuzzActor(t, "bob", false)
+	genesis, err := CreateControl(context.Background(), store, testWorkspace, alice.p, alice.signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := addMember(t, store, genesis.Digest, alice, bob)
+	return stateFixture{store: store, alice: alice, bob: bob, genesis: genesis.Digest, view: load(t, store, genesis.Digest), headHash: head.Digest, gens: map[digest.Digest]uint64{}}
+}
+
+func TestFuzzFixturesAreStableAndSeedsVerify(t *testing.T) {
+	a, b := fuzzStateFixture(t), fuzzStateFixture(t)
+	if a.genesis != b.genesis || a.headHash != b.headHash || a.bob.p.ID != b.bob.p.ID {
+		t.Fatal("fuzz processes would disagree on the fixture")
+	}
+	body := mustBody(t, a.state(a.bob))
+	blob := sealed(t, body, b.bob.signer, signing.DomainState, true)
+	if _, err := VerifyRevision(b.view, testWorkspace, testResource, digest.FromBytes(blob), blob); err != nil {
+		t.Fatalf("another fixture cannot verify the seed: %v", err)
+	}
+}
 
 func mustBody(t testing.TB, v any) []byte {
 	t.Helper()
@@ -85,9 +127,10 @@ func FuzzSignedEnvelope(f *testing.F) {
 }
 
 func FuzzStateCodec(f *testing.F) {
-	fx := newStateFixture(f)
+	fx := fuzzStateFixture(f)
 	base := fx.state(fx.bob)
-	f.Add(mustBody(f, base), true)
+	seedBody := mustBody(f, base)
+	f.Add(seedBody, true)
 	withParent := fx.state(fx.bob, digest.FromString("deleted parent"))
 	f.Add(mustBody(f, withParent), true)
 	// GEN-7: the largest Generation a member can sign behind a missing parent.
@@ -99,6 +142,9 @@ func FuzzStateCodec(f *testing.F) {
 		blob := sealed(t, body, fx.bob.signer, signing.DomainState, sign)
 		st, err := VerifyRevision(fx.view, testWorkspace, testResource, digest.FromBytes(blob), blob)
 		if err != nil {
+			if sign && bytes.Equal(body, seedBody) {
+				t.Fatalf("worker rejected the coordinator's valid State seed: %v", err)
+			}
 			return
 		}
 		canonicalBody(t, blob, st.State)
@@ -123,16 +169,13 @@ func FuzzStateCodec(f *testing.F) {
 }
 
 func FuzzControlCodec(f *testing.F) {
-	store, alice, genesisDigest := workspace(f)
-	genesis, err := LoadControl(context.Background(), store, testWorkspace, genesisDigest, nil)
-	if err != nil {
-		f.Fatal(err)
-	}
-	head, _ := genesis.Head()
-	bob := newActor(f, false)
+	fx := fuzzStateFixture(f)
+	alice, bob := fx.alice, fx.bob
+	head, _ := fx.view.Get(fx.genesis)
 	child := Control{Workspace: testWorkspace, Parents: []digest.Digest{head.Digest}, Height: 1,
 		Principals: []Principal{alice.p, bob.p}, Author: alice.p.ID}
-	f.Add(mustBody(f, child.canonical()), true)
+	seedBody := mustBody(f, child.canonical())
+	f.Add(seedBody, true)
 	f.Add(mustBody(f, head.Control), true)
 	f.Add(mustBody(f, child.canonical()), false)
 	f.Fuzz(func(t *testing.T, body []byte, sign bool) {
@@ -149,6 +192,9 @@ func FuzzControlCodec(f *testing.F) {
 		}
 		v, err := VerifyChild([]*Verified{head}, blob)
 		if err != nil {
+			if sign && bytes.Equal(body, seedBody) {
+				t.Fatalf("worker rejected the coordinator's valid Control seed: %v", err)
+			}
 			return
 		}
 		canonicalBody(t, blob, v.Control)
@@ -183,7 +229,7 @@ func checkPrincipals(t *testing.T, c Control) {
 }
 
 func FuzzJoinRequestCodec(f *testing.F) {
-	requester := newActor(f, false)
+	requester := fuzzActor(f, "requester", false)
 	valid, err := NewJoinRequest(testWorkspace, requester.p.Recipient, time.Unix(1700000000, 0), requester.signer)
 	if err != nil {
 		f.Fatal(err)
@@ -198,6 +244,9 @@ func FuzzJoinRequestCodec(f *testing.F) {
 		blob := sealed(t, body, requester.signer, signing.DomainJoin, sign)
 		r, err := VerifyJoinRequest(testWorkspace, blob)
 		if err != nil {
+			if (sign && bytes.Equal(body, s.Body)) || (!sign && bytes.Equal(body, valid)) {
+				t.Fatalf("worker rejected the coordinator's valid request seed: %v", err)
+			}
 			return
 		}
 		signed := canonicalBody(t, blob, *r)

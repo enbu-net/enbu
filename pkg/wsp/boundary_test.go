@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -345,17 +346,23 @@ func TestJunkInABatchIsSkippedAndCounted(t *testing.T) {
 	fx := newStateFixture(t)
 	valid := fx.publish(t, fx.state(fx.bob), fx.bob, "valid")
 	scope := storage.StateScope(testWorkspace, testResource)
-	junk := 0
-	for i := 0; junk < 3; i++ {
+	var order []digest.Digest
+	const junk = 3
+	for i := range junk {
 		head := []byte(fmt.Sprintf("junk %d", i))
-		if rev := digest.FromBytes(head); rev < valid {
-			if err := fx.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Payload: []byte("x")}); err != nil {
-				t.Fatal(err)
-			}
-			junk++
+		rev := digest.FromBytes(head)
+		if err := fx.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Payload: []byte("x")}); err != nil {
+			t.Fatal(err)
 		}
+		order = append(order, rev)
 	}
-	sv, err := LoadStates(context.Background(), fx.store, fx.view, testWorkspace, testResource)
+	order = append(order, valid)
+	store := storagetest.Wrap(fx.store, storagetest.Hooks{
+		Discover: func(context.Context, storage.Store, storage.Kind, string) ([]digest.Digest, error) {
+			return slices.Clone(order), nil
+		},
+	})
+	sv, err := LoadStates(context.Background(), store, fx.view, testWorkspace, testResource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +546,7 @@ func TestResolveForkIsTheIntersectionInAnyHeadOrder(t *testing.T) {
 		for _, p := range v.Principals {
 			got[p.ID] = p.Admin
 		}
-		if len(got) != len(want) || got[alice.p.ID] != true || got[bob.p.ID] != false {
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("heads in order %v: resolution keeps %v, want alice as admin and bob as member", heads, got)
 		}
 	}
