@@ -41,7 +41,7 @@ func TestDotenvRoundTripsGeneratedEnvironments(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Parse cannot read what Format wrote:\n%s\n%v", formatted, err)
 		}
-		if !reflect.DeepEqual(got, secrets) && !(len(got) == 0 && len(secrets) == 0) {
+		if !reflect.DeepEqual(got, secrets) && (len(got) != 0 || len(secrets) != 0) {
 			t.Fatalf("round trip changed the secrets:\n%q\n%q", secrets, got)
 		}
 	})

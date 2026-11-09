@@ -142,8 +142,9 @@ func TestMergeProperties(t *testing.T) {
 			c, picked := choices[k]
 			switch {
 			case conflicted && picked:
-				if want := (Value{Text: c.Value, Deleted: c.Delete}); value(chosen, k) != want && !(c.Delete && value(chosen, k).Deleted) {
-					t.Fatalf("choice %v for %s ignored: %v", c, k, value(chosen, k))
+				got := value(chosen, k)
+				if (c.Delete && !got.Deleted) || (!c.Delete && got != Value{Text: c.Value}) {
+					t.Fatalf("choice %v for %s ignored: %v", c, k, got)
 				}
 			case conflicted:
 				if !slices.ContainsFunc(left, func(x Conflict) bool { return x.Key == k }) {
