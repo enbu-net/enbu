@@ -119,6 +119,14 @@ func TestMergeProperties(t *testing.T) {
 			if len(c.Candidates) < 2 {
 				t.Fatalf("conflict %s with fewer than two candidates: %v", c.Key, c.Candidates)
 			}
+			// Candidates are shown in one order whatever the heads' order:
+			// values before deletion, values ascending, each once.
+			for i := 1; i < len(c.Candidates); i++ {
+				a, b := c.Candidates[i-1], c.Candidates[i]
+				if a == b || a.Deleted || (!b.Deleted && a.Text >= b.Text) {
+					t.Fatalf("conflict %s candidates are not in order: %v", c.Key, c.Candidates)
+				}
+			}
 		}
 
 		// Choices settle exactly the conflicted keys and are ignored elsewhere.

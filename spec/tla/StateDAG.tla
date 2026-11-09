@@ -38,7 +38,7 @@ UnknownControl == Len(Members) + 1
 
 Mutants == {"none", "count-untrusted", "abort-on-unknown-control", "skip-continuity",
             "trust-every-signed", "skip-checkpoint", "no-fallback", "skip-generation",
-            "before-fixes"}
+            "before-fixes", "count-proven"}
 
 \* before-fixes is the reader before F1 and F2 were fixed; Go conformance
 \* tests use it to show the harness matches that code exactly.
@@ -121,11 +121,21 @@ TrustedHeads(V) ==
     LET C == StandIns(Heads(V), V, {}) IN
     {h \in C : ~\E o \in C : o # h /\ h.id \in AncestorIds({o}, V)}
 
-\* What the checkpoint compares with: the highest Generation of the verified
-\* revisions storage shows. Only revisions of trusted authors count; a removed
-\* member's key must not vouch for freshness (F2).
+\* A revision whose ancestors are all shown, back to a first revision, so the
+\* reader checked every step of its Generation.
+RECURSIVE Proven(_, _)
+Proven(s, V) ==
+    LET P == {p \in V : p.id \in s.parents} IN
+    Ids(P) = s.parents /\ \A p \in P : Proven(p, V)
+
+\* What the checkpoint compares with. Only revisions of trusted authors count:
+\* a removed member's key must not vouch for freshness (F2). The variants are
+\* the reader before F2 (every verified revision) and counting the trusted
+\* heads plus every proven revision, whoever signed it.
 Freshness(V) ==
-    IF Bug("count-untrusted") THEN TopGen(V) ELSE TopGen({s \in V : Trusted(s)})
+    IF Bug("count-untrusted") THEN TopGen(V)
+    ELSE IF Mutant = "count-proven" THEN TopGen(TrustedHeads(V) \cup {s \in V : Proven(s, V)})
+    ELSE TopGen({s \in V : Trusted(s)})
 
 \* The outcome of reading what storage shows, without the checkpoint update.
 Outcome(S) ==

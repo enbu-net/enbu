@@ -40,7 +40,7 @@ A property stated only in Go (for example arithmetic limits) has `—` in the TL
 | GEN-1 | An honest revision carries 1 + the highest Generation of its parents. | StateDAG.HonestGenerations | TestStateGenerationAndOpMustBeWellFormed, TestLoadStatesChecksGenerationsAgainstPresentParents |
 | GEN-2 | A successful read never goes back behind a revision the device adopted whose author is still trusted. | StateDAG.NoUndetectedRollback | TestHidingANewerGenerationIsARollback, TestSessionDetectsStateRollback, TestReaderMatchesTheModel |
 | GEN-5 | Accepted limitation: hiding an adopted head behind a branch of equal or higher Generation is not detected. | StateDAG.NoUndetectedRollback | TestStateCheckpointDoesNotDetectAHiddenHeadBehindASiblingOfEqualGeneration |
-| GEN-6 | A removed member's key cannot vouch for freshness, so it cannot mask a rollback (F2). | StateDAG.NoUndetectedRollback | TestReaderMatchesTheModel |
+| GEN-6 | A removed member's key cannot vouch for freshness, so it cannot mask a rollback (F2, F2b). | StateDAG.NoUndetectedRollback | TestRemovedKeyCannotMaskARollback, TestReaderMatchesTheModel |
 | GEN-7 | Generation never wraps: no revision makes the next one impossible to write (F3). | — | TestNextGenerationNeverWraps, FuzzStateCodec |
 | AVAIL-1 | Objects without a valid signature or naming an unknown Control change nothing a read decides (F1). | StateDAG.JunkDoesNotInterfere | TestReaderMatchesTheModel |
 | AVAIL-2 | A read shown a trusted author's revision is not refused for lack of a trusted head. | StateDAG.TrustedContentReadable | TestRemovalKeepsRemainingMembersReading |
@@ -68,15 +68,16 @@ A property stated only in Go (for example arithmetic limits) has `—` in the TL
 ## Findings
 
 These came out of the models and the review that wrote them.
-F1 to F5 are fixed in the PRs that implement ADR-25 to ADR-27; the models' mutants with the same names fail if a fix is undone.
+The fixes are on `fix/protocol-findings`; each model keeps a mutant with the code's old behavior, which must stay caught.
 
 | ID | Finding | Status | Checked by |
 |----|---------|--------|------------|
-| F1 | `VerifyRevision` returned `ErrRollback` for a State naming an unknown Control before checking its signature, and `LoadStates` aborted on it: one unsigned object blocked a resource. | fixed upstream | StateDAG mutant `abort-on-unknown-control`, AVAIL-1 |
-| F2 | Revisions of untrusted authors counted for freshness, so a removed member's key (with storage hiding the newest revisions) masked a rollback. Counting only revisions whose ancestry is present is not enough: the removed key can sign a chain on top of a visible revision. | fixed upstream | StateDAG mutant `count-untrusted`, GEN-6 |
-| F3 | A member could publish `Generation = 2^64-1`; the next write's Generation wrapped to 0 and was refused forever. | fixed upstream | GEN-7 |
-| F4 | The verifier accepted any subset of the heads' union as a join, while honest clients publish the intersection. | fixed upstream | ControlDAG FORK-1, FORK-4 |
-| F5 | A write that ran out of attempts because members kept changing returned `internal`. | fixed upstream | MemberChange mutant `moved-is-internal`, ERR-1 |
+| F1 | `VerifyRevision` returned `ErrRollback` for a State naming an unknown Control before checking its signature, and `LoadStates` aborted on it: one unsigned object blocked a resource. | fixed (fdca35d) | StateDAG mutant `abort-on-unknown-control`, AVAIL-1 |
+| F2 | Revisions of untrusted authors counted for freshness, so a removed member's key (with storage hiding the newest revisions) masked a rollback. | partly fixed (5981f6e), see F2b | StateDAG mutant `count-untrusted`, GEN-6 |
+| F2b | The F2 fix counts every revision whose ancestry is present. A removed member's key still signs such a revision: a child of an older revision storage shows, with the Generation of the newest one it hides. The reader then goes back without noticing (TLC, 7 steps; `TestRemovedKeyCannotMaskARollback`). Counting only revisions of trusted authors detects it. Its cost is a false `rollback_detected` when a removed member's write raced its removal and was accepted; a sync after the removal's Control (see F6) clears it. | **open** | StateDAG mutant `count-proven`, GEN-6 |
+| F3 | A member could publish `Generation = 2^64-1`; the next write's Generation wrapped to 0 and was refused forever. | fixed (349cddf) | GEN-7 |
+| F4 | The verifier accepted any subset of the heads' union as a join, while honest clients publish the intersection. | fixed (8f74c05) | ControlDAG mutant `union-resolution`, FORK-1 |
+| F5 | A write that ran out of attempts because members kept changing returned `internal`. | fixed (c706130) | MemberChange mutant `moved-is-internal`, ERR-1 |
 | F6 | A write that overlaps a removal (published after the remover took the heads to re-encrypt) stays the current head, still encrypted for the removed member, until the next write or sync. Its content predates the removal. A sync after the removal's Control would close it. | open, documented | MemberChange witness `SettledHeadsExcludeRemoved`, RCPT-3 |
 | F7 | A write that gives up after publishing (members kept changing) leaves a revision a member approved meanwhile cannot decrypt until the next write or sync. | open, documented | MemberChange witness `SettledHeadsReadableStrict`, AVAIL-3 |
 

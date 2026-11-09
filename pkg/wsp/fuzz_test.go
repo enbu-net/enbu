@@ -285,7 +285,7 @@ func FuzzCheckpointFile(f *testing.F) {
 		// Whatever was read is enforced: a view below it is a rollback.
 		if gen > 0 {
 			sv := &StateView{States: map[digest.Digest]*VerifiedState{"x": {State: State{Generation: gen - 1}}}}
-			if c.CheckState("secrets/x", sv) == nil {
+			if c.CheckState("secrets/x", sv, nil) == nil {
 				t.Fatalf("a view below the accepted generation %d passed", gen)
 			}
 		}
@@ -299,7 +299,9 @@ func TestNextGenerationNeverWraps(t *testing.T) {
 	fx := newStateFixture(t)
 	st := fx.state(fx.bob, digest.FromString("deleted parent"))
 	st.Generation = math.MaxUint64
-	blob, rev := signedState(t, st, fx.bob)
+	// Signed as an attacker would, without SignState's checks.
+	blob := sealed(t, mustBody(t, st), fx.bob.signer, signing.DomainState, true)
+	rev := digest.FromBytes(blob)
 	if err := fx.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Head: blob, Payload: []byte("c")}); err != nil {
 		t.Fatal(err)
 	}

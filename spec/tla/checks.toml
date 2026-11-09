@@ -40,6 +40,10 @@ min_states = 100000
   [[model.mutant]]
   name = "skip-resolution-check"
   violates = ["ResolutionsStayInsideParents"]
+  # The verifier before F4 accepted any subset of the heads' union.
+  [[model.mutant]]
+  name = "union-resolution"
+  violates = ["ResolutionsStayInsideParents"]
 
 [[model]]
 name = "ControlDAG reader checkpoint"
@@ -65,6 +69,11 @@ tier = "pr"
 min_states = 50000
   [[model.mutant]]
   name = "count-untrusted"
+  violates = ["NoUndetectedRollback"]
+  # F2b: counting every proven revision, whoever signed it, still lets a
+  # removed member's key mask a rollback (spec/INVARIANTS.md).
+  [[model.mutant]]
+  name = "count-proven"
   violates = ["NoUndetectedRollback"]
   [[model.mutant]]
   name = "abort-on-unknown-control"

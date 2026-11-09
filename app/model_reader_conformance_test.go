@@ -266,8 +266,8 @@ func (w *modelWorld) runReader(c readerCase, dir string) (res string, heads []in
 	}
 	cps := wsp.OpenCheckpoints(dir, conformanceWorkspace, w.digests[0], clock.New())
 	if c.cpBefore > 0 {
-		seed := &wsp.StateView{States: map[digest.Digest]*wsp.VerifiedState{"seed": {State: wsp.State{Generation: uint64(c.cpBefore)}}}}
-		if err := cps.AcceptState(conformanceResource, seed, uint64(c.cpBefore)); err != nil {
+		seed := []*wsp.VerifiedState{{State: wsp.State{Generation: uint64(c.cpBefore)}}}
+		if err := cps.AcceptState(conformanceResource, nil, seed); err != nil {
 			return "", nil, 0, err
 		}
 	}
@@ -369,5 +369,27 @@ func TestReaderMatchesTheModel(t *testing.T) {
 				t.Fatalf("%d of %d reads differ from the model (mutant %q):\n  %s", len(mismatches), len(cases), mutant, strings.Join(shown, "\n  "))
 			}
 		})
+	}
+}
+
+// TestRemovedKeyCannotMaskARollback is TLC's counterexample for F2b, replayed
+// with real keys. a writes #0 and #1 on top of it, and the device accepts
+// #1. r is removed; someone holding r's key signs #2 on top of #0 under the
+// Control that still listed r. Storage shows #0 and #2 and hides #1. #2's
+// ancestry is present, but r's key must not vouch for freshness: the read
+// must stop as a rollback instead of going back to #0.
+func TestRemovedKeyCannotMaskARollback(t *testing.T) {
+	w := newModelWorld(t, [][]string{{"a", "b", "r"}, {"a", "b"}})
+	c := readerCase{now: 2, cpBefore: 2, view: []int64{0, 2}, revs: []modelRev{
+		{id: 0, gen: 1, ctl: 1, author: "a", sig: true},
+		{id: 1, gen: 2, ctl: 1, parents: []int64{0}, author: "a", sig: true},
+		{id: 2, gen: 2, ctl: 1, parents: []int64{0}, author: "r", sig: true},
+	}}
+	res, heads, _, err := w.runReader(c, filepath.Join(t.TempDir(), "checkpoints"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != "rollback_detected" {
+		t.Fatalf("storage hid the accepted revision #1 behind a removed member's #2; the read gave %s with heads %v", res, heads)
 	}
 }

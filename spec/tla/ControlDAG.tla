@@ -31,7 +31,7 @@ CONSTANTS
 Roles == {"none", "member", "admin"}
 
 Mutants == {"none", "any-parent-admin", "skip-signature", "skip-resolution-check",
-            "skip-checkpoint", "resolve-union", "forked-proceeds"}
+            "skip-checkpoint", "resolve-union", "forked-proceeds", "union-resolution"}
 
 ASSUME Honest \subseteq Devices /\ Compromised \subseteq Devices /\ Honest \cap Compromised = {}
 ASSUME Reader \in Honest
@@ -66,7 +66,15 @@ MaxHeight(P) == CHOOSE h \in {p.height : p \in P} : \A p \in P : p.height <= h
 (***************************************************************************)
 (* Verification, as VerifyChild and checkResolution do it.                 *)
 (***************************************************************************)
+\* A join keeps a principal only if every parent lists it, and an admin right
+\* only if every parent grants it (F4).
 ResolutionOK(c, P) ==
+    \A d \in Devices :
+        /\ IsPrincipal(c, d) => \A p \in P : IsPrincipal(p, d)
+        /\ IsAdmin(c, d) => \A p \in P : IsAdmin(p, d)
+
+\* The verifier before F4: anything some parent listed or granted.
+UnionResolutionOK(c, P) ==
     \A d \in Devices :
         /\ IsPrincipal(c, d) => \E p \in P : IsPrincipal(p, d)
         /\ IsAdmin(c, d) => \E p \in P : IsAdmin(p, d)
@@ -81,7 +89,8 @@ ValidChild(c, V) ==
          ELSE \A p \in P : IsAdmin(p, c.author)
     /\ c.sig \/ Mutant = "skip-signature"
     /\ HasAdmin(c.roles)
-    /\ (Cardinality(P) > 1 /\ Mutant # "skip-resolution-check") => ResolutionOK(c, P)
+    /\ (Cardinality(P) > 1 /\ Mutant # "skip-resolution-check") =>
+          IF Mutant = "union-resolution" THEN UnionResolutionOK(c, P) ELSE ResolutionOK(c, P)
 
 RECURSIVE Close(_, _)
 Close(S, V) ==
@@ -233,7 +242,8 @@ ChildrenSignedByAdminsOfEveryParent ==
         c.parents # {} =>
             \A p \in ver : p.id \in c.parents => IsAdmin(p, c.author)
 
-\* FORK-1: a verified resolution keeps only what its parents listed.
+\* FORK-1: a verified join keeps only the principals every parent lists and
+\* the admin rights every parent grants.
 ResolutionsStayInsideParents ==
     \A c \in ver :
         Cardinality(c.parents) > 1 =>
