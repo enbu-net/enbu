@@ -11,7 +11,6 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/merge"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -493,7 +492,7 @@ func (s *session) controlUnchanged(ctx context.Context) error {
 // and the next reader merges them. The revision is returned once it is
 // published, even when the error says members changed meanwhile.
 func (s *session) writeState(ctx context.Context, resource string, secrets map[string]string, parents []digest.Digest) (*wsp.VerifiedState, error) {
-	ciphertext, err := s.app.encrypt(bundle.Marshal(secrets), s.head.Recipients())
+	ciphertext, err := s.app.encrypt(encodeSecrets(secrets), s.head.Recipients())
 	if err != nil {
 		return nil, err
 	}

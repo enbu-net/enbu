@@ -10,8 +10,8 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
@@ -198,7 +198,7 @@ func TestPullSecretsDataUsesRepositoryOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(a.RepositoryDir, "custom.env"))
-	want, marshalErr := bundle.ToDotEnv(result.Secrets)
+	want, marshalErr := dotenv.Format(result.Secrets)
 	want = append(want, "\n"+keptMarker+"\n"...)
 	if err != nil || marshalErr != nil || string(got) != string(want) {
 		t.Fatalf("file = %q, %v, want %q", got, err, want)

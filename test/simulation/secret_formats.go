@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 )
 
 func (w *World) SecretFormats(ctx context.Context) error {
@@ -36,7 +36,7 @@ func (w *World) SecretFormats(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		decoded, err := secretmap.ImportDotenv(data)
+		decoded, err := dotenv.Parse(data)
 		if err != nil {
 			return err
 		}
