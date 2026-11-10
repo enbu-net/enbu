@@ -10,7 +10,7 @@ import {
 } from "react";
 import { backend } from "./backend";
 import { createAuthRefresher, type AuthRefreshOptions } from "./auth-refresh";
-import type { AuthStatus, GUIRepoStatus } from "./types";
+import { noRepo, type AuthStatus, type RepoInfo } from "./types";
 
 /**
  * What every screen needs to know: who is signed in and which repository the
@@ -20,11 +20,11 @@ import type { AuthStatus, GUIRepoStatus } from "./types";
 export type Session = {
   status: AuthStatus | null;
   loading: boolean;
-  /** The selected repository; null until it has been loaded. */
-  repo: GUIRepoStatus | null;
+  /** The selected repository, without a path when none is; null until it has been loaded. */
+  repo: RepoInfo | null;
   refresh: (options?: AuthRefreshOptions) => Promise<void> | undefined;
   /** Shows a repository the backend just selected or set up. */
-  setRepo: (repo: GUIRepoStatus) => void;
+  setRepo: (repo: RepoInfo) => void;
   reloadRepo: () => Promise<void>;
 };
 
@@ -44,11 +44,11 @@ export function useSession() {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [repo, setRepoState] = useState<GUIRepoStatus | null>(null);
+  const [repo, setRepoState] = useState<RepoInfo | null>(null);
 
   const refresher = useRef(
     createAuthRefresher({
-      fetchStatus: () => backend.authStatus(),
+      fetchStatus: () => backend.GetAuthStatus(),
       setStatus,
     }),
   );
@@ -59,16 +59,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const reloadRepo = useCallback(async () => {
     try {
-      setRepoState(await backend.repoStatus());
+      setRepoState(await backend.GetRepoStatus());
     } catch (err) {
       console.error("loading the selected repository failed", err);
-      setRepoState({ selected: false });
+      setRepoState(noRepo);
     }
   }, []);
 
   // Whether a workspace is configured depends on the repository.
   const setRepo = useCallback(
-    (next: GUIRepoStatus) => {
+    (next: RepoInfo) => {
       setRepoState(next);
       void refresh({ force: true, invalidate: true });
     },

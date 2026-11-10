@@ -3,7 +3,7 @@ import { Check, ChevronDown, Layers3, Plus, X } from "lucide-react";
 import { Box, Flex, HStack, VStack, styled } from "styled-system/jsx";
 import { Button, Heading, Input, Popover, Text } from "../../components/ui";
 import { useFocusTrap } from "../../lib/use-focus-trap";
-import type { Environment } from "../../lib/types";
+import type { EnvInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 export function EnvironmentSelector({
@@ -13,7 +13,7 @@ export function EnvironmentSelector({
   onSelect,
   onAdd,
 }: {
-  environments: Environment[];
+  environments: EnvInfo[];
   value: string;
   addTriggerRef?: RefObject<HTMLButtonElement | null>;
   onSelect: (environment: string) => void | Promise<void>;

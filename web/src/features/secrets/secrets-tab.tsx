@@ -8,7 +8,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ImportResult, PullResult } from "../../lib/types";
+import type { ImportResult, WrittenFile } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
@@ -28,7 +28,7 @@ export function SecretsTab({
   const latestEnv = useRef(env);
   latestEnv.current = env;
   const [pullLoading, setPullLoading] = useState(false);
-  const [pullNotice, setPullNotice] = useState<PullResult | null>(null);
+  const [pullNotice, setPullNotice] = useState<WrittenFile | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
   const [replaceFile, setReplaceFile] = useState<string | null>(null);
   const [resolveLoading, setResolveLoading] = useState(false);
@@ -45,7 +45,7 @@ export function SecretsTab({
     setPullLoading(true);
     try {
       await transfer("pull", async () => {
-        const result = await backend.pullSecrets(env, replace);
+        const result = await backend.PullSecrets(env, replace);
         setPullNotice(result.kept.length > 0 || result.removed.length > 0 ? result : null);
         await refresh(env);
       });
@@ -69,8 +69,8 @@ export function SecretsTab({
     setEnvironmentCreateLoading(true);
     setError(null);
     try {
-      await backend.createEnvironment(created);
-      await backend.switchEnvironment(created);
+      await backend.CreateEnvironment(created);
+      await backend.SwitchEnvironment(created);
       await refresh(created);
       setEnvironmentModalOpen(false);
       setNewEnv("");
@@ -92,7 +92,7 @@ export function SecretsTab({
             onSelect={async (environment) => {
               if (environment === env) return;
               try {
-                await backend.switchEnvironment(environment);
+                await backend.SwitchEnvironment(environment);
                 await refresh(environment);
               } catch (err) {
                 report(err);
@@ -160,7 +160,7 @@ export function SecretsTab({
             setResolveLoading(true);
             let failure: DisplayError | null = null;
             try {
-              await backend.resolveConflicts(env, conflicts.heads, choices);
+              await backend.ResolveConflicts(env, conflicts.heads, choices);
             } catch (err) {
               failure = toDisplayError(err);
             } finally {
@@ -180,7 +180,7 @@ export function SecretsTab({
               secretValue={secret.value}
               onEdit={async (value) => {
                 try {
-                  await backend.editSecret(secret.key, value, env);
+                  await backend.EditSecret(env, secret.key, value);
                   await refresh(env);
                 } catch (err) {
                   report(err);
@@ -189,7 +189,7 @@ export function SecretsTab({
               onDelete={async () => {
                 try {
                   await transfer("delete", async () => {
-                    await backend.deleteSecret(secret.key, env);
+                    await backend.DeleteSecret(env, secret.key);
                     await refresh(env);
                   });
                 } catch (err) {
@@ -212,7 +212,7 @@ export function SecretsTab({
         onAdd={async (key, value) => {
           try {
             await transfer("add", async () => {
-              await backend.addSecret(key, value, env);
+              await backend.AddSecret(env, key, value);
               await refresh(env);
             });
             return true;
@@ -239,7 +239,7 @@ export function SecretsTab({
   );
 }
 
-function PullNotice({ result, onDismiss }: { result: PullResult; onDismiss: () => void }) {
+function PullNotice({ result, onDismiss }: { result: WrittenFile; onDismiss: () => void }) {
   return (
     <Notice onDismiss={onDismiss}>
       {result.removed.length > 0 && (

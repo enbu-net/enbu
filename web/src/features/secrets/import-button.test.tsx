@@ -27,12 +27,12 @@ describe("ImportButton", () => {
     await renderAndSettle(<ImportButton env="staging" onImported={onImported} onError={vi.fn()} />);
     await choose("A=1\n");
 
-    expect(mocked.importSecrets).toHaveBeenCalledWith("A=1\n", false, "staging");
+    expect(mocked.ImportSecrets).toHaveBeenCalledWith("staging", "A=1\n", false);
     expect(onImported).toHaveBeenCalled();
   });
 
   it("asks before replacing secrets that hold another value", async () => {
-    mocked.importSecrets.mockRejectedValueOnce(
+    mocked.ImportSecrets.mockRejectedValueOnce(
       createAppError("import_conflict", { count: "2", keys: "A, B" }),
     );
     const onImported = vi.fn();
@@ -44,13 +44,13 @@ describe("ImportButton", () => {
     await act(async () => queryButton("Replace", dialog)?.click());
     await settle();
 
-    expect(mocked.importSecrets).toHaveBeenLastCalledWith("A=2\nB=3\n", true, "default");
+    expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("default", "A=2\nB=3\n", true);
     expect(onImported).toHaveBeenCalled();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("reports other failures", async () => {
-    mocked.importSecrets.mockRejectedValueOnce(createAppError("invalid_argument"));
+    mocked.ImportSecrets.mockRejectedValueOnce(createAppError("invalid_argument"));
     const onError = vi.fn();
     await renderAndSettle(<ImportButton env="default" onImported={vi.fn()} onError={onError} />);
     await choose("not dotenv");
@@ -68,12 +68,12 @@ describe("ImportButton", () => {
     await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
     await settle();
 
-    expect(mocked.importSecrets).not.toHaveBeenCalled();
+    expect(mocked.ImportSecrets).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "internal" }));
   });
 
   it("overwrites in the environment the conflict was found in", async () => {
-    mocked.importSecrets.mockRejectedValueOnce(
+    mocked.ImportSecrets.mockRejectedValueOnce(
       createAppError("secret_already_exists", { key: "A" }),
     );
     const props = { onImported: vi.fn(), onError: vi.fn() };
@@ -84,6 +84,6 @@ describe("ImportButton", () => {
     const dialog = container.querySelector('[role="dialog"]')!;
     await act(async () => queryButton("Replace", dialog)?.click());
     await settle();
-    expect(mocked.importSecrets).toHaveBeenLastCalledWith("A=2\n", true, "staging");
+    expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("staging", "A=2\n", true);
   });
 });

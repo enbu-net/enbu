@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import { createInterface } from "node:readline";
+import type { AppErrorPayload } from "./protocol";
 
 /**
  * A JSON-RPC 2.0 client for `enbu rpc --stdio`, one JSON message per line.
@@ -7,13 +8,6 @@ import { createInterface } from "node:readline";
  *
  * Params and results carry secret values. Nothing here logs them.
  */
-
-/** The AppError payload the server puts in error.data. */
-export interface AppErrorPayload {
-  code: string;
-  message?: string;
-  params?: Record<string, string>;
-}
 
 /** A failed call. data is the AppError payload when the method itself failed. */
 export class RpcError extends Error {
