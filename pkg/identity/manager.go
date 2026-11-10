@@ -226,7 +226,9 @@ func (m *Manager) read(workspaceID string) (*Metadata, error) {
 		return nil, fmt.Errorf("identity metadata: %w", err)
 	}
 	if md.Backend == "" || md.Recipient == "" || md.SigningKey.Validate() != nil {
-		return nil, errors.New("incomplete identity metadata")
+		// An identity written by an older enbu keeps its signing key apart and
+		// is not migrated: the device starts over with a new identity.
+		return nil, unavailable("the identity in "+m.Path(workspaceID)+" was made by an older enbu and cannot be used; remove that file, run enbu init, and ask an admin to approve this device again", nil)
 	}
 	return &md, nil
 }

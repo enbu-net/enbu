@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -389,5 +390,27 @@ func TestHybridHardwareIdentityRequiresValidKeys(t *testing.T) {
 	p, _ := ecdh.P256().GenerateKey(rand.Reader)
 	if _, err := NewHybridHardwareIdentity(&softwareHardwareKey{PrivateKey: p}, make([]byte, 10)); err == nil {
 		t.Fatal("accepted a short ML-KEM seed")
+	}
+}
+
+func TestManagerRefusesIdentityFromOlderEnbu(t *testing.T) {
+	m := newManager(t)
+	if err := os.MkdirAll(filepath.Dir(m.Path("o/r")), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(`{"version":1,"backend":"keyring","public_key":"age1old","reference":"old"}`)
+	if err := os.WriteFile(m.Path("o/r"), legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := m.Create("o/r")
+	var unavailableErr *UnavailableError
+	if !errors.As(err, &unavailableErr) {
+		t.Fatalf("Create() error = %v, want UnavailableError", err)
+	}
+	if !strings.Contains(err.Error(), m.Path("o/r")) {
+		t.Fatalf("error %q does not name %s", err, m.Path("o/r"))
+	}
+	if after, _ := os.ReadFile(m.Path("o/r")); !bytes.Equal(after, legacy) {
+		t.Fatal("replaced the older identity metadata")
 	}
 }
