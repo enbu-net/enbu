@@ -1,11 +1,5 @@
 version: '3'
 
-vars:
-  # The commit time stands in for the build time in release archives
-  # (https://reproducible-builds.org/specs/source-date-epoch/).
-  SOURCE_DATE_EPOCH:
-    sh: git log -1 --format=%ct 2>/dev/null || echo 0
-
 tasks:
   default:
     desc: List all available tasks
@@ -437,7 +431,11 @@ tasks:
       WAILS3: ../../.tmp/bin/wails3{{exeExt}}
       STAGE: ../../.tmp/release/windows_{{.GOARCH}}
     env:
-      SOURCE_DATE_EPOCH: '{{.SOURCE_DATE_EPOCH}}'
+      # The commit time stands in for the build time in release archives
+      # (https://reproducible-builds.org/specs/source-date-epoch/). Without
+      # Git history the task fails rather than date the archive wrong.
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
     cmds:
       - rm -rf {{.STAGE}} && mkdir -p build {{.STAGE}}
       - '{{.WAILS3}} generate icons -input ../../assets/icon.png -windowsfilename build/icon.ico -macfilename build/icons.icns'
@@ -452,7 +450,8 @@ tasks:
     deps:
       - vscode/build
     env:
-      SOURCE_DATE_EPOCH: '{{.SOURCE_DATE_EPOCH}}'
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
     cmds:
       - for: [linux_amd64:linux-x64, linux_arm64:linux-arm64, darwin_amd64:darwin-x64, darwin_arm64:darwin-arm64, windows_amd64:win32-x64, windows_arm64:win32-arm64]
         cmd: |
