@@ -68,13 +68,23 @@ func singleInstanceID(dataDir, defaultDir string) string {
 	return desktopID + ".d" + hex.EncodeToString(sum[:6])
 }
 
-// resolvedDir is dir with symlinks resolved, or only cleaned while it does
-// not exist yet.
+// resolvedDir is dir with symlinks resolved. Before the directory exists, its
+// nearest existing ancestor is resolved, so the ID does not change when the
+// app creates it.
 func resolvedDir(dir string) string {
-	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
-		return resolved
+	dir = filepath.Clean(dir)
+	var missing []string
+	for {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(append([]string{resolved}, missing...)...)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Join(append([]string{dir}, missing...)...)
+		}
+		missing = append([]string{filepath.Base(dir)}, missing...)
+		dir = parent
 	}
-	return filepath.Clean(dir)
 }
 
 func setupLogger() *os.File {

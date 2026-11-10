@@ -74,6 +74,25 @@ func TestSingleInstanceIDFollowsTheDataDirectory(t *testing.T) {
 		}
 	}
 
+	// A data directory not created yet beneath a symlink keeps its ID once created.
+	target := filepath.Join(root, "target")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(target, alias); err == nil {
+		before := singleInstanceID(filepath.Join(alias, "enbu"), def)
+		if canonical := singleInstanceID(filepath.Join(target, "enbu"), def); before != canonical {
+			t.Fatalf("singleInstanceID() through a symlink = %q, canonical = %q", before, canonical)
+		}
+		if err := os.Mkdir(filepath.Join(target, "enbu"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if after := singleInstanceID(filepath.Join(alias, "enbu"), def); after != before {
+			t.Fatalf("singleInstanceID() changed from %q to %q once the directory existed", before, after)
+		}
+	}
+
 	a := singleInstanceID(filepath.Join(root, "a", "enbu"), def)
 	b := singleInstanceID(filepath.Join(root, "b", "enbu"), def)
 	if a == desktopID || b == desktopID || a == b {
