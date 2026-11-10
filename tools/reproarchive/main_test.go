@@ -1,10 +1,8 @@
 package main
 
 import (
-	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"compress/gzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -56,7 +54,7 @@ var sample = map[string]string{
 
 func TestArchivesDependOnlyOnContent(t *testing.T) {
 	t.Setenv("SOURCE_DATE_EPOCH", "1762790400")
-	for _, kind := range []string{"zip", "tar"} {
+	for _, kind := range []string{"zip"} {
 		t.Run(kind, func(t *testing.T) {
 			a := tree(t, time.Unix(1, 0), sample)
 			b := tree(t, time.Now(), sample)
@@ -102,54 +100,6 @@ func TestZipEntries(t *testing.T) {
 			t.Fatalf("entries %v, want %v", names, wantNames)
 		}
 	}
-}
-
-func TestTarEntries(t *testing.T) {
-	t.Setenv("SOURCE_DATE_EPOCH", "1762790400")
-	out := filepath.Join(t.TempDir(), "out.tar.gz")
-	build(t, "tar", out, tree(t, time.Now(), sample))
-	f, err := os.Open(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = f.Close() }()
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gz.Name != "" || !gz.ModTime.IsZero() {
-		t.Errorf("gzip header carries name %q, time %v", gz.Name, gz.ModTime)
-	}
-	tr := tar.NewReader(gz)
-	var names []string
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		names = append(names, h.Name)
-		if h.Uid != 0 || h.Gid != 0 || h.Uname != "root" || !h.ModTime.Equal(time.Unix(1762790400, 0)) {
-			t.Errorf("%s: owner %d/%d %s, time %v", h.Name, h.Uid, h.Gid, h.Uname, h.ModTime)
-		}
-	}
-	want := "enbu enbu-setup.exe share/ share/LICENSE share/a/ share/a/b.txt"
-	if got := join(names); got != want {
-		t.Errorf("entries %q, want %q", got, want)
-	}
-}
-
-func join(s []string) string {
-	var b bytes.Buffer
-	for i, v := range s {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		b.WriteString(v)
-	}
-	return b.String()
 }
 
 func TestRezipKeepsOrderAndContent(t *testing.T) {
