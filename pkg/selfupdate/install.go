@@ -28,16 +28,22 @@ func binaryName(goos string) string {
 }
 
 // Install replaces target (see Target) with the app in a verified release
-// archive. The new copy is written beside target first and then renamed into
-// place, so a failure leaves the running app as it was.
-func Install(ctx context.Context, goos, archive, target string) error {
+// archive. It reads the archive through the handle that was verified, not by
+// its name, so the file cannot be swapped in between (the disk image, which
+// hdiutil opens by name, lives in the user's private cache directory). The
+// new copy is written beside target first and then renamed into place, so a
+// failure leaves the running app as it was.
+func Install(ctx context.Context, goos string, archive *os.File, target string) error {
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	switch goos {
 	case "linux":
 		return installBinary(target, func(w io.Writer) error { return extractTarGz(archive, binaryName(goos), w) }, false)
 	case "windows":
 		return installBinary(target, func(w io.Writer) error { return extractZip(archive, binaryName(goos), w) }, true)
 	case "darwin":
-		return installApp(ctx, archive, target)
+		return installApp(ctx, archive.Name(), target)
 	default:
 		return fmt.Errorf("self-update is not supported on %s", goos)
 	}
@@ -48,7 +54,9 @@ func Install(ctx context.Context, goos, archive, target string) error {
 // one, so there the old binary moves to target.old first (see CleanUp).
 func installBinary(target string, extract func(io.Writer) error, moveAside bool) error {
 	next := target + ".new"
-	f, err := os.OpenFile(next, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
+	// O_EXCL never follows a symlink or reuses a file someone left there.
+	_ = os.Remove(next)
+	f, err := os.OpenFile(next, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 	if err != nil {
 		return err
 	}
@@ -106,13 +114,8 @@ func copyLimited(w io.Writer, r io.Reader) error {
 	return nil
 }
 
-func extractTarGz(archive, name string, w io.Writer) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	gz, err := gzip.NewReader(f)
+func extractTarGz(archive io.Reader, name string, w io.Writer) error {
+	gz, err := gzip.NewReader(archive)
 	if err != nil {
 		return err
 	}
@@ -132,12 +135,15 @@ func extractTarGz(archive, name string, w io.Writer) error {
 	}
 }
 
-func extractZip(archive, name string, w io.Writer) error {
-	zr, err := zip.OpenReader(archive)
+func extractZip(archive *os.File, name string, w io.Writer) error {
+	info, err := archive.Stat()
 	if err != nil {
 		return err
 	}
-	defer func() { _ = zr.Close() }()
+	zr, err := zip.NewReader(archive, info.Size())
+	if err != nil {
+		return err
+	}
 	for _, file := range zr.File {
 		if path.Clean(file.Name) != name || file.FileInfo().IsDir() {
 			continue

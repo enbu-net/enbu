@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -194,5 +195,29 @@ func TestLatestReportsDownloadFailures(t *testing.T) {
 
 	if _, err := Latest(context.Background(), srv.Client()); !errors.Is(err, ErrDownload) {
 		t.Errorf("Latest() = %v, want ErrDownload", err)
+	}
+}
+
+func TestUpdateNeedsAPrivateCacheDirectory(t *testing.T) {
+	_, latest := releaseServer(t, "v0.10.0", false)
+	u, target := testUpdater(t, latest, nil)
+	u.CacheDir = ""
+	if _, err := u.Update(context.Background()); err == nil {
+		t.Fatal("Update() without a cache directory = nil")
+	}
+
+	shared := t.TempDir()
+	if err := os.Mkdir(filepath.Join(shared, "downloads"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(shared, "downloads"), 0o777); err != nil {
+		t.Fatal(err)
+	}
+	u.CacheDir = shared
+	if _, err := u.Update(context.Background()); err == nil && runtime.GOOS != "windows" {
+		t.Fatal("Update() into a world-writable directory = nil")
+	}
+	if got := readFile(t, target); got != "old" && runtime.GOOS != "windows" {
+		t.Errorf("target = %q, want old", got)
 	}
 }

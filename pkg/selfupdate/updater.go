@@ -138,8 +138,8 @@ func (u *Updater) Update(ctx context.Context) (Status, error) {
 		return status, err
 	}
 
-	downloads := filepath.Join(u.CacheDir, "downloads")
-	if err := os.MkdirAll(downloads, 0o700); err != nil {
+	downloads, err := privateDir(u.CacheDir, "downloads")
+	if err != nil {
 		return status, err
 	}
 	archive, err := os.CreateTemp(downloads, "update-*-"+asset)
@@ -159,17 +159,43 @@ func (u *Updater) Update(ctx context.Context) (Status, error) {
 	if err := VerifyFile(archive, want); err != nil {
 		return status, err
 	}
-	if err := Install(ctx, u.GOOS, archive.Name(), u.Target); err != nil {
+	if err := Install(ctx, u.GOOS, archive, u.Target); err != nil {
 		return status, fmt.Errorf("install %s: %w", release.Version, err)
 	}
 	return Status{Method: u.Method, Current: release.Version, Latest: release.Version, URL: release.URL}, nil
+}
+
+// privateDir creates dir/name for this user alone and refuses one that
+// others may write to: what is downloaded there is verified and installed,
+// so nobody else may swap it in between. CacheDir must be set; there is no
+// fallback to a shared temporary directory.
+func privateDir(cacheDir, name string) (string, error) {
+	if cacheDir == "" {
+		return "", errors.New("no cache directory for updates")
+	}
+	dir := filepath.Join(cacheDir, name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() || !ownedPrivately(info) {
+		return "", fmt.Errorf("%s is not a private directory of this user", dir)
+	}
+	return dir, nil
 }
 
 func (u *Updater) trustedRoot(ctx context.Context) (root.TrustedMaterial, error) {
 	if u.TrustedRoot != nil {
 		return u.TrustedRoot(ctx)
 	}
-	opts := tuf.DefaultOptions().WithContext(ctx).WithCachePath(filepath.Join(u.CacheDir, "sigstore"))
+	cache, err := privateDir(u.CacheDir, "sigstore")
+	if err != nil {
+		return nil, err
+	}
+	opts := tuf.DefaultOptions().WithContext(ctx).WithCachePath(cache)
 	return root.FetchTrustedRootWithOptions(opts)
 }
 

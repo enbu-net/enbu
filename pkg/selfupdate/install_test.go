@@ -60,6 +60,16 @@ func writeZip(t *testing.T, path string, files map[string]string) {
 	}
 }
 
+func open(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	return f
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -78,7 +88,7 @@ func TestInstallLinuxReplacesTheBinary(t *testing.T) {
 	archive := filepath.Join(dir, "update.tar.gz")
 	writeTarGz(t, archive, map[string]string{"./enbu-desktop": "new", "./README": "x"})
 
-	if err := Install(context.Background(), "linux", archive, target); err != nil {
+	if err := Install(context.Background(), "linux", open(t, archive), target); err != nil {
 		t.Fatalf("Install() = %v", err)
 	}
 	if got := readFile(t, target); got != "new" {
@@ -102,7 +112,7 @@ func TestInstallKeepsTheAppWhenTheArchiveLacksTheBinary(t *testing.T) {
 	archive := filepath.Join(dir, "update.tar.gz")
 	writeTarGz(t, archive, map[string]string{"./other": "x"})
 
-	if err := Install(context.Background(), "linux", archive, target); err == nil {
+	if err := Install(context.Background(), "linux", open(t, archive), target); err == nil {
 		t.Fatal("Install() = nil, want an error")
 	}
 	if got := readFile(t, target); got != "old" {
@@ -122,7 +132,7 @@ func TestInstallWindowsMovesTheRunningBinaryAside(t *testing.T) {
 	archive := filepath.Join(dir, "update.zip")
 	writeZip(t, archive, map[string]string{"enbu-desktop.exe": "new"})
 
-	if err := Install(context.Background(), "windows", archive, target); err != nil {
+	if err := Install(context.Background(), "windows", open(t, archive), target); err != nil {
 		t.Fatalf("Install() = %v", err)
 	}
 	if got := readFile(t, target); got != "new" {
@@ -163,7 +173,34 @@ func TestSwapDirs(t *testing.T) {
 }
 
 func TestInstallRefusesOtherSystems(t *testing.T) {
-	if err := Install(context.Background(), "plan9", "a", "b"); err == nil {
+	if err := Install(context.Background(), "plan9", open(t, os.Args[0]), "b"); err == nil {
 		t.Error("Install(plan9) = nil")
+	}
+}
+
+func TestInstallReplacesAStaleNewFileWithoutFollowingIt(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "enbu-desktop")
+	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(dir, "victim")
+	if err := os.WriteFile(victim, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, target+".new"); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	archive := filepath.Join(dir, "update.tar.gz")
+	writeTarGz(t, archive, map[string]string{"./enbu-desktop": "new"})
+
+	if err := Install(context.Background(), "linux", open(t, archive), target); err != nil {
+		t.Fatalf("Install() = %v", err)
+	}
+	if got := readFile(t, victim); got != "keep" {
+		t.Errorf("the symlink's target was written: %q", got)
+	}
+	if got := readFile(t, target); got != "new" {
+		t.Errorf("target = %q, want new", got)
 	}
 }

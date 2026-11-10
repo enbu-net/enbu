@@ -24,9 +24,11 @@ func newUpdater(version string, quit func()) *appUpdater {
 	here := selfupdate.Here(runtime.GOOS, version)
 	method := selfupdate.Detect(here)
 	target, _ := selfupdate.Target(runtime.GOOS, here.Executable)
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		cache = os.TempDir()
+	// Without the user's own cache directory there is nowhere private to
+	// download to, so updates fail instead of using a shared temp directory.
+	cacheDir := ""
+	if cache, err := os.UserCacheDir(); err == nil {
+		cacheDir = filepath.Join(cache, "enbu", "update")
 	}
 	if method == selfupdate.MethodSelf {
 		selfupdate.CleanUp(target)
@@ -40,7 +42,7 @@ func newUpdater(version string, quit func()) *appUpdater {
 			GOOS:     runtime.GOOS,
 			GOARCH:   runtime.GOARCH,
 			Target:   target,
-			CacheDir: filepath.Join(cache, "enbu", "update"),
+			CacheDir: cacheDir,
 		},
 		executable: here.Executable,
 		quit:       quit,

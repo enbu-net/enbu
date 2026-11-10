@@ -1,6 +1,10 @@
 package selfupdate
 
-import "golang.org/x/sys/windows"
+import (
+	"os"
+
+	"golang.org/x/sys/windows"
+)
 
 // stillActive is GetExitCodeProcess's code for a process that has not exited.
 const stillActive = 259
@@ -17,3 +21,7 @@ func processAlive(pid int) bool {
 	}
 	return code == stillActive
 }
+
+// ownedPrivately trusts the directory on Windows, where the user's cache
+// (%LocalAppData%) is private to the user by its ACL.
+func ownedPrivately(os.FileInfo) bool { return true }
