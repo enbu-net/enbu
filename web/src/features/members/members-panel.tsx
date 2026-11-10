@@ -377,7 +377,7 @@ export function MemberAvatar({ username }: { username: string }) {
         inset="0"
         display="grid"
         placeItems="center"
-        color="accent.default"
+        color="accent.text"
         bg="accent.subtle"
         borderRadius="full"
         fontSize="2xs"

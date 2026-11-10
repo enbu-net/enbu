@@ -5,7 +5,7 @@ const selectClass = css({
   appearance: 'none',
   h: '8',
   borderWidth: '1px',
-  borderColor: 'border.default',
+  borderColor: 'border.strong',
   borderRadius: 'md',
   px: '3',
   fontSize: 'sm',
@@ -14,7 +14,7 @@ const selectClass = css({
   outline: 'none',
   cursor: 'pointer',
   _focus: { borderColor: 'colorPalette.8', outlineWidth: '1px', outlineColor: 'colorPalette.8' },
-  _hover: { borderColor: 'border.strong' },
+  _hover: { borderColor: 'fg.muted' },
 })
 
 export type NativeSelectProps = ComponentProps<'select'>

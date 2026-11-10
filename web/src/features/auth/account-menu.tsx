@@ -59,6 +59,7 @@ export function AccountMenu() {
               fontSize="sm"
               fontWeight="extrabold"
               display={authenticated && username ? "none" : "grid"}
+              aria-hidden="true"
               placeItems="center"
               position="absolute"
               top="0"
@@ -90,7 +91,7 @@ export function AccountMenu() {
                 fontWeight="bold"
                 fontSize="sm"
                 color="fg.default"
-                _hover={{ textDecoration: "underline", color: "accent.default" }}
+                _hover={{ textDecoration: "underline", color: "accent.text" }}
               >
                 {username}
               </styled.a>

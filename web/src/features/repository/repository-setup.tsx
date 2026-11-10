@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
+import { hstack } from "styled-system/patterns";
 import { Button, Heading, Input, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
@@ -344,11 +345,9 @@ function Option({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label>
-      <HStack gap="2">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        <Text fontSize="sm">{label}</Text>
-      </HStack>
+    <label className={hstack({ gap: "2", fontSize: "sm" })}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
     </label>
   );
 }
