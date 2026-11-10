@@ -35,6 +35,29 @@ describe("AccountList", () => {
       },
     });
     expect(rows()).toEqual(["octo", "hubot"]);
+  });
+
+  it("puts the account in use first and the rest from the latest sign-in back", async () => {
+    await renderList({
+      status: {
+        authenticated: true,
+        workspace_configured: false,
+        username: "b",
+        accounts: ["a", "b", "c"],
+      },
+    });
+    expect(rows()).toEqual(["b", "c", "a"]);
+  });
+
+  it("marks only the account in use", async () => {
+    await renderList({
+      status: {
+        authenticated: true,
+        workspace_configured: false,
+        username: "octo",
+        accounts: ["octo", "hubot"],
+      },
+    });
     const inUse = container.querySelector('[data-account="octo"]');
     expect(inUse?.textContent).toContain("In use");
     expect(queryButton("Use: octo")).toBeNull();

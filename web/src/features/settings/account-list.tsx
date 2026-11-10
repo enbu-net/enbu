@@ -88,7 +88,9 @@ export function AccountList() {
     );
   }
 
-  const rows = fromEnvironment ? [current, ...accounts] : accounts;
+  // The account in use first, then the others from the latest sign-in back.
+  const others = accounts.filter((account) => account !== current).reverse();
+  const rows = current ? [current, ...others] : others;
   return (
     <VStack alignItems="stretch" gap="3">
       {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
