@@ -150,4 +150,37 @@ describe("Sidebar", () => {
     await settle();
     expect(setRepo).toHaveBeenCalledWith(next);
   });
+
+  it("opens the settings from the bottom button", async () => {
+    const onOpenSettings = vi.fn();
+    await act(async () => {
+      root.render(<>{withSession(<Sidebar onOpenSettings={onOpenSettings} />)}</>);
+    });
+    await settle();
+    await act(async () => queryButton("Settings")?.click());
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the settings through the repository in use without selecting it again", async () => {
+    const onCloseSettings = vi.fn();
+    vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/b", "acme", "api")]);
+    vi.mocked(backend).selectRepository.mockClear();
+    await act(async () => {
+      root.render(
+        <>
+          {withSession(<Sidebar settingsOpen onCloseSettings={onCloseSettings} />, {
+            repo: { selected: true, repo: repoInfo("/b") },
+          })}
+        </>,
+      );
+    });
+    await settle();
+    expect(queryButton("Settings")?.getAttribute("aria-current")).toBe("page");
+    await act(async () => {
+      container.querySelector<HTMLElement>('[data-repository-path="/b"]')?.click();
+    });
+    await settle();
+    expect(backend.selectRepository).not.toHaveBeenCalled();
+    expect(onCloseSettings).toHaveBeenCalledTimes(1);
+  });
 });

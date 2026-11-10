@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Settings, Trash2 } from "lucide-react";
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
 import { Button, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
@@ -14,8 +14,20 @@ function pathKey(path = "") {
   return path.replaceAll("\\", "/").toLowerCase();
 }
 
-/** Lists the repositories enbu knows on this device and switches between them. */
-export function Sidebar() {
+/**
+ * Lists the repositories enbu knows on this device and switches between them,
+ * with the way to the settings at the bottom. While the settings are open,
+ * picking a repository, the current one included, closes them.
+ */
+export function Sidebar({
+  settingsOpen = false,
+  onOpenSettings = () => {},
+  onCloseSettings = () => {},
+}: {
+  settingsOpen?: boolean;
+  onOpenSettings?: () => void;
+  onCloseSettings?: () => void;
+}) {
   const { repo, setRepo } = useSession();
   const activePath = repo?.repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -73,7 +85,8 @@ export function Sidebar() {
   async function select(path: string) {
     setError(null);
     try {
-      setRepo(await backend.selectRepository(path));
+      if (path !== activePath) setRepo(await backend.selectRepository(path));
+      if (settingsOpen) onCloseSettings();
     } catch (err) {
       setError(toDisplayError(err));
     }
@@ -83,13 +96,17 @@ export function Sidebar() {
     <styled.nav
       aria-label={m.sidebar_navigation()}
       w="248px"
-      minH="calc(100vh - 72px)"
-      display={{ base: "none", md: "block" }}
+      h="calc(100vh - 72px)"
+      position="sticky"
+      top="72px"
+      overflowY="auto"
+      display={{ base: "none", md: "flex" }}
       borderRightWidth="1px"
       borderColor="border.default"
       bg="bg.surface"
       p="3.5"
       flexShrink="0"
+      flexDirection="column"
     >
       {error && (
         <Box mb="3">
@@ -103,7 +120,8 @@ export function Sidebar() {
           </Text>
         )}
         {repos.map((item) => {
-          const isActive = item.path === activePath;
+          // The repository in use is also the way back from the settings.
+          const isActive = item.path === activePath && !settingsOpen;
           return (
             <Flex
               key={item.path}
@@ -225,6 +243,21 @@ export function Sidebar() {
         }}
       >
         {m.sidebar_addRepository()}
+      </Button>
+      <Box flex="1" />
+      <Button
+        mt="4"
+        size="sm"
+        variant="ghost"
+        w="full"
+        justifyContent="start"
+        color="fg.default"
+        aria-current={settingsOpen ? "page" : undefined}
+        bg={settingsOpen ? "accent.subtle" : undefined}
+        onClick={onOpenSettings}
+      >
+        <Settings size={16} aria-hidden="true" />
+        {m.settings_title()}
       </Button>
     </styled.nav>
   );

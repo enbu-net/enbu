@@ -1,10 +1,11 @@
-import { createRootRoute, Outlet } from "@tanstack/react-router";
+import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Settings } from "lucide-react";
 import { Box, Flex, styled } from "styled-system/jsx";
 import { Text } from "../components/ui";
 import { UserErrorGate } from "../components/user-error-gate";
-import { AccountMenu } from "../features/auth/account-menu";
 import { Sidebar } from "../features/repository/sidebar";
 import { SessionProvider, useSession } from "../lib/session";
+import { m } from "../paraglide/messages";
 
 export const Route = createRootRoute({
   component: RootWithProviders,
@@ -24,6 +25,9 @@ function RootWithProviders() {
 
 function RootLayout() {
   const { loading } = useSession();
+  const navigate = useNavigate();
+  const settingsOpen =
+    useRouterState({ select: (state) => state.location.pathname }) === "/settings";
   return (
     <>
       <styled.header
@@ -47,10 +51,26 @@ function RootLayout() {
             enbu
           </Text>
         </Flex>
-        <AccountMenu />
+        {/* The sidebar, which holds the settings button, is hidden on narrow windows. */}
+        <styled.span display={{ base: "inline-flex", md: "none" }} color="fg.muted">
+          <Link
+            to="/settings"
+            style={{ display: "inline-flex", color: "inherit" }}
+            aria-label={m.settings_title()}
+            title={m.settings_title()}
+          >
+            <Settings size={20} aria-hidden="true" />
+          </Link>
+        </styled.span>
       </styled.header>
       <Flex minH="calc(100vh - 72px)">
-        {!loading && <Sidebar />}
+        {!loading && (
+          <Sidebar
+            settingsOpen={settingsOpen}
+            onOpenSettings={() => void navigate({ to: "/settings" })}
+            onCloseSettings={() => void navigate({ to: "/" })}
+          />
+        )}
         <Box flex="1" minW="0">
           <Outlet />
         </Box>

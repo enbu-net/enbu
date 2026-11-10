@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  applyTheme,
-  readThemePreference,
-  resolveTheme,
-  setThemePreference,
-  startTheme,
-  systemTheme,
-  themeStorageKey,
-} from "./theme";
+import { applyTheme, resolveTheme, setThemePreference, startTheme, systemTheme } from "./theme";
+import { loadSettings, settingsStorageKey } from "./settings";
+
+function saveTheme(theme: string) {
+  localStorage.setItem(settingsStorageKey, JSON.stringify({ theme }));
+  loadSettings();
+}
+
+function savedTheme() {
+  return JSON.parse(localStorage.getItem(settingsStorageKey) ?? "{}").theme;
+}
 
 // jsdom has no matchMedia; this one answers prefers-color-scheme and lets a test flip it.
 function stubMatchMedia(dark: boolean) {
@@ -37,6 +39,7 @@ let stop = () => {};
 
 beforeEach(() => {
   localStorage.clear();
+  loadSettings();
   root.className = "";
   root.style.colorScheme = "";
   document.body.removeAttribute("data-vscode-theme-kind");
@@ -49,22 +52,6 @@ afterEach(() => {
 });
 
 describe("theme preference", () => {
-  it("defaults to system and ignores values it does not know", () => {
-    expect(readThemePreference()).toBe("system");
-    localStorage.setItem(themeStorageKey, "sepia");
-    expect(readThemePreference()).toBe("system");
-    localStorage.setItem(themeStorageKey, "dark");
-    expect(readThemePreference()).toBe("dark");
-  });
-
-  it("falls back to system when storage throws", () => {
-    const getItem = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("denied");
-    });
-    expect(readThemePreference()).toBe("system");
-    getItem.mockRestore();
-  });
-
   it("resolves system to the host's theme and keeps an explicit choice", () => {
     expect(resolveTheme("system", "dark")).toBe("dark");
     expect(resolveTheme("light", "dark")).toBe("light");
@@ -111,7 +98,7 @@ describe("systemTheme", () => {
 describe("startTheme", () => {
   it("shows the saved preference before anything renders", () => {
     stubMatchMedia(false);
-    localStorage.setItem(themeStorageKey, "dark");
+    saveTheme("dark");
     stop = startTheme("desktop");
     expect(root.classList.contains("dark")).toBe(true);
   });
@@ -125,13 +112,12 @@ describe("startTheme", () => {
     expect(root.classList.contains("dark")).toBe(true);
 
     setThemePreference("light");
-    expect(localStorage.getItem(themeStorageKey)).toBe("light");
+    expect(savedTheme()).toBe("light");
     media.set(true);
     expect(root.classList.contains("dark")).toBe(false);
 
-    // Picking system again forgets the saved choice.
     setThemePreference("system");
-    expect(localStorage.getItem(themeStorageKey)).toBeNull();
+    expect(savedTheme()).toBe("system");
     expect(root.classList.contains("dark")).toBe(true);
   });
 

@@ -1,10 +1,8 @@
 import { useCallback } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
-import { Flex, VStack } from "styled-system/jsx";
+import { VStack } from "styled-system/jsx";
 import { Button } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
-import { LanguageSelector } from "../../components/language-selector";
-import { ThemeSelector } from "../../components/theme-selector";
 import { PageCenter } from "../../components/layout";
 import { useSession } from "../../lib/session";
 import { OAuthLoginPanel } from "./oauth-login-panel";
@@ -47,10 +45,6 @@ export function SignIn() {
           <SiGithub size={16} aria-hidden="true" />
           {m.auth_connect()}
         </Button>
-        <Flex w="full" justifyContent="flex-end" gap="4" pt="3" flexWrap="wrap">
-          <ThemeSelector />
-          <LanguageSelector />
-        </Flex>
       </VStack>
     </PageCenter>
   );

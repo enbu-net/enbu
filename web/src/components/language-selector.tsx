@@ -4,16 +4,21 @@ import { NativeSelect } from "./ui/native-select";
 import { getLocale, locales, setLocale, type Locale } from "../paraglide/runtime";
 import { m } from "../paraglide/messages";
 
-type LanguageSelectorProps = ComponentProps<typeof Flex>;
+type LanguageSelectorProps = ComponentProps<typeof Flex> & {
+  /** false when the caller labels the select itself (its id is language-select). */
+  label?: boolean;
+};
 
 const localeNames: Record<Locale, string> = { en: "English", ja: "日本語" };
 
-export function LanguageSelector(props: LanguageSelectorProps) {
+export function LanguageSelector({ label = true, ...props }: LanguageSelectorProps) {
   return (
     <Flex alignItems="center" gap="2" {...props}>
-      <styled.label htmlFor="language-select" fontSize="sm" color="fg.muted">
+      {label && (
+        <styled.label htmlFor="language-select" fontSize="sm" color="fg.muted">
         {m.app_language()}
       </styled.label>
+      )}
       <NativeSelect
         id="language-select"
         value={getLocale()}
