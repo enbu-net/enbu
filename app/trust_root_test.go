@@ -145,7 +145,7 @@ func TestPinnedDeviceDoesNotFoundTheWorkspaceAgain(t *testing.T) {
 	if revs, err := alice.Storage.Discover(bg, storage.KindControl, ""); err != nil || len(revs) != 0 {
 		t.Fatalf("a genesis was published: %v %v", revs, err)
 	}
-	if pinned, err := alice.trustRoot(mustWorkspace(t, alice)).Pinned(); err != nil || pinned.Genesis != digest.Digest(trusted) {
+	if pinned, err := alice.trust().Pinned(mustWorkspace(t, alice)); err != nil || pinned.Genesis != digest.Digest(trusted) {
 		t.Fatalf("the pin moved: %v %v", pinned, err)
 	}
 }
@@ -160,7 +160,7 @@ func TestUnverifiedGenesisIsNotPinned(t *testing.T) {
 	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("unknown genesis: %v", err)
 	}
-	if pinned, err := bob.trustRoot(mustWorkspace(t, bob)).Pinned(); err != nil || pinned != (wsp.Root{}) {
+	if pinned, err := bob.trust().Pinned(mustWorkspace(t, bob)); err != nil || pinned != (wsp.Root{}) {
 		t.Fatalf("an unverified genesis was pinned: %q %v", pinned, err)
 	}
 	setGenesis(t, bob, trusted)
@@ -222,6 +222,7 @@ func TestFoundingAgainInTheSameCheckoutMovesThePin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	original := wsp.Root{Workspace: cfg.WorkspaceID, Genesis: digest.Digest(cfg.ControlGenesis)}
 	cfg.WorkspaceID = "33333333-3333-4333-8333-333333333333"
 	cfg.ControlGenesis = ""
 	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
@@ -237,5 +238,12 @@ func TestFoundingAgainInTheSameCheckoutMovesThePin(t *testing.T) {
 	}
 	if _, err := alice.ListSecrets(bg, "default"); err != nil && !IsNotFoundError(err) {
 		t.Fatalf("the new workspace is not usable: %v", err)
+	}
+	trust := alice.trust()
+	if repo, err := trust.Repository(alice.repositoryKey()); err != nil || repo.Workspace != cfg.WorkspaceID || string(repo.Genesis) != result.ControlGenesis {
+		t.Fatalf("repository pin did not move: %+v %v", repo, err)
+	}
+	if kept, err := trust.Pinned(original.Workspace); err != nil || kept != original {
+		t.Fatalf("the old workspace pin was dropped: %+v %v", kept, err)
 	}
 }

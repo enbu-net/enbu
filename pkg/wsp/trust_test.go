@@ -2,123 +2,151 @@ package wsp
 
 import (
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	digest "github.com/opencontainers/go-digest"
 )
 
 func root(ws, g string) Root { return Root{Workspace: ws, Genesis: digest.FromString(g)} }
 
-func TestTrustRootPinsTheFirstRoot(t *testing.T) {
+func TestTrustPinsTheFirstRoot(t *testing.T) {
 	dir := t.TempDir()
 	r1, r2 := root("ws", "g1"), root("ws", "g2")
-	tr := OpenTrustRoot(dir, "ws", clock.New())
-	if err := tr.Check(r1); err != nil {
+	tr := OpenTrust(dir, clock.New())
+	if err := tr.Check(r1, "/repo/enbu.toml", PinFirst); err != nil {
 		t.Fatalf("nothing pinned yet: %v", err)
 	}
-	if prev, err := tr.Pin(r1, false); err != nil || prev != (Root{}) {
+	if prev, err := tr.Pin(r1, "/repo/enbu.toml", PinFirst); err != nil || prev != (Root{}) {
 		t.Fatalf("first pin: %v %v", prev, err)
 	}
-	if prev, err := tr.Pin(r1, false); err != nil || prev != r1 {
+	if prev, err := tr.Pin(r1, "/repo/enbu.toml", PinFirst); err != nil || prev != (Root{}) {
 		t.Fatalf("pinning the same root again: %v %v", prev, err)
 	}
 	// A fresh handle reads the pin back from disk.
-	tr = OpenTrustRoot(dir, "ws", clock.New())
+	tr = OpenTrust(dir, clock.New())
 	var changed *TrustRootChangedError
-	if err := tr.Check(r2); !errors.As(err, &changed) || changed.Pinned != r1 || changed.Configured != r2 {
+	if err := tr.Check(r2, "/other/enbu.toml", PinFirst); !errors.As(err, &changed) || changed.Pinned != r1 || changed.Configured != r2 {
 		t.Fatalf("Check accepted another genesis: %v", err)
 	}
-	if _, err := tr.Pin(r2, false); !errors.As(err, &changed) {
+	if _, err := tr.Pin(r2, "", PinFounded); !errors.As(err, &changed) {
+		t.Fatalf("founding replaced the workspace pin: %v", err)
+	}
+	if _, err := tr.Pin(r2, "", PinFirst); !errors.As(err, &changed) {
 		t.Fatalf("Pin replaced the root without replace: %v", err)
 	}
-	if got, _ := tr.Pinned(); got != r1 {
+	if got, _ := tr.Pinned("ws"); got != r1 {
 		t.Fatalf("pin changed to %v", got)
 	}
-	if prev, err := tr.Pin(r2, true); err != nil || prev != r1 {
+	if prev, err := tr.Pin(r2, "/repo/enbu.toml", PinReplace); err != nil || prev != r1 {
 		t.Fatalf("replace: %v %v", prev, err)
 	}
-	if err := tr.Check(r2); err != nil {
+	if err := tr.Check(r2, "/repo/enbu.toml", PinFirst); err != nil {
 		t.Fatalf("replaced root rejected: %v", err)
+	}
+	if got, _ := tr.Repository("/repo/enbu.toml"); got != r2 {
+		t.Fatalf("repository pin is %v", got)
 	}
 }
 
 // The repository pin compares the workspace too, so changing both fields of
 // enbu.toml is still a change of trust root.
-func TestRepositoryTrustRootComparesTheWorkspace(t *testing.T) {
-	dir := t.TempDir()
-	tr := OpenRepositoryTrustRoot(dir, "/repo/enbu.toml", clock.New())
-	if _, err := tr.Pin(root("ws1", "g1"), false); err != nil {
+func TestTrustRepositoryComparesTheWorkspace(t *testing.T) {
+	tr := OpenTrust(t.TempDir(), clock.New())
+	ws1, ws2 := root("ws1", "g1"), root("ws2", "g2")
+	if _, err := tr.Pin(ws1, "/repo/enbu.toml", PinFirst); err != nil {
 		t.Fatal(err)
 	}
 	var changed *TrustRootChangedError
-	if err := tr.Check(root("ws2", "g2")); !errors.As(err, &changed) || changed.Pinned.Workspace != "ws1" {
+	if err := tr.Check(ws2, "/repo/enbu.toml", PinFirst); !errors.As(err, &changed) || changed.Pinned != ws1 {
 		t.Fatalf("another workspace was accepted: %v", err)
 	}
-	if err := OpenRepositoryTrustRoot(dir, "/other/enbu.toml", clock.New()).Check(root("ws2", "g2")); err != nil {
+	if _, err := tr.Pin(ws2, "/repo/enbu.toml", PinFirst); !errors.As(err, &changed) {
+		t.Fatalf("another workspace was pinned: %v", err)
+	}
+	if err := tr.Check(ws2, "/other/enbu.toml", PinFirst); err != nil {
 		t.Fatalf("a pin leaked to another repository: %v", err)
 	}
+	if err := tr.Check(ws2, "", PinFirst); err != nil {
+		t.Fatalf("an unknown repository was compared: %v", err)
+	}
+	// Founding a new workspace moves the repository and reports nothing replaced.
+	if prev, err := tr.Pin(ws2, "/repo/enbu.toml", PinFounded); err != nil || prev != ws1 {
+		t.Fatalf("founding did not move the repository: %v %v", prev, err)
+	}
+	if got, _ := tr.Repository("/repo/enbu.toml"); got != ws2 {
+		t.Fatalf("repository pin is %v", got)
+	}
+	if got, _ := tr.Pinned("ws1"); got != ws1 {
+		t.Fatalf("moving the repository dropped the workspace pin: %v", got)
+	}
 }
 
-func TestTrustRootIsPerWorkspace(t *testing.T) {
+func TestTrustRejectsACorruptFileUnlessReplaced(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := OpenTrustRoot(dir, "a", clock.New()).Pin(root("a", "g1"), false); err != nil {
+	tr := OpenTrust(dir, clock.New())
+	if err := os.WriteFile(filepath.Join(dir, "trust.json"), []byte(`{"workspaces":{"ws":"nope"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := OpenTrustRoot(dir, "b", clock.New()).Check(root("b", "g2")); err != nil {
-		t.Fatalf("a pin leaked to another workspace: %v", err)
-	}
-}
-
-func TestTrustRootRejectsACorruptFileUnlessReplaced(t *testing.T) {
-	dir := t.TempDir()
-	tr := OpenTrustRoot(dir, "ws", clock.New())
-	if err := os.WriteFile(tr.path, []byte(`{"version":1,"workspace":"ws","genesis":"nope"}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := tr.Check(root("ws", "g")); err == nil {
+	if err := tr.Check(root("ws", "g"), "", PinFirst); err == nil {
 		t.Fatal("a corrupt pin was accepted")
 	}
-	if _, err := tr.Pin(root("ws", "g"), false); err == nil {
+	if _, err := tr.Pin(root("ws", "g"), "", PinFounded); err == nil {
 		t.Fatal("a corrupt pin was overwritten without replace")
 	}
-	if _, err := tr.Pin(root("ws", "g"), true); err != nil {
+	if _, err := tr.Pin(root("ws", "g"), "", PinReplace); err != nil {
 		t.Fatalf("replace could not repair a corrupt pin: %v", err)
 	}
+	if got, err := tr.Pinned("ws"); err != nil || got != root("ws", "g") {
+		t.Fatalf("repaired pin: %v %v", got, err)
+	}
 }
 
-func TestTrustRootRejectsAnInvalidRoot(t *testing.T) {
-	tr := OpenTrustRoot(t.TempDir(), "ws", clock.New())
-	if _, err := tr.Pin(Root{Workspace: "ws", Genesis: "sha256:short"}, false); !errors.Is(err, ErrInvalid) {
+// Confirming one workspace's new root repairs its own pin only. A file that
+// also holds another corrupt pin, or is not a trust file at all, is not reset.
+func TestTrustReplaceKeepsOtherPins(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trust.json")
+	tr := OpenTrust(dir, clock.New())
+	other := root("other", "o")
+	file := `{"workspaces":{"ws":"nope","other":"` + string(other.Genesis) + `"},"repositories":{"/b/enbu.toml":"other"}}`
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.Pin(root("ws", "g"), "/a/enbu.toml", PinReplace); err != nil {
+		t.Fatalf("replace could not repair its own pin: %v", err)
+	}
+	if got, err := tr.Pinned("other"); err != nil || got != other {
+		t.Fatalf("another workspace's pin: %v %v", got, err)
+	}
+	if got, err := tr.Repository("/b/enbu.toml"); err != nil || got != other {
+		t.Fatalf("another checkout's pin: %v %v", got, err)
+	}
+
+	for name, file := range map[string]string{
+		"another corrupt pin": `{"workspaces":{"ws":"nope","other":"nope"}}`,
+		"not a trust file":    `{`,
+	} {
+		if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tr.Pin(root("ws", "g"), "", PinReplace); err == nil {
+			t.Fatalf("%s: replace reset the file", name)
+		}
+		if b, err := os.ReadFile(path); err != nil || string(b) != file {
+			t.Fatalf("%s: the file changed: %s %v", name, b, err)
+		}
+	}
+}
+
+func TestTrustRejectsAnInvalidRoot(t *testing.T) {
+	tr := OpenTrust(t.TempDir(), clock.New())
+	if _, err := tr.Pin(Root{Workspace: "ws", Genesis: "sha256:short"}, "", PinFirst); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("pinned an invalid digest: %v", err)
 	}
-	if _, err := tr.Pin(Root{Genesis: digest.FromString("g")}, false); !errors.Is(err, ErrInvalid) {
+	if _, err := tr.Pin(Root{Genesis: digest.FromString("g")}, "", PinFirst); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("pinned a root without a workspace: %v", err)
-	}
-}
-
-func TestFoundingReplacementChecksExpectedPinUnderLock(t *testing.T) {
-	trust := OpenTrustRoot(t.TempDir(), testWorkspace, clock.New())
-	old := Root{Workspace: testWorkspace, Genesis: d("old")}
-	newer := Root{Workspace: testWorkspace, Genesis: d("newer")}
-	target := Root{Workspace: testWorkspace, Genesis: d("founding")}
-	if _, err := trust.Pin(old, false); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := trust.Pin(newer, true); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := trust.PinReplacing(target, old); err == nil {
-		t.Fatal("stale authorization replaced newer pin")
-	}
-	if got, err := trust.Pinned(); err != nil || got != newer {
-		t.Fatalf("pin changed: %+v %v", got, err)
-	}
-	if _, err := trust.PinReplacing(target, newer); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := trust.PinReplacing(target, newer); err != nil {
-		t.Fatalf("committed replacement not idempotent: %v", err)
 	}
 }

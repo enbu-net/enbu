@@ -89,6 +89,8 @@ See [Storage configuration and tests](docs/storage.md).
 workspace UUID and storage configuration in `enbu.toml`, and updates `.gitignore`.
 The first device to run `init` becomes the workspace admin and records `control_genesis`
 in `enbu.toml`: the trusted digest every other device verifies the member list against.
+If `init` stops after publishing the genesis, run it again: it recognises the genesis its own
+signing key signed and continues with it.
 Commit and share `enbu.toml`. Each member runs `enbu init` in their own folder.
 The UUID binds local Identity and environment-switch state to the workspace, so
 moving its folder or changing its storage URL does not select a new Identity.
@@ -414,8 +416,9 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
   non-member published.
 - **Local checkpoints** remember the Control and State heads this device accepted, so storage
   cannot silently hide them. A delayed listing is retried, not treated as lost data.
-- **Pinned trust root.** Each device remembers the first `control_genesis` it verified for a
-  workspace, and the workspace and genesis each checkout's `enbu.toml` first named. If a later
+- **Pinned trust root.** Each device remembers, in one local `trust.json`, the first
+  `control_genesis` it verified for a workspace, and the workspace each checkout's `enbu.toml`
+  first named. If a later
   `enbu.toml` names another one, every command stops with `trust_root_changed`; after an admin
   confirms out of band that they re-created the workspace, run `enbu init --accept-new-genesis`.
   A fresh clone in a new folder still trusts its first `enbu.toml`.

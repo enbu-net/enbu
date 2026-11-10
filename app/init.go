@@ -2,21 +2,15 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	agecrypto "filippo.io/age"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"uuid"
@@ -187,6 +181,10 @@ var ociRepositoryName = regexp.MustCompile(`^[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(/
 // when the storage has none and this repository has no trusted genesis yet. On
 // return s.view and s.head describe the verified DAG.
 func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Principal) error {
+	pinned, err := a.trust().Pinned(s.workspace)
+	if err != nil && !s.acceptNewGenesis {
+		return err
+	}
 	if s.cfg.ControlGenesis == "" {
 		// Accepting replaces a pin with the genesis enbu.toml names; with none
 		// named there is nothing to accept, only a new workspace to found.
@@ -195,66 +193,11 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 		}
 		// A device that already trusts a genesis for this workspace must not
 		// found another one: emptied storage would otherwise re-root its trust.
-		if pinned, err := a.trustRoot(s.workspace).Pinned(); err != nil {
-			return err
-		} else if pinned != (wsp.Root{}) {
+		if pinned != (wsp.Root{}) {
 			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: wsp.Root{Workspace: s.workspace}})
 		}
-		// Storage must hold no workspace yet: with no trusted genesis there is
-		// nothing to tell a founder's Control from an outsider's.
-		for _, k := range []storage.Kind{storage.KindControl, storage.KindRequest} {
-			if revs, err := s.store.Discover(ctx, k, ""); err != nil {
-				return storageError(err)
-			} else if len(revs) > 0 {
-				return apperr.New(apperr.CodeIncompatibleStorage, "storage already holds a workspace; use the enbu.toml an admin shared, or an empty location", nil)
-			}
-		}
-
-		blob, genesis, gerr := wsp.NewGenesis(s.workspace, founder, s.signer)
-		if gerr != nil {
-			return gerr
-		}
-		// Keep the exact signed bytes before publishing: a response can be lost
-		// after storage commits, and hardware signatures cannot be regenerated.
-		path, err := a.pendingGenesisPath(s.workspace, string(genesis))
+		genesis, err := a.foundGenesis(ctx, s, founder)
 		if err != nil {
-			return err
-		}
-		if err := fsutil.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return err
-		}
-		previousRepo := wsp.Root{}
-		if repo := a.repositoryTrustRoot(); repo != nil {
-			previousRepo, err = repo.Pinned()
-			if err != nil {
-				return err
-			}
-		}
-		repository, err := a.foundingRepository()
-		if err != nil {
-			return err
-		}
-		pending, err := json.Marshal(pendingFounding{Root: wsp.Root{Workspace: s.workspace, Genesis: genesis}, Repository: repository, PreviousRepo: previousRepo, Genesis: blob})
-		if err != nil {
-			return err
-		}
-		f, err := os.CreateTemp(filepath.Dir(path), "founding-*")
-		if err != nil {
-			return err
-		}
-		tmp := f.Name()
-		defer func() { _ = os.Remove(tmp) }()
-		if _, err = f.Write(pending); err == nil {
-			err = f.Sync()
-		}
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if err := fsutil.Rename(tmp, path); err != nil {
 			return err
 		}
 		s.cfg.ControlGenesis = string(genesis)
@@ -262,72 +205,53 @@ func (a *App) ensureControl(ctx context.Context, s *session, founder wsp.Princip
 			return err
 		}
 		s.founded = true
-
+	} else if !s.acceptNewGenesis && pinned == (wsp.Root{}) {
+		// A genesis this device signed and has not pinned yet is its own
+		// founding, left by an attempt that stopped before pinning it. Only
+		// its signing key can sign one, so this hands trust to nobody else.
+		// A genesis storage lacks falls through to verifyControl, which reports
+		// it; any other storage failure is returned so it can be retried.
+		blob, err := s.store.FetchHead(ctx, storage.KindControl, "", digest.Digest(s.cfg.ControlGenesis))
+		if err != nil && !errors.Is(err, storage.ErrNotFound) {
+			return storageError(err)
+		}
+		if err == nil {
+			v, err := wsp.VerifyGenesis(s.workspace, blob, digest.Digest(s.cfg.ControlGenesis))
+			s.founded = err == nil && v.Author == s.self()
+		}
 	}
-	path, err := a.pendingGenesisPath(s.workspace, s.cfg.ControlGenesis)
-	if err != nil {
-		return err
-	}
-	recovery := false
-	if data, err := os.ReadFile(path); err == nil {
-		root := wsp.Root{Workspace: s.workspace, Genesis: digest.Digest(s.cfg.ControlGenesis)}
-		repository, err := a.foundingRepository()
-		if err != nil {
-			return err
-		}
-		var pending pendingFounding
-		if err := json.Unmarshal(data, &pending); err != nil || pending.Root != root || pending.Repository != repository {
-			return apperr.New(apperr.CodeUntrusted, "invalid founding authorization", nil)
-		}
-		if _, err := wsp.VerifyGenesis(s.workspace, pending.Genesis, root.Genesis); err != nil {
-			return wspError(err)
-		}
-		pinned, err := a.trustRoot(s.workspace).Pinned()
-		if err != nil {
-			return err
-		}
-		if !s.acceptNewGenesis && pinned != (wsp.Root{}) && pinned != root {
-			return wspError(&wsp.TrustRootChangedError{Pinned: pinned, Configured: root})
-		}
-		repoPin := wsp.Root{}
-		if repo := a.repositoryTrustRoot(); repo != nil {
-			repoPin, err = repo.Pinned()
-			if err != nil {
-				return err
-			}
-		}
-		// The durable capability names the exact repository pin that founding
-		// was authorized to replace. A matching workspace pin alone is not
-		// permission to overwrite a checkout that has since changed roots.
-		if !s.acceptNewGenesis && repoPin != root && repoPin != pending.PreviousRepo {
-			return wspError(&wsp.TrustRootChangedError{Pinned: repoPin, Configured: root})
-		}
-		if pinned != root {
-			if err := wsp.PublishGenesis(ctx, s.store, pending.Genesis); err != nil {
-				return storageError(err)
-			}
-		}
-		recovery = true
-		s.founded = !s.acceptNewGenesis && (pinned != root || repoPin != root)
-		if s.founded {
-			s.foundingRepo = &pending.PreviousRepo
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
 	// A genesis the repository trusts but storage lacks is reported by verifyControl
 	// as incompatible storage; trust is never re-rooted silently.
-	if err := a.verifyControl(ctx, s); err != nil {
-		return err
+	return a.verifyControl(ctx, s)
+}
+
+// foundGenesis publishes the genesis Control of a new workspace. Storage must
+// hold no workspace yet: with no trusted genesis there is nothing to tell a
+// founder's Control from an outsider's. The one exception is a genesis this
+// device signed itself, left by an attempt whose publish reply was lost.
+func (a *App) foundGenesis(ctx context.Context, s *session, founder wsp.Principal) (digest.Digest, error) {
+	own, err := wsp.FindGenesis(ctx, s.store, s.workspace, s.self())
+	if err != nil {
+		return "", wspError(err)
 	}
-	if recovery {
-		// Retain the exact founding bytes until verification and both trust
-		// pins commit. A disconnect before this point must remain retryable.
-		// Afterward leftover public bytes are harmless if cleanup fails.
-		_ = os.Remove(path)
+	if own != nil {
+		return own.Digest, nil
 	}
-	return nil
+	for _, k := range []storage.Kind{storage.KindControl, storage.KindRequest} {
+		if revs, err := s.store.Discover(ctx, k, ""); err != nil {
+			return "", storageError(err)
+		} else if len(revs) > 0 {
+			return "", apperr.New(apperr.CodeIncompatibleStorage, "storage already holds a workspace; use the enbu.toml an admin shared, or an empty location", nil)
+		}
+	}
+	blob, genesis, err := wsp.NewGenesis(s.workspace, founder, s.signer)
+	if err != nil {
+		return "", err
+	}
+	if err := wsp.PublishGenesis(ctx, s.store, blob); err != nil {
+		return "", storageError(err)
+	}
+	return genesis, nil
 }
 
 // identityError turns "this device has no backend for a key" into an error
@@ -343,36 +267,4 @@ func identityError(err error) error {
 	}
 	return apperr.Wrap(apperr.CodeIdentityUnavailable,
 		"no usable identity backend on this device: "+unavailable.Reason+" (run 'enbu doctor' for details)", err, apperr.Params{"reason": unavailable.Reason})
-}
-
-// A recovery capability belongs to this workspace in this checkout, never
-// another repository that happens to name the same genesis in enbu.toml.
-func (a *App) pendingGenesisPath(workspace, genesis string) (string, error) {
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
-	if err != nil {
-		return "", err
-	}
-	path, err = filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256([]byte(workspace + "\x00" + path + "\x00" + genesis))
-	return filepath.Join(a.checkpointDir(), "founding", fmt.Sprintf("%x.json", sum)), nil
-}
-
-// pendingFounding is a local authorization, persisted before configuration or
-// trust pins change. It is never obtained from untrusted workspace storage.
-type pendingFounding struct {
-	Root         wsp.Root `json:"root"`
-	Repository   string   `json:"repository"`
-	PreviousRepo wsp.Root `json:"previous_repo"`
-	Genesis      []byte   `json:"genesis"`
-}
-
-func (a *App) foundingRepository() (string, error) {
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(path)
 }
