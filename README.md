@@ -60,6 +60,13 @@ GHCR creates the package private to you. So that teammates can join, open the pa
 settings on GitHub, connect the repository and turn on "Inherit access from repository";
 `init` prints this reminder.
 
+With more than one GitHub account, such as a work and a personal one, sign in with
+each: `enbu auth login` adds the account and uses it, `enbu auth switch LOGIN` goes
+back to another, `enbu auth status` lists them, and `enbu auth logout --user LOGIN`
+signs out of one. The tokens live in the OS keyring; which account is in use belongs to
+enbu's data directory, so another `XDG_DATA_HOME` keeps its own choice. `GITHUB_TOKEN`,
+when set, is used instead of any account.
+
 Anywhere else, name the storage with `--storage`. `ghcr.io` always uses enbu's GitHub
 login; any other OCI registry uses the Docker credential configuration:
 

@@ -13,6 +13,12 @@ export class AuthStatus {
     "authenticated": boolean;
     "workspace_configured": boolean;
     "username"?: string;
+
+    /**
+     * Accounts are the signed-in GitHub logins, the most recent sign-in last;
+     * Username is the one in use. GITHUB_TOKEN is not among them.
+     */
+    "accounts"?: string[];
     "repo"?: RepoInfo | null;
 
     /** Creates a new AuthStatus instance. */
@@ -31,10 +37,14 @@ export class AuthStatus {
      * Creates a new AuthStatus instance from a string or object.
      */
     static createFrom($$source: any = {}): AuthStatus {
-        const $$createField3_0 = $$createType1;
+        const $$createField3_0 = $$createType0;
+        const $$createField4_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("accounts" in $$parsedSource) {
+            $$parsedSource["accounts"] = $$createField3_0($$parsedSource["accounts"]);
+        }
         if ("repo" in $$parsedSource) {
-            $$parsedSource["repo"] = $$createField3_0($$parsedSource["repo"]);
+            $$parsedSource["repo"] = $$createField4_0($$parsedSource["repo"]);
         }
         return new AuthStatus($$parsedSource as Partial<AuthStatus>);
     }
@@ -154,7 +164,7 @@ export class ConflictSet {
      * Creates a new ConflictSet instance from a string or object.
      */
     static createFrom($$source: any = {}): ConflictSet {
-        const $$createField1_0 = $$createType2;
+        const $$createField1_0 = $$createType0;
         const $$createField2_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("heads" in $$parsedSource) {
@@ -537,8 +547,8 @@ export class PullResult {
      * Creates a new PullResult instance from a string or object.
      */
     static createFrom($$source: any = {}): PullResult {
-        const $$createField2_0 = $$createType2;
-        const $$createField3_0 = $$createType2;
+        const $$createField2_0 = $$createType0;
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("kept" in $$parsedSource) {
             $$parsedSource["kept"] = $$createField2_0($$parsedSource["kept"]);
@@ -711,9 +721,9 @@ export class StorageSettings {
 }
 
 // Private type creation functions
-const $$createType0 = RepoInfo.createFrom;
-const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $Create.Array($Create.Any);
+const $$createType0 = $Create.Array($Create.Any);
+const $$createType1 = RepoInfo.createFrom;
+const $$createType2 = $Create.Nullable($$createType1);
 const $$createType3 = SecretConflict.createFrom;
 const $$createType4 = $Create.Array($$createType3);
 const $$createType5 = apperr$0.Payload.createFrom;

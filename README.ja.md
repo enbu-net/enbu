@@ -60,6 +60,12 @@ GHCR のパッケージは作成者だけが見られる private で作られま
 GitHub でパッケージの設定を開き、リポジトリを接続して「Inherit access from repository」を
 有効にしてください（`init` も案内を表示します）。
 
+仕事用と個人用のように GitHub アカウントが複数あるときは、それぞれでサインインします。
+`enbu auth login` はアカウントを追加してそれを使い、`enbu auth switch LOGIN` で別のアカウントに戻し、
+`enbu auth status` で一覧を、`enbu auth logout --user LOGIN` で 1 つだけサインアウトします。
+トークンは OS keyring に置き、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
+別の `XDG_DATA_HOME` では別のアカウントを選べます。`GITHUB_TOKEN` があればどのアカウントよりも優先します。
+
 ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
 それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
 その他の OCI レジストリは Docker の認証設定を使います:

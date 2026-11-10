@@ -125,10 +125,13 @@ func (s *Service) SetEventEmitter(emit EventEmitter) {
 }
 
 type AuthStatus struct {
-	Authenticated       bool      `json:"authenticated"`
-	WorkspaceConfigured bool      `json:"workspace_configured"`
-	Username            string    `json:"username,omitempty"`
-	Repo                *RepoInfo `json:"repo,omitempty"`
+	Authenticated       bool   `json:"authenticated"`
+	WorkspaceConfigured bool   `json:"workspace_configured"`
+	Username            string `json:"username,omitempty"`
+	// Accounts are the signed-in GitHub logins, the most recent sign-in last;
+	// Username is the one in use. GITHUB_TOKEN is not among them.
+	Accounts []string  `json:"accounts,omitempty"`
+	Repo     *RepoInfo `json:"repo,omitempty"`
 }
 
 type RepoInfo struct {
@@ -264,6 +267,9 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
+	if logins, _, err := auth.Accounts(); err == nil {
+		status.Accounts = logins
+	}
 	token, err := auth.LoadToken()
 	if err != nil {
 		slog.Debug("GetAuthStatus: not authenticated", "err", err)
@@ -389,8 +395,17 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 	}
 }
 
-func (s *Service) Logout() error {
-	return auth.DeleteToken()
+// Logout signs out of the GitHub account login, or of the one in use when
+// login is "". Signing out of the one in use moves to the most recent
+// remaining sign-in.
+func (s *Service) Logout(login string) error {
+	return auth.DeleteAccount(login)
+}
+
+// SwitchAccount uses another signed-in GitHub account in this data directory.
+func (s *Service) SwitchAccount(login string) error {
+	_, err := auth.SwitchAccount(login)
+	return err
 }
 
 func (s *Service) BrowseRepository() (RepoInfo, error) {

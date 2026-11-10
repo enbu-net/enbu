@@ -39,7 +39,10 @@ export interface Backend {
   startOAuthLogin(): Promise<OAuthStart>;
   oauthStatus(sessionID: string): Promise<OAuthStatus>;
   cancelOAuthLogin(sessionID: string): Promise<void>;
-  logout(): Promise<void>;
+  /** Signs out of the GitHub account login, or of the one in use when it is omitted. */
+  logout(login?: string): Promise<void>;
+  /** Uses another signed-in GitHub account (one of AuthStatus.accounts). */
+  switchAccount(login: string): Promise<void>;
 
   repoStatus(): Promise<GUIRepoStatus>;
   browseRepository(): Promise<GUIRepoStatus>;
@@ -151,7 +154,8 @@ export function createServiceBackend(svc: ServiceClient): Backend {
       };
     },
     cancelOAuthLogin: (sessionID) => call(svc.CancelOAuthLogin(sessionID)),
-    logout: () => call(svc.Logout()),
+    logout: (login = "") => call(svc.Logout(login)),
+    switchAccount: (login) => call(svc.SwitchAccount(login)),
 
     repoStatus: async () => repoStatusOf(await call(svc.GetRepoStatus())),
     browseRepository: async () => repoStatusOf(await call(svc.BrowseRepository())),
