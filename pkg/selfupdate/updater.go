@@ -245,8 +245,13 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// Only a failed read is a download failure; a failed local write is not.
-	n, err := io.Copy(w, io.LimitReader(bodyReader{resp.Body}, maxDownloadSize+1))
+	return copyBody(w, resp.Body, url)
+}
+
+// copyBody copies a release file. Only a failed read is a download failure;
+// a failed local write is not.
+func copyBody(w io.Writer, body io.Reader, url string) error {
+	n, err := io.Copy(w, io.LimitReader(bodyReader{body}, maxDownloadSize+1))
 	var read readError
 	if errors.As(err, &read) {
 		return fmt.Errorf("%w: %s: %w", ErrDownload, url, read.err)

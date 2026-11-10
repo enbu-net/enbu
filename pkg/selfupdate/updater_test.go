@@ -281,13 +281,26 @@ func TestCheckBoundsTheReleaseLookup(t *testing.T) {
 	}
 }
 
+// dataAndError returns its data and a read error from the same Read.
+type dataAndError struct{ err error }
+
+func (r dataAndError) Read(p []byte) (int, error) {
+	return copy(p, "partial"), r.err
+}
+
 func TestAFailedWriteWinsOverAFailedRead(t *testing.T) {
-	srv := shortBodyServer(t)
-	u := &Updater{Client: srv.Client()}
-	// The body arrives short and the write of what came fails too: io.Copy
-	// reports the write, which is not a download failure.
-	err := u.download(context.Background(), srv.URL, failingWriter{})
-	if err == nil || errors.Is(err, ErrDownload) {
-		t.Errorf("download() = %v, want the write error", err)
+	readErr := errors.New("connection reset")
+	writeErr := errors.New("disk full")
+	err := copyBody(writerFunc(func([]byte) (int, error) { return 0, writeErr }), dataAndError{readErr}, "u")
+	if !errors.Is(err, writeErr) || errors.Is(err, ErrDownload) {
+		t.Errorf("copyBody() = %v, want the write error", err)
+	}
+	var buf bytes.Buffer
+	if err := copyBody(&buf, dataAndError{readErr}, "u"); !errors.Is(err, ErrDownload) || !errors.Is(err, readErr) {
+		t.Errorf("copyBody() = %v, want ErrDownload wrapping the read error", err)
 	}
 }
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
