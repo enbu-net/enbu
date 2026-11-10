@@ -28,12 +28,27 @@ func gitignoreEntries(cfg *config.ProjectConfig) []string {
 		if output == "" || filepath.IsAbs(output) {
 			continue
 		}
-		if strings.HasPrefix(output, "#") || strings.HasPrefix(output, "!") {
-			output = `\` + output
-		}
-		entries = append(entries, output)
+		entries = append(entries, gitignoreLiteral(filepath.ToSlash(output)))
 	}
 	return entries
+}
+
+// gitignoreLiteral returns a .gitignore pattern that matches path only: glob
+// characters and a leading # or ! are escaped. Outputs are trimmed, so no
+// trailing space needs escaping.
+func gitignoreLiteral(path string) string {
+	var b strings.Builder
+	for _, r := range path {
+		if strings.ContainsRune(`\*?[`, r) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	out := b.String()
+	if strings.HasPrefix(out, "#") || strings.HasPrefix(out, "!") {
+		out = `\` + out
+	}
+	return out
 }
 
 // ensureGitignore appends to the repository's .gitignore the entries of cfg it

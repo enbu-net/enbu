@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -99,5 +100,38 @@ func TestEnsureGitignoreCustomOutputs(t *testing.T) {
 	}
 	if strings.Contains(content, "/abs/path.env") {
 		t.Error("an absolute output was added")
+	}
+}
+
+func TestGitignoreLiteralMatchesOnlyThePath(t *testing.T) {
+	for path, want := range map[string]string{
+		"secrets.json":   "secrets.json",
+		"!literal.env":   `\!literal.env`,
+		"#hash.env":      `\#hash.env`,
+		"out/*.env":      `out/\*.env`,
+		"what?.env":      `what\?.env`,
+		"[ab].env":       `\[ab].env`,
+		`back\slash.env`: `back\\slash.env`,
+	} {
+		if got := gitignoreLiteral(path); got != want {
+			t.Errorf("gitignoreLiteral(%q) = %q, want %q", path, got, want)
+		}
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(gitignoreLiteral("out/*.env")+"\n"+gitignoreLiteral("[ab].env")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for path, ignored := range map[string]bool{"out/*.env": true, "out/x.env": false, "[ab].env": true, "a.env": false} {
+		err := exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", path).Run()
+		if (err == nil) != ignored {
+			t.Errorf("git check-ignore %q: ignored = %v, want %v", path, err == nil, ignored)
+		}
 	}
 }
