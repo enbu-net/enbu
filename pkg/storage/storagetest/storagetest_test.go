@@ -26,7 +26,7 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 			return nil, nil // stale listing
 		},
 	})
-	o := Object(storage.KindControl, "", "head")
+	o := Object(storage.KindControl, "", "head", "")
 	if err := wrapped.Publish(ctx, o); !errors.Is(err, boom) {
 		t.Fatalf("first publish: %v", err)
 	}

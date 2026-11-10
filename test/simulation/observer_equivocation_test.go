@@ -50,7 +50,7 @@ func TestMetadataOnlyProbeRejectsRecordedPayloadReads(t *testing.T) {
 		t.Fatalf("metadata-only requests rejected: %v", err)
 	}
 	start = len(tape.Recording.Entries)
-	reader, err := store.OpenBlob(t.Context(), object.Kind, object.Scope, object.Rev, 0)
+	reader, err := store.OpenPayload(t.Context(), object.Kind, object.Scope, object.Rev)
 	if err != nil {
 		t.Fatal(err)
 	}

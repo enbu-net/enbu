@@ -59,7 +59,7 @@ func TestSaveProjectDiscoversImplicitAncestorDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Chdir(child)
-	if err := SaveProject(atomicProjectFixture("after")); err != nil {
+	if err := SaveProjectTo("", atomicProjectFixture("after")); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)

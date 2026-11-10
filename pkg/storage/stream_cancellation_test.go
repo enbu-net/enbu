@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -34,13 +35,14 @@ func TestRemoteInterruptedResponseBody(t *testing.T) {
 						defer stop()
 						head := bytes.Repeat([]byte("signed-header-fixture"), 32)
 						payload := bytes.Repeat([]byte("encrypted-payload-fixture"), 512)
-						object := Object{Kind: KindState, Scope: StateScope("team", "default"), Rev: digest.FromBytes(head), Head: head, Blobs: [][]byte{payload}}
-						_, _, manifest, desc, err := manifestFor(object)
+						object := Object{Kind: KindState, Scope: StateScope("team", "default"), Rev: digest.FromBytes(head), Head: head, Payload: payload}
+						_, manifest, desc, err := manifestFor(object)
 						if err != nil {
 							t.Fatal(err)
 						}
 						framed := frame(object)
-						_, layout, err := readHead(bytes.NewReader(framed), int64(len(framed)), object.Rev)
+						_, payloadAt, err := readHead(bytes.NewReader(framed), int64(len(framed)), object.Rev)
+						headAt := int64(len(binary.AppendUvarint(nil, uint64(len(head)))))
 						if err != nil {
 							t.Fatal(err)
 						}
@@ -86,9 +88,9 @@ func TestRemoteInterruptedResponseBody(t *testing.T) {
 								case "frame":
 									target = start == 0
 								case "head":
-									target = start == layout.offsets[0]
+									target = start == headAt
 								case "payload":
-									target = start >= layout.offsets[1]
+									target = start >= payloadAt
 								}
 							}
 							for key, values := range recorder.Header() {
@@ -125,10 +127,11 @@ func TestRemoteInterruptedResponseBody(t *testing.T) {
 						if backend == "oci" {
 							store, err = NewOCI(endpoint+"/team/secrets", func(context.Context, string) (auth.Credential, error) {
 								return auth.EmptyCredential, nil
-							}, transport == "http", func(s *ociStore) {
+							}, transport == "http")
+							if err == nil {
 								// Trust only this fixture server, without changing global TLS state.
-								s.repo.Client.(*auth.Client).Client = server.Client()
-							})
+								withHTTPClient(store, server.Client())
+							}
 						} else {
 							var client *minio.Client
 							client, err = minio.New(endpoint, &minio.Options{
@@ -147,7 +150,7 @@ func TestRemoteInterruptedResponseBody(t *testing.T) {
 							if phase != "payload" {
 								return store.FetchHead(ctx, object.Kind, object.Scope, object.Rev)
 							}
-							rc, err := store.OpenBlob(ctx, object.Kind, object.Scope, object.Rev, 0)
+							rc, err := store.OpenPayload(ctx, object.Kind, object.Scope, object.Rev)
 							if err != nil {
 								return nil, err
 							}
@@ -222,4 +225,9 @@ func TestRemoteInterruptedResponseBody(t *testing.T) {
 			}
 		}
 	}
+}
+
+// withHTTPClient makes an OCI store send its requests through client.
+func withHTTPClient(s Store, client *http.Client) {
+	s.(ociStore).repo.Client.(*auth.Client).Client = client
 }

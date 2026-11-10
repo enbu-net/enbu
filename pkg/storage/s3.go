@@ -71,8 +71,6 @@ func (s s3) base() string {
 
 func (s s3) key(name string) string { return s.base() + "revisions/" + name }
 
-func (s s3) Capabilities() Capabilities { return Capabilities{PhysicalDelete: true} }
-
 // open returns an object for ranged reads and its size.
 func (s s3) open(ctx context.Context, name string) (*minio.Object, int64, error) {
 	obj, err := s.client.GetObject(ctx, s.bucket, s.key(name), minio.GetObjectOptions{})
@@ -130,7 +128,7 @@ func (s s3) Publish(ctx context.Context, o Object) error {
 		}
 		return nil
 	}
-	// Read back by name: the size and the head, without transferring the blobs.
+	// Read back by name: the size and the head, without transferring the payload.
 	obj, size, err := s.open(ctx, name)
 	if err != nil {
 		return err
@@ -157,7 +155,7 @@ func (s s3) FetchHead(ctx context.Context, kind Kind, scope string, rev digest.D
 	return head, err
 }
 
-func (s s3) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+func (s s3) OpenPayload(ctx context.Context, kind Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 	name, err := Name(kind, scope, rev)
 	if err != nil {
 		return nil, err
@@ -166,12 +164,12 @@ func (s s3) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Di
 	if err != nil {
 		return nil, err
 	}
-	_, layout, err := readHead(obj, size, rev)
+	_, offset, err := readHead(obj, size, rev)
 	if err != nil {
 		_ = obj.Close()
 		return nil, err
 	}
-	section, err := blobSection(obj, layout, index)
+	section, err := payloadSection(obj, size, offset)
 	if err != nil {
 		_ = obj.Close()
 		return nil, err

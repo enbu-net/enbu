@@ -65,7 +65,7 @@ func RunScenario(t *testing.T, steps ...Step) {
 	owner, repo := uniqueRepo(t)
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.Storage = config.StorageConfig{URL: "oci://localhost:5000/" + owner + "/" + repo + "-enbu", PlainHTTP: true}
-	if err := config.SaveProject(cfg); err != nil {
+	if err := config.SaveProjectTo("", cfg); err != nil {
 		t.Fatal(err)
 	}
 	state := &ScenarioState{

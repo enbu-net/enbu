@@ -19,7 +19,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/merge"
 	"github.com/enbu-net/enbu/pkg/schema/secretmap"
-	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
@@ -30,11 +29,7 @@ var errNoChange = fmt.Errorf("secret unchanged")
 
 func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]string, err error) {
 	defer apperr.NormalizeInto(&err)
-	resolved, err := a.resolveEnvironment(env)
-	if err != nil {
-		return nil, err
-	}
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +108,7 @@ type ConflictSet struct {
 // ListConflicts returns the keys of env that are waiting for a decision.
 func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, err error) {
 	defer apperr.NormalizeInto(&err)
-	resolved, err := a.resolveEnvironment(env)
-	if err != nil {
-		return nil, err
-	}
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -204,11 +195,7 @@ func (a *App) changeSecret(ctx context.Context, env, op string, change func(map[
 // whichever reads next merges them. Before publishing it looks once more, so a
 // head that appeared during the edit is merged now rather than left for later.
 func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[string]merge.Choice, seen []string, change func(map[string]string) error) error {
-	resolved, err := a.resolveEnvironment(env)
-	if err != nil {
-		return err
-	}
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return err
 	}
@@ -305,14 +292,6 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			}
 			continue
 		}
-		if errors.Is(err, storage.ErrNotFound) {
-			// A blob vanished between its upload and the read-back (registry GC).
-			// Run the whole attempt again, which uploads it again.
-			if attempt == attempts-1 {
-				return fmt.Errorf("saving encrypted secrets: uploaded blob disappeared before it was referenced: %v", err)
-			}
-			continue
-		}
 		if err != nil {
 			return fmt.Errorf("saving encrypted secrets: %w", err)
 		}
@@ -379,11 +358,7 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 }
 
 func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
-	resolved, err := a.resolveEnvironment(env)
-	if err != nil {
-		return nil, err
-	}
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -483,11 +458,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 // marker apart from a person's: a key the environment once stored and no
 // longer does was deleted from enbu.
 func (a *App) storedKeys(ctx context.Context, env string) (map[string]bool, error) {
-	resolved, err := a.resolveEnvironment(env)
-	if err != nil {
-		return nil, err
-	}
-	s, err := a.openSession(ctx)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}

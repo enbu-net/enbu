@@ -645,11 +645,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			if e != nil {
 				return e
 			}
-			blob, e := storage.ReadBlob(ctx, w.Devices[0].Store, storage.KindState, scope, rev, 0, storage.MaxPayloadBytes)
+			blob, e := storage.ReadPayload(ctx, w.Devices[0].Store, storage.KindState, scope, rev, storage.MaxPayloadBytes)
 			if e != nil {
 				return e
 			}
-			saved = append(saved, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Blobs: [][]byte{blob}})
+			saved = append(saved, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Payload: blob})
 			if e := w.Devices[0].Store.Delete(ctx, storage.KindState, scope, rev); e != nil {
 				return e
 			}

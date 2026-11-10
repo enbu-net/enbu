@@ -47,7 +47,7 @@ func (f stateFixture) publish(t *testing.T, s State, by actor, cipher string) di
 		t.Fatal(err)
 	}
 	rev := digest.FromBytes(blob)
-	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{[]byte(cipher)}}); err != nil {
+	if err := f.store.Publish(context.Background(), storage.Object{Kind: storage.KindState, Scope: s.Scope(), Rev: rev, Head: blob, Payload: []byte(cipher)}); err != nil {
 		t.Fatal(err)
 	}
 	return rev
@@ -257,7 +257,7 @@ func TestReadCiphertextChecksTheBlobAgainstTheSignedState(t *testing.T) {
 	}
 	// Storage serves other bytes under the revision: the State names the digest.
 	swapped := storagetest.Wrap(f.store, storagetest.Hooks{
-		OpenBlob: func(context.Context, storage.Store, storage.Kind, string, digest.Digest, int) (io.ReadCloser, error) {
+		OpenPayload: func(context.Context, storage.Store, storage.Kind, string, digest.Digest) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("another ciphertext")), nil
 		},
 	})
@@ -275,9 +275,9 @@ func TestLoadStatesNeverOpensABlob(t *testing.T) {
 	f.publish(t, f.state(f.bob, root), f.bob, "child")
 	opened := 0
 	counting := storagetest.Wrap(f.store, storagetest.Hooks{
-		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 			opened++
-			return next.OpenBlob(ctx, kind, scope, rev, index)
+			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 	})
 	sv, err := LoadStates(ctx, counting, f.view, testWorkspace, testResource)

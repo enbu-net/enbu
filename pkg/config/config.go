@@ -140,10 +140,6 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 	return nil
 }
 
-func SaveProject(cfg *ProjectConfig) error {
-	return SaveProjectTo("", cfg)
-}
-
 // SaveProjectTo honors an explicit destination. Only an implicit destination
 // searches ancestors, so a fresh explicit workspace cannot overwrite a parent.
 func SaveProjectTo(dir string, cfg *ProjectConfig) error {
@@ -228,11 +224,6 @@ func LocalStatePath(workspaceID string) string {
 	return filepath.Join(DataDir(), "state", uuidOrHash(workspaceID)+".toml")
 }
 
-// LoadLocalState loads per-project state from the XDG data directory.
-func LoadLocalState(workspaceID string) (*LocalConfig, error) {
-	return LoadLocalStateFrom(DataDir(), workspaceID)
-}
-
 // LoadLocalStateFrom reads local state for one explicitly selected device.
 func LoadLocalStateFrom(dir, workspaceID string) (*LocalConfig, error) {
 	path := filepath.Join(dir, "state", uuidOrHash(workspaceID)+".toml")
@@ -244,11 +235,6 @@ func LoadLocalStateFrom(dir, workspaceID string) (*LocalConfig, error) {
 		return nil, fmt.Errorf("reading local state: %w", err)
 	}
 	return &cfg, nil
-}
-
-// SaveLocalState persists per-project state to the XDG data directory.
-func SaveLocalState(workspaceID string, cfg *LocalConfig) error {
-	return SaveLocalStateTo(DataDir(), workspaceID, cfg)
 }
 
 // SaveLocalStateTo persists local state for one explicitly selected device.
@@ -448,11 +434,6 @@ func ValidEnvironmentName(name string) bool {
 		return false
 	}
 	return true
-}
-
-// ProjectConfigPath returns the path to enbu.toml by traversing up from cwd.
-func ProjectConfigPath() (string, error) {
-	return ProjectConfigPathFrom("")
 }
 
 func ProjectConfigPathFrom(dir string) (string, error) {

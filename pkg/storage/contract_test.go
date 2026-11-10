@@ -65,7 +65,7 @@ func TestS3PrefixesAreIsolated(t *testing.T) {
 	client := minis3Client(t)
 	ctx := context.Background()
 	a, b := storage.NewS3(client, "enbu-test", "a"), storage.NewS3(client, "enbu-test", "b")
-	o := storagetest.Object(storage.KindControl, "", "head")
+	o := storagetest.Object(storage.KindControl, "", "head", "")
 	if err := a.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestS3DiscoverPaginates(t *testing.T) {
 	st := storage.NewS3(client, "enbu-test", "ws")
 	const n = 1003
 	for i := range n {
-		if err := st.Publish(ctx, storagetest.Object(storage.KindRequest, "", fmt.Sprintf("request-%d", i))); err != nil {
+		if err := st.Publish(ctx, storagetest.Object(storage.KindRequest, "", fmt.Sprintf("request-%d", i), "")); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -94,7 +94,7 @@ func TestS3FetchRejectsTamperedAndMalformedObjects(t *testing.T) {
 	client := minis3Client(t)
 	ctx := context.Background()
 	st := storage.NewS3(client, "enbu-test", "ws")
-	o := storagetest.Object(storage.KindControl, "", "head-control")
+	o := storagetest.Object(storage.KindControl, "", "head-control", "")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestNewS3ClientCredentials(t *testing.T) {
 			} else if err := os.WriteFile(creds, []byte("[enbu-test]\naws_access_key_id=test-key\naws_secret_access_key=test-secret\naws_session_token=test-token\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			o := storagetest.Object(storage.KindControl, "", "head")
+			o := storagetest.Object(storage.KindControl, "", "head", "")
 			name, _ := storage.Name(o.Kind, o.Scope, o.Rev)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if (r.Method != http.MethodGet && r.Method != http.MethodHead) || r.URL.Path != "/enbu-test/workspace/revisions/"+name {
@@ -185,6 +185,12 @@ type fakeRegistry struct {
 	manifests map[string][]byte // by tag and by digest
 	puts      int
 	blobPuts  int
+	// lose drops a blob when it is looked up after its upload, as a registry
+	// GC would, as many times as it says.
+	lose map[string]int
+	// loseBeforeManifest drops a blob just before a manifest naming it is
+	// pushed, as many times as it says.
+	loseBeforeManifest map[string]int
 	// unknownWhenEmpty answers tags/list of a repository nothing was pushed to
 	// with 404 NAME_UNKNOWN, as zot and GHCR do.
 	unknownWhenEmpty bool
@@ -235,6 +241,10 @@ func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	case strings.HasPrefix(path, "blobs/"):
 		key := strings.TrimPrefix(path, "blobs/")
+		if _, ok := r.blobs[key]; ok && r.lose[key] > 0 {
+			r.lose[key]--
+			delete(r.blobs, key)
+		}
 		b, ok := r.blobs[key]
 		serve(b, ok, "application/octet-stream", key) // a registry reports the address, not a recomputed hash
 	case strings.HasPrefix(path, "manifests/") && req.Method == http.MethodPut:
@@ -245,8 +255,14 @@ func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		for _, d := range append([]ocispec.Descriptor{m.Config}, m.Layers...) {
+			if r.loseBeforeManifest[d.Digest.String()] > 0 {
+				r.loseBeforeManifest[d.Digest.String()]--
+				delete(r.blobs, d.Digest.String())
+			}
 			if _, ok := r.blobs[d.Digest.String()]; !ok {
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"errors":[{"code":"MANIFEST_BLOB_UNKNOWN","message":"blob unknown to registry"}]}`))
 				return
 			}
 		}
@@ -281,7 +297,7 @@ func TestOCIContractAgainstFakeRegistry(t *testing.T) {
 	storagetest.Contract(t, s)
 }
 
-func TestOCIPublishesOneManifestWithTheHeadAndItsBlobs(t *testing.T) {
+func TestOCIPublishesOneManifestWithTheHeadAndItsPayload(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state", "ciphertext")
 	if err := s.Publish(context.Background(), o); err != nil {
@@ -292,8 +308,8 @@ func TestOCIPublishesOneManifestWithTheHeadAndItsBlobs(t *testing.T) {
 	if err := json.Unmarshal(r.manifests[name], &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Layers) != 2 || m.Layers[0].Digest != o.Rev || m.Layers[1].Digest != digest.FromBytes(o.Blobs[0]) {
-		t.Fatalf("layers are not the head followed by its blobs: %+v", m.Layers)
+	if len(m.Layers) != 2 || m.Layers[0].Digest != o.Rev || m.Layers[1].Digest != digest.FromBytes(o.Payload) {
+		t.Fatalf("layers are not the head followed by its payload: %+v", m.Layers)
 	}
 	if m.Subject != nil {
 		t.Fatal("a subject would trigger the racy referrers fallback")
@@ -322,14 +338,14 @@ func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 
 	// The registry serves other bytes under the ciphertext digest.
 	r.mu.Lock()
-	r.blobs[digest.FromBytes(o.Blobs[0]).String()] = []byte("tampered!!")
+	r.blobs[digest.FromBytes(o.Payload).String()] = []byte("tampered!!")
 	r.mu.Unlock()
-	// The head is still fine; the tampered blob is caught when it is read.
+	// The head is still fine; the tampered payload is caught when it is read.
 	if _, err := s.FetchHead(ctx, o.Kind, o.Scope, o.Rev); err != nil {
-		t.Fatalf("head of an object with a tampered blob: %v", err)
+		t.Fatalf("head of an object with a tampered payload: %v", err)
 	}
-	if _, err := storage.ReadBlob(ctx, s, o.Kind, o.Scope, o.Rev, 0, storage.MaxPayloadBytes); !errors.Is(err, storage.ErrCorrupt) {
-		t.Fatalf("tampered blob accepted: %v", err)
+	if _, err := storage.ReadPayload(ctx, s, o.Kind, o.Scope, o.Rev, storage.MaxPayloadBytes); !errors.Is(err, storage.ErrCorrupt) {
+		t.Fatalf("tampered payload accepted: %v", err)
 	}
 
 	// The tag is retargeted at another revision's manifest.
@@ -349,26 +365,61 @@ func TestOCIFetchRejectsTamperedContent(t *testing.T) {
 	}
 }
 
-func TestOCIPublishFailsWhenABlobDisappears(t *testing.T) {
+func TestOCIPublishUploadsADisappearedBlobAgain(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	ctx := context.Background()
 	o := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state", "ciphertext")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
-	// A registry GC drops the ciphertext after the manifest exists; republishing must not acknowledge.
+	// A registry GC drops the ciphertext after the manifest exists; republishing uploads it again.
+	payload := digest.FromBytes(o.Payload).String()
 	r.mu.Lock()
-	delete(r.blobs, digest.FromBytes(o.Blobs[0]).String())
+	delete(r.blobs, payload)
 	r.mu.Unlock()
-	if err := s.Publish(ctx, o); !errors.Is(err, storage.ErrNotFound) {
-		t.Fatalf("publish acknowledged a missing blob: %v", err)
+	if err := s.Publish(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := storage.ReadPayload(ctx, s, o.Kind, o.Scope, o.Rev, storage.MaxPayloadBytes); err != nil || !bytes.Equal(got, o.Payload) {
+		t.Fatalf("payload after republishing: %q %v", got, err)
+	}
+
+	// A blob dropped once between its upload and the read-back is uploaded again.
+	other := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state-2", "ciphertext-2")
+	r.mu.Lock()
+	r.lose = map[string]int{digest.FromBytes(other.Payload).String(): 1}
+	r.mu.Unlock()
+	if err := s.Publish(ctx, other); err != nil {
+		t.Fatalf("publish after one lost blob: %v", err)
+	}
+
+	// A blob dropped between its upload and the manifest push is uploaded again.
+	early := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state-4", "ciphertext-4")
+	r.mu.Lock()
+	r.loseBeforeManifest = map[string]int{digest.FromBytes(early.Payload).String(): 1}
+	r.mu.Unlock()
+	if err := s.Publish(ctx, early); err != nil {
+		t.Fatalf("publish after a blob lost before the manifest: %v", err)
+	}
+	if got, err := storage.ReadPayload(ctx, s, early.Kind, early.Scope, early.Rev, storage.MaxPayloadBytes); err != nil || !bytes.Equal(got, early.Payload) {
+		t.Fatalf("payload after a blob lost before the manifest: %q %v", got, err)
+	}
+
+	// A blob the registry keeps dropping fails the publish, and never as a
+	// missing object: the caller would take that for an absent environment.
+	lost := storagetest.Object(storage.KindState, storagetest.Scope("secrets/dev"), "head-state-3", "ciphertext-3")
+	r.mu.Lock()
+	r.lose = map[string]int{digest.FromBytes(lost.Payload).String(): 1000}
+	r.mu.Unlock()
+	if err := s.Publish(ctx, lost); err == nil || errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("publish acknowledged a missing blob or reported it missing: %v", err)
 	}
 }
 
 func TestOCIDiscoverIgnoresForeignTags(t *testing.T) {
 	r, s := newFakeRegistry(t)
 	ctx := context.Background()
-	o := storagetest.Object(storage.KindControl, "", "head-control")
+	o := storagetest.Object(storage.KindControl, "", "head-control", "")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -381,12 +432,10 @@ func TestOCIDiscoverIgnoresForeignTags(t *testing.T) {
 	if err != nil || len(revs) != 1 || revs[0] != o.Rev {
 		t.Fatalf("discover = %v %v", revs, err)
 	}
-	if s.Capabilities().PhysicalDelete {
-		t.Fatal("OCI cannot delete through the registry API")
+	if err := s.Delete(ctx, storage.KindControl, "", o.Rev); !errors.Is(err, storage.ErrUnsupported) {
+		t.Fatalf("OCI cannot delete through the registry API: %v", err)
 	}
 }
-
-var _ = bytes.Equal
 
 func TestOCIDiscoverTreatsAnUnknownRepositoryAsEmpty(t *testing.T) {
 	r, s := newFakeRegistry(t)
@@ -397,7 +446,7 @@ func TestOCIDiscoverTreatsAnUnknownRepositoryAsEmpty(t *testing.T) {
 			t.Fatalf("%s before the first push: %v %v", kind, revs, err)
 		}
 	}
-	o := storagetest.Object(storage.KindControl, "", "head-control")
+	o := storagetest.Object(storage.KindControl, "", "head-control", "")
 	if err := s.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}

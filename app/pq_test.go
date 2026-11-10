@@ -40,7 +40,7 @@ func stanzas(t *testing.T, a *App) string {
 		t.Fatalf("read: %v", err)
 	}
 	h := read.heads[0]
-	ciphertext, err := storage.ReadBlob(bg, a.Storage, storage.KindState, h.Scope(), h.Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, a.Storage, storage.KindState, h.Scope(), h.Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

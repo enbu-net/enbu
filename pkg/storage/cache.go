@@ -32,7 +32,7 @@ type listing struct {
 	scope string
 }
 
-// WithHeadCache returns s with its heads cached under dir. Blobs are not
+// WithHeadCache returns s with its heads cached under dir. Payloads are not
 // cached: they are read only for the few revisions whose content is used.
 func WithHeadCache(s Store, dir string) Store {
 	return &headCache{Store: s, dir: dir, listed: map[listing]map[digest.Digest]bool{}}

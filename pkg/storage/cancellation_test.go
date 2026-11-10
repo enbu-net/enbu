@@ -86,7 +86,7 @@ func TestRemoteCancellationWhileWaiting(t *testing.T) {
 						_, err = store.FetchHead(ctx, object.Kind, object.Scope, object.Rev)
 					case "blob":
 						var reader io.ReadCloser
-						reader, err = store.OpenBlob(ctx, object.Kind, object.Scope, object.Rev, 0)
+						reader, err = store.OpenPayload(ctx, object.Kind, object.Scope, object.Rev)
 						if reader != nil {
 							_ = reader.Close()
 						}

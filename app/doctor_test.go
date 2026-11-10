@@ -129,7 +129,7 @@ func TestDoctorDetectsMissingAcceptedHistory(t *testing.T) {
 
 type doctorCorruptStore struct{ storage.Store }
 
-func (s doctorCorruptStore) OpenBlob(context.Context, storage.Kind, string, digest.Digest, int) (io.ReadCloser, error) {
+func (s doctorCorruptStore) OpenPayload(context.Context, storage.Kind, string, digest.Digest) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("corrupt ciphertext")), nil
 }
 
@@ -306,7 +306,7 @@ func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
 				defer cancel()
 			}
 			checks := 0
-			a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenBlob: func(got context.Context, store storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+			a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenPayload: func(got context.Context, store storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 				checks++
 				deadline, ok := got.Deadline()
 				want, wantOK := ctx.Deadline()
@@ -318,7 +318,7 @@ func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
 					<-ctx.Done()
 					return nil, ctx.Err()
 				}
-				return store.OpenBlob(got, kind, scope, rev, index)
+				return store.OpenPayload(got, kind, scope, rev)
 			}})
 			r := a.Diagnose(ctx)
 			if checks == 0 {

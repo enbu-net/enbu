@@ -73,7 +73,7 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), rev, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), rev, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestSessionIgnoresRevisionsWithoutAuthority(t *testing.T) {
 
 	// Real ciphertext for the real recipients inside a "state" nobody signed.
 	garbage := []byte("not a signed state")
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Head: garbage, Blobs: [][]byte{raw}}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Head: garbage, Payload: raw}); err != nil {
 		t.Fatal(err)
 	}
 	// A valid signature by a device that is not a principal.
@@ -136,12 +136,12 @@ func TestSessionRejectsStateOfAnotherResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, src, rev, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, src, rev, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Replaying a genuine staging state as the dev environment must fail.
-	replay := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(s.workspace, s.resource("dev")), Rev: rev, Head: head, Blobs: [][]byte{ciphertext}}
+	replay := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(s.workspace, s.resource("dev")), Rev: rev, Head: head, Payload: ciphertext}
 	if err := alice.Storage.Publish(bg, replay); err != nil {
 		t.Fatal(err)
 	}

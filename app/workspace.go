@@ -116,7 +116,16 @@ func wspError(err error) error {
 // openControl verifies the Control DAG without loading any key. It fails with
 // CodeControlForked while two heads compete.
 func (a *App) openControl(ctx context.Context) (*session, error) {
-	s, err := a.openControlView(ctx)
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	return a.openControlWith(ctx, cfg)
+}
+
+// openControlWith is openControl on an enbu.toml already loaded.
+func (a *App) openControlWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	s, err := a.openControlViewWith(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +141,11 @@ func (a *App) openControlView(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := a.workspaceStorage(ctx)
+	return a.openControlViewWith(ctx, cfg)
+}
+
+func (a *App) openControlViewWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	store, err := a.workspaceStorage(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +239,34 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 // openSession also loads the encryption identity and the signing key, and
 // requires this device to be a principal of the verified Control.
 func (a *App) openSession(ctx context.Context) (*session, error) {
-	s, err := a.openControl(ctx)
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	return a.openSessionWith(ctx, cfg)
+}
+
+// openEnvironment resolves env from enbu.toml before opening a session on the
+// same config, so an unknown environment is reported from the local file
+// before storage is reached or membership is checked.
+func (a *App) openEnvironment(ctx context.Context, env string) (*session, *ResolvedEnvironment, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved, err := resolveEnvironment(func() (*config.ProjectConfig, error) { return cfg, nil }, env)
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := a.openSessionWith(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s, resolved, nil
+}
+
+func (a *App) openSessionWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	s, err := a.openControlWith(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +515,8 @@ var errControlMoved = errors.New("workspace members changed while writing")
 
 // controlUnchanged loads the Control DAG again just before and after
 // publishing. Encrypting for a recipient set that has since changed would hand
-// new ciphertext to someone who was removed in the meantime.
+// new ciphertext to someone who was removed in the meantime, and leave a head
+// that someone approved in the meantime cannot read.
 func (s *session) controlUnchanged(ctx context.Context) error {
 	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), nil)
 	if err != nil {
@@ -512,7 +553,7 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 	if err != nil {
 		return nil, err
 	}
-	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
+	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Payload: ciphertext}
 	if err := s.store.Publish(ctx, obj); err != nil {
 		return nil, fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}
