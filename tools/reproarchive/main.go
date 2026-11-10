@@ -4,18 +4,22 @@
 // commit give the same archive on any machine.
 //
 //	reproarchive zip OUT.zip DIR            pack DIR's files, sorted by path
+//	reproarchive tar OUT.tar.gz DIR         the same as a gzip-compressed tar
 //	reproarchive rezip FILE.zip             rewrite a zip in place, keeping its entry order
 package main
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"compress/flate"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -31,7 +35,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: reproarchive zip OUT DIR | rezip FILE")
+		return errors.New("usage: reproarchive zip|tar OUT DIR | rezip FILE")
 	}
 	mtime, err := sourceDate(os.Getenv("SOURCE_DATE_EPOCH"))
 	if err != nil {
@@ -44,6 +48,12 @@ func run(args []string) error {
 			return err
 		}
 		return writeFile(args[1], func(w io.Writer) error { return writeZip(w, files, mtime) })
+	case args[0] == "tar" && len(args) == 3:
+		files, err := collect(args[2])
+		if err != nil {
+			return err
+		}
+		return writeFile(args[1], func(w io.Writer) error { return writeTarGz(w, files, mtime) })
 	case args[0] == "rezip" && len(args) == 2:
 		files, err := readZip(args[1])
 		if err != nil {
@@ -64,7 +74,7 @@ func sourceDate(v string) (time.Time, error) {
 	if err != nil || sec < 0 {
 		return time.Time{}, fmt.Errorf("SOURCE_DATE_EPOCH %q is not a Unix time", v)
 	}
-	// Zip times have two-second steps and no time zone.
+	// Zip times have two-second steps and no time zone; tar keeps whole seconds.
 	return time.Unix(sec, 0).UTC(), nil
 }
 
@@ -163,6 +173,53 @@ func writeZip(w io.Writer, files []entry, mtime time.Time) error {
 		}
 	}
 	return zw.Close()
+}
+
+func writeTarGz(w io.Writer, files []entry, mtime time.Time) error {
+	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
+	if err != nil {
+		return err
+	}
+	// The gzip header keeps no name and no time.
+	tw := tar.NewWriter(gz)
+	dirs := map[string]bool{}
+	for _, e := range files {
+		// Parent directories first, so extracting gives them a fixed mode too.
+		for _, d := range parents(e.name) {
+			if dirs[d] {
+				continue
+			}
+			dirs[d] = true
+			if err := tw.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeDir, Name: d + "/", Mode: 0o755, ModTime: mtime,
+				Uname: "root", Gname: "root", Format: tar.FormatPAX,
+			}); err != nil {
+				return err
+			}
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Typeflag: tar.TypeReg, Name: e.name, Mode: int64(mode(e)), Size: int64(len(e.data)), ModTime: mtime,
+			Uname: "root", Gname: "root", Format: tar.FormatPAX,
+		}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(e.data); err != nil {
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return gz.Close()
+}
+
+// parents lists the directories above name, outermost first.
+func parents(name string) []string {
+	var out []string
+	for d := path.Dir(name); d != "."; d = path.Dir(d) {
+		out = append([]string{d}, out...)
+	}
+	return out
 }
 
 // writeFile builds the archive in memory and then replaces name, so rezip can
