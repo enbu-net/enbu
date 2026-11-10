@@ -179,7 +179,7 @@ func TestFakeSecretRejected(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {

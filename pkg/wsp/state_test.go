@@ -156,7 +156,7 @@ func TestLoadStatesSkipsAnUnsignedStateNamingAnUnknownControl(t *testing.T) {
 		t.Fatal(err)
 	}
 	rev := digest.FromBytes(blob)
-	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: forged.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{[]byte("junk")}}); err != nil {
+	if err := f.store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: forged.Scope(), Rev: rev, Head: blob, Payload: []byte("junk")}); err != nil {
 		t.Fatal(err)
 	}
 	sv, err := LoadStates(ctx, f.store, f.view, testWorkspace, testResource)
