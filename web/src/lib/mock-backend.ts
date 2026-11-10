@@ -398,9 +398,6 @@ export const mockBackend: Backend = {
       m.device_id === deviceID ? Object.assign({}, m, { admin }) : m,
     );
   },
-  async resolveMemberFork(): Promise<void> {
-    throw createAppError("invalid_argument");
-  },
   async identity(): Promise<PublicInfo> {
     const self = mockMembers[0];
     return {

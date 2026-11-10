@@ -296,65 +296,6 @@ func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
 	return nil
 }
 
-// ResolveControlFork joins competing Control heads. Two admins changed the
-// members at the same time; the resolution keeps only principals every head
-// lists and admin rights every head grants, so nothing is granted by chance.
-// Anyone it dropped, or anything it did not grant, is added again afterwards
-// by a normal approval.
-func (a *App) ResolveControlFork(ctx context.Context) (err error) {
-	defer apperr.NormalizeInto(&err)
-	s, err := a.openControlView(ctx)
-	if err != nil {
-		return err
-	}
-	if s.head != nil {
-		return apperr.New(apperr.CodeInvalidArgument, "the workspace members are not forked", nil)
-	}
-	if a.Identities == nil {
-		return fmt.Errorf("identity store is not initialized")
-	}
-	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
-		return identityError(fmt.Errorf("loading signing key: %w", err))
-	}
-	defer s.Close()
-	author := s.signer.Public().DeviceID()
-	for _, h := range s.view.Heads {
-		if p, ok := h.Principal(author); !ok || !p.Admin {
-			return apperr.New(apperr.CodeAccessDenied, "only an admin of every competing member list can join them", nil)
-		}
-	}
-	_, err = wsp.ResolveFork(ctx, s.store, s.view, s.signer, func(c *wsp.Control) error {
-		kept := c.Principals[:0:0]
-		for _, p := range c.Principals {
-			inAll, adminInAll := true, true
-			for _, h := range s.view.Heads {
-				q, ok := h.Principal(p.ID)
-				inAll = inAll && ok
-				adminInAll = adminInAll && ok && q.Admin
-			}
-			if inAll {
-				p.Admin = adminInAll
-				kept = append(kept, p)
-			}
-		}
-		c.Principals = kept
-		return requireAdmin(c)
-	})
-	if err != nil {
-		var appErr *apperr.Error
-		if errors.As(err, &appErr) {
-			return err
-		}
-		return wspError(err)
-	}
-	// The resolution may have dropped members that the existing ciphertext is
-	// still encrypted for, so it re-encrypts exactly as a removal does.
-	if err := a.reencryptAll(ctx); err != nil {
-		return apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
-	}
-	return nil
-}
-
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
 // of the current Control: the ones enbu.toml names and any other storage holds,
 // so an environment another member created, whose enbu.toml this device has not

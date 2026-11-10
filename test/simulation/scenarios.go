@@ -403,10 +403,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := w.Batch(ctx, "publish", []func(int) error{func(int) error { return allowFork(a.SetAdmin(ctx, w.Devices[2].ID, true)) }, func(int) error { return allowFork(b.SetAdmin(ctx, w.Devices[2].ID, false)) }}); e != nil {
 			return e
 		}
-		if _, e := a.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeControlForked) != nil {
+		if _, e := w.Devices[2].App.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("forked read accepted: %v", e)
 		}
-		if e := a.ResolveControlFork(ctx); e != nil {
+		// a is an admin of both heads, so its next operation joins them.
+		if _, e := a.ListSecrets(ctx, "default"); e != nil {
 			return e
 		}
 		return w.Check(ctx, "default")

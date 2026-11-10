@@ -59,7 +59,7 @@ export enum Code {
     CodeSecretConflict = "secret_conflict",
 
     /**
-     * two admins changed the members at once; an admin must resolve it
+     * two admins changed the members at once; an admin's next operation resolves it
      */
     CodeControlForked = "control_forked",
 
