@@ -92,6 +92,9 @@ func (s ociStore) Delete(ctx context.Context, kind Kind, scope string, rev diges
 	return s.packages.DeleteTag(ctx, name)
 }
 
+// CanDelete reports whether the registry has a provider delete API.
+func (s ociStore) CanDelete() bool { return s.packages != nil }
+
 func blobDescriptor(mediaType string, data []byte) ocispec.Descriptor {
 	return ocispec.Descriptor{MediaType: mediaType, Digest: digest.FromBytes(data), Size: int64(len(data))}
 }

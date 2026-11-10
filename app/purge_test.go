@@ -12,6 +12,8 @@ import (
 // noDelete is a backend that cannot delete, like a registry without a provider API.
 type noDelete struct{ storage.Store }
 
+func (noDelete) CanDelete() bool { return false }
+
 func (noDelete) Delete(context.Context, storage.Kind, string, digest.Digest) error {
 	return storage.ErrUnsupported
 }

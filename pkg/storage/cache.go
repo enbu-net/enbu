@@ -38,6 +38,9 @@ func WithHeadCache(s Store, dir string) Store {
 	return &headCache{Store: s, dir: dir, listed: map[listing]map[digest.Digest]bool{}}
 }
 
+// CanDelete passes on whether the wrapped store can delete.
+func (c *headCache) CanDelete() bool { return CanDelete(c.Store) }
+
 func (c *headCache) path(rev digest.Digest) string {
 	// The digest was validated, so its hex form is a safe file name.
 	return filepath.Join(c.dir, rev.Encoded())

@@ -435,6 +435,9 @@ func TestOCIDiscoverIgnoresForeignTags(t *testing.T) {
 	if err := s.Delete(ctx, storage.KindControl, "", o.Rev); !errors.Is(err, storage.ErrUnsupported) {
 		t.Fatalf("OCI cannot delete through the registry API: %v", err)
 	}
+	if storage.CanDelete(s) {
+		t.Fatal("OCI without a provider API claims it can delete")
+	}
 }
 
 func TestOCIDiscoverTreatsAnUnknownRepositoryAsEmpty(t *testing.T) {

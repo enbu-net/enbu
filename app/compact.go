@@ -91,11 +91,8 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	if len(removed)+len(junk) == 0 {
 		return result, nil
 	}
-	// A backend that cannot delete must refuse before the record is published.
-	// Deleting a revision that cannot exist tells it apart without removing
-	// anything.
-	if err := s.store.Delete(ctx, storage.KindState, scope, digest.FromString("enbu delete probe")); err != nil && !errorsIsNotFound(err) {
-		return nil, storageError(err)
+	if !storage.CanDelete(s.store) {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", nil)
 	}
 	// Publish the records before deleting anything: a device must never see a
 	// revision it accepted gone without the record that excuses it.

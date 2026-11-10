@@ -105,6 +105,16 @@ type Store interface {
 	Delete(ctx context.Context, kind Kind, scope string, rev digest.Digest) error
 }
 
+// CanDelete reports, without calling the backend, whether s can delete
+// objects. A backend that may not delete says so through a CanDelete method,
+// and a wrapper passes its inner store's answer on; every other backend can.
+func CanDelete(s Store) bool {
+	if d, ok := s.(interface{ CanDelete() bool }); ok {
+		return d.CanDelete()
+	}
+	return true
+}
+
 // ReadPayload reads a whole payload of at most limit bytes.
 func ReadPayload(ctx context.Context, s Store, kind Kind, scope string, rev digest.Digest, limit int64) ([]byte, error) {
 	rc, err := s.OpenPayload(ctx, kind, scope, rev)
