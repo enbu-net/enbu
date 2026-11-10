@@ -56,6 +56,8 @@ const pairs: [string, string[], number][] = [
   ["accent.text", [...surfaces, "accent.subtle"], TEXT],
   ["accent.default", surfaces, UI],
   ["border.strong", surfaces, UI],
+  // The hover border of the native select.
+  ["fg.muted", surfaces, UI],
   ["status.success", [...surfaces, "status.successMuted"], TEXT],
   ["status.danger", [...surfaces, "status.dangerMuted"], TEXT],
   ["status.dangerFg", ["status.dangerSolid"], TEXT],

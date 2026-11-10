@@ -33,7 +33,7 @@ task gui/run            # Run the desktop app against the Vite dev server
 task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code (jsx-a11y included), fail on stale bindings, then run gui/a11y
-task gui/a11y           # WCAG 2.2 AA check of the browser preview with axe-core in Chromium (light/dark, en/ja, narrow)
+task gui/a11y           # WCAG 2.2 AA check of the browser preview with axe-core in Chromium (light/dark, en/ja, narrow); runs `playwright install chromium` first unless ENBU_A11Y_CHROMIUM names an installed Chromium
 task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests

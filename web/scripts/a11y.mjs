@@ -84,6 +84,8 @@ async function audit(page, where) {
 }
 
 const violations = [];
+// Script errors on the page, reported with the violations after every run.
+const pageErrors = [];
 let audits = 0;
 try {
   for (const { theme, locale, width } of runs) {
@@ -137,7 +139,7 @@ try {
           await page.waitForTimeout(200);
         }
       }
-      if (errors.length) throw new Error(`page errors in ${run}: ${errors.join("; ")}`);
+      pageErrors.push(...errors.map((message) => `${run}: ${message}`));
       await context.close();
     }
   }
@@ -154,8 +156,11 @@ for (const violation of violations) {
     console.error(`    ${node.failureSummary?.replaceAll("\n", "\n    ")}`);
   }
 }
-if (violations.length) {
-  console.error(`\nWCAG check failed: ${violations.length} violation(s) in ${audits} screen(s).`);
+for (const error of pageErrors) console.error(`\n[page error] ${error}`);
+if (violations.length || pageErrors.length) {
+  console.error(
+    `\nWCAG check failed: ${violations.length} violation(s) in ${audits} screen(s), ${pageErrors.length} page error(s).`,
+  );
   process.exit(1);
 }
 console.log(`WCAG 2.2 AA: no violations in ${audits} screen(s).`);
