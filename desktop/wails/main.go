@@ -161,7 +161,7 @@ func main() {
 	}
 	// After an update, the app that installed it may still hold the
 	// single-instance lock for a moment.
-	selfupdate.WaitForPrevious(15 * time.Second)
+	selfupdate.WaitForPrevious(clock.New(), 15*time.Second)
 	if err := registerProtocolHandler(); err != nil {
 		slog.Warn("registering enbu protocol handler", "err", err)
 	}

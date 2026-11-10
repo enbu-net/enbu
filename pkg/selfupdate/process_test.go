@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 func TestProcessAlive(t *testing.T) {
@@ -16,7 +18,7 @@ func TestProcessAlive(t *testing.T) {
 func TestWaitForPreviousReturnsOnceTheProcessIsGone(t *testing.T) {
 	t.Setenv(waitPIDEnv, strconv.Itoa(1<<30))
 	start := time.Now()
-	WaitForPrevious(5 * time.Second)
+	WaitForPrevious(clock.New(), 5*time.Second)
 	if time.Since(start) > time.Second {
 		t.Error("waited for a process that does not exist")
 	}
@@ -28,7 +30,7 @@ func TestWaitForPreviousReturnsOnceTheProcessIsGone(t *testing.T) {
 func TestWaitForPreviousGivesUpAfterTheTimeout(t *testing.T) {
 	t.Setenv(waitPIDEnv, strconv.Itoa(os.Getpid()))
 	start := time.Now()
-	WaitForPrevious(200 * time.Millisecond)
+	WaitForPrevious(clock.New(), 200*time.Millisecond)
 	if elapsed := time.Since(start); elapsed < 200*time.Millisecond || elapsed > 2*time.Second {
 		t.Errorf("waited %v", elapsed)
 	}

@@ -1,11 +1,14 @@
 package selfupdate
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 // waitPIDEnv tells a relaunched app which process to wait for: the app that
@@ -56,7 +59,7 @@ func Relaunch(executable string) error {
 
 // WaitForPrevious blocks, for at most timeout, until the app that relaunched
 // this one has exited, and clears the variable so children do not inherit it.
-func WaitForPrevious(timeout time.Duration) {
+func WaitForPrevious(c clock.Clock, timeout time.Duration) {
 	value := os.Getenv(waitPIDEnv)
 	if value == "" {
 		return
@@ -66,8 +69,8 @@ func WaitForPrevious(timeout time.Duration) {
 	if err != nil || pid <= 0 {
 		return
 	}
-	deadline := time.Now().Add(timeout)
-	for processAlive(pid) && time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
+	deadline := c.Now().Add(timeout)
+	for processAlive(pid) && c.Now().Before(deadline) {
+		_ = clock.Wait(context.Background(), c, 100*time.Millisecond)
 	}
 }

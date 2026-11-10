@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
 )
@@ -43,6 +44,8 @@ type Updater struct {
 	// TrustedRoot returns the Sigstore trusted root; nil fetches it over
 	// TUF (the root of trust embedded in sigstore-go), cached in CacheDir.
 	TrustedRoot func(ctx context.Context) (root.TrustedMaterial, error)
+	// Clock bounds the release lookup; nil uses the real clock.
+	Clock clock.Clock
 	// latest and verify are replaceable in tests.
 	latest func(ctx context.Context, client *http.Client) (Release, error)
 	verify func(trusted root.TrustedMaterial, checksums, bundleJSON []byte) error
@@ -79,7 +82,11 @@ func (u *Updater) check(ctx context.Context) (Status, Release, error) {
 	}
 	// The client's timeout fits a whole archive; the release lookup should
 	// not keep the settings screen waiting that long.
-	lookup, cancel := context.WithTimeout(ctx, lookupTimeout)
+	c := u.Clock
+	if c == nil {
+		c = clock.New()
+	}
+	lookup, cancel := clock.WithTimeout(ctx, c, lookupTimeout)
 	defer cancel()
 	release, err := latest(lookup, u.client())
 	if err != nil {
