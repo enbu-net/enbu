@@ -56,9 +56,27 @@ type Service struct {
 	repoPath   string
 	sessions   map[string]*oauthSession
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
+	accounts   accountStore
 	emit       EventEmitter
 	AppVersion string
 }
+
+// accountStore holds the signed-in GitHub accounts; tests replace it.
+type accountStore interface {
+	Accounts() (logins []string, current string, err error)
+	Switch(login string) error
+	Delete(login string) error
+}
+
+// keyringAccounts is the accountStore of the OS keyring and the data directory.
+type keyringAccounts struct{}
+
+func (keyringAccounts) Accounts() ([]string, string, error) { return auth.Accounts() }
+func (keyringAccounts) Switch(login string) error {
+	_, err := auth.SwitchAccount(login)
+	return err
+}
+func (keyringAccounts) Delete(login string) error { return auth.DeleteAccount(login) }
 
 type oauthSession struct {
 	cancel    context.CancelFunc
@@ -73,6 +91,7 @@ func NewService(a *app.App) *Service {
 		openURL:  auth.OpenBrowser,
 		git:      a.Git,
 		sessions: make(map[string]*oauthSession),
+		accounts: keyringAccounts{},
 	}
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock
@@ -267,7 +286,7 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
-	if logins, _, err := auth.Accounts(); err == nil {
+	if logins, _, err := s.accounts.Accounts(); err == nil {
 		status.Accounts = logins
 	}
 	token, err := auth.LoadToken()
@@ -399,13 +418,12 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 // login is "". Signing out of the one in use moves to the most recent
 // remaining sign-in.
 func (s *Service) Logout(login string) error {
-	return auth.DeleteAccount(login)
+	return s.accounts.Delete(login)
 }
 
 // SwitchAccount uses another signed-in GitHub account in this data directory.
 func (s *Service) SwitchAccount(login string) error {
-	_, err := auth.SwitchAccount(login)
-	return err
+	return s.accounts.Switch(login)
 }
 
 func (s *Service) BrowseRepository() (RepoInfo, error) {
