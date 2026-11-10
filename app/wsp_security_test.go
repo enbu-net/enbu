@@ -690,6 +690,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 		t.Fatal("retry changed workspace or root")
 	}
 }
+
 // Members that keep changing exhaust the write's retries. That used to leave
 // as an unclassified internal error; it is a conflict the caller can retry.
 func TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging(t *testing.T) {
