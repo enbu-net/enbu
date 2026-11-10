@@ -56,10 +56,11 @@ commit (`SOURCE_DATE_EPOCH`), never from the clock.
 file system was made and a random volume ID, so two builds of the same app
 never give the same bytes. `tools/release-darwin/dmg-contents.sh` mounts an
 image and lists the mode and SHA-256 of every file, every link and every
-directory in it; two images match when the lists match. Left out are only the
-entries macOS keeps for the volume itself (`.fseventsd`, `.Trashes`, the HFS+
-private directories) and `.DS_Store`, the Finder window layout, which points at
-the volume by its creation date. None of these is ever run. The app, its
+directory in it; two images match when the lists match. Left out are only
+these entries at the root of the volume, which macOS keeps for the volume
+itself: `.fseventsd`, `.Trashes`, the HFS+ private directories and journal
+files, and `.DS_Store`, the Finder window layout, which points at the volume by
+its creation date. None of these is ever run. Everything inside the app, its
 signature, the `Applications` link and the background are all compared.
 
 The release workflow enforces this. For each platform, the `build` job builds
@@ -73,14 +74,17 @@ reproducibility cannot be merged.
 
 ## Rebuild a release yourself
 
-On Linux (amd64 or arm64) you rebuild everything except the macOS app; you
-need Git, [aqua](https://aquaproj.github.io/) for the pinned tools, the Vite+
-CLI (`vp`) that the frontend tasks call, Docker for the Linux desktop app, and
-the GTK 4 and WebKitGTK 6.0 headers (`libgtk-4-dev libwebkitgtk-6.0-dev`), which
-the Wails CLI needs to build. The Linux desktop app is built for your machine's
-architecture only. On macOS you rebuild the macOS app for your Mac's
-architecture; you need Xcode of the version that `XCODE_VERSION` in
-`.github/workflows/release-build.yaml` names, selected with `DEVELOPER_DIR`.
+On either system you need Git, Go of the version `go.mod` names,
+[aqua](https://aquaproj.github.io/) for the other pinned tools (it does not
+install Go), and the Vite+ CLI (`vp`) that the frontend tasks call.
+
+On Linux (amd64 or arm64) you rebuild everything except the macOS app. You also
+need Docker for the Linux desktop app, and the GTK 4 and WebKitGTK 6.0 headers
+(`libgtk-4-dev libwebkitgtk-6.0-dev`), which the Wails CLI needs to build. The
+Linux desktop app is built for your machine's architecture only. On macOS you
+rebuild the macOS app for your Mac's architecture; you also need Xcode of the
+version that `XCODE_VERSION` in `.github/workflows/release-build.yaml` names,
+selected with `DEVELOPER_DIR`.
 
 ```sh
 git clone https://github.com/enbu-net/enbu && cd enbu

@@ -417,14 +417,20 @@ tasks:
         for f in enbu_*.tar.gz enbu_*.zip enbu_*.deb enbu_*.rpm enbu_*.apk enbu_*.pkg.tar.zst enbu-desktop_* enbu-vscode_*.vsix; do
           if [ -f "$f" ]; then set -- "$@" "$f"; fi
         done
-        {
-          for f in "$@"; do
-            case "$f" in
-              *.dmg) printf '%s  %s\n' "$(../tools/release-darwin/dmg-contents.sh "$f" | shasum -a 256 | cut -d' ' -f1)" "$f:contents" ;;
-              *) shasum -a 256 "$f" ;;
-            esac
-          done
-        } | LC_ALL=C sort -k2 > reproducible.sha256
+        # No pipes: set -e must see a failing helper, never hash its short output.
+        for f in "$@"; do
+          case "$f" in
+            *.dmg)
+              ../tools/release-darwin/dmg-contents.sh "$f" > "$f.contents"
+              test -s "$f.contents"
+              sum=$(shasum -a 256 < "$f.contents")
+              rm "$f.contents"
+              printf '%s  %s\n' "${sum%% *}" "$f:contents" ;;
+            *) shasum -a 256 "$f" ;;
+          esac
+        done > reproducible.unsorted
+        LC_ALL=C sort -k2 reproducible.unsorted > reproducible.sha256
+        rm reproducible.unsorted
 
   # Checks the assets in PUBLISHED against dist/reproducible.sha256 of a
   # release/build run: every asset built here must be in PUBLISHED with the
@@ -443,9 +449,14 @@ tasks:
             echo "missing: ${name%:contents}"; failed=1; continue
           fi
           case "$name" in
-            *:contents) have=$(tools/release-darwin/dmg-contents.sh "$file" | shasum -a 256 | cut -d' ' -f1) ;;
-            *) have=$(shasum -a 256 "$file" | cut -d' ' -f1) ;;
+            *:contents)
+              mkdir -p .tmp
+              tools/release-darwin/dmg-contents.sh "$file" > .tmp/published.contents
+              test -s .tmp/published.contents
+              have=$(shasum -a 256 < .tmp/published.contents) ;;
+            *) have=$(shasum -a 256 < "$file") ;;
           esac
+          have=${have%% *}
           if [ "$have" = "$want" ]; then
             echo "OK: $name"
           else
@@ -453,7 +464,6 @@ tasks:
             case "$name" in
               *:contents)
                 tools/release-darwin/dmg-contents.sh "dist/${name%:contents}" > .tmp/rebuilt.contents
-                tools/release-darwin/dmg-contents.sh "$file" > .tmp/published.contents
                 diff .tmp/rebuilt.contents .tmp/published.contents || true ;;
             esac
           fi
