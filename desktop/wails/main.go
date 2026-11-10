@@ -42,27 +42,39 @@ func init() {
 // Wails finds the running app over the D-Bus session bus and stops with a fatal
 // error when there is none, so without a session bus a second window is the
 // lesser harm.
-func singleInstance(goos string, getenv func(string) string, dataDir string, onSecond func(application.SecondInstanceData)) *application.SingleInstanceOptions {
+func singleInstance(goos string, getenv func(string) string, dataDir, defaultDir string, onSecond func(application.SecondInstanceData)) *application.SingleInstanceOptions {
 	if goos == "linux" && getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
 		slog.Warn("no D-Bus session bus; more than one enbu window may open")
 		return nil
 	}
 	return &application.SingleInstanceOptions{
-		UniqueID:               singleInstanceID(getenv, dataDir),
+		UniqueID:               singleInstanceID(dataDir, defaultDir),
 		OnSecondInstanceLaunch: onSecond,
 	}
 }
 
-// singleInstanceID is desktopID, unless XDG_DATA_HOME moves enbu's data
-// directory: each data directory holds its own identity and local state, so an
-// app started with another one is another device and runs beside the first.
-// The suffix starts with a letter because D-Bus names allow no leading digit.
-func singleInstanceID(getenv func(string) string, dataDir string) string {
-	if !filepath.IsAbs(getenv("XDG_DATA_HOME")) {
+// singleInstanceID is desktopID for the default data directory, and one
+// derived from the directory for any other: each data directory holds its own
+// identity and local state, so an app started with another one is another
+// device and runs beside the first. Paths are compared after resolving
+// symlinks, so two spellings of one directory share one app. The suffix starts
+// with a letter because D-Bus names allow no leading digit.
+func singleInstanceID(dataDir, defaultDir string) string {
+	dir := resolvedDir(dataDir)
+	if dir == resolvedDir(defaultDir) {
 		return desktopID
 	}
-	sum := sha256.Sum256([]byte(filepath.Clean(dataDir)))
+	sum := sha256.Sum256([]byte(dir))
 	return desktopID + ".d" + hex.EncodeToString(sum[:6])
+}
+
+// resolvedDir is dir with symlinks resolved, or only cleaned while it does
+// not exist yet.
+func resolvedDir(dir string) string {
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		return resolved
+	}
+	return filepath.Clean(dir)
 }
 
 func setupLogger() *os.File {
@@ -165,7 +177,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(web.FrontendFS()),
 		},
-		SingleInstance: singleInstance(runtime.GOOS, os.Getenv, config.DataDir(), func(data application.SecondInstanceData) {
+		SingleInstance: singleInstance(runtime.GOOS, os.Getenv, config.DataDir(), config.DefaultDataDir(), func(data application.SecondInstanceData) {
 			slog.Info("second instance launch", "args", data.Args, "cwd", data.WorkingDir)
 			if mainWindow != nil {
 				activate(mainWindow)
