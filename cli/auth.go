@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -24,10 +25,14 @@ type authLoginDeps struct {
 	// windows runs the login in the Windows enbu.exe instead, inside WSL:
 	// the token goes to the Windows keyring and Windows opens the browser.
 	windows func(ctx context.Context, cmd *cobra.Command, args ...string) error
+	// useLatest makes the account Windows just signed in with the one in use
+	// in this data directory, which Windows does not see.
+	useLatest func() error
 }
 
 type authStatusDeps struct {
 	loadToken     func() (*auth.StoredToken, error)
+	accounts      func() ([]string, string, error)
 	identityStore app.IdentityStore
 }
 
@@ -43,6 +48,7 @@ func newAuthCommand(a *app.App) *cobra.Command {
 	cmd.AddCommand(
 		newAuthLoginCommand(),
 		newAuthLogoutCommand(),
+		newAuthSwitchCommand(),
 		newAuthStatusCommand(a),
 	)
 
@@ -58,6 +64,7 @@ func newAuthLoginCommand() *cobra.Command {
 	}
 	if inWSL() {
 		deps.windows = runInWindows
+		deps.useLatest = auth.UseLatestAccount
 	}
 	return newAuthLoginCommandWithDeps(deps)
 }
@@ -82,7 +89,10 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 	var deviceFlow bool
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate with GitHub",
+		Short: "Authenticate with GitHub, adding an account",
+		Long: `Authenticate with GitHub. Signing in with another account adds it beside the
+accounts already signed in and makes it the one in use; switch back with
+'enbu auth switch'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if jsonEnabled(cmd) && deviceFlow {
 				return invalidArgument("--device cannot be used with --json", nil)
@@ -97,7 +107,13 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 				if jsonEnabled(cmd) {
 					args = append(args, "--json")
 				}
-				return deps.windows(ctx, cmd, args...)
+				if err := deps.windows(ctx, cmd, args...); err != nil {
+					return err
+				}
+				if deps.useLatest != nil {
+					return deps.useLatest()
+				}
+				return nil
 			}
 
 			humanPrintf(cmd, "Initiating GitHub authentication...\n")
@@ -149,15 +165,17 @@ func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
 }
 
 func newAuthLogoutCommand() *cobra.Command {
-	return newAuthLogoutCommandWithDelete(auth.DeleteToken)
+	return newAuthLogoutCommandWithDelete(auth.DeleteAccount)
 }
 
-func newAuthLogoutCommandWithDelete(deleteToken func() error) *cobra.Command {
-	return &cobra.Command{
+func newAuthLogoutCommandWithDelete(deleteAccount func(login string) error) *cobra.Command {
+	var login string
+	cmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Remove stored authentication token",
+		Short: "Sign out of the GitHub account in use, or of --user",
+		Args:  appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := deleteToken(); err != nil {
+			if err := deleteAccount(login); err != nil {
 				return err
 			}
 
@@ -172,11 +190,40 @@ func newAuthLogoutCommandWithDelete(deleteToken func() error) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&login, "user", "", "GitHub login to sign out of (default: the account in use)")
+	return cmd
+}
+
+func newAuthSwitchCommand() *cobra.Command {
+	return newAuthSwitchCommandWithDeps(auth.SwitchAccount)
+}
+
+func newAuthSwitchCommandWithDeps(switchAccount func(login string) (*auth.StoredToken, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "switch LOGIN",
+		Short: "Use another signed-in GitHub account",
+		Long: `Use another GitHub account that 'enbu auth login' signed in with. The choice
+belongs to enbu's data directory, so another XDG_DATA_HOME keeps its own.
+GITHUB_TOKEN, when set, is used instead of any account.`,
+		Args: appArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token, err := switchAccount(args[0])
+			if err != nil {
+				return err
+			}
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{"username": token.Username})
+			}
+			cmd.Printf("✓ Using GitHub account: %s\n", token.Username)
+			return nil
+		},
+	}
 }
 
 func newAuthStatusCommand(a *app.App) *cobra.Command {
 	return newAuthStatusCommandWithDeps(a, authStatusDeps{
 		loadToken:     auth.LoadToken,
+		accounts:      auth.Accounts,
 		identityStore: a.Identities,
 	})
 }
@@ -202,6 +249,15 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 				return nil
 			}
 			humanPrintf(cmd, "Auth: logged in as %s\n", token.Username)
+			accounts := []string{}
+			if deps.accounts != nil {
+				if logins, _, err := deps.accounts(); err == nil && logins != nil {
+					accounts = logins
+				}
+			}
+			if len(accounts) > 1 {
+				humanPrintf(cmd, "Accounts: %s (switch with 'enbu auth switch LOGIN')\n", strings.Join(accounts, ", "))
+			}
 
 			owner, repo, err := a.RepoDetector.LoadRepo()
 			if err != nil {
@@ -209,6 +265,7 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 					return writeJSON(cmd, map[string]any{
 						"authenticated":      true,
 						"username":           token.Username,
+						"accounts":           accounts,
 						"repository":         nil,
 						"public_key":         nil,
 						"config_initialized": nil,
@@ -243,6 +300,7 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 				return writeJSON(cmd, map[string]any{
 					"authenticated": true,
 					"username":      token.Username,
+					"accounts":      accounts,
 					"repository": map[string]string{
 						"owner": owner,
 						"name":  repo,

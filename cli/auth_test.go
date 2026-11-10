@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/spf13/cobra"
 )
 
 func TestAuthLoginDeviceFlagUsesDeviceFlow(t *testing.T) {
@@ -142,5 +143,68 @@ func TestAuthLoginDeviceUsesClientIDOverride(t *testing.T) {
 	cmd.SetArgs([]string{"--device"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatalf("ExecuteContext: %v", err)
+	}
+}
+
+func TestAuthSwitchUsesTheNamedAccount(t *testing.T) {
+	var asked string
+	cmd := newAuthSwitchCommandWithDeps(func(login string) (*auth.StoredToken, error) {
+		asked = login
+		return &auth.StoredToken{Username: "octo-work"}, nil
+	})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetArgs([]string{"octo-work"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext: %v", err)
+	}
+	if asked != "octo-work" || !strings.Contains(output.String(), "Using GitHub account: octo-work") {
+		t.Fatalf("switched to %q, output %q", asked, output.String())
+	}
+
+	cmd = newAuthSwitchCommandWithDeps(func(string) (*auth.StoredToken, error) {
+		t.Fatal("switch without a login should not reach the store")
+		return nil, nil
+	})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs(nil)
+	if err := cmd.ExecuteContext(context.Background()); err == nil {
+		t.Fatal("switch without a login succeeded")
+	}
+}
+
+func TestAuthLogoutUserSignsOutOfThatAccount(t *testing.T) {
+	var removed string
+	cmd := newAuthLogoutCommandWithDelete(func(login string) error {
+		removed = login
+		return nil
+	})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--user", "octo-work"})
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext: %v", err)
+	}
+	if removed != "octo-work" {
+		t.Fatalf("signed out of %q, want octo-work", removed)
+	}
+}
+
+// Inside WSL the Windows enbu.exe signs in; this data directory then uses
+// that account, and a failed Windows login changes nothing.
+func TestAuthLoginInWSLUsesTheNewAccount(t *testing.T) {
+	for _, windowsErr := range []error{nil, errors.New("windows login failed")} {
+		used := false
+		cmd := newAuthLoginCommandWithDeps(authLoginDeps{
+			windows:   func(context.Context, *cobra.Command, ...string) error { return windowsErr },
+			useLatest: func() error { used = true; return nil },
+		})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(nil)
+		err := cmd.ExecuteContext(context.Background())
+		if (err != nil) != (windowsErr != nil) || used != (windowsErr == nil) {
+			t.Fatalf("windows error %v: login = %v, used latest = %v", windowsErr, err, used)
+		}
 	}
 }

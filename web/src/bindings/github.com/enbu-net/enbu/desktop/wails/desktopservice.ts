@@ -151,8 +151,8 @@ export function ListSecrets(env: string): $CancellablePromise<desktop$0.SecretsR
     });
 }
 
-export function Logout(): $CancellablePromise<void> {
-    return $Call.ByID(962515307);
+export function Logout(login: string): $CancellablePromise<void> {
+    return $Call.ByID(962515307, login);
 }
 
 export function PullSecrets(env: string, replace: boolean): $CancellablePromise<desktop$0.PullResult> {
@@ -211,6 +211,10 @@ export function StartOAuthLogin(): $CancellablePromise<desktop$0.OAuthStart> {
 
 export function SuggestStorage(): $CancellablePromise<string> {
     return $Call.ByID(1228668934);
+}
+
+export function SwitchAccount(login: string): $CancellablePromise<void> {
+    return $Call.ByID(1906469936, login);
 }
 
 export function SwitchEnvironment(name: string): $CancellablePromise<void> {

@@ -75,8 +75,12 @@ func (s *DesktopService) CancelOAuthLogin(sessionID string) error {
 	return publicError(s.core.CancelOAuthLogin(sessionID))
 }
 
-func (s *DesktopService) Logout() error {
-	return publicError(s.core.Logout())
+func (s *DesktopService) Logout(login string) error {
+	return publicError(s.core.Logout(login))
+}
+
+func (s *DesktopService) SwitchAccount(login string) error {
+	return publicError(s.core.SwitchAccount(login))
 }
 
 func (s *DesktopService) BrowseRepository() (desktop.RepoInfo, error) {

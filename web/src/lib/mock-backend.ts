@@ -151,6 +151,7 @@ export const mockBackend: Backend = {
     return {
       authenticated: true,
       username: previewUsername,
+      accounts: [previewUsername],
       workspace_configured: true,
     };
   },
@@ -168,6 +169,10 @@ export const mockBackend: Backend = {
   },
 
   async logout(): Promise<void> {
+    // no-op
+  },
+
+  async switchAccount(_login: string): Promise<void> {
     // no-op
   },
 

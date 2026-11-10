@@ -44,6 +44,7 @@ var Methods = []string{
 	"GetOAuthLoginStatus",
 	"CancelOAuthLogin",
 	"Logout",
+	"SwitchAccount",
 	"BrowseRepository",
 	"SelectRepository",
 	"GetRepoStatus",
