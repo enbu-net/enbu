@@ -13,17 +13,40 @@ on:
 
 permissions: {}
 
+env:
+  # The Xcode that builds the macOS app. A release can be rebuilt bit for bit
+  # only with the same Xcode, so it changes only on purpose.
+  XCODE_VERSION: "16.4"
+
 jobs:
-  # The CLI archives and packages, the Windows desktop app and the VS Code
-  # extensions are reproducible: `task release/build` gives the same bytes from
-  # the same tag on any machine (docs/reproducible-builds.md). This job builds
-  # the assets that are published; reproduce builds them again elsewhere.
-  reproducible:
-    name: Build reproducible assets
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
+  # Every asset is reproducible: `task release/build` gives the same bytes from
+  # the same tag on any machine of its platform (docs/reproducible-builds.md).
+  # On Linux it builds the CLI, its packages, the Windows desktop app, the VS
+  # Code extensions and the Linux desktop app; on macOS, the macOS desktop app.
+  # The cross-built assets come out of both Linux runners; the amd64 one
+  # publishes them, and the arm64 one publishes only its own desktop app.
+  build:
+    name: Build (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            suffix: linux_amd64
+            publish: all
+          - os: ubuntu-26.04-arm
+            suffix: linux_arm64
+            publish: desktop
+          - os: macos-15
+            suffix: darwin_arm64
+            publish: all
+          - os: macos-15-intel
+            suffix: darwin_amd64
+            publish: all
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -33,45 +56,98 @@ jobs:
 
       - parallel:
           - uses: $/.github/actions/setup-go
+            with:
+              cache: "true"
 
           - uses: $/.github/actions/setup-tools
+            with:
+              cache: "true"
 
           - uses: $/.github/actions/setup-frontend
+            with:
+              cache: "true"
 
           - uses: $/.github/actions/desktop-deps
+
+      - name: Select the pinned Xcode
+        if: runner.os == 'macOS'
+        run: |
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "$app" ]; then
+            echo "Xcode $XCODE_VERSION is not on this runner; it has:"; ls -d /Applications/Xcode*
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
 
       - name: Build reproducible assets
         env:
           VERSION: ${{ inputs.version }}
         run: task release/build VERSION="$VERSION"
 
-      - name: Upload reproducible assets
+      - name: Select the assets this runner publishes
+        env:
+          PUBLISH: ${{ matrix.publish }}
+        run: |
+          set -euo pipefail
+          mkdir -p publish
+          : > published.sha256
+          while read -r sum name; do
+            file=${name%:contents}
+            case "$PUBLISH:$file" in
+              all:* | desktop:enbu-desktop_*_linux_*)
+                cp "dist/$file" publish/
+                printf '%s  %s\n' "$sum" "$name" >> published.sha256
+                ;;
+            esac
+          done < dist/reproducible.sha256
+          test -s published.sha256
+
+      - name: Upload assets
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: release-reproducible
+          name: release-${{ matrix.suffix }}
           compression-level: 0
-          path: |
-            dist/enbu_*.tar.gz
-            dist/enbu_*.zip
-            dist/enbu_*.deb
-            dist/enbu_*.rpm
-            dist/enbu_*.apk
-            dist/enbu_*.pkg.tar.zst
-            dist/enbu-desktop_*_windows_*.zip
-            dist/enbu-vscode_*.vsix
+          path: publish/*
           if-no-files-found: error
           retention-days: 1
 
-  # An independent rebuild: another runner, another CPU architecture, another
-  # checkout path, and no Go, tool or dependency cache. Nothing is signed or
-  # published unless every asset it builds matches the uploaded one bit for bit.
+      - name: Upload the list of assets
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: published-list-${{ matrix.suffix }}
+          path: published.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  # An independent rebuild of every platform: a fresh clone in another
+  # directory, with no Go, tool or dependency cache. The arm64 Linux runner
+  # rebuilds the cross-built assets the amd64 one published, so they are also
+  # compared across CPU architectures. Nothing is signed or published unless
+  # every asset matches what this runner rebuilt, and every asset its platform
+  # publishes was rebuilt.
   reproduce:
-    name: Rebuild and compare
-    runs-on: ubuntu-26.04-arm
-    timeout-minutes: 30
-    needs: [reproducible]
+    name: Rebuild and compare (${{ matrix.suffix }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    needs: [build]
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-26.04
+            suffix: linux_amd64
+            publish: all
+          - os: ubuntu-26.04-arm
+            suffix: linux_arm64
+            publish: desktop
+          - os: macos-15
+            suffix: darwin_arm64
+            publish: all
+          - os: macos-15-intel
+            suffix: darwin_amd64
+            publish: all
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -93,6 +169,16 @@ jobs:
               cache: "false"
 
           - uses: $/.github/actions/desktop-deps
+
+      - name: Select the pinned Xcode
+        if: runner.os == 'macOS'
+        run: |
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "$app" ]; then
+            echo "Xcode $XCODE_VERSION is not on this runner; it has:"; ls -d /Applications/Xcode*
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
 
       # A fresh clone in another directory, so nothing of the checkout above
       # (paths, file times) can make the two builds agree by accident.
@@ -104,170 +190,41 @@ jobs:
           cd "$RUNNER_TEMP/rebuild/enbu"
           git checkout --quiet "refs/tags/$VERSION"
           task release/build VERSION="$VERSION"
-          cp dist/reproducible.sha256 "$GITHUB_WORKSPACE/rebuilt.sha256"
 
       - name: Download the assets to publish
         uses: actions/download-artifact@v8.0.2
         with:
-          name: release-reproducible
+          pattern: release-*
           path: published
+          merge-multiple: true
+
+      - name: Download the list of this platform's assets
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: published-list-${{ matrix.suffix }}
+          path: published-list
 
       - name: Compare
         shell: bash
         run: |
           set -euo pipefail
-          test "$(find published -type f | wc -l)" -eq "$(wc -l < rebuilt.sha256)"
-          (cd published && sha256sum --strict -c ../rebuilt.sha256)
-
-  frontend:
-    name: Build frontend
-    runs-on: ubuntu-26.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: refs/tags/${{ inputs.version }}
-          persist-credentials: false
-
-      - uses: $/.github/actions/setup-tools
-
-      - uses: $/.github/actions/setup-frontend
-
-      - name: Build frontend for Go embed
-        working-directory: web
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run build
-
-      - name: Upload frontend artifact
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: frontend-dist
-          compression-level: 1
-          path: web/dist
-          if-no-files-found: error
-          retention-days: 1
-
-  desktop:
-    name: Build desktop (${{ matrix.suffix }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    needs: [frontend]
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            suffix: darwin_arm64
-            package: dmg
-          - os: macos-15-intel
-            suffix: darwin_amd64
-            package: dmg
-          - os: ubuntu-26.04
-            suffix: linux_amd64
-            package: tar.gz
-          - os: ubuntu-26.04-arm
-            suffix: linux_arm64
-            package: tar.gz
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: refs/tags/${{ inputs.version }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: $/.github/actions/setup-go
-
-      - uses: $/.github/actions/setup-tools
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v8.0.2
-        with:
-          name: frontend-dist
-          path: web/dist
-
-      - uses: $/.github/actions/desktop-deps
-
-      # Each runner builds for its own platform and architecture.
-      - name: Build desktop app
-        shell: bash
-        env:
-          ENBU_FRONTEND_PREBUILT: "1"
-        run: task gui/build
-
-      - name: Package desktop app
-        if: matrix.package == 'tar.gz'
-        shell: bash
-        env:
-          DESKTOP_SUFFIX: ${{ matrix.suffix }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          mkdir -p release
-          tar -C desktop/wails/build/bin \
-            -czf "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.tar.gz" \
-            .
-
-      # The .deb and .rpm install the desktop entry and icon system-wide.
-      - name: Package desktop app as .deb and .rpm
-        if: matrix.package == 'tar.gz'
-        shell: bash
-        env:
-          DESKTOP_SUFFIX: ${{ matrix.suffix }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          task gui/package/linux
-          for package in desktop/wails/build/package/*; do
-            case "$package" in
-              *.deb) ext=deb ;;
-              *.rpm) ext=rpm ;;
-              *) continue ;;
-            esac
-            cp "$package" "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.${ext}"
-          done
-
-      - name: Package desktop app
-        if: matrix.package == 'dmg'
-        shell: bash
-        env:
-          DESKTOP_SUFFIX: ${{ matrix.suffix }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          app_path="$(find desktop/wails/build/bin -maxdepth 1 -type d -name '*.app' -print -quit)"
-          test -n "$app_path"
-          mkdir -p release
-          python3 -m venv "$RUNNER_TEMP/dmgbuild"
-          "$RUNNER_TEMP/dmgbuild/bin/pip" install \
-            --disable-pip-version-check \
-            dmgbuild==1.6.7
-          "$RUNNER_TEMP/dmgbuild/bin/dmgbuild" \
-            -s .github/dmg-settings.py \
-            -D app="$app_path" \
-            enbu \
-            "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.dmg"
-
-      - name: Upload desktop artifact
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: release-enbu-desktop-${{ matrix.suffix }}
-          compression-level: 0
-          path: release/*
-          if-no-files-found: error
-          retention-days: 1
+          cd "$RUNNER_TEMP/rebuild/enbu"
+          task release/verify PUBLISHED="$GITHUB_WORKSPACE/published"
+          missing=$(comm -23 \
+            <(awk '{print $2}' "$GITHUB_WORKSPACE/published-list/published.sha256" | LC_ALL=C sort) \
+            <(awk '{print $2}' dist/reproducible.sha256 | LC_ALL=C sort))
+          if [ -n "$missing" ]; then
+            echo "published but not rebuilt:"; echo "$missing"
+            exit 1
+          fi
 
   assets:
     name: Sign and attest assets
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     needs:
-      - reproducible
+      - build
       - reproduce
-      - desktop
     permissions:
       contents: read
       id-token: write
@@ -284,6 +241,24 @@ jobs:
               pattern: release-*
               path: release-assets
               merge-multiple: true
+
+          - name: Download the lists of published assets
+            uses: actions/download-artifact@v8.0.2
+            with:
+              pattern: published-list-*
+              path: published-lists
+
+      # Merging the release-* artifacts keeps one file of each name, so two
+      # runners publishing the same name would replace each other silently.
+      - name: Require each asset to come from one runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          dup=$(cat published-lists/*/published.sha256 | awk '{print $2}' | LC_ALL=C sort | uniq -d)
+          if [ -n "$dup" ]; then
+            echo "published by more than one runner:"; echo "$dup"
+            exit 1
+          fi
 
       - name: Generate SBOMs
         shell: bash

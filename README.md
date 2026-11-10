@@ -45,8 +45,8 @@ sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # Desktop app (GTK 4, We
 ```
 
 Check a download before installing it: every release asset is signed and attested by the
-release workflow, and the CLI, its packages, the Windows desktop app and the VS Code
-extension can be rebuilt bit for bit from the tag. See
+release workflow, and every asset can be rebuilt bit for bit from the tag (a `.dmg` by
+its contents). See
 [docs/reproducible-builds.md](docs/reproducible-builds.md).
 
 ```bash

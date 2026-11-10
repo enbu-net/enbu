@@ -44,7 +44,7 @@ sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
 sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # デスクトップアプリ（GTK 4、WebKitGTK 6.0）
 ```
 
-ダウンロードしたものはインストール前に検証してください。リリースのすべてのアセットはリリース workflow が署名と attestation を付けており、CLI とそのパッケージ、Windows 版デスクトップアプリ、VS Code 拡張はタグからビット単位で同じものを再ビルドできます。詳しくは [docs/reproducible-builds.md](docs/reproducible-builds.md) を参照してください。
+ダウンロードしたものはインストール前に検証してください。リリースのすべてのアセットはリリース workflow が署名と attestation を付けており、すべてのアセットはタグからビット単位で同じものを再ビルドできます（`.dmg` は中身の一致）。詳しくは [docs/reproducible-builds.md](docs/reproducible-builds.md) を参照してください。
 
 ```bash
 gh attestation verify enbu_vX.Y.Z_linux_amd64.tar.gz --repo enbu-net/enbu \
