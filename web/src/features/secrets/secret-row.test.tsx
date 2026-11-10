@@ -3,6 +3,12 @@ import { act } from "react-dom/test-utils";
 import { clipboardWrite, container, queryButton, queryInput, root, setupDom } from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
+// Secret values go through the host's clipboard; here that is the page's.
+vi.mock("../../lib/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/platform")>()),
+  writeClipboard: (text: string) => navigator.clipboard.writeText(text),
+}));
+
 setupDom();
 
 function renderSecretRow(props: {

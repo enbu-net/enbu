@@ -1,4 +1,4 @@
-import { Browser, Events } from "@wailsio/runtime";
+import { Browser, Clipboard, Events } from "@wailsio/runtime";
 import * as BackendEvents from "../bindings/events";
 import type { ProgressStep } from "./types";
 import { host } from "./host";
@@ -21,6 +21,21 @@ export function openURL(url: string): void {
     return;
   }
   Browser.OpenURL(url).catch((err: unknown) => console.error("opening URL failed", err));
+}
+
+/**
+ * Puts text on the clipboard. The desktop app goes through Wails, which also
+ * works when the webview's own clipboard API is refused.
+ */
+export async function writeClipboard(text: string): Promise<void> {
+  if (host === "desktop") await Clipboard.SetText(text);
+  else await navigator.clipboard.writeText(text);
+}
+
+/** Reads the clipboard's text; rejects where the host does not allow it. */
+export async function readClipboard(): Promise<string> {
+  if (host === "desktop") return Clipboard.Text();
+  return navigator.clipboard.readText();
 }
 
 /** Subscribes to the backend's progress events; returns the unsubscribe function. */

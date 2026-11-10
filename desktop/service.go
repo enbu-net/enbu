@@ -58,6 +58,8 @@ type Service struct {
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	accounts   accountStore
 	emit       EventEmitter
+	updater    AppUpdater
+	updateMu   sync.Mutex
 	AppVersion string
 }
 

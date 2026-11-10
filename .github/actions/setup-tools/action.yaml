@@ -4,6 +4,9 @@ inputs:
   cache-scope:
     description: Isolated tool population; no fallback to another workload's large cache
     default: ${{ github.job }}
+  cache:
+    description: Restore and save the tool root; "false" downloads every tool
+    default: "true"
 runs:
   using: composite
   steps:
@@ -11,6 +14,7 @@ runs:
       shell: bash
       run: echo "AQUA_ROOT_DIR=$RUNNER_TEMP/enbu-aqua" >> "$GITHUB_ENV"
     - uses: actions/cache@v6.1.0
+      if: inputs.cache == 'true'
       with:
         path: ${{ runner.temp }}/enbu-aqua
         key: v3-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.cache-scope }}-${{ hashFiles('aqua.yaml', '.github/actions/setup-tools/action.yaml') }}

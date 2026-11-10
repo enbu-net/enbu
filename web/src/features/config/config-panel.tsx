@@ -61,7 +61,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
 
   return (
     <>
-      <SectionHeader title={m.config_settings()}>
+      <SectionHeader title={m.config_workspace()}>
         <HStack gap="2">
           <Button
             size="sm"
