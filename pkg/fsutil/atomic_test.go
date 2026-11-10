@@ -87,3 +87,18 @@ func requireNoTemp(t *testing.T, dir string) {
 		}
 	}
 }
+
+func TestWriteFileAtomicWithoutSyncStillReplaces(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cache")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFileAtomicWith(path, []byte("new"), 0o600, AtomicOptions{NoSync: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "new" {
+		t.Fatalf("content = %q, %v", got, err)
+	}
+	requireNoTemp(t, dir)
+}

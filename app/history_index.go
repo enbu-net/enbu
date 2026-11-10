@@ -96,5 +96,5 @@ func (x historyIndex) save(flags map[digest.Digest]historyFlags, states map[dige
 	if err := os.MkdirAll(filepath.Dir(x.path), 0o700); err != nil {
 		return
 	}
-	_ = fsutil.WriteFileAtomic(x.path, b, 0o600)
+	_ = fsutil.WriteFileAtomicWith(x.path, b, 0o600, fsutil.AtomicOptions{NoSync: true})
 }

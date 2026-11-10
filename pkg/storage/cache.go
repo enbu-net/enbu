@@ -113,7 +113,7 @@ func (c *headCache) write(rev digest.Digest, head []byte) {
 	if err := os.MkdirAll(c.dir, 0o700); err != nil {
 		return
 	}
-	_ = fsutil.WriteFileAtomic(c.path(rev), head, 0o600)
+	_ = fsutil.WriteFileAtomicWith(c.path(rev), head, 0o600, fsutil.AtomicOptions{NoSync: true})
 }
 
 // Publish keeps the head of what this device published, which it reads next.

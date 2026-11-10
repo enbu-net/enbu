@@ -17,6 +17,10 @@ type AtomicOptions struct {
 	// BeforeRename runs once data is synced and the file closed. An error
 	// leaves path untouched.
 	BeforeRename func() error
+	// NoSync skips syncing the file and its directory, for a cache that is
+	// rebuilt when lost: a sync costs milliseconds on Windows, and caches are
+	// written often. A reader still sees the old content or the new, never part.
+	NoSync bool
 }
 
 // WriteFileAtomic replaces path with data through a synced temporary file in
@@ -41,7 +45,7 @@ func WriteFileAtomicWith(path string, data []byte, perm os.FileMode, opts Atomic
 		err = tmp.Chmod(perm)
 	}
 	if err == nil {
-		if _, err = tmp.Write(data); err == nil {
+		if _, err = tmp.Write(data); err == nil && !opts.NoSync {
 			err = tmp.Sync()
 		}
 	}
@@ -52,6 +56,9 @@ func WriteFileAtomicWith(path string, data []byte, perm os.FileMode, opts Atomic
 		if err := opts.BeforeRename(); err != nil {
 			return err
 		}
+	}
+	if opts.NoSync {
+		return renameRetrying(tmp.Name(), path)
 	}
 	return Rename(tmp.Name(), path)
 }
