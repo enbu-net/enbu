@@ -391,6 +391,83 @@ tasks:
       - test "${ENBU_FRONTEND_PREBUILT:-}" = "1"
       - test -f dist-vscode/index.html
 
+  # Release assets that anyone can rebuild bit for bit from the tag: the CLI
+  # archives and packages, the Windows desktop app and the VS Code extensions.
+  # The release workflow builds them with this task and, on another runner,
+  # builds them again and compares (docs/reproducible-builds.md).
+  release/build:
+    desc: Build the reproducible release assets of tag VERSION (a tag on HEAD) into dist/ and list them in dist/reproducible.sha256
+    requires:
+      vars: [VERSION]
+    cmds:
+      - task: release/cli
+      - task: release/desktop/windows
+        vars: { GOARCH: amd64 }
+      - task: release/desktop/windows
+        vars: { GOARCH: arm64 }
+      - task: release/vscode
+      - |
+        set -eu -o pipefail
+        cd dist
+        sha256sum enbu_*.tar.gz enbu_*.zip enbu_*.deb enbu_*.rpm enbu_*.apk enbu_*.pkg.tar.zst \
+          enbu-desktop_*_windows_*.zip enbu-vscode_*.vsix | LC_ALL=C sort -k2 > reproducible.sha256
+
+  release/cli:
+    internal: true
+    env:
+      GORELEASER_CURRENT_TAG: '{{.VERSION}}'
+    cmds:
+      - goreleaser release --clean --skip=publish
+
+  # The Windows app uses no cgo, so it is cross-built here like the CLI and
+  # does not depend on a Windows runner's toolchain.
+  release/desktop/windows:
+    internal: true
+    deps:
+      - gui/build/frontend
+      - tools/wails3
+    dir: desktop/wails
+    vars:
+      WAILS3: ../../.tmp/bin/wails3{{exeExt}}
+      STAGE: ../../.tmp/release/windows_{{.GOARCH}}
+    env:
+      # The commit time stands in for the build time in release archives
+      # (https://reproducible-builds.org/specs/source-date-epoch/). Without
+      # Git history the task fails rather than date the archive wrong.
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - rm -rf {{.STAGE}} && mkdir -p build {{.STAGE}}
+      - '{{.WAILS3}} generate icons -input ../../assets/icon.png -windowsfilename build/icon.ico -macfilename build/icons.icns'
+      - '{{.WAILS3}} generate syso -arch {{.GOARCH}} -icon build/icon.ico -manifest packaging/windows/enbu-desktop.exe.manifest -out rsrc_windows_{{.GOARCH}}.syso'
+      - CGO_ENABLED=0 GOOS=windows GOARCH={{.GOARCH}} go build -tags production -trimpath -ldflags "-s -w -X main.Version={{.VERSION}} -H windowsgui" -o {{.STAGE}}/enbu-desktop.exe .
+      - go run ../../tools/reproarchive zip ../../dist/enbu-desktop_{{.VERSION}}_windows_{{.GOARCH}}.zip {{.STAGE}}
+
+  # One VSIX per VS Code target, each carrying the CLI binary of release/cli
+  # for that platform; reproarchive rezip drops the file times vsce writes.
+  release/vscode:
+    internal: true
+    deps:
+      - vscode/build
+    env:
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - for: [linux_amd64:linux-x64, linux_arm64:linux-arm64, darwin_amd64:darwin-x64, darwin_arm64:darwin-arm64, windows_amd64:win32-x64, windows_arm64:win32-arm64]
+        cmd: |
+          set -eu
+          suffix="{{splitList ":" .ITEM | first}}"
+          target="{{splitList ":" .ITEM | last}}"
+          bin_dir=".tmp/release/enbu-$suffix"
+          rm -rf "$bin_dir" && mkdir -p "$bin_dir"
+          case "$suffix" in
+            windows_*) unzip -q -o -j "dist/enbu_{{.VERSION}}_$suffix.zip" enbu.exe -d "$bin_dir"; binary="$bin_dir/enbu.exe" ;;
+            *) tar -xzf "dist/enbu_{{.VERSION}}_$suffix.tar.gz" -C "$bin_dir" enbu; binary="$bin_dir/enbu" ;;
+          esac
+          out="dist/enbu-vscode_{{.VERSION}}_$suffix.vsix"
+          node vscode/scripts/package.mjs --enbu "$binary" --target "$target" --version "{{.VERSION}}" --out "$out"
+          go run ./tools/reproarchive rezip "$out"
+
   scripts/check:
     desc: Check Python formatting and lint
     dir: scripts

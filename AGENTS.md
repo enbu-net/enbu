@@ -37,6 +37,7 @@ task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
 task vscode/check       # Format and lint VS Code extension code
+task release/build VERSION=vX.Y.Z  # Build the reproducible release assets of a tag on HEAD into dist/
 ```
 
 The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
@@ -44,6 +45,8 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 ## Releasing
 
 Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
+
+The CLI archives and packages, the Windows desktop app and the VS Code extensions must stay bit-for-bit reproducible (docs/reproducible-builds.md): `task release/build` is their only build definition, the release refuses to publish unless a second, cache-free build on the other CPU architecture matches, and CI runs the same comparison on every PR. Never let the clock, the checkout path or the build user reach those bytes: take times from `SOURCE_DATE_EPOCH`, write archives with `tools/reproarchive`, and pin every tool version.
 
 ## Architecture
 
