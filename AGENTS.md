@@ -37,6 +37,8 @@ task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
 task vscode/check       # Format and lint VS Code extension code
+task release/build VERSION=vX.Y.Z  # Build the reproducible release assets of a tag on HEAD for this platform into dist/
+task release/verify PUBLISHED=DIR  # Compare published assets with the ones release/build just built
 ```
 
 The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
@@ -44,6 +46,8 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 ## Releasing
 
 Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
+
+Every release asset must stay bit-for-bit reproducible (docs/reproducible-builds.md; a `.dmg` by its contents): `task release/build` is the only build definition, the release refuses to publish unless a second, cache-free build of each platform matches (`task release/verify`), and CI runs the same comparison on every PR. Never let the clock, the checkout path, the build user or the runner's toolchain reach those bytes: take times from `SOURCE_DATE_EPOCH`, write archives with `tools/reproarchive`, build the Linux desktop app only in `tools/release-linux`, keep the Xcode pinned (`XCODE_VERSION`), and pin every tool version.
 
 ## Architecture
 
@@ -69,6 +73,7 @@ pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
 pkg/apperr/              → application error type, codes, and normalization helpers
+pkg/selfupdate/          → desktop app updates: who updates an installation (Detect), the newest GitHub release, Sigstore verification of checksums.txt, replacing the binary or .app, relaunch
 test/                    → scenario tests (build tag: scenario)
 ```
 
@@ -88,6 +93,8 @@ test/                    → scenario tests (build tag: scenario)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring. Hardware that exists but this user may not open (a TPM outside the `tss` group) is an error, not a fallback. There is no file-based or plaintext Identity backend and no SSH key support. Inside WSL the keys live in Windows through `pkg/winbridge`, and a missing enbu.exe is an error, not a fallback
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
 - Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
+- The desktop app updates itself only when it was unpacked from a release archive into a place the user may write (`selfupdate.Detect`); Homebrew, .deb/.rpm and read-only installs get instructions, VS Code updates its extension, and development builds never update. An update installs only after `checksums.txt` verifies against the Sigstore signature of `release-build.yaml` in this repository (keyless, trusted root over TUF) and the archive matches its checksum
+- The GUI's own settings (theme, font size, clipboard clearing) are one JSON object in localStorage per host (`web/src/lib/settings.ts`); the settings screen edits it as a form or as JSON. The language stays with Paraglide
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling

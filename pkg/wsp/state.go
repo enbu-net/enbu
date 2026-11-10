@@ -91,9 +91,11 @@ func SignState(s State, signer signing.Signer) ([]byte, error) {
 // VerifyRevision checks one stored revision of workspace and resource against
 // the Control it names. The author must be a principal of that Control and the
 // signature must verify under the key it lists; a member removed since still
-// signed it validly. The named Control must be part of the verified DAG: one
-// that is not means storage showed an older Control DAG than the author saw,
-// which is reported as a rollback.
+// signed it validly. A State naming a Control the verified DAG does not hold
+// cannot be checked, so it is invalid like any other unverifiable object:
+// anyone able to write to storage can name an arbitrary Control, and treating
+// it as a rollback would let one unsigned object block a resource. A hidden
+// Control is detected by the Control checkpoint, a hidden State by the State checkpoint.
 //
 // It makes no claim about freshness or about whether the author is a member
 // now; see AuthorIsCurrent for revisions that become the head.
@@ -117,7 +119,7 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 	}
 	written, ok := view.Get(s.Control)
 	if !ok {
-		return nil, fmt.Errorf("%w: state names control %s that storage does not show", ErrRollback, s.Control)
+		return nil, invalid("state names control %s that is not part of the verified control", s.Control)
 	}
 	author, ok := written.Principal(s.Author)
 	if !ok {
@@ -246,9 +248,6 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 			totalBytes += len(f.head)
 			st, err := VerifyRevision(view, workspace, resource, rev, f.head)
 			if err != nil {
-				if errors.Is(err, ErrRollback) {
-					return nil, err
-				}
 				sv.Skipped++
 				continue
 			}
