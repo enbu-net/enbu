@@ -32,5 +32,6 @@ var definitions = map[Code]definition{
 	CodeTrustRootChanged:    {message: "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then accept the new root ('enbu init --accept-new-genesis').", params: []string{}},
 	CodeIdentityUnavailable: {message: "No usable identity backend on this device. Run 'enbu doctor' for details.", params: []string{}},
 	CodeKeyringLocked:       {message: "The OS keyring is locked. Unlock it (for example by logging in to the desktop) and try again.", params: []string{}},
+	CodeUpdateUnverified:    {message: "The downloaded update failed signature verification and was not installed.", params: []string{}},
 	CodeOutputUnreadable:    {message: "{file} is not a dotenv file enbu can read. Pull again and overwrite it to replace its content.", params: []string{"file"}},
 }

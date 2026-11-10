@@ -17,6 +17,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage"
 	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/fxamacker/cbor/v2"
 	digest "github.com/opencontainers/go-digest"
 )
 
@@ -159,6 +160,33 @@ func TestFakeSecretRejected(t *testing.T) {
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
 			t.Fatalf("unsigned state changed the secrets: %v %v", got, err)
+		}
+	})
+	// Naming a Control the verified DAG does not hold used to be reported as a
+	// rollback before the signature was checked, blocking the environment.
+	t.Run("unsigned state naming an unknown control", func(t *testing.T) {
+		st := wsp.State{Workspace: ws, Resource: resource, Parents: []digest.Digest{revisionsOf(t, alice, "default")[0]},
+			Control: digest.FromString("no such control"), Ciphertext: digest.FromBytes(forged), Author: s.self()}
+		enc, err := cbor.CoreDetEncOptions().EncMode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := enc.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blob, err := wsp.Signed{Body: body, Signature: []byte("forged")}.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Blobs: [][]byte{forged}}); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+			t.Fatalf("state naming an unknown control blocked reads: %v %v", got, err)
+		}
+		if err := alice.AddSecret(bg, "default", "BESIDE_UNKNOWN_CONTROL", "ok"); err != nil {
+			t.Fatalf("state naming an unknown control blocked writes: %v", err)
 		}
 	})
 	t.Run("state signed by a non-principal", func(t *testing.T) {
@@ -680,5 +708,36 @@ func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
 	}
 	if pinned != previous || calls != 1 {
 		t.Fatalf("foreign recovery changed trust or published: %+v calls %d", pinned, calls)
+	}
+}
+
+// Members that keep changing exhaust the write's retries. That used to leave
+// as an unclassified internal error; it is a conflict the caller can retry.
+func TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging(t *testing.T) {
+	alice := newAlice(t)
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				s, err := (&App{Storage: base, Identities: alice.Identities, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}).openSession(ctx)
+				if err != nil {
+					t.Error(err)
+				} else {
+					defer s.Close()
+					extra := extraPrincipal(t)
+					if _, err := wsp.UpdateControl(ctx, base, s.view, s.signer, func(c *wsp.Control) error {
+						c.Principals = append(c.Principals, extra)
+						return nil
+					}); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.AddSecret(bg, "default", "NEW", "value")
+	if !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("members kept changing: %v", err)
 	}
 }

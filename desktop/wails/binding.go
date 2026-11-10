@@ -230,3 +230,15 @@ func (s *DesktopService) WriteConfig(content string) error {
 func (s *DesktopService) GetAppVersion() string {
 	return s.core.GetAppVersion()
 }
+
+func (s *DesktopService) CheckForUpdate() (desktop.UpdateStatus, error) {
+	return result(s.core.CheckForUpdate())
+}
+
+func (s *DesktopService) InstallUpdate() (desktop.UpdateStatus, error) {
+	return result(s.core.InstallUpdate())
+}
+
+func (s *DesktopService) RestartApp() error {
+	return publicError(s.core.RestartApp())
+}

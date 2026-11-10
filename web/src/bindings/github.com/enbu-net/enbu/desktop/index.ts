@@ -21,5 +21,6 @@ export {
     SecretConflict,
     SecretItem,
     SecretsResponse,
-    StorageSettings
+    StorageSettings,
+    UpdateStatus
 } from "./models.js";

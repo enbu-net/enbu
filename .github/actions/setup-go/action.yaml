@@ -4,6 +4,9 @@ inputs:
   cache-scope:
     description: Workload whose compiled packages should be retained
     default: ${{ github.job }}
+  cache:
+    description: Restore and save the Go caches; "false" builds from nothing
+    default: "true"
 runs:
   using: composite
   steps:
@@ -17,7 +20,7 @@ runs:
     - uses: actions/setup-go@v7.0.0
       with:
         go-version-file: go.mod
-        cache: true
+        cache: ${{ inputs.cache == 'true' }}
         cache-dependency-path: |
           go.sum
           tools/wails3/go.sum

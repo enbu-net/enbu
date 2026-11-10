@@ -39,29 +39,8 @@ func SaveGUI(cfg *GUIConfig) error {
 		return fmt.Errorf("encoding GUI config: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".gui.toml.tmp*")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-
-	if _, err := tmp.Write(buf.Bytes()); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
+	if err := fsutil.WriteFileAtomic(guiConfigPath(), buf.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("writing GUI config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("syncing GUI config: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("closing GUI config: %w", err)
-	}
-	if err := fsutil.Rename(tmpName, guiConfigPath()); err != nil {
-		_ = os.Remove(tmpName)
-		return fmt.Errorf("replacing GUI config: %w", err)
 	}
 	return nil
 }

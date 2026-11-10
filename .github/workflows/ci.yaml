@@ -396,6 +396,99 @@ jobs:
           path: .tmp/atago-artifacts
           if-no-files-found: ignore
 
+  # Every release asset (task release/build) must come out the same twice on
+  # each platform, once with caches and once without; the cross-built assets
+  # also across the two Linux CPU architectures. So a change that breaks
+  # reproducibility fails here and not at release time.
+  reproducible:
+    name: Reproducible build (${{ matrix.suffix }}, cache ${{ matrix.cache }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      XCODE_VERSION: "16.4"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, ubuntu-26.04-arm, macos-15, macos-15-intel]
+        cache: ["true", "false"]
+        include:
+          - os: ubuntu-26.04
+            suffix: linux_amd64
+          - os: ubuntu-26.04-arm
+            suffix: linux_arm64
+          - os: macos-15
+            suffix: darwin_arm64
+          - os: macos-15-intel
+            suffix: darwin_amd64
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - parallel:
+          - uses: $/.github/actions/setup-go
+            with:
+              cache: ${{ matrix.cache }}
+
+          - uses: $/.github/actions/setup-tools
+            with:
+              cache: ${{ matrix.cache }}
+
+          - uses: $/.github/actions/setup-frontend
+            with:
+              cache: ${{ matrix.cache }}
+
+          - uses: $/.github/actions/desktop-deps
+
+      - name: Select the pinned Xcode
+        if: runner.os == 'macOS'
+        run: |
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "$app" ]; then
+            echo "Xcode $XCODE_VERSION is not on this runner; it has:"; ls -d /Applications/Xcode*
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$app/Contents/Developer" >> "$GITHUB_ENV"
+
+      # goreleaser builds a tag; a local one stands in for the release tag.
+      - name: Build reproducible assets
+        run: |
+          git tag v0.0.0
+          task release/build VERSION=v0.0.0
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: reproducible-${{ matrix.suffix }}-cache-${{ matrix.cache }}
+          path: dist/reproducible.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  reproducible-compare:
+    name: Compare reproducible builds
+    needs: [reproducible]
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: reproducible-*
+          path: builds
+
+      # Every asset must have been built at least twice, always to the same hash.
+      - name: Require identical assets
+        run: |
+          cat builds/*/reproducible.sha256 | awk '
+            { count[$2]++ }
+            ($2 in sum) && sum[$2] != $1 { print "DIFFERENT: " $2; bad = 1 }
+            { sum[$2] = $1 }
+            END {
+              for (name in count) if (count[name] < 2) { print "BUILT ONCE: " name; bad = 1 }
+              exit bad
+            }'
+          for list in builds/*/reproducible.sha256; do echo "== $list"; cat "$list"; done
+
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
   # every job above has passed. always() makes a failed, cancelled or skipped
@@ -404,7 +497,7 @@ jobs:
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, renovate-config]
+    needs: [frontend, core-native, identity-e2e, storage-e2e, aws-export-e2e, check, test, desktop, scenario, e2e, reproducible, reproducible-compare, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}

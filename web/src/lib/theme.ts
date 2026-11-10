@@ -1,4 +1,10 @@
-import { useSyncExternalStore } from "react";
+import {
+  getSettings,
+  subscribeSettings,
+  updateSettings,
+  useSettings,
+  type ThemePreference,
+} from "./settings";
 import { host as currentHost, type Host } from "./host";
 
 /**
@@ -13,42 +19,16 @@ import { host as currentHost, type Host } from "./host";
  * The person picks a preference; "system" follows the host: the OS setting in
  * the desktop app and the browser preview, and the editor's color theme in VS
  * Code (a webview's prefers-color-scheme reports the OS, not the editor). The
- * preference is saved in localStorage, like the language, so each host keeps
- * its own.
+ * preference is one of the settings (see settings.ts), so each host keeps its
+ * own.
  */
 
-export const themePreferences = ["system", "light", "dark"] as const;
-export type ThemePreference = (typeof themePreferences)[number];
+export { themePreferences, type ThemePreference } from "./settings";
 export type Theme = "light" | "dark";
-
-export const themeStorageKey = "enbu-theme";
 
 const darkQuery = "(prefers-color-scheme: dark)";
 // VS Code sets this on the webview's <body> and updates it when the editor's theme changes.
 const vscodeThemeKind = "data-vscode-theme-kind";
-
-function isPreference(value: unknown): value is ThemePreference {
-  return themePreferences.includes(value as ThemePreference);
-}
-
-/** The saved preference, or "system" when there is none or storage is unavailable. */
-export function readThemePreference(): ThemePreference {
-  try {
-    const saved = localStorage.getItem(themeStorageKey);
-    return isPreference(saved) ? saved : "system";
-  } catch {
-    return "system";
-  }
-}
-
-function saveThemePreference(preference: ThemePreference) {
-  try {
-    if (preference === "system") localStorage.removeItem(themeStorageKey);
-    else localStorage.setItem(themeStorageKey, preference);
-  } catch {
-    // Without storage the choice lasts until the page reloads.
-  }
-}
 
 /** The theme the host asks for: VS Code's color theme in a webview, the OS setting elsewhere. */
 export function systemTheme(host: Host = currentHost): Theme {
@@ -85,12 +65,10 @@ export function applyTheme(theme: Theme, root: HTMLElement = document.documentEl
   root.style.colorScheme = theme;
 }
 
-let preference: ThemePreference = "system";
 let activeHost: Host = currentHost;
-const listeners = new Set<() => void>();
 
 function render() {
-  applyTheme(resolveTheme(preference, systemTheme(activeHost)));
+  applyTheme(resolveTheme(getSettings().theme, systemTheme(activeHost)));
 }
 
 /**
@@ -100,28 +78,21 @@ function render() {
  */
 export function startTheme(host: Host = currentHost): () => void {
   activeHost = host;
-  preference = readThemePreference();
   render();
-  return watchSystemTheme(render, host);
-}
-
-export function getThemePreference(): ThemePreference {
-  return preference;
+  const stopHost = watchSystemTheme(render, host);
+  const stopSettings = subscribeSettings(render);
+  return () => {
+    stopHost();
+    stopSettings();
+  };
 }
 
 /** Saves and shows a preference at once; no reload, unlike the language. */
 export function setThemePreference(next: ThemePreference) {
-  preference = next;
-  saveThemePreference(next);
+  updateSettings({ theme: next });
   render();
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
 }
 
 export function useThemePreference(): [ThemePreference, (next: ThemePreference) => void] {
-  return [useSyncExternalStore(subscribe, getThemePreference), setThemePreference];
+  return [useSettings().theme, setThemePreference];
 }
