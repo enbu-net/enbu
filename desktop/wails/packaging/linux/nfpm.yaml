@@ -32,6 +32,7 @@ overrides:
       - libgtk-4-1
       - libwebkitgtk-6.0-4
   rpm:
+    buildhost: enbu
     depends:
       - gtk4
       - webkitgtk6.0

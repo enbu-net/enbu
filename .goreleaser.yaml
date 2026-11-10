@@ -72,6 +72,9 @@ nfpms:
     bindir: /usr/bin
     # Reproducible packages, like the binaries.
     mtime: "{{ .CommitDate }}"
+    rpm:
+      # An RPM records the build machine's hostname unless told otherwise.
+      buildhost: enbu
     contents:
       - src: .tmp/completions/enbu.bash
         dst: /usr/share/bash-completion/completions/enbu
