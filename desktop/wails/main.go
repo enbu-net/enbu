@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"log/slog"
@@ -12,6 +14,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/process"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -35,18 +38,31 @@ func init() {
 	application.RegisterEvent[desktop.ConflictRetry](desktop.EventConflictRetry)
 }
 
-// singleInstance keeps one app running per user. On Linux Wails finds the
-// running app over the D-Bus session bus and stops with a fatal error when
-// there is none, so without a session bus a second window is the lesser harm.
-func singleInstance(goos string, getenv func(string) string, onSecond func(application.SecondInstanceData)) *application.SingleInstanceOptions {
+// singleInstance keeps one app running per user and data directory. On Linux
+// Wails finds the running app over the D-Bus session bus and stops with a fatal
+// error when there is none, so without a session bus a second window is the
+// lesser harm.
+func singleInstance(goos string, getenv func(string) string, dataDir string, onSecond func(application.SecondInstanceData)) *application.SingleInstanceOptions {
 	if goos == "linux" && getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
 		slog.Warn("no D-Bus session bus; more than one enbu window may open")
 		return nil
 	}
 	return &application.SingleInstanceOptions{
-		UniqueID:               desktopID,
+		UniqueID:               singleInstanceID(getenv, dataDir),
 		OnSecondInstanceLaunch: onSecond,
 	}
+}
+
+// singleInstanceID is desktopID, unless XDG_DATA_HOME moves enbu's data
+// directory: each data directory holds its own identity and local state, so an
+// app started with another one is another device and runs beside the first.
+// The suffix starts with a letter because D-Bus names allow no leading digit.
+func singleInstanceID(getenv func(string) string, dataDir string) string {
+	if !filepath.IsAbs(getenv("XDG_DATA_HOME")) {
+		return desktopID
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(dataDir)))
+	return desktopID + ".d" + hex.EncodeToString(sum[:6])
 }
 
 func setupLogger() *os.File {
@@ -149,7 +165,7 @@ func run() error {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(web.FrontendFS()),
 		},
-		SingleInstance: singleInstance(runtime.GOOS, os.Getenv, func(data application.SecondInstanceData) {
+		SingleInstance: singleInstance(runtime.GOOS, os.Getenv, config.DataDir(), func(data application.SecondInstanceData) {
 			slog.Info("second instance launch", "args", data.Args, "cwd", data.WorkingDir)
 			if mainWindow != nil {
 				activate(mainWindow)
