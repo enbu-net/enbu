@@ -59,7 +59,7 @@ describe("AccountList", () => {
       },
     });
     const inUse = container.querySelector('[data-account="octo"]');
-    expect(inUse?.textContent).toContain("In use");
+    expect(inUse?.getAttribute("aria-current")).toBe("true");
     expect(queryButton("Use: octo")).toBeNull();
     expect(queryButton("Use: hubot")).not.toBeNull();
   });
@@ -120,6 +120,8 @@ describe("AccountList", () => {
     });
     const inUse = container.querySelectorAll('[aria-current="true"]');
     expect(Array.from(inUse).map((row) => row.getAttribute("data-account"))).toEqual(["octocat"]);
+    const providers = Array.from(container.querySelectorAll("[data-account] [data-provider]"));
+    expect(providers.map((label) => label.textContent)).toEqual(["GitHub", "GitHub"]);
     const heading = container.querySelector("h2")?.parentElement;
     expect(heading?.textContent).toContain("Add account");
   });

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { Check, Plus } from "lucide-react";
+import { SiGithub } from "@icons-pack/react-simple-icons";
+import { Plus } from "lucide-react";
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
 import { Button, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
@@ -45,7 +46,20 @@ function Avatar({ login }: { login: string }) {
 }
 
 /**
- * The GitHub accounts signed in on this device: the one in use, switching to
+ * Which sign-in provider an account belongs to. Every account is a GitHub
+ * account today; other OpenID Connect providers will add their own label.
+ */
+function ProviderLabel() {
+  return (
+    <styled.span display="inline-flex" alignItems="center" gap="1" data-provider="github">
+      <SiGithub size={12} title="" aria-hidden="true" />
+      GitHub
+    </styled.span>
+  );
+}
+
+/**
+ * The accounts signed in on this device: the one in use, switching to
  * another, signing one out, and signing in with another account.
  */
 export function AccountList() {
@@ -143,42 +157,26 @@ export function AccountList() {
                   boxShadow={inUse ? "inset 3px 0 0 {colors.accent.default}" : undefined}
                 >
                   <Avatar login={account} />
-                  <Flex flex="1" minW="0" align="center" gap="2" flexWrap="wrap">
-                    <styled.a
-                      href={`https://github.com/${account}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      fontSize="sm"
-                      fontWeight="semibold"
-                      color="fg.default"
-                      truncate
-                      _hover={{ textDecoration: "underline", color: "accent.default" }}
-                    >
-                      {account}
-                    </styled.a>
-                    {inUse && (
-                      <styled.span
-                        display="inline-flex"
-                        alignItems="center"
-                        gap="1"
-                        px="2"
-                        py="0.5"
-                        borderRadius="full"
-                        bg="accent.default"
-                        color="accent.fg"
-                        fontSize="xs"
+                  <Box flex="1" minW="0">
+                    <Flex align="center" gap="2" flexWrap="wrap">
+                      <styled.a
+                        href={`https://github.com/${account}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        fontSize="sm"
                         fontWeight="semibold"
+                        color="fg.default"
+                        truncate
+                        _hover={{ textDecoration: "underline", color: "accent.default" }}
                       >
-                        <Check size={12} aria-hidden="true" />
-                        {m.settings_inUse()}
-                      </styled.span>
-                    )}
-                    {envToken && (
-                      <Text fontSize="xs" color="fg.muted">
-                        {m.settings_envToken()}
-                      </Text>
-                    )}
-                  </Flex>
+                        {account}
+                      </styled.a>
+                    </Flex>
+                    <Flex align="center" gap="1.5" mt="0.5" fontSize="xs" color="fg.muted">
+                      <ProviderLabel />
+                      {envToken && <span>· {m.settings_envToken()}</span>}
+                    </Flex>
+                  </Box>
                   {!envToken && !inUse && (
                     <Button
                       size="sm"
