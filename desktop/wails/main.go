@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/process"
+	"github.com/enbu-net/enbu/pkg/selfupdate"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -119,6 +121,9 @@ func main() {
 			_ = logFile.Close()
 		}()
 	}
+	// After an update, the app that installed it may still hold the
+	// single-instance lock for a moment.
+	selfupdate.WaitForPrevious(15 * time.Second)
 	if err := registerProtocolHandler(); err != nil {
 		slog.Warn("registering enbu protocol handler", "err", err)
 	}
@@ -173,6 +178,7 @@ func run() error {
 			PromptForSingleSelection()
 	})
 	core.SetBrowserOpener(wailsApp.Browser.OpenURL)
+	core.SetUpdater(newUpdater(Version, wailsApp.Quit))
 	core.SetEventEmitter(func(name string, data any) {
 		wailsApp.Event.Emit(name, data)
 	})

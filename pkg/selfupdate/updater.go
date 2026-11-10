@@ -1,0 +1,222 @@
+package selfupdate
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	"github.com/sigstore/sigstore-go/pkg/root"
+	"github.com/sigstore/sigstore-go/pkg/tuf"
+)
+
+// maxDownloadSize bounds one release file.
+const maxDownloadSize = 256 << 20
+
+// Status is what a check found.
+type Status struct {
+	Method  Method `json:"method"`
+	Current string `json:"current"`
+	// Latest is empty when the method does not look for releases
+	// (development builds and editor extensions).
+	Latest string `json:"latest,omitempty"`
+	// Available is true when Latest is newer than Current.
+	Available bool   `json:"available"`
+	URL       string `json:"url,omitempty"`
+}
+
+// Updater checks for and installs releases of one installation.
+type Updater struct {
+	Client  *http.Client
+	Method  Method
+	Version string
+	GOOS    string
+	GOARCH  string
+	// Target is what Install replaces (see Target).
+	Target string
+	// CacheDir keeps the Sigstore trusted root and the downloads.
+	CacheDir string
+	// TrustedRoot returns the Sigstore trusted root; nil fetches it over
+	// TUF (the root of trust embedded in sigstore-go), cached in CacheDir.
+	TrustedRoot func(ctx context.Context) (root.TrustedMaterial, error)
+	// latest and verify are replaceable in tests.
+	latest func(ctx context.Context, client *http.Client) (Release, error)
+	verify func(trusted root.TrustedMaterial, checksums, bundleJSON []byte) error
+}
+
+func (u *Updater) client() *http.Client {
+	if u.Client != nil {
+		return u.Client
+	}
+	return http.DefaultClient
+}
+
+// Looks reports whether a method looks for releases at all: editor
+// extensions are updated by the editor, and development builds have no
+// release to compare with.
+func (m Method) Looks() bool {
+	return m != MethodEditor && m != MethodDevelopment
+}
+
+// Check compares the installation with the newest release.
+func (u *Updater) Check(ctx context.Context) (Status, error) {
+	status, _, err := u.check(ctx)
+	return status, err
+}
+
+func (u *Updater) check(ctx context.Context) (Status, Release, error) {
+	status := Status{Method: u.Method, Current: u.Version}
+	if !u.Method.Looks() {
+		return status, Release{}, nil
+	}
+	latest := u.latest
+	if latest == nil {
+		latest = Latest
+	}
+	release, err := latest(ctx, u.client())
+	if err != nil {
+		return status, Release{}, err
+	}
+	status.Latest = release.Version
+	status.URL = release.URL
+	status.Available = Newer(u.Version, release.Version)
+	return status, release, nil
+}
+
+// ErrDownload marks a failure to reach GitHub or to download a release
+// file; trying again later may work.
+var ErrDownload = errors.New("download failed")
+
+// ErrNotSelfManaged means the installation is updated some other way.
+var ErrNotSelfManaged = errors.New("this installation is not updated by the app")
+
+// Update installs the newest release when it is newer: it downloads
+// checksums.txt and its Sigstore bundle, verifies them, downloads this
+// platform's archive, checks it against checksums.txt and only then
+// replaces the app. It returns the status after the update.
+func (u *Updater) Update(ctx context.Context) (Status, error) {
+	if u.Method != MethodSelf {
+		return Status{Method: u.Method, Current: u.Version}, ErrNotSelfManaged
+	}
+	status, release, err := u.check(ctx)
+	if err != nil || !status.Available {
+		return status, err
+	}
+	asset, ok := AssetName(release.Version, u.GOOS, u.GOARCH)
+	if !ok {
+		return status, fmt.Errorf("no release archive for %s/%s", u.GOOS, u.GOARCH)
+	}
+	assetURL, checksumsURL, bundleURL := release.Assets[asset], release.Assets[checksumsName], release.Assets[checksumsName+bundleSuffix]
+	if assetURL == "" || checksumsURL == "" || bundleURL == "" {
+		return status, fmt.Errorf("%w: release %s lacks %s, %s or its signature", ErrUnverified, release.Version, asset, checksumsName)
+	}
+
+	checksums, err := u.fetch(ctx, checksumsURL, 1<<20)
+	if err != nil {
+		return status, err
+	}
+	bundleJSON, err := u.fetch(ctx, bundleURL, 1<<20)
+	if err != nil {
+		return status, err
+	}
+	trusted, err := u.trustedRoot(ctx)
+	if err != nil {
+		return status, fmt.Errorf("load the Sigstore trusted root: %w", err)
+	}
+	verify := u.verify
+	if verify == nil {
+		verify = VerifyChecksums
+	}
+	if err := verify(trusted, checksums, bundleJSON); err != nil {
+		return status, err
+	}
+	want, err := ChecksumFor(checksums, asset)
+	if err != nil {
+		return status, err
+	}
+
+	downloads := filepath.Join(u.CacheDir, "downloads")
+	if err := os.MkdirAll(downloads, 0o700); err != nil {
+		return status, err
+	}
+	archive, err := os.CreateTemp(downloads, "update-*-"+asset)
+	if err != nil {
+		return status, err
+	}
+	defer func() {
+		_ = archive.Close()
+		_ = os.Remove(archive.Name())
+	}()
+	if err := u.download(ctx, assetURL, archive); err != nil {
+		return status, err
+	}
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return status, err
+	}
+	if err := VerifyFile(archive, want); err != nil {
+		return status, err
+	}
+	if err := Install(ctx, u.GOOS, archive.Name(), u.Target); err != nil {
+		return status, fmt.Errorf("install %s: %w", release.Version, err)
+	}
+	return Status{Method: u.Method, Current: release.Version, Latest: release.Version, URL: release.URL}, nil
+}
+
+func (u *Updater) trustedRoot(ctx context.Context) (root.TrustedMaterial, error) {
+	if u.TrustedRoot != nil {
+		return u.TrustedRoot(ctx)
+	}
+	opts := tuf.DefaultOptions().WithContext(ctx).WithCachePath(filepath.Join(u.CacheDir, "sigstore"))
+	return root.FetchTrustedRootWithOptions(opts)
+}
+
+func (u *Updater) get(ctx context.Context, url string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := u.client().Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrDownload, url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("%w: %s: %s", ErrDownload, url, resp.Status)
+	}
+	return resp, nil
+}
+
+func (u *Updater) fetch(ctx context.Context, url string, limit int64) ([]byte, error) {
+	resp, err := u.get(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("download %s: too large", url)
+	}
+	return data, nil
+}
+
+func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
+	resp, err := u.get(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	n, err := io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize+1))
+	if err != nil {
+		return err
+	}
+	if n > maxDownloadSize {
+		return fmt.Errorf("download %s: too large", url)
+	}
+	return nil
+}

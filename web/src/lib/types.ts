@@ -27,6 +27,10 @@ export type {
   ProgressStep,
 } from "../bindings/github.com/enbu-net/enbu/app/models";
 export type { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
+export type {
+  Method as UpdateMethod,
+  Status as UpdateStatus,
+} from "../bindings/github.com/enbu-net/enbu/pkg/selfupdate/models";
 
 import type { RepoInfo } from "../bindings/github.com/enbu-net/enbu/desktop/models";
 export type { IdentityDiagnosis as Diagnosis } from "../bindings/github.com/enbu-net/enbu/desktop/models";

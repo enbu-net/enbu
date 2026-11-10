@@ -1,4 +1,6 @@
 import type {
+  UpdateMethod,
+  UpdateStatus,
   AuthStatus,
   ConflictChoice,
   ConflictSet,
@@ -442,5 +444,15 @@ export const mockBackend: Backend = {
   },
   async appVersion(): Promise<string> {
     return "";
+  },
+  // The preview is not a release; it has nothing to update.
+  async checkForUpdate(): Promise<UpdateStatus> {
+    return { method: "development" as UpdateMethod, current: "", available: false };
+  },
+  async installUpdate(): Promise<UpdateStatus> {
+    throw createAppError("invalid_argument");
+  },
+  async restartApp(): Promise<void> {
+    throw createAppError("invalid_argument");
   },
 };

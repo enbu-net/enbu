@@ -22,6 +22,7 @@ import { m } from "../../paraglide/messages";
 import { getLocale, locales, setLocale, type Locale } from "../../paraglide/runtime";
 import { AccountList } from "./account-list";
 import { SettingsJsonEditor } from "./settings-json-editor";
+import { UpdateSection } from "./update-section";
 
 /** What the JSON view shows: the settings and the language, in one object. */
 export type SettingsDocument = Settings & { language: Locale };
@@ -230,6 +231,11 @@ function SettingsForm({ settings, version }: { settings: Settings; version: stri
             <Text fontSize="sm" fontFamily="mono" color="fg.muted">
               {version || "-"}
             </Text>
+          </Row>
+          <Row label={<Text fontSize="sm">{m.update_title()}</Text>}>
+            <Box flex="1" minW="240px">
+              <UpdateSection />
+            </Box>
           </Row>
         </Card>
       </Section>

@@ -76,5 +76,8 @@ export function createBackendMock() {
     readConfig: vi.fn(async () => ""),
     writeConfig: vi.fn(async () => {}),
     appVersion: vi.fn(async () => ""),
+    checkForUpdate: vi.fn(async () => ({ method: "development", current: "", available: false })),
+    installUpdate: vi.fn(),
+    restartApp: vi.fn(async () => {}),
   } satisfies Record<keyof Backend, unknown>;
 }

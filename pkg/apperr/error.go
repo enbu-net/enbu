@@ -41,6 +41,7 @@ const (
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
 	CodeOutputUnreadable    Code = "output_unreadable"    // the output file is not dotenv; pulling again with replace overwrites it
 	CodeKeyringLocked       Code = "keyring_locked"       // the OS keyring exists but is locked; the person must unlock it
+	CodeUpdateUnverified    Code = "update_unverified"    // a downloaded update failed its signature or checksum and was not installed
 )
 
 type Params map[string]string

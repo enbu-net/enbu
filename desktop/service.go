@@ -57,6 +57,8 @@ type Service struct {
 	sessions   map[string]*oauthSession
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	emit       EventEmitter
+	updater    AppUpdater
+	updateMu   sync.Mutex
 	AppVersion string
 }
 
