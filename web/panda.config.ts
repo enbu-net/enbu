@@ -65,16 +65,7 @@ export default defineConfig({
             800: { value: "#113177" },
             900: { value: "#0c2454" },
           },
-          canvas: { value: "#ffffff" },
-          surface: { value: "#ffffff" },
-          surfaceMuted: { value: "#f8f9fa" },
           enbu: {
-            borderStrong: { value: "#b8c0cc" },
-            statusSuccess: { value: "#16835d" },
-            statusSuccessMuted: { value: "#eaf7f1" },
-            statusSuccessBorder: { value: "#b9e4d1" },
-            statusDanger: { value: "#e5484d" },
-            statusDangerMuted: { value: "#fff1f2" },
             editorBg: { value: "#1b1b22" },
             editorSurface: { value: "#22222a" },
             editorBorder: { value: "#303039" },
@@ -88,10 +79,6 @@ export default defineConfig({
           md: { value: "6px" },
           lg: { value: "8px" },
           full: { value: "9999px" },
-        },
-        shadows: {
-          app: { value: "0 24px 80px rgba(15, 23, 42, 0.12)" },
-          dropdown: { value: "0 16px 40px rgba(31, 35, 40, 0.16)" },
         },
         fontSizes: {
           "2xs": { value: "11px" },
@@ -119,35 +106,48 @@ export default defineConfig({
           "4.5": { value: "18px" },
         },
       },
+      // Every color a component uses is a semantic token with a light (_light) and
+      // a dark (_dark) value; src/lib/theme.ts switches between them with the
+      // `.dark` class on <html>. Do not use raw colors in components.
       semanticTokens: {
+        shadows: {
+          app: { value: { _light: "0 24px 80px rgba(15, 23, 42, 0.12)", _dark: "0 24px 80px rgba(0, 0, 0, 0.5)" } },
+          dropdown: { value: { _light: "0 16px 40px rgba(31, 35, 40, 0.16)", _dark: "0 16px 40px rgba(0, 0, 0, 0.56)" } },
+        },
         colors: {
           bg: {
-            default: { value: "{colors.canvas}" },
-            surface: { value: "{colors.surface}" },
-            muted: { value: "{colors.surfaceMuted}" },
+            // The page behind every surface; Park UI's bg.canvas stays the recipes' own.
+            page: { value: { _light: "#f8f9fa", _dark: "#111113" } },
+            default: { value: { _light: "#ffffff", _dark: "#18191b" } },
+            surface: { value: { _light: "#ffffff", _dark: "#18191b" } },
+            muted: { value: { _light: "#f8f9fa", _dark: "#212225" } },
+            // Behind dialogs.
+            backdrop: { value: { _light: "rgba(15, 23, 42, 0.48)", _dark: "rgba(0, 0, 0, 0.64)" } },
           },
           fg: {
-            default: { value: "#1f2328" },
-            muted: { value: "#667085" },
-            subtle: { value: "#475467" },
+            default: { value: { _light: "#1f2328", _dark: "#edeef0" } },
+            muted: { value: { _light: "#667085", _dark: "#9ba1a6" } },
+            subtle: { value: { _light: "#475467", _dark: "#b0b4ba" } },
           },
           border: {
-            default: { value: "#d8dee4" },
-            strong: { value: "{colors.enbu.borderStrong}" },
+            default: { value: { _light: "#d8dee4", _dark: "#363a3f" } },
+            strong: { value: { _light: "#b8c0cc", _dark: "#5a6169" } },
           },
           accent: {
-            default: { value: "{colors.brand.500}" },
-            fg: { value: "#fff" },
-            subtle: { value: "{colors.brand.50}" },
-            emphasized: { value: "{colors.brand.600}" },
+            default: { value: { _light: "{colors.brand.500}", _dark: "#3b82f6" } },
+            fg: { value: { _light: "#ffffff", _dark: "#ffffff" } },
+            subtle: { value: { _light: "{colors.brand.50}", _dark: "#172448" } },
+            border: { value: { _light: "{colors.brand.100}", _dark: "#203a72" } },
+            emphasized: { value: { _light: "{colors.brand.600}", _dark: "#5b96f7" } },
           },
           status: {
-            success: { value: "{colors.enbu.statusSuccess}" },
-            successMuted: { value: "{colors.enbu.statusSuccessMuted}" },
-            successBorder: { value: "{colors.enbu.statusSuccessBorder}" },
-            danger: { value: "{colors.enbu.statusDanger}" },
-            dangerMuted: { value: "{colors.enbu.statusDangerMuted}" },
+            success: { value: { _light: "#16835d", _dark: "#3dd68c" } },
+            successMuted: { value: { _light: "#eaf7f1", _dark: "#0f2a1f" } },
+            successBorder: { value: { _light: "#b9e4d1", _dark: "#1f5a40" } },
+            danger: { value: { _light: "#e5484d", _dark: "#ec5d5e" } },
+            dangerMuted: { value: { _light: "#fff1f2", _dark: "#3b1219" } },
           },
+          // The enbu.toml editor stays dark in both themes, like Monaco's vs-dark.
           editor: {
             bg: { value: "{colors.enbu.editorBg}" },
             surface: { value: "{colors.enbu.editorSurface}" },

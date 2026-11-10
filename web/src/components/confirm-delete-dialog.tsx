@@ -52,7 +52,7 @@ export function ConfirmDeleteDialog({
       display="grid"
       placeItems="center"
       p="4"
-      bg="rgba(15, 23, 42, 0.48)"
+      bg="bg.backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !loading) onClose();
       }}

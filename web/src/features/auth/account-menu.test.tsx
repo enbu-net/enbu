@@ -22,6 +22,7 @@ describe("AccountMenu", () => {
   it("does not show another GitHub connect action when signed out", async () => {
     await openMenu({ status: { authenticated: false, workspace_configured: true } });
 
+    expect(document.body.textContent).toContain("Theme");
     expect(document.body.textContent).toContain("Language");
     expect(document.body.textContent).toContain("Account");
     expect(document.body.textContent).not.toContain("Connect GitHub");

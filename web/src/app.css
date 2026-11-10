@@ -6,10 +6,11 @@ body,
   height: 100%;
 }
 
+/* Colors come from the theme tokens; see panda.config.ts and src/lib/theme.ts. */
 body {
   margin: 0;
-  color: #1f2328;
-  background: #f8f9fa;
+  color: var(--colors-fg-default);
+  background: var(--colors-bg-page);
 }
 
 button,

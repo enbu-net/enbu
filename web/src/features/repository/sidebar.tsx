@@ -116,7 +116,7 @@ export function Sidebar() {
               py="9px"
               borderRadius="lg"
               borderWidth="1px"
-              borderColor={isActive ? "brand.100" : "transparent"}
+              borderColor={isActive ? "accent.border" : "transparent"}
               bg={isActive ? "accent.subtle" : undefined}
               _hover={{ bg: isActive ? "accent.subtle" : "bg.muted" }}
               cursor={isActive ? "default" : "pointer"}

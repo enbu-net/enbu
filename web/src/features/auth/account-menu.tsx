@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, styled } from "styled-system/jsx";
 import { Button, Popover, Separator, Text } from "../../components/ui";
 import { LanguageSelector } from "../../components/language-selector";
+import { ThemeSelector } from "../../components/theme-selector";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
 import { m } from "../../paraglide/messages";
@@ -54,7 +55,7 @@ export function AccountMenu() {
               h="32px"
               borderRadius="full"
               bg={authenticated ? "accent.default" : "bg.muted"}
-              color={authenticated ? "white" : "fg.muted"}
+              color={authenticated ? "accent.fg" : "fg.muted"}
               fontSize="sm"
               fontWeight="extrabold"
               display={authenticated && username ? "none" : "grid"}
@@ -100,6 +101,7 @@ export function AccountMenu() {
             )}
           </Box>
 
+          <ThemeSelector justifyContent="space-between" pt="10px" />
           <LanguageSelector justifyContent="space-between" py="10px" />
 
           {authenticated && (

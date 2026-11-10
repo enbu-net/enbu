@@ -46,12 +46,13 @@ describe("SignIn", () => {
     });
   });
 
-  it("shows the login action and language selector without a redundant heading", () => {
+  it("shows the login action and the theme and language selectors without a redundant heading", () => {
     renderSignIn();
 
     expect(queryButton("Connect with GitHub")).toBeTruthy();
     expect(container.textContent).not.toContain("Sign in to GitHub");
-    expect(container.querySelector("select")?.value).toBe("en");
+    expect(container.querySelector<HTMLSelectElement>("#theme-select")?.value).toBe("system");
+    expect(container.querySelector<HTMLSelectElement>("#language-select")?.value).toBe("en");
   });
 
   it("shows the Japanese authentication label in Japanese", async () => {
