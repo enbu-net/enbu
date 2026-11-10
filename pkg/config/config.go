@@ -520,6 +520,17 @@ func DataDir() string {
 	return dataDir(runtime.GOOS, os.Getenv, homeDir)
 }
 
+// DefaultDataDir is the data directory DataDir names when XDG_DATA_HOME is
+// not set.
+func DefaultDataDir() string {
+	return dataDir(runtime.GOOS, func(name string) string {
+		if name == "XDG_DATA_HOME" {
+			return ""
+		}
+		return os.Getenv(name)
+	}, homeDir)
+}
+
 func dataDir(goos string, getenv func(string) string, home func() string) string {
 	if xdg := getenv("XDG_DATA_HOME"); filepath.IsAbs(xdg) {
 		return filepath.Join(xdg, "enbu")

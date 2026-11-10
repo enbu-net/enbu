@@ -288,6 +288,8 @@ version 1 metadataはenbuのローカルデータディレクトリの`identitie
 旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
 GitHubのトークンもOS keyringに保存します。平文ファイルには保存しません。使えるkeyringがなければ`enbu auth login`は失敗します。CIでは`GITHUB_TOKEN`を使います。
 
+データディレクトリごとに別のデバイスになります。デスクトップアプリはデータディレクトリごとに1つ起動します。別の`XDG_DATA_HOME`で起動すると、そのディレクトリのIdentityで2つ目のウィンドウが開くので、1台のPCで2人のワークスペースを試せます。
+
 Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtureを使い、3 OSで実行します。
 ロック解除済みOS keyringがある環境で`task identity/test/e2e`を実行できます。
 通常のCLIにはsoftware TPM transportを組み込みません。

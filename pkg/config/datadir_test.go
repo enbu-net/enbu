@@ -71,3 +71,15 @@ func TestHomeDirWithoutHOME(t *testing.T) {
 		t.Fatalf("DataDir() = %q, want an absolute path", got)
 	}
 }
+
+func TestDefaultDataDirIgnoresXDGDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	want := DataDir()
+	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "elsewhere"))
+	if got := DefaultDataDir(); got != want {
+		t.Fatalf("DefaultDataDir() with XDG_DATA_HOME = %q, want %q", got, want)
+	}
+	if DataDir() == want {
+		t.Fatal("DataDir() ignored XDG_DATA_HOME")
+	}
+}
