@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
-import { VStack } from "styled-system/jsx";
+import { Flex, VStack } from "styled-system/jsx";
 import { Button } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { LanguageSelector } from "../../components/language-selector";
+import { ThemeSelector } from "../../components/theme-selector";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
@@ -106,7 +107,10 @@ export function SignIn() {
           <SiGithub size={16} aria-hidden="true" />
           {m.auth_connect()}
         </Button>
-        <LanguageSelector w="full" justifyContent="flex-end" pt="3" />
+        <Flex w="full" justifyContent="flex-end" gap="4" pt="3" flexWrap="wrap">
+          <ThemeSelector />
+          <LanguageSelector />
+        </Flex>
       </VStack>
     </PageCenter>
   );

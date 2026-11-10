@@ -4,6 +4,7 @@ import { RouterProvider, createMemoryHistory, createRouter } from "@tanstack/rea
 import { routeTree } from "./routeTree.gen";
 import { host } from "./lib/host";
 import { installExternalLinkHandling } from "./lib/platform";
+import { startTheme } from "./lib/theme";
 import "./app.css";
 
 // A VS Code webview has no address to keep the route in, and its assets load
@@ -15,6 +16,8 @@ const router = createRouter(
 );
 
 installExternalLinkHandling();
+// Before the first render, so the page never shows the other theme first.
+startTheme();
 
 declare module "@tanstack/react-router" {
   interface Register {

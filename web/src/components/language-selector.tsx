@@ -19,7 +19,7 @@ export function LanguageSelector(props: LanguageSelectorProps) {
         value={getLocale()}
         // Switching reloads the page, which renders every message in the new locale.
         onChange={(event) => void setLocale(event.target.value as Locale)}
-        style={{ width: "118px" }}
+        style={{ width: "148px" }}
       >
         {locales.map((locale) => (
           <option key={locale} value={locale}>
