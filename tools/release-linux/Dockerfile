@@ -13,18 +13,16 @@ FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab0
 ARG SNAPSHOT=20261101T000000Z
 
 # ca-certificates comes from the image's own archive first, only so that apt
-# can reach the snapshot service over HTTPS; it does not touch the build.
+# can reach the snapshot service over HTTPS; it does not touch the build. The
+# snapshot service has no ubuntu-ports archive: its ubuntu archive holds the
+# arm64 packages too.
 RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates; \
-    case "$(dpkg --print-architecture)" in \
-      amd64) archive=ubuntu ;; \
-      *) archive=ubuntu-ports ;; \
-    esac; \
     rm -f /etc/apt/sources.list.d/*; \
     printf '%s\n' \
       'Types: deb' \
-      "URIs: https://snapshot.ubuntu.com/$archive/$SNAPSHOT/" \
+      "URIs: https://snapshot.ubuntu.com/ubuntu/$SNAPSHOT/" \
       'Suites: resolute resolute-updates resolute-security' \
       'Components: main universe' \
       'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
