@@ -56,9 +56,29 @@ type Service struct {
 	repoPath   string
 	sessions   map[string]*oauthSession
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
+	accounts   accountStore
 	emit       EventEmitter
+	updater    AppUpdater
+	updateMu   sync.Mutex
 	AppVersion string
 }
+
+// accountStore holds the signed-in GitHub accounts; tests replace it.
+type accountStore interface {
+	Accounts() (logins []string, current string, err error)
+	Switch(login string) error
+	Delete(login string) error
+}
+
+// keyringAccounts is the accountStore of the OS keyring and the data directory.
+type keyringAccounts struct{}
+
+func (keyringAccounts) Accounts() ([]string, string, error) { return auth.Accounts() }
+func (keyringAccounts) Switch(login string) error {
+	_, err := auth.SwitchAccount(login)
+	return err
+}
+func (keyringAccounts) Delete(login string) error { return auth.DeleteAccount(login) }
 
 type oauthSession struct {
 	cancel    context.CancelFunc
@@ -73,6 +93,7 @@ func NewService(a *app.App) *Service {
 		openURL:  auth.OpenBrowser,
 		git:      a.Git,
 		sessions: make(map[string]*oauthSession),
+		accounts: keyringAccounts{},
 	}
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock
@@ -125,10 +146,13 @@ func (s *Service) SetEventEmitter(emit EventEmitter) {
 }
 
 type AuthStatus struct {
-	Authenticated       bool      `json:"authenticated"`
-	WorkspaceConfigured bool      `json:"workspace_configured"`
-	Username            string    `json:"username,omitempty"`
-	Repo                *RepoInfo `json:"repo,omitempty"`
+	Authenticated       bool   `json:"authenticated"`
+	WorkspaceConfigured bool   `json:"workspace_configured"`
+	Username            string `json:"username,omitempty"`
+	// Accounts are the signed-in GitHub logins, the most recent sign-in last;
+	// Username is the one in use. GITHUB_TOKEN is not among them.
+	Accounts []string  `json:"accounts,omitempty"`
+	Repo     *RepoInfo `json:"repo,omitempty"`
 }
 
 type RepoInfo struct {
@@ -264,6 +288,9 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
+	if logins, _, err := s.accounts.Accounts(); err == nil {
+		status.Accounts = logins
+	}
 	token, err := auth.LoadToken()
 	if err != nil {
 		slog.Debug("GetAuthStatus: not authenticated", "err", err)
@@ -389,8 +416,16 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 	}
 }
 
-func (s *Service) Logout() error {
-	return auth.DeleteToken()
+// Logout signs out of the GitHub account login, or of the one in use when
+// login is "". Signing out of the one in use moves to the most recent
+// remaining sign-in.
+func (s *Service) Logout(login string) error {
+	return s.accounts.Delete(login)
+}
+
+// SwitchAccount uses another signed-in GitHub account in this data directory.
+func (s *Service) SwitchAccount(login string) error {
+	return s.accounts.Switch(login)
 }
 
 func (s *Service) BrowseRepository() (RepoInfo, error) {

@@ -44,6 +44,7 @@ var Methods = []string{
 	"GetOAuthLoginStatus",
 	"CancelOAuthLogin",
 	"Logout",
+	"SwitchAccount",
 	"BrowseRepository",
 	"SelectRepository",
 	"GetRepoStatus",
@@ -81,6 +82,9 @@ var Methods = []string{
 	"ReadConfig",
 	"WriteConfig",
 	"GetAppVersion",
+	"CheckForUpdate",
+	"InstallUpdate",
+	"RestartApp",
 }
 
 // Methods handled by the server itself rather than desktop.Service.

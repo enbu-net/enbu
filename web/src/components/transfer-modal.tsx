@@ -132,7 +132,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
       position="fixed"
       inset="0"
       zIndex="1000"
-      bg="rgba(15, 23, 42, 0.5)"
+      bg="bg.backdrop"
       backdropFilter="blur(4px)"
       display="flex"
       alignItems="center"
@@ -262,7 +262,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
               zIndex="10"
             >
               {error ? (
-                <AlertCircle size={38} style={{ color: "var(--colors-status-danger, #f85149)" }} />
+                <AlertCircle size={38} style={{ color: "var(--colors-status-danger)" }} />
               ) : (
                 <CheckCircle2 size={38} style={{ color: "var(--colors-accent-default)" }} />
               )}
@@ -299,7 +299,7 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
             fontWeight="bold"
             style={{
               color: error
-                ? "var(--colors-status-danger, #f85149)"
+                ? "var(--colors-status-danger)"
                 : isDone
                 ? "var(--colors-accent-default)"
                 : "var(--colors-fg-default)",

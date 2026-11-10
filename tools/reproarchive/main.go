@@ -4,22 +4,34 @@
 // commit give the same archive on any machine.
 //
 //	reproarchive zip OUT.zip DIR            pack DIR's files, sorted by path
+<<<<<<< HEAD
 //	reproarchive tar OUT.tar.gz DIR         the same as a gzip-compressed tar
+=======
+>>>>>>> origin/main
 //	reproarchive rezip FILE.zip             rewrite a zip in place, keeping its entry order
 package main
 
 import (
+<<<<<<< HEAD
 	"archive/tar"
 	"archive/zip"
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+=======
+	"archive/zip"
+	"bytes"
+	"compress/flate"
+>>>>>>> origin/main
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+<<<<<<< HEAD
 	"path"
+=======
+>>>>>>> origin/main
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -35,7 +47,11 @@ func main() {
 
 func run(args []string) error {
 	if len(args) < 2 {
+<<<<<<< HEAD
 		return errors.New("usage: reproarchive zip|tar OUT DIR | rezip FILE")
+=======
+		return errors.New("usage: reproarchive zip OUT DIR | rezip FILE")
+>>>>>>> origin/main
 	}
 	mtime, err := sourceDate(os.Getenv("SOURCE_DATE_EPOCH"))
 	if err != nil {
@@ -48,12 +64,15 @@ func run(args []string) error {
 			return err
 		}
 		return writeFile(args[1], func(w io.Writer) error { return writeZip(w, files, mtime) })
+<<<<<<< HEAD
 	case args[0] == "tar" && len(args) == 3:
 		files, err := collect(args[2])
 		if err != nil {
 			return err
 		}
 		return writeFile(args[1], func(w io.Writer) error { return writeTarGz(w, files, mtime) })
+=======
+>>>>>>> origin/main
 	case args[0] == "rezip" && len(args) == 2:
 		files, err := readZip(args[1])
 		if err != nil {
@@ -74,7 +93,11 @@ func sourceDate(v string) (time.Time, error) {
 	if err != nil || sec < 0 {
 		return time.Time{}, fmt.Errorf("SOURCE_DATE_EPOCH %q is not a Unix time", v)
 	}
+<<<<<<< HEAD
 	// Zip times have two-second steps and no time zone; tar keeps whole seconds.
+=======
+	// Zip times have two-second steps and no time zone.
+>>>>>>> origin/main
 	return time.Unix(sec, 0).UTC(), nil
 }
 
@@ -175,6 +198,7 @@ func writeZip(w io.Writer, files []entry, mtime time.Time) error {
 	return zw.Close()
 }
 
+<<<<<<< HEAD
 func writeTarGz(w io.Writer, files []entry, mtime time.Time) error {
 	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 	if err != nil {
@@ -222,6 +246,8 @@ func parents(name string) []string {
 	return out
 }
 
+=======
+>>>>>>> origin/main
 // writeFile builds the archive in memory and then replaces name, so rezip can
 // rewrite the file it read and a failure leaves nothing half written.
 func writeFile(name string, build func(io.Writer) error) error {

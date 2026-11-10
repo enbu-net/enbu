@@ -3,6 +3,7 @@ import { Check, Copy, Eye, EyeOff, Trash2 } from "lucide-react";
 import { Box, HStack } from "styled-system/jsx";
 import { Button, Input, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
+import { copySecret } from "../../lib/clipboard";
 import { m } from "../../paraglide/messages";
 
 export function SecretRow({
@@ -97,7 +98,7 @@ export function SecretRow({
           aria-label={copied === "value" ? m.dashboard_valueCopied() : m.dashboard_copyValue()}
           title={copied === "value" ? m.dashboard_valueCopied() : m.dashboard_copyValue()}
           onClick={async () => {
-            await navigator.clipboard.writeText(editValue);
+            await copySecret(editValue);
             setCopied("value");
           }}
         >

@@ -75,8 +75,12 @@ func (s *DesktopService) CancelOAuthLogin(sessionID string) error {
 	return publicError(s.core.CancelOAuthLogin(sessionID))
 }
 
-func (s *DesktopService) Logout() error {
-	return publicError(s.core.Logout())
+func (s *DesktopService) Logout(login string) error {
+	return publicError(s.core.Logout(login))
+}
+
+func (s *DesktopService) SwitchAccount(login string) error {
+	return publicError(s.core.SwitchAccount(login))
 }
 
 func (s *DesktopService) BrowseRepository() (desktop.RepoInfo, error) {
@@ -225,4 +229,16 @@ func (s *DesktopService) WriteConfig(content string) error {
 
 func (s *DesktopService) GetAppVersion() string {
 	return s.core.GetAppVersion()
+}
+
+func (s *DesktopService) CheckForUpdate() (desktop.UpdateStatus, error) {
+	return result(s.core.CheckForUpdate())
+}
+
+func (s *DesktopService) InstallUpdate() (desktop.UpdateStatus, error) {
+	return result(s.core.InstallUpdate())
+}
+
+func (s *DesktopService) RestartApp() error {
+	return publicError(s.core.RestartApp())
 }

@@ -67,6 +67,12 @@ GHCR のパッケージは作成者だけが見られる private で作られま
 GitHub でパッケージの設定を開き、リポジトリを接続して「Inherit access from repository」を
 有効にしてください（`init` も案内を表示します）。
 
+仕事用と個人用のように GitHub アカウントが複数あるときは、それぞれでサインインします。
+`enbu auth login` はアカウントを追加してそれを使い、`enbu auth switch LOGIN` で別のアカウントに戻し、
+`enbu auth status` で一覧を、`enbu auth logout --user LOGIN` で 1 つだけサインアウトします。
+トークンは OS keyring に置き、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
+別の `XDG_DATA_HOME` では別のアカウントを選べます。`GITHUB_TOKEN` があればどのアカウントよりも優先します。
+
 ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
 それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
 その他の OCI レジストリは Docker の認証設定を使います:
@@ -294,6 +300,8 @@ version 1 metadataはenbuのローカルデータディレクトリの`identitie
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
 旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
 GitHubのトークンもOS keyringに保存します。平文ファイルには保存しません。使えるkeyringがなければ`enbu auth login`は失敗します。CIでは`GITHUB_TOKEN`を使います。
+
+データディレクトリごとに別のデバイスになります。デスクトップアプリはデータディレクトリごとに1つ起動します。別の`XDG_DATA_HOME`で起動すると、そのディレクトリのIdentityで2つ目のウィンドウが開くので、1台のPCで2人のワークスペースを試せます。
 
 Identity E2Eは固定したテスト専用vTPM SDKとローカルOCI HTTP fixtureを使い、3 OSで実行します。
 ロック解除済みOS keyringがある環境で`task identity/test/e2e`を実行できます。

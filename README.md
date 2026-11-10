@@ -70,6 +70,13 @@ GHCR creates the package private to you. So that teammates can join, open the pa
 settings on GitHub, connect the repository and turn on "Inherit access from repository";
 `init` prints this reminder.
 
+With more than one GitHub account, such as a work and a personal one, sign in with
+each: `enbu auth login` adds the account and uses it, `enbu auth switch LOGIN` goes
+back to another, `enbu auth status` lists them, and `enbu auth logout --user LOGIN`
+signs out of one. The tokens live in the OS keyring; which account is in use belongs to
+enbu's data directory, so another `XDG_DATA_HOME` keeps its own choice. `GITHUB_TOKEN`,
+when set, is used instead of any account.
+
 Anywhere else, name the storage with `--storage`. `ghcr.io` always uses enbu's GitHub
 login; any other OCI registry uses the Docker credential configuration:
 
@@ -328,6 +335,10 @@ Version 1 metadata is stored under `identities/` in enbu's local data directory
 Old identities are not migrated or loaded. Plaintext Identity storage is removed.
 The GitHub token is kept in the OS keyring too. There is no plaintext file for it:
 without a usable keyring, `enbu auth login` fails, and CI uses `GITHUB_TOKEN`.
+
+Each data directory is its own device. The desktop app runs once per data directory:
+started with another `XDG_DATA_HOME`, it opens a second window beside the first, with
+that directory's identity, for example to try a two-member workspace on one computer.
 
 Identity E2E runs on Linux, Windows and macOS with a pinned test-only vTPM SDK and
 local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring.

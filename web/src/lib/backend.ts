@@ -25,6 +25,7 @@ import type {
   PullResult,
   RepoInfo,
   SecretsResponse,
+  UpdateStatus,
 } from "./types";
 
 /**
@@ -39,7 +40,10 @@ export interface Backend {
   startOAuthLogin(): Promise<OAuthStart>;
   oauthStatus(sessionID: string): Promise<OAuthStatus>;
   cancelOAuthLogin(sessionID: string): Promise<void>;
-  logout(): Promise<void>;
+  /** Signs out of the GitHub account login, or of the one in use when it is omitted. */
+  logout(login?: string): Promise<void>;
+  /** Uses another signed-in GitHub account (one of AuthStatus.accounts). */
+  switchAccount(login: string): Promise<void>;
 
   repoStatus(): Promise<GUIRepoStatus>;
   browseRepository(): Promise<GUIRepoStatus>;
@@ -95,6 +99,12 @@ export interface Backend {
   readConfig(): Promise<string>;
   writeConfig(content: string): Promise<void>;
   appVersion(): Promise<string>;
+  /** Compares the app with the newest release; says who updates this installation. */
+  checkForUpdate(): Promise<UpdateStatus>;
+  /** Downloads, verifies and installs the newest release over the app. */
+  installUpdate(): Promise<UpdateStatus>;
+  /** Starts the installed update and quits. */
+  restartApp(): Promise<void>;
 }
 
 /**
@@ -151,7 +161,8 @@ export function createServiceBackend(svc: ServiceClient): Backend {
       };
     },
     cancelOAuthLogin: (sessionID) => call(svc.CancelOAuthLogin(sessionID)),
-    logout: () => call(svc.Logout()),
+    logout: (login = "") => call(svc.Logout(login)),
+    switchAccount: (login) => call(svc.SwitchAccount(login)),
 
     repoStatus: async () => repoStatusOf(await call(svc.GetRepoStatus())),
     browseRepository: async () => repoStatusOf(await call(svc.BrowseRepository())),
@@ -199,6 +210,9 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     readConfig: () => call(svc.ReadConfig()),
     writeConfig: (content) => call(svc.WriteConfig(content)),
     appVersion: () => call(svc.GetAppVersion()),
+    checkForUpdate: () => call(svc.CheckForUpdate()),
+    installUpdate: () => call(svc.InstallUpdate()),
+    restartApp: () => call(svc.RestartApp()),
   };
 }
 

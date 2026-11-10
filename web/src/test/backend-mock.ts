@@ -16,6 +16,7 @@ export function createBackendMock() {
     oauthStatus: vi.fn(),
     cancelOAuthLogin: vi.fn(async () => {}),
     logout: vi.fn(async () => {}),
+    switchAccount: vi.fn(async () => {}),
     repoStatus: vi.fn(async () => ({ selected: false })),
     browseRepository: vi.fn(async () => ({ selected: false })),
     selectRepository: vi.fn(async () => ({ selected: false })),
@@ -75,5 +76,8 @@ export function createBackendMock() {
     readConfig: vi.fn(async () => ""),
     writeConfig: vi.fn(async () => {}),
     appVersion: vi.fn(async () => ""),
+    checkForUpdate: vi.fn(async () => ({ method: "development", current: "", available: false })),
+    installUpdate: vi.fn(),
+    restartApp: vi.fn(async () => {}),
   } satisfies Record<keyof Backend, unknown>;
 }

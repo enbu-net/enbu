@@ -11,7 +11,7 @@ import { EnvironmentsTab } from "../environments/environments-tab";
 import { HistoryTab } from "../history/history-tab";
 import { MembersTab } from "../members/members-tab";
 import { SecretsTab } from "../secrets/secrets-tab";
-import { ConfigPanel } from "../settings/config-panel";
+import { ConfigPanel } from "../config/config-panel";
 import { DashboardTab, DashboardTabContent } from "./dashboard-tabs";
 import { m } from "../../paraglide/messages";
 import { useTransfer, type RunTransfer } from "./use-transfer";
@@ -60,7 +60,7 @@ const tabs: DashboardTabDefinition[] = [
   },
   {
     value: "settings",
-    label: m.config_settings,
+    label: m.config_workspace,
     icon: <SlidersHorizontal size={16} />,
     render: ({ workspace }) => <ConfigPanel environments={workspace.environments} />,
   },
@@ -77,7 +77,7 @@ export function Dashboard({ repo }: { repo: RepoInfo }) {
       minH="calc(100vh - 72px)"
       px={{ base: "4", md: "7", lg: "12" }}
       py={{ base: "7", lg: "10" }}
-      bg="bg.muted"
+      bg="bg.page"
     >
       <Box maxW="1120px" mx="auto">
         <Flex align={{ base: "start", sm: "center" }} justify="space-between" gap="4" mb="7">

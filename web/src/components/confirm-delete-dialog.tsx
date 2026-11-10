@@ -52,7 +52,7 @@ export function ConfirmDeleteDialog({
       display="grid"
       placeItems="center"
       p="4"
-      bg="rgba(15, 23, 42, 0.48)"
+      bg="bg.backdrop"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !loading) onClose();
       }}
@@ -88,7 +88,7 @@ export function ConfirmDeleteDialog({
           <Button
             type="button"
             bg="status.danger"
-            color="white"
+            color="status.dangerFg"
             loading={loading}
             aria-label={`${confirmLabel}: ${title}`}
             onClick={() => void onConfirm()}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Plus, Settings, Trash2 } from "lucide-react";
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
 import { Button, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
@@ -14,8 +14,20 @@ function pathKey(path = "") {
   return path.replaceAll("\\", "/").toLowerCase();
 }
 
-/** Lists the repositories enbu knows on this device and switches between them. */
-export function Sidebar() {
+/**
+ * Lists the repositories enbu knows on this device and switches between them,
+ * with the way to the settings at the bottom. While the settings are open,
+ * picking a repository, the current one included, closes them.
+ */
+export function Sidebar({
+  settingsOpen = false,
+  onOpenSettings = () => {},
+  onCloseSettings = () => {},
+}: {
+  settingsOpen?: boolean;
+  onOpenSettings?: () => void;
+  onCloseSettings?: () => void;
+}) {
   const { repo, setRepo } = useSession();
   const activePath = repo?.repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -73,7 +85,8 @@ export function Sidebar() {
   async function select(path: string) {
     setError(null);
     try {
-      setRepo(await backend.selectRepository(path));
+      if (path !== activePath) setRepo(await backend.selectRepository(path));
+      if (settingsOpen) onCloseSettings();
     } catch (err) {
       setError(toDisplayError(err));
     }
@@ -83,27 +96,61 @@ export function Sidebar() {
     <styled.nav
       aria-label={m.sidebar_navigation()}
       w="248px"
-      minH="calc(100vh - 72px)"
-      display={{ base: "none", md: "block" }}
+      h="calc(100vh - 72px)"
+      position="sticky"
+      top="72px"
+      display={{ base: "none", md: "flex" }}
       borderRightWidth="1px"
       borderColor="border.default"
       bg="bg.surface"
       p="3.5"
       flexShrink="0"
+      flexDirection="column"
     >
+      <Button
+        size="sm"
+        variant="outline"
+        w="full"
+        flexShrink="0"
+        borderColor="border.default"
+        color="fg.default"
+        fontWeight="semibold"
+        loading={addLoading}
+        onClick={async () => {
+          setAddLoading(true);
+          setError(null);
+          try {
+            const next = await backend.browseRepository();
+            // A cancelled picker selects nothing and changes nothing.
+            if (next.selected) {
+              setRepo(next);
+              if (settingsOpen) onCloseSettings();
+            }
+          } catch (err) {
+            setError(toDisplayError(err));
+          } finally {
+            setAddLoading(false);
+          }
+        }}
+      >
+        <Plus size={16} aria-hidden="true" />
+        {m.sidebar_addRepository()}
+      </Button>
       {error && (
-        <Box mb="3">
+        <Box mt="3">
           <ErrorAlert error={error} onDismiss={() => setError(null)} />
         </Box>
       )}
-      <VStack alignItems="stretch" gap="1" mb="3">
+      {/* Only the list scrolls: adding stays at the top and the settings at the bottom. */}
+      <VStack alignItems="stretch" gap="1" mt="3" flex="1" minH="0" overflowY="auto">
         {repos.length === 0 && (
           <Text fontSize="sm" color="fg.muted">
             {m.sidebar_noRepositories()}
           </Text>
         )}
         {repos.map((item) => {
-          const isActive = item.path === activePath;
+          // The repository in use is also the way back from the settings.
+          const isActive = item.path === activePath && !settingsOpen;
           return (
             <Flex
               key={item.path}
@@ -116,7 +163,7 @@ export function Sidebar() {
               py="9px"
               borderRadius="lg"
               borderWidth="1px"
-              borderColor={isActive ? "brand.100" : "transparent"}
+              borderColor={isActive ? "accent.border" : "transparent"}
               bg={isActive ? "accent.subtle" : undefined}
               _hover={{ bg: isActive ? "accent.subtle" : "bg.muted" }}
               cursor={isActive ? "default" : "pointer"}
@@ -203,28 +250,19 @@ export function Sidebar() {
         }}
       />
       <Button
+        mt="3"
+        flexShrink="0"
         size="sm"
-        variant="outline"
+        variant="ghost"
         w="full"
-        borderColor="border.default"
+        justifyContent="start"
         color="fg.default"
-        fontWeight="semibold"
-        loading={addLoading}
-        onClick={async () => {
-          setAddLoading(true);
-          setError(null);
-          try {
-            const next = await backend.browseRepository();
-            // A cancelled picker selects nothing and changes nothing.
-            if (next.selected) setRepo(next);
-          } catch (err) {
-            setError(toDisplayError(err));
-          } finally {
-            setAddLoading(false);
-          }
-        }}
+        aria-current={settingsOpen ? "page" : undefined}
+        bg={settingsOpen ? "accent.subtle" : undefined}
+        onClick={onOpenSettings}
       >
-        {m.sidebar_addRepository()}
+        <Settings size={16} aria-hidden="true" />
+        {m.settings_title()}
       </Button>
     </styled.nav>
   );

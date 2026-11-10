@@ -56,7 +56,7 @@ main.go                  → version injection, signal handling, delegates to cl
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
 desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
 vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local and WSL, trusted workspaces only
-web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`; colors only through the semantic tokens in web/panda.config.ts, each with a `_light` and a `_dark` value, which lib/theme.ts switches with the `.dark` class on `<html>` (light, dark, or system: the OS, or the editor's theme in VS Code)
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
@@ -74,6 +74,7 @@ pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
 pkg/apperr/              → application error type, codes, and normalization helpers
+pkg/selfupdate/          → desktop app updates: who updates an installation (Detect), the newest GitHub release, Sigstore verification of checksums.txt, replacing the binary or .app, relaunch
 test/                    → scenario tests (build tag: scenario)
 ```
 
@@ -93,6 +94,8 @@ test/                    → scenario tests (build tag: scenario)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring. Hardware that exists but this user may not open (a TPM outside the `tss` group) is an error, not a fallback. There is no file-based or plaintext Identity backend and no SSH key support. Inside WSL the keys live in Windows through `pkg/winbridge`, and a missing enbu.exe is an error, not a fallback
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
 - Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
+- The desktop app updates itself only when it was unpacked from a release archive into a place the user may write (`selfupdate.Detect`); Homebrew, .deb/.rpm and read-only installs get instructions, VS Code updates its extension, and development builds never update. An update installs only after `checksums.txt` verifies against the Sigstore signature of `release-build.yaml` in this repository (keyless, trusted root over TUF) and the archive matches its checksum
+- The GUI's own settings (theme, font size, clipboard clearing) are one JSON object in localStorage per host (`web/src/lib/settings.ts`); the settings screen edits it as a form or as JSON. The language stays with Paraglide
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling
