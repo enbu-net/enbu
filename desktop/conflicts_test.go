@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -57,7 +58,7 @@ func TestConflictsCanBeListedAndResolvedFromTheDesktop(t *testing.T) {
 	if !values["alice's"] || !values["bob's"] {
 		t.Fatalf("candidates: %+v", set.Conflicts[0].Candidates)
 	}
-	if err := f.alice.ResolveConflicts("", set.Heads, []ConflictChoice{{Key: "KEY", Value: "bob's"}}); err != nil {
+	if err := f.alice.ResolveConflicts("", set.Heads, []app.SecretChoice{{Key: "KEY", Value: "bob's"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, who := range []*Service{f.alice, f.bob} {
@@ -77,7 +78,7 @@ func TestResolvingAConflictCanDeleteTheKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.bob.ResolveConflicts("", set.Heads, []ConflictChoice{{Key: "KEY", Delete: true}}); err != nil {
+	if err := f.bob.ResolveConflicts("", set.Heads, []app.SecretChoice{{Key: "KEY", Delete: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := f.alice.ListSecrets(""); err != nil || len(got.Secrets) != 0 {
@@ -91,12 +92,12 @@ func TestResolvingRefusesStaleHeadsAndDuplicateKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = f.alice.ResolveConflicts("", set.Heads, []ConflictChoice{{Key: "KEY", Value: "a"}, {Key: "KEY", Value: "b"}})
+	err = f.alice.ResolveConflicts("", set.Heads, []app.SecretChoice{{Key: "KEY", Value: "a"}, {Key: "KEY", Value: "b"}})
 	if !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("duplicate key: %v", err)
 	}
 	// A choice made from heads that are no longer the current ones publishes nothing.
-	err = f.alice.ResolveConflicts("", set.Heads[:1], []ConflictChoice{{Key: "KEY", Value: "a"}})
+	err = f.alice.ResolveConflicts("", set.Heads[:1], []app.SecretChoice{{Key: "KEY", Value: "a"}})
 	if !apperr.Is(err, apperr.CodeConflict) {
 		t.Fatalf("stale heads: %v", err)
 	}

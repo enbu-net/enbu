@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -60,7 +61,7 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 		d.Store.advance = w.Devices[0].Store.advance
 		d.App.Runtime.Clock = w.Devices[0].App.Runtime.Clock
 		d.App.Runtime.NewID = w.Devices[0].App.Runtime.NewID
-		if _, err := d.App.InitializeRepository(ctx); requireCode(err, apperr.CodeIncompatibleStorage) != nil {
+		if _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); requireCode(err, apperr.CodeIncompatibleStorage) != nil {
 			return fmt.Errorf("second workspace founded in occupied storage: %v", err)
 		}
 		if err := w.Check(ctx, "default"); err != nil {
@@ -297,7 +298,7 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 	if err := other.Check(ctx, "default"); err != nil {
 		return err
 	}
-	if _, err := w.Devices[1].App.InitializeRepository(ctx); err != nil {
+	if _, err := w.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	requests, err := other.Devices[0].App.ListJoinRequests(ctx)

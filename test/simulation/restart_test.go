@@ -47,7 +47,6 @@ func TestRestartReconstructsProcessDependenciesFromDurableFixtures(t *testing.T)
 	recipient := pending.Recipient().String()
 	_ = pending.Close()
 	oldRuntime := a.Runtime
-	a.AcceptNewGenesis = true
 	a.Runtime.NewID = func() string { return "process-only-poison" }
 	a.Runtime.Encrypt = func([]byte, []string) ([]byte, error) {
 		t.Fatal("old process encryption survived restart")
@@ -55,7 +54,7 @@ func TestRestartReconstructsProcessDependenciesFromDurableFixtures(t *testing.T)
 	}
 	w.Restart(1)
 	fresh := w.Devices[1].App
-	if fresh == a || fresh.Runtime == oldRuntime || w.Devices[1].Keys == keys || fresh.AcceptNewGenesis {
+	if fresh == a || fresh.Runtime == oldRuntime || w.Devices[1].Keys == keys {
 		t.Fatal("process-owned state survived restart")
 	}
 	if fresh.Runtime.NewID() == "process-only-poison" {

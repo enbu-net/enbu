@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/schema/secretmap"
 )
 
 // ImportResult names what one import did to an environment.
@@ -15,6 +16,17 @@ type ImportResult struct {
 	Added       []string `json:"added"`
 	Updated     []string `json:"updated"`
 	Unchanged   []string `json:"unchanged"`
+}
+
+// ImportDotenv adds every variable of a dotenv file's content to env, as
+// ImportSecrets does.
+func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, overwrite bool) (result *ImportResult, err error) {
+	defer apperr.NormalizeInto(&err)
+	secrets, err := secretmap.ImportDotenv(content)
+	if err != nil {
+		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
+	}
+	return a.ImportSecrets(ctx, env, secrets, overwrite)
 }
 
 // ImportSecrets adds every key of secrets to env in one signed state. A key

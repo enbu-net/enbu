@@ -71,15 +71,20 @@ type Code string
 const CodeInternal Code = "internal"`)
 	writeFixture(t, root, "other/use.go", `package other
 func run() error { return apperr.New(apperr.CodeInternal, "failed", nil) }`)
-	writeFixture(t, root, "desktop/wails/binding.go", `package main
-type DesktopService struct{ core interface{ List() ([]string, error); Save() error } }
-func result[T any](v T, err error) (T, error) { return v, err }
+	writeFixture(t, root, "desktop/service.go", `package desktop
+type Service struct{ core interface{ List() ([]string, error); Save() error } }
+func withRepoResult[T any](s *Service, fn func() (T, error)) (T, error) { return fn() }
 func publicError(err error) error { return err }
-func (s *DesktopService) Raw() error { return s.core.Save() }
-func (s *DesktopService) RawResult() ([]string, error) { return s.core.List() }
-func (s *DesktopService) Saved() error { return publicError(s.core.Save()) }
-func (s *DesktopService) Listed() ([]string, error) { return result(s.core.List()) }
-func (s *DesktopService) Version() string { return "v1" }`)
+func publicInto(err *error) {}
+func (s *Service) Raw() error { return s.core.Save() }
+func (s *Service) RawResult() ([]string, error) { return s.core.List() }
+func (s *Service) Saved() error { return publicError(s.core.Save()) }
+func (s *Service) Listed() ([]string, error) { return withRepoResult(s, s.core.List) }
+func (s *Service) Deferred() (err error) { defer publicInto(&err); return s.core.Save() }
+func (s *Service) Version() string { return "v1" }`)
+	writeFixture(t, root, "desktop/rpc/server.go", `package rpc
+type Service struct{}
+func (s *Service) Elsewhere() error { return nil }`)
 	writeFixture(t, root, "web/messages/en.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"Internal"}`)
 	writeFixture(t, root, "web/messages/ja.json", `{"$schema":"https://inlang.com/schema/inlang-message-format","app_name":"enbu","error_internal":"内部"}`)
 
@@ -89,11 +94,11 @@ func (s *DesktopService) Version() string { return "v1" }`)
 	}
 	joined := strings.Join(violations, "\n")
 	for _, method := range []string{"Raw", "RawResult"} {
-		if !strings.Contains(joined, method+" must return its error through result or publicError") {
+		if !strings.Contains(joined, "method "+method+" must return its error through") {
 			t.Fatalf("missing violation for %s:\n%s", method, joined)
 		}
 	}
-	for _, method := range []string{"Saved", "Listed", "Version"} {
+	for _, method := range []string{"Saved", "Listed", "Deferred", "Version", "Elsewhere"} {
 		if strings.Contains(joined, "method "+method+" ") {
 			t.Fatalf("unexpected violation for %s:\n%s", method, joined)
 		}

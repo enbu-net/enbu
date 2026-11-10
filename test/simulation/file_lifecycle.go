@@ -90,7 +90,7 @@ func (w *World) fileLifecycle(ctx context.Context) error {
 	if err := a.DeleteSecret(ctx, "default", "HIDDEN"); err != nil {
 		return err
 	}
-	if _, err := b.InitializeRepository(ctx); err != nil {
+	if _, err := b.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := a.ApproveMember(ctx, w.Devices[1].ID); err != nil {

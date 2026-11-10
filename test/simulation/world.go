@@ -4,6 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -11,12 +18,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/jonboulle/clockwork"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sort"
-	"strings"
-	"time"
 )
 
 type Device struct {
@@ -101,7 +102,7 @@ func (w *World) Bootstrap(ctx context.Context) error {
 				return e
 			}
 		}
-		r, e := d.App.InitializeRepository(ctx)
+		r, e := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if e := w.Observe("init", i, r, e); e != nil {
 			return e
 		}

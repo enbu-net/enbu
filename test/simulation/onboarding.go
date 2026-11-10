@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -20,7 +21,7 @@ import (
 func (w *World) FirstMember(ctx context.Context) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	founder := w.Devices[0]
-	result, err := founder.App.InitializeRepository(ctx)
+	result, err := founder.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (w *World) FirstMember(ctx context.Context) error {
 	}
 	for i := 1; i < len(w.Devices); i++ {
 		d := w.Devices[i]
-		result, err := d.App.InitializeRepository(ctx)
+		result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if err != nil {
 			return err
 		}

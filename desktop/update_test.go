@@ -64,7 +64,7 @@ func TestUpdateErrorsCarryCodes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		s := NewService(app.New(clock.New()))
-		s.SetUpdater(&fakeUpdater{err: tt.err})
+		s.updater = (&fakeUpdater{err: tt.err})
 		if _, err := s.CheckForUpdate(); !apperr.Is(err, tt.code) {
 			t.Errorf("CheckForUpdate(%v) = %v, want %s", tt.err, err, tt.code)
 		}
@@ -81,7 +81,7 @@ func TestInstallUpdateRunsOneAtATime(t *testing.T) {
 		started: make(chan struct{}),
 		block:   make(chan struct{}),
 	}
-	s.SetUpdater(fake)
+	s.updater = (fake)
 	done := make(chan error)
 	go func() {
 		_, err := s.InstallUpdate()
@@ -100,7 +100,7 @@ func TestInstallUpdateRunsOneAtATime(t *testing.T) {
 func TestRestartApp(t *testing.T) {
 	s := NewService(app.New(clock.New()))
 	fake := &fakeUpdater{}
-	s.SetUpdater(fake)
+	s.updater = (fake)
 	if err := s.RestartApp(); err != nil || !fake.restarted {
 		t.Errorf("RestartApp() = %v, restarted %v", err, fake.restarted)
 	}

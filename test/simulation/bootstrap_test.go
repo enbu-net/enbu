@@ -3,9 +3,11 @@ package simulation
 import (
 	"context"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/config"
 	"sort"
 	"testing"
+
+	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/config"
 )
 
 func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
@@ -18,7 +20,10 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			}
 			d := w.Devices[0]
 			d.Store.Arm(Fault{"publish", 1, mode})
-			if e := catchCrash(func() error { _, err := d.App.InitializeRepository(context.Background()); return err }); e == nil {
+			if e := catchCrash(func() error {
+				_, err := d.App.InitializeRepository(context.Background(), app.InitOptions{})
+				return err
+			}); e == nil {
 				t.Fatal("fault not returned")
 			}
 			cfg, e := config.LoadProjectFrom(d.App.RepositoryDir)
@@ -32,7 +37,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			w.Restart(0)
 			d = w.Devices[0]
 			d.Store.Arm(Fault{})
-			r, e := d.App.InitializeRepository(context.Background())
+			r, e := d.App.InitializeRepository(context.Background(), app.InitOptions{})
 			if e != nil {
 				t.Fatal(e)
 			}

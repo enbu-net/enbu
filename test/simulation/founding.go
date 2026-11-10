@@ -3,6 +3,8 @@ package simulation
 import (
 	"context"
 	"fmt"
+
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -16,7 +18,7 @@ func (w *World) FoundingProbe(ctx context.Context, fault Fault) (map[string]int,
 		return nil, err
 	}
 	d.Store.Arm(fault)
-	initial := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx); return err })
+	initial := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); return err })
 	hits := d.Store.faultHits
 	counts := map[string]int{}
 	for method, n := range d.Store.calls {
@@ -38,7 +40,7 @@ func (w *World) FoundingProbe(ctx context.Context, fault Fault) (map[string]int,
 	d.Store.Arm(Fault{})
 	w.Restart(0)
 	d = w.Devices[0]
-	result, err := d.App.InitializeRepository(ctx)
+	result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("founding recovery: %w", err)
 	}

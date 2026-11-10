@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -106,7 +107,7 @@ func (w *World) PartialKeys(ctx context.Context, kind string) error {
 		if err := admin.RemoveMember(ctx, oldID); err != nil {
 			return err
 		}
-		result, err := d.App.InitializeRepository(ctx)
+		result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if err != nil {
 			return err
 		}
@@ -136,7 +137,7 @@ func (w *World) PartialKeys(ctx context.Context, kind string) error {
 		if err := advanceTeam(); err != nil {
 			return err
 		}
-		result, err := d.App.InitializeRepository(ctx)
+		result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if err != nil {
 			return err
 		}

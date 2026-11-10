@@ -21,10 +21,6 @@ type AppUpdater interface {
 // UpdateStatus is what the settings screen shows about updates.
 type UpdateStatus = selfupdate.Status
 
-func (s *Service) SetUpdater(updater AppUpdater) {
-	s.updater = updater
-}
-
 // CheckForUpdate compares the running app with the newest release. Without
 // an updater the app is an editor extension's, which the editor updates.
 func (s *Service) CheckForUpdate() (UpdateStatus, error) {
@@ -32,7 +28,7 @@ func (s *Service) CheckForUpdate() (UpdateStatus, error) {
 		return UpdateStatus{Method: selfupdate.MethodEditor, Current: s.GetAppVersion()}, nil
 	}
 	status, err := s.updater.Check(s.context())
-	return status, updateError(err)
+	return status, publicError(updateError(err))
 }
 
 // InstallUpdate downloads, verifies and installs the newest release over
@@ -40,22 +36,22 @@ func (s *Service) CheckForUpdate() (UpdateStatus, error) {
 // runs at a time.
 func (s *Service) InstallUpdate() (UpdateStatus, error) {
 	if s.updater == nil {
-		return UpdateStatus{Method: selfupdate.MethodEditor, Current: s.GetAppVersion()}, apperr.New(apperr.CodeInvalidArgument, "the editor updates this app", nil)
+		return UpdateStatus{Method: selfupdate.MethodEditor, Current: s.GetAppVersion()}, publicError(apperr.New(apperr.CodeInvalidArgument, "the editor updates this app", nil))
 	}
 	if !s.updateMu.TryLock() {
-		return UpdateStatus{}, apperr.New(apperr.CodeConflict, "an update is already running", nil)
+		return UpdateStatus{}, publicError(apperr.New(apperr.CodeConflict, "an update is already running", nil))
 	}
 	defer s.updateMu.Unlock()
 	status, err := s.updater.Update(s.context())
-	return status, updateError(err)
+	return status, publicError(updateError(err))
 }
 
 // RestartApp starts the installed update and quits.
 func (s *Service) RestartApp() error {
 	if s.updater == nil {
-		return apperr.New(apperr.CodeInvalidArgument, "the editor restarts this app", nil)
+		return publicError(apperr.New(apperr.CodeInvalidArgument, "the editor restarts this app", nil))
 	}
-	return updateError(s.updater.Restart())
+	return publicError(updateError(s.updater.Restart()))
 }
 
 // updateError gives the UI a code it can act on: a failed verification is
