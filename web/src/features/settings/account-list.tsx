@@ -162,7 +162,7 @@ export function AccountList() {
                 {!envToken && (
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="outline"
                     aria-label={`${m.auth_logout()}: ${account}`}
                     disabled={busy !== ""}
                     onClick={() => void act(account, () => backend.logout(account))}

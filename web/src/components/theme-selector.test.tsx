@@ -25,6 +25,13 @@ afterEach(() => {
 });
 
 describe("ThemeSelector", () => {
+  it("shows a chevron so the select reads as a list to pick from", () => {
+    act(() => root.render(<ThemeSelector />));
+    const select = container.querySelector("#theme-select");
+    expect(select?.parentElement?.querySelector("svg")).toBeTruthy();
+    expect(select?.parentElement?.style.width).toBe("148px");
+  });
+
   it("lists the preferences and applies the one picked without a reload", () => {
     act(() => root.render(<ThemeSelector />));
 

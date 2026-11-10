@@ -116,6 +116,20 @@ describe("accessibility: sidebar keyboard", () => {
 });
 
 describe("Sidebar", () => {
+  it("keeps adding a repository above the list and the settings below it", async () => {
+    vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    await act(async () => {
+      root.render(<>{withSession(<Sidebar onOpenSettings={() => {}} />)}</>);
+    });
+    await settle();
+    const nav = container.querySelector("nav");
+    const order = Array.from(nav?.querySelectorAll("button, [data-repository-path]") ?? []).map(
+      (node) => node.getAttribute("data-repository-path") ?? node.textContent,
+    );
+    expect(order).toEqual(["Add repository", "/a", "Settings"]);
+    expect(nav?.querySelector("button svg")).toBeTruthy();
+  });
+
   it("shows why the repository list could not load", async () => {
     vi.mocked(backend).listRepositories.mockRejectedValueOnce(new Error("disk unavailable"));
     await act(async () => {
