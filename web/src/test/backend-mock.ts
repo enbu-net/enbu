@@ -16,6 +16,7 @@ export function createBackendMock() {
     oauthStatus: vi.fn(),
     cancelOAuthLogin: vi.fn(async () => {}),
     logout: vi.fn(async () => {}),
+    switchAccount: vi.fn(async () => {}),
     repoStatus: vi.fn(async () => ({ selected: false })),
     browseRepository: vi.fn(async () => ({ selected: false })),
     selectRepository: vi.fn(async () => ({ selected: false })),

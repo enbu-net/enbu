@@ -229,8 +229,8 @@ func TestJSONAuthDeviceIsRejectedBeforeLogin(t *testing.T) {
 
 func TestJSONAuthLogout(t *testing.T) {
 	called := false
-	logout := newAuthLogoutCommandWithDelete(func() error {
-		called = true
+	logout := newAuthLogoutCommandWithDelete(func(login string) error {
+		called = login == ""
 		return nil
 	})
 	envelope := executeJSON(t, jsonTestRoot(logout), "logout", "--json")
@@ -254,6 +254,9 @@ func TestJSONAuthStatus(t *testing.T) {
 		loadToken: func() (*auth.StoredToken, error) {
 			return &auth.StoredToken{Username: "octo"}, nil
 		},
+		accounts: func() ([]string, string, error) {
+			return []string{"octo-work", "octo"}, "octo", nil
+		},
 		identityStore: &staticKeyStore{key: []byte(keyPair.Identity.String())},
 	})
 	envelope := executeJSON(t, jsonTestRoot(status), "status", "--json")
@@ -263,6 +266,9 @@ func TestJSONAuthStatus(t *testing.T) {
 	}
 	if got := stringField(t, data, "username"); got != "octo" {
 		t.Fatalf("username = %q", got)
+	}
+	if got, _ := data["accounts"].([]any); len(got) != 2 || got[0] != "octo-work" || got[1] != "octo" {
+		t.Fatalf("accounts = %#v", data["accounts"])
 	}
 }
 
