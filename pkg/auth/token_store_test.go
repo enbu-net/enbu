@@ -271,3 +271,53 @@ func TestAnOldTokenEntryIsReplacedBySigningIn(t *testing.T) {
 		t.Fatalf("LoadToken = %#v, %v", got, err)
 	}
 }
+
+// A sign-in that fails changes neither the accounts nor the one in use.
+func TestAFailedSignInChangesNothing(t *testing.T) {
+	stubBackend(t)
+	work := &StoredToken{AccessToken: "w", Username: "work", UserID: 1}
+	home := &StoredToken{AccessToken: "h", Username: "home", UserID: 2}
+	for _, tok := range []*StoredToken{work, home} {
+		if err := SaveToken(tok); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := SwitchAccount("work"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The keyring refuses the new token.
+	stored := tokenBackend
+	tokenBackend = &readOnlyBackend{Backend: stored}
+	if err := SaveToken(&StoredToken{AccessToken: "n", Username: "new", UserID: 3}); err == nil {
+		t.Fatal("SaveToken succeeded with a read-only keyring")
+	}
+	tokenBackend = stored
+	if logins, current, err := Accounts(); err != nil || len(logins) != 2 || current != "work" {
+		t.Fatalf("after a failed keyring write: %v %q %v", logins, current, err)
+	}
+
+	// The data directory cannot record the choice.
+	useDataDir(t, filepath.Join(writeFile(t), "dir"))
+	if err := SaveToken(&StoredToken{AccessToken: "n", Username: "new", UserID: 3}); err == nil {
+		t.Fatal("SaveToken succeeded without a data directory")
+	}
+	if logins, _, err := Accounts(); err != nil || len(logins) != 2 {
+		t.Fatalf("after a failed choice: %v %v", logins, err)
+	}
+}
+
+// readOnlyBackend reads from Backend and refuses every write.
+type readOnlyBackend struct{ keystore.Backend }
+
+func (readOnlyBackend) Store(_, _ string, _ []byte) error { return errors.New("read only") }
+
+// writeFile returns a regular file, beneath which no directory can be made.
+func writeFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

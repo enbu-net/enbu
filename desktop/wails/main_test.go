@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -37,16 +39,74 @@ func TestSingleInstanceNeedsSessionBusOnLinux(t *testing.T) {
 		return func(name string) string { return vars[name] }
 	}
 	onSecond := func(application.SecondInstanceData) {}
-	if got := singleInstance("linux", env(nil), onSecond); got != nil {
+	if got := singleInstance("linux", env(nil), "/home/u/.local/share/enbu", "/home/u/.local/share/enbu", onSecond); got != nil {
 		t.Fatalf("singleInstance() without a session bus = %+v, want nil", got)
 	}
 	bus := map[string]string{"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-	if got := singleInstance("linux", env(bus), onSecond); got == nil || got.UniqueID != "net.enbu.desktop" {
+	if got := singleInstance("linux", env(bus), "/home/u/.local/share/enbu", "/home/u/.local/share/enbu", onSecond); got == nil || got.UniqueID != "net.enbu.desktop" {
 		t.Fatalf("singleInstance() with a session bus = %+v", got)
 	}
 	for _, goos := range []string{"darwin", "windows"} {
-		if got := singleInstance(goos, env(nil), onSecond); got == nil {
+		if got := singleInstance(goos, env(nil), "/home/u/.local/share/enbu", "/home/u/.local/share/enbu", onSecond); got == nil {
 			t.Fatalf("singleInstance(%q) = nil, want options", goos)
+		}
+	}
+}
+
+func TestSingleInstanceIDFollowsTheDataDirectory(t *testing.T) {
+	root := t.TempDir()
+	def := filepath.Join(root, "home", ".local", "share", "enbu")
+	if err := os.MkdirAll(def, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := singleInstanceID(def, def); got != desktopID {
+		t.Fatalf("singleInstanceID() for the default directory = %q, want %q", got, desktopID)
+	}
+	// XDG_DATA_HOME naming the default directory, by another spelling or
+	// through a symlink, is still the default app.
+	if got := singleInstanceID(def+string(filepath.Separator), def); got != desktopID {
+		t.Fatalf("singleInstanceID() for the default directory with a trailing separator = %q", got)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(def, link); err == nil {
+		if got := singleInstanceID(link, def); got != desktopID {
+			t.Fatalf("singleInstanceID() through a symlink to the default directory = %q, want %q", got, desktopID)
+		}
+	}
+
+	// A data directory not created yet beneath a symlink keeps its ID once created.
+	target := filepath.Join(root, "target")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(target, alias); err == nil {
+		before := singleInstanceID(filepath.Join(alias, "enbu"), def)
+		if canonical := singleInstanceID(filepath.Join(target, "enbu"), def); before != canonical {
+			t.Fatalf("singleInstanceID() through a symlink = %q, canonical = %q", before, canonical)
+		}
+		if err := os.Mkdir(filepath.Join(target, "enbu"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if after := singleInstanceID(filepath.Join(alias, "enbu"), def); after != before {
+			t.Fatalf("singleInstanceID() changed from %q to %q once the directory existed", before, after)
+		}
+	}
+
+	a := singleInstanceID(filepath.Join(root, "a", "enbu"), def)
+	b := singleInstanceID(filepath.Join(root, "b", "enbu"), def)
+	if a == desktopID || b == desktopID || a == b {
+		t.Fatalf("singleInstanceID() for two data directories = %q and %q, want two IDs apart from %q", a, b, desktopID)
+	}
+	if again := singleInstanceID(filepath.Join(root, "a", "enbu")+string(filepath.Separator), def); again != a {
+		t.Fatalf("singleInstanceID() for the same data directory = %q, then %q", a, again)
+	}
+	if !strings.HasPrefix(a, desktopID+".") {
+		t.Fatalf("singleInstanceID() = %q, want the %q prefix", a, desktopID)
+	}
+	for _, element := range strings.Split(a, ".") {
+		if element == "" || element[0] >= '0' && element[0] <= '9' {
+			t.Fatalf("singleInstanceID() = %q is not a valid D-Bus name", a)
 		}
 	}
 }

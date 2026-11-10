@@ -78,7 +78,11 @@ type activeAccount struct {
 var activePath = func() string { return filepath.Join(config.DataDir(), "github-account.json") }
 
 // SaveToken adds the account, or replaces its token when it is already signed
-// in, and makes it the account in use.
+// in, and makes it the account in use. The choice is written first, and put
+// back if the keyring then fails, so a failed sign-in changes nothing.
+//
+// Two sign-ins at the same moment, such as the CLI and the desktop app, may
+// keep only one of the two accounts; signing in again adds the other.
 func SaveToken(token *StoredToken) error {
 	if err := validateStoredToken(token); err != nil {
 		return err
@@ -93,10 +97,17 @@ func SaveToken(token *StoredToken) error {
 			kept = append(kept, a)
 		}
 	}
-	if err := storeAccounts(append(kept, *token)); err != nil {
+	previous := loadActive()
+	if err := setActive(token.UserID); err != nil {
 		return err
 	}
-	return setActive(token.UserID)
+	if err := storeAccounts(append(kept, *token)); err != nil {
+		if restoreErr := setActive(previous); restoreErr != nil {
+			slog.Warn("could not restore the GitHub account in use", "err", restoreErr)
+		}
+		return err
+	}
+	return nil
 }
 
 // LoadToken returns GITHUB_TOKEN when it is set, otherwise the account in use.

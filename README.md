@@ -326,6 +326,10 @@ Old identities are not migrated or loaded. Plaintext Identity storage is removed
 The GitHub token is kept in the OS keyring too. There is no plaintext file for it:
 without a usable keyring, `enbu auth login` fails, and CI uses `GITHUB_TOKEN`.
 
+Each data directory is its own device. The desktop app runs once per data directory:
+started with another `XDG_DATA_HOME`, it opens a second window beside the first, with
+that directory's identity, for example to try a two-member workspace on one computer.
+
 Identity E2E runs on Linux, Windows and macOS with a pinned test-only vTPM SDK and
 local OCI HTTP fixture. Run `task identity/test/e2e` with an unlocked OS keyring.
 The normal CLI excludes the software TPM transport. On a real TPM or Secure Enclave
