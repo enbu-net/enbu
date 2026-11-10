@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Braces, ListTree } from "lucide-react";
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
-import { Button, Heading, Input, Text } from "../../components/ui";
+import { Button, Input, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { LanguageSelector } from "../../components/language-selector";
 import { SectionHeader } from "../../components/layout";
@@ -21,6 +21,7 @@ import {
 import { m } from "../../paraglide/messages";
 import { getLocale, locales, setLocale, type Locale } from "../../paraglide/runtime";
 import { AccountList } from "./account-list";
+import { Section } from "./section";
 import { SettingsJsonEditor } from "./settings-json-editor";
 import { UpdateSection } from "./update-section";
 
@@ -78,17 +79,6 @@ export function settingsSchema(): object {
       },
     },
   };
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <styled.section aria-label={title}>
-      <Heading as="h2" size="md" fontWeight="bold" mb="3">
-        {title}
-      </Heading>
-      {children}
-    </styled.section>
-  );
 }
 
 function Row({ label, hint, children }: { label: ReactNode; hint?: string; children: ReactNode }) {
@@ -183,9 +173,7 @@ function Label({ htmlFor, children }: { htmlFor: string; children: ReactNode }) 
 function SettingsForm({ settings, version }: { settings: Settings; version: string }) {
   return (
     <VStack alignItems="stretch" gap="8">
-      <Section title={m.settings_accounts()}>
-        <AccountList />
-      </Section>
+      <AccountList />
 
       <Section title={m.settings_display()}>
         <Card>

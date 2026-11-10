@@ -12,7 +12,7 @@
   "settings_inUse": "使用中",
   "settings_use": "使う",
   "settings_addAccount": "アカウントを追加",
-  "settings_noAccounts": "GitHub アカウントにサインインしていません。",
+  "settings_noAccounts": "サインインしているアカウントはありません。",
   "settings_envToken": "GITHUB_TOKEN を使用中",
   "settings_display": "表示",
   "settings_fontSize": "文字サイズ",

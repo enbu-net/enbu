@@ -109,9 +109,24 @@ describe("AccountList", () => {
     expect(queryButton("Log out: ci")).toBeNull();
   });
 
+  it("tints the account in use and puts adding one beside the heading", async () => {
+    await renderList({
+      status: {
+        authenticated: true,
+        workspace_configured: false,
+        username: "octocat",
+        accounts: ["hubot", "octocat"],
+      },
+    });
+    const inUse = container.querySelectorAll('[aria-current="true"]');
+    expect(Array.from(inUse).map((row) => row.getAttribute("data-account"))).toEqual(["octocat"]);
+    const heading = container.querySelector("h2")?.parentElement;
+    expect(heading?.textContent).toContain("Add account");
+  });
+
   it("says no account is signed in and offers to add one", async () => {
     await renderList({ status: { authenticated: false, workspace_configured: false } });
-    expect(container.textContent).toContain("No GitHub account is signed in.");
+    expect(container.textContent).toContain("No account is signed in.");
     expect(queryButton("Add account")).not.toBeNull();
   });
 });

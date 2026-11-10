@@ -1,13 +1,14 @@
 import { useCallback, useState } from "react";
-import { SiGithub } from "@icons-pack/react-simple-icons";
+import { Check, Plus } from "lucide-react";
 import { Box, Flex, VStack, styled } from "styled-system/jsx";
-import { Badge, Button, Text } from "../../components/ui";
+import { Button, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
 import { OAuthLoginPanel } from "../auth/oauth-login-panel";
 import { useGitHubLogin } from "../auth/use-github-login";
+import { Section } from "./section";
 import { m } from "../../paraglide/messages";
 
 function Avatar({ login }: { login: string }) {
@@ -77,110 +78,136 @@ export function AccountList() {
 
   if (login.start) {
     return (
-      <Flex justify="center" py="4">
-        <OAuthLoginPanel
-          status={login.status}
-          expiresIn={login.expiresIn}
-          onCancel={login.cancel}
-          onRetry={login.reset}
-        />
-      </Flex>
+      <Section title={m.settings_accounts()}>
+        <Flex justify="center" py="4">
+          <OAuthLoginPanel
+            status={login.status}
+            expiresIn={login.expiresIn}
+            onCancel={login.cancel}
+            onRetry={login.reset}
+          />
+        </Flex>
+      </Section>
     );
   }
 
   // The account in use first, then the others from the latest sign-in back.
   const others = accounts.filter((account) => account !== current).reverse();
   const rows = current ? [current, ...others] : others;
+  const addAccount = (
+    <Button size="sm" variant="outline" loading={login.starting} onClick={login.begin}>
+      <Plus size={14} aria-hidden="true" />
+      {m.settings_addAccount()}
+    </Button>
+  );
   return (
-    <VStack alignItems="stretch" gap="3">
-      {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
-      {login.error && <ErrorAlert error={login.error} onDismiss={login.clearError} />}
-      {rows.length === 0 && (
-        <Text fontSize="sm" color="fg.muted">
-          {m.settings_noAccounts()}
-        </Text>
-      )}
-      {rows.length > 0 && (
-        <styled.ul
-          aria-label={m.settings_accounts()}
-          listStyle="none"
-          m="0"
-          p="0"
-          borderWidth="1px"
-          borderColor="border.default"
-          borderRadius="lg"
-          bg="bg.surface"
-        >
-          {rows.map((account, index) => {
-            const inUse = account === current;
-            const envToken = fromEnvironment && index === 0;
-            return (
-              <Flex
-                as="li"
-                key={`${account}-${index}`}
-                data-account={account}
-                align="center"
-                gap="3"
-                px="3.5"
-                py="3"
-                borderTopWidth={index === 0 ? "0" : "1px"}
-                borderColor="border.default"
-              >
-                <Avatar login={account} />
-                <Flex flex="1" minW="0" align="center" gap="2" flexWrap="wrap">
-                  <styled.a
-                    href={`https://github.com/${account}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    fontSize="sm"
-                    fontWeight="semibold"
-                    color="fg.default"
-                    truncate
-                    _hover={{ textDecoration: "underline", color: "accent.default" }}
-                  >
-                    {account}
-                  </styled.a>
-                  {inUse && <Badge size="sm">{m.settings_inUse()}</Badge>}
-                  {envToken && (
-                    <Text fontSize="xs" color="fg.muted">
-                      {m.settings_envToken()}
-                    </Text>
+    <Section title={m.settings_accounts()} action={addAccount}>
+      <VStack alignItems="stretch" gap="3">
+        {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
+        {login.error && <ErrorAlert error={login.error} onDismiss={login.clearError} />}
+        {rows.length === 0 && (
+          <Text fontSize="sm" color="fg.muted">
+            {m.settings_noAccounts()}
+          </Text>
+        )}
+        {rows.length > 0 && (
+          <styled.ul
+            aria-label={m.settings_accounts()}
+            listStyle="none"
+            m="0"
+            p="0"
+            borderWidth="1px"
+            borderColor="border.default"
+            borderRadius="lg"
+            bg="bg.surface"
+            overflow="hidden"
+          >
+            {rows.map((account, index) => {
+              const inUse = account === current;
+              const envToken = fromEnvironment && index === 0;
+              return (
+                <Flex
+                  as="li"
+                  key={`${account}-${index}`}
+                  data-account={account}
+                  data-in-use={inUse ? "true" : undefined}
+                  aria-current={inUse ? "true" : undefined}
+                  align="center"
+                  gap="3"
+                  px="3.5"
+                  py="3"
+                  borderTopWidth={index === 0 ? "0" : "1px"}
+                  borderColor="border.default"
+                  // The account in use stands out: tinted, with an accent bar.
+                  bg={inUse ? "accent.subtle" : undefined}
+                  boxShadow={inUse ? "inset 3px 0 0 {colors.accent.default}" : undefined}
+                >
+                  <Avatar login={account} />
+                  <Flex flex="1" minW="0" align="center" gap="2" flexWrap="wrap">
+                    <styled.a
+                      href={`https://github.com/${account}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      fontSize="sm"
+                      fontWeight="semibold"
+                      color="fg.default"
+                      truncate
+                      _hover={{ textDecoration: "underline", color: "accent.default" }}
+                    >
+                      {account}
+                    </styled.a>
+                    {inUse && (
+                      <styled.span
+                        display="inline-flex"
+                        alignItems="center"
+                        gap="1"
+                        px="2"
+                        py="0.5"
+                        borderRadius="full"
+                        bg="accent.default"
+                        color="accent.fg"
+                        fontSize="xs"
+                        fontWeight="semibold"
+                      >
+                        <Check size={12} aria-hidden="true" />
+                        {m.settings_inUse()}
+                      </styled.span>
+                    )}
+                    {envToken && (
+                      <Text fontSize="xs" color="fg.muted">
+                        {m.settings_envToken()}
+                      </Text>
+                    )}
+                  </Flex>
+                  {!envToken && !inUse && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`${m.settings_use()}: ${account}`}
+                      disabled={busy !== ""}
+                      loading={busy === account}
+                      onClick={() => void act(account, () => backend.switchAccount(account))}
+                    >
+                      {m.settings_use()}
+                    </Button>
+                  )}
+                  {!envToken && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      aria-label={`${m.auth_logout()}: ${account}`}
+                      disabled={busy !== ""}
+                      onClick={() => void act(account, () => backend.logout(account))}
+                    >
+                      {m.auth_logout()}
+                    </Button>
                   )}
                 </Flex>
-                {!envToken && !inUse && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={`${m.settings_use()}: ${account}`}
-                    disabled={busy !== ""}
-                    loading={busy === account}
-                    onClick={() => void act(account, () => backend.switchAccount(account))}
-                  >
-                    {m.settings_use()}
-                  </Button>
-                )}
-                {!envToken && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label={`${m.auth_logout()}: ${account}`}
-                    disabled={busy !== ""}
-                    onClick={() => void act(account, () => backend.logout(account))}
-                  >
-                    {m.auth_logout()}
-                  </Button>
-                )}
-              </Flex>
-            );
-          })}
-        </styled.ul>
-      )}
-      <Box>
-        <Button size="sm" variant="outline" loading={login.starting} onClick={login.begin}>
-          <SiGithub size={14} aria-hidden="true" />
-          {m.settings_addAccount()}
-        </Button>
-      </Box>
-    </VStack>
+              );
+            })}
+          </styled.ul>
+        )}
+      </VStack>
+    </Section>
   );
 }

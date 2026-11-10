@@ -12,7 +12,7 @@
   "settings_inUse": "In use",
   "settings_use": "Use",
   "settings_addAccount": "Add account",
-  "settings_noAccounts": "No GitHub account is signed in.",
+  "settings_noAccounts": "No account is signed in.",
   "settings_envToken": "From GITHUB_TOKEN",
   "settings_display": "Display",
   "settings_fontSize": "Font size",
