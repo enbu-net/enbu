@@ -253,3 +253,21 @@ func TestEachDataDirectoryChoosesItsAccount(t *testing.T) {
 		t.Fatalf("LoadToken after UseLatestAccount = %q, want bob", got.Username)
 	}
 }
+
+// A token an earlier version saved reads as signed out, and signing in
+// replaces it.
+func TestAnOldTokenEntryIsReplacedBySigningIn(t *testing.T) {
+	stubBackend(t)
+	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, []byte(`{"access_token":"old","username":"octo","user_id":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeNotAuthenticated) {
+		t.Fatalf("LoadToken with an old entry = %v, want not_authenticated", err)
+	}
+	if err := SaveToken(&StoredToken{AccessToken: "new", Username: "octo", UserID: 1}); err != nil {
+		t.Fatalf("SaveToken over an old entry: %v", err)
+	}
+	if got, err := LoadToken(); err != nil || got.AccessToken != "new" {
+		t.Fatalf("LoadToken = %#v, %v", got, err)
+	}
+}

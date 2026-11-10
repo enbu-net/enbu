@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -221,6 +222,18 @@ func loadAccounts() ([]StoredToken, error) {
 	if err != nil {
 		return nil, keyringError("loading token", err)
 	}
+	accounts, err := parseAccounts(data)
+	if err != nil {
+		// An entry an earlier version saved, or a damaged one, holds no
+		// account this version can use: the person signs in again, which
+		// replaces it.
+		slog.Warn("ignoring the stored GitHub sign-in; run 'enbu auth login'", "err", err)
+		return nil, nil
+	}
+	return accounts, nil
+}
+
+func parseAccounts(data []byte) ([]StoredToken, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var stored storedAccounts
