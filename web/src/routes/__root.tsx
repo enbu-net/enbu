@@ -1,5 +1,5 @@
 import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Settings } from "lucide-react";
+import { Settings, X } from "lucide-react";
 import { Box, Flex, styled } from "styled-system/jsx";
 import { Text } from "../components/ui";
 import { UserErrorGate } from "../components/user-error-gate";
@@ -53,13 +53,18 @@ function RootLayout() {
         </Flex>
         {/* The sidebar, which holds the settings button, is hidden on narrow windows. */}
         <styled.span display={{ base: "inline-flex", md: "none" }} color="fg.muted">
+          {/* It also leads back, since the sidebar is not there to do it. */}
           <Link
-            to="/settings"
+            to={settingsOpen ? "/" : "/settings"}
             style={{ display: "inline-flex", color: "inherit" }}
-            aria-label={m.settings_title()}
-            title={m.settings_title()}
+            aria-label={settingsOpen ? m.common_close() : m.settings_title()}
+            title={settingsOpen ? m.common_close() : m.settings_title()}
           >
-            <Settings size={20} aria-hidden="true" />
+            {settingsOpen ? (
+              <X size={20} aria-hidden="true" />
+            ) : (
+              <Settings size={20} aria-hidden="true" />
+            )}
           </Link>
         </styled.span>
       </styled.header>

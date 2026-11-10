@@ -27,8 +27,10 @@ export function SettingsJsonEditor({
   const initialRef = useRef({ value, schema, fontSize });
   const [loading, setLoading] = useState(true);
 
-  onChangeRef.current = onChange;
-  onSaveRef.current = onSave;
+  useEffect(() => {
+    onChangeRef.current = onChange;
+    onSaveRef.current = onSave;
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;

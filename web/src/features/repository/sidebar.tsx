@@ -122,7 +122,10 @@ export function Sidebar({
           try {
             const next = await backend.browseRepository();
             // A cancelled picker selects nothing and changes nothing.
-            if (next.selected) setRepo(next);
+            if (next.selected) {
+              setRepo(next);
+              if (settingsOpen) onCloseSettings();
+            }
           } catch (err) {
             setError(toDisplayError(err));
           } finally {

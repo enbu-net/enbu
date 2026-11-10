@@ -116,6 +116,26 @@ describe("accessibility: sidebar keyboard", () => {
 });
 
 describe("Sidebar", () => {
+  it("closes the settings once an added repository is selected", async () => {
+    const setRepo = vi.fn();
+    const onCloseSettings = vi.fn();
+    const next = { selected: true, repo: repoInfo("/c", "acme", "web") };
+    vi.mocked(backend).listRepositories.mockResolvedValue([]);
+    vi.mocked(backend).browseRepository.mockResolvedValueOnce(next);
+    await act(async () => {
+      root.render(
+        <>{withSession(<Sidebar settingsOpen onCloseSettings={onCloseSettings} />, { setRepo })}</>,
+      );
+    });
+    await settle();
+    await act(async () => {
+      queryButton("Add repository")?.click();
+    });
+    await settle();
+    expect(setRepo).toHaveBeenCalledWith(next);
+    expect(onCloseSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps adding a repository above the list and the settings below it", async () => {
     vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
     await act(async () => {

@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 )
@@ -219,5 +221,62 @@ func TestUpdateNeedsAPrivateCacheDirectory(t *testing.T) {
 	}
 	if got := readFile(t, target); got != "old" && runtime.GOOS != "windows" {
 		t.Errorf("target = %q, want old", got)
+	}
+}
+
+func shortBodyServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Promise more than is sent, so the read fails partway.
+		w.Header().Set("Content-Length", "100")
+		_, _ = w.Write([]byte("partial"))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestBodyReadFailuresAreDownloadFailures(t *testing.T) {
+	srv := shortBodyServer(t)
+	u := &Updater{Client: srv.Client()}
+	if _, err := u.fetch(context.Background(), srv.URL, 1024); !errors.Is(err, ErrDownload) {
+		t.Errorf("fetch() = %v, want ErrDownload", err)
+	}
+	var buf bytes.Buffer
+	if err := u.download(context.Background(), srv.URL, &buf); !errors.Is(err, ErrDownload) {
+		t.Errorf("download() = %v, want ErrDownload", err)
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestLocalWriteFailuresAreNotDownloadFailures(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("archive"))
+	}))
+	t.Cleanup(srv.Close)
+	u := &Updater{Client: srv.Client()}
+	err := u.download(context.Background(), srv.URL, failingWriter{})
+	if err == nil || errors.Is(err, ErrDownload) {
+		t.Errorf("download() = %v, want a non-download error", err)
+	}
+}
+
+func TestCheckBoundsTheReleaseLookup(t *testing.T) {
+	var deadline time.Time
+	u := &Updater{
+		Method:  MethodSelf,
+		Version: "v0.9.0",
+		latest: func(ctx context.Context, _ *http.Client) (Release, error) {
+			deadline, _ = ctx.Deadline()
+			return Release{Version: "v0.9.0"}, nil
+		},
+	}
+	if _, err := u.Check(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if deadline.IsZero() || time.Until(deadline) > lookupTimeout {
+		t.Errorf("lookup deadline = %v, want within %v", deadline, lookupTimeout)
 	}
 }

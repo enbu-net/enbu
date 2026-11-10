@@ -14,7 +14,7 @@ export async function copySecret(
   value: string,
   seconds: number = getSettings().clipboardClearSeconds,
 ): Promise<void> {
-  await navigator.clipboard.writeText(value);
+  await writeClipboard(value);
   clearTimeout(pending);
   pending = undefined;
   if (seconds <= 0) return;

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/tuf"
@@ -76,7 +77,11 @@ func (u *Updater) check(ctx context.Context) (Status, Release, error) {
 	if latest == nil {
 		latest = Latest
 	}
-	release, err := latest(ctx, u.client())
+	// The client's timeout fits a whole archive; the release lookup should
+	// not keep the settings screen waiting that long.
+	lookup, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+	release, err := latest(lookup, u.client())
 	if err != nil {
 		return status, Release{}, err
 	}
@@ -85,6 +90,9 @@ func (u *Updater) check(ctx context.Context) (Status, Release, error) {
 	status.Available = Newer(u.Version, release.Version)
 	return status, release, nil
 }
+
+// lookupTimeout bounds the request for the newest release.
+const lookupTimeout = 30 * time.Second
 
 // ErrDownload marks a failure to reach GitHub or to download a release
 // file; trying again later may work.
@@ -223,7 +231,7 @@ func (u *Updater) fetch(ctx context.Context, url string, limit int64) ([]byte, e
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s: %w", ErrDownload, url, err)
 	}
 	if int64(len(data)) > limit {
 		return nil, fmt.Errorf("download %s: too large", url)
@@ -237,7 +245,12 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	n, err := io.Copy(w, io.LimitReader(resp.Body, maxDownloadSize+1))
+	// Only a failed read is a download failure; a failed local write is not.
+	body := &bodyReader{r: resp.Body}
+	n, err := io.Copy(w, io.LimitReader(body, maxDownloadSize+1))
+	if body.err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrDownload, url, body.err)
+	}
 	if err != nil {
 		return err
 	}
@@ -245,4 +258,18 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
 		return fmt.Errorf("download %s: too large", url)
 	}
 	return nil
+}
+
+// bodyReader remembers the error of a failed read.
+type bodyReader struct {
+	r   io.Reader
+	err error
+}
+
+func (b *bodyReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if err != nil && err != io.EOF {
+		b.err = err
+	}
+	return n, err
 }
