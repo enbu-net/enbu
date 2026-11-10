@@ -335,6 +335,26 @@ tasks:
       - git diff --exit-code -- web/src/bindings
       - test -z "$(git status --porcelain -- web/src/bindings)"
       - cd web && vp check
+      - task: gui/a11y
+
+  gui/a11y:
+    desc: Check the GUI against WCAG 2.2 AA with axe-core in Chromium
+    deps:
+      - gui/install
+    dir: web
+    cmds:
+      - task: gui/a11y/browser
+      - vp run build:preview
+      - vp run a11y
+
+  # ENBU_A11Y_CHROMIUM names a Chromium that is already installed.
+  gui/a11y/browser:
+    internal: true
+    dir: web
+    status:
+      - test -n "${ENBU_A11Y_CHROMIUM:-}"
+    cmds:
+      - vp exec playwright install chromium
 
   vscode/test:
     desc: Run VS Code extension tests

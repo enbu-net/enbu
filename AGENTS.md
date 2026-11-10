@@ -32,7 +32,8 @@ task gui/build          # Build GUI desktop app (desktop/wails/build/bin)
 task gui/run            # Run the desktop app against the Vite dev server
 task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
 task gui/test           # GUI tests
-task gui/check          # Format and lint GUI code, and fail on stale bindings
+task gui/check          # Format and lint GUI code (jsx-a11y included), fail on stale bindings, then run gui/a11y
+task gui/a11y           # WCAG 2.2 AA check of the browser preview with axe-core in Chromium (light/dark, en/ja, narrow); runs `playwright install chromium` first unless ENBU_A11Y_CHROMIUM names an installed Chromium
 task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
@@ -52,7 +53,7 @@ main.go                  → version injection, signal handling, delegates to cl
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
 desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
 vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local and WSL, trusted workspaces only
-web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`; colors only through the semantic tokens in web/panda.config.ts, each with a `_light` and a `_dark` value, which lib/theme.ts switches with the `.dark` class on `<html>` (light, dark, or system: the OS, or the editor's theme in VS Code)
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`; colors only through the semantic tokens in web/panda.config.ts, each with a `_light` and a `_dark` value that meets WCAG 2.2 AA contrast for the pairs listed in lib/contrast.test.ts (add a pair when a token goes on a new background), which lib/theme.ts switches with the `.dark` class on `<html>` (light, dark, or system: the OS, or the editor's theme in VS Code)
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture

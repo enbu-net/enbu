@@ -38,6 +38,11 @@ export default defineConfig({
 
   theme: {
     extend: {
+      // Form controls need a boundary of at least 3:1 (WCAG 1.4.11).
+      recipes: {
+        input: { base: { borderColor: "border.strong" } },
+        textarea: { base: { borderColor: "border.strong" } },
+      },
       tokens: {
         fonts: {
           body: {
@@ -72,6 +77,7 @@ export default defineConfig({
             editorFg: { value: "#d6d6de" },
             editorMuted: { value: "#a8a8b2" },
             editorAccent: { value: "#9f98ed" },
+            editorDanger: { value: "#ff6369" },
           },
         },
         radii: {
@@ -132,23 +138,37 @@ export default defineConfig({
           },
           border: {
             default: { value: { _light: "#d8dee4", _dark: "#363a3f" } },
-            strong: { value: { _light: "#b8c0cc", _dark: "#5a6169" } },
+            // The boundary of form controls: at least 3:1 against the surfaces.
+            strong: { value: { _light: "#868e9a", _dark: "#737b86" } },
           },
           accent: {
-            default: { value: { _light: "{colors.brand.500}", _dark: "#3b82f6" } },
+            // Solid accent: the background of accent.fg, focus rings and indicators.
+            default: { value: { _light: "{colors.brand.500}", _dark: "{colors.brand.500}" } },
             fg: { value: { _light: "#ffffff", _dark: "#ffffff" } },
+            // Accent-colored text on the page's surfaces.
+            text: { value: { _light: "{colors.brand.600}", _dark: "#70b8ff" } },
             subtle: { value: { _light: "{colors.brand.50}", _dark: "#172448" } },
             border: { value: { _light: "{colors.brand.100}", _dark: "#203a72" } },
-            emphasized: { value: { _light: "{colors.brand.600}", _dark: "#5b96f7" } },
+            emphasized: { value: { _light: "{colors.brand.600}", _dark: "{colors.brand.600}" } },
           },
           status: {
-            success: { value: { _light: "#16835d", _dark: "#3dd68c" } },
+            success: { value: { _light: "#13795b", _dark: "#3dd68c" } },
             successMuted: { value: { _light: "#eaf7f1", _dark: "#0f2a1f" } },
             successBorder: { value: { _light: "#b9e4d1", _dark: "#1f5a40" } },
-            danger: { value: { _light: "#e5484d", _dark: "#e5484d" } },
+            // Danger text and borders on the page's surfaces.
+            danger: { value: { _light: "#ce2c31", _dark: "#ff6369" } },
+            // The background of dangerFg, such as a delete button.
+            dangerSolid: { value: { _light: "#ce2c31", _dark: "#ce2c31" } },
             dangerMuted: { value: { _light: "#fff1f2", _dark: "#3b1219" } },
             // Text on a status.danger background.
             dangerFg: { value: { _light: "#ffffff", _dark: "#ffffff" } },
+          },
+          // Park UI's global colorPalette is the blue scale: its solid buttons and
+          // focus rings take enbu's accent, whose white text meets 4.5:1.
+          blue: {
+            default: { value: { _light: "{colors.accent.default}", _dark: "{colors.accent.default}" } },
+            emphasized: { value: { _light: "{colors.accent.emphasized}", _dark: "{colors.accent.emphasized}" } },
+            fg: { value: { _light: "{colors.accent.fg}", _dark: "{colors.accent.fg}" } },
           },
           // The enbu.toml editor stays dark in both themes, like Monaco's vs-dark.
           editor: {
@@ -158,6 +178,7 @@ export default defineConfig({
             fg: { value: "{colors.enbu.editorFg}" },
             muted: { value: "{colors.enbu.editorMuted}" },
             accent: { value: "{colors.enbu.editorAccent}" },
+            danger: { value: "{colors.enbu.editorDanger}" },
           },
         },
       },
