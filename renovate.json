@@ -3,13 +3,14 @@
   "extends": [
     "github>aquaproj/aqua-renovate-config#2.14.0",
     "config:best-practices",
-    ":disableRateLimiting",
     ":label(renovate)",
     ":timezone(Asia/Tokyo)"
   ],
   "dependencyDashboard": false,
   "configMigration": true,
   "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
   "automerge": true,
   "platformAutomerge": false,
   "postUpdateOptions": [

@@ -1,7 +1,11 @@
 name: Deterministic simulation
 
 on:
+  # main gets the nightly full exploration instead; branch pushes already ran
+  # the affected DST before merging.
   push:
+    branches-ignore:
+      - main
   schedule:
     - cron: '0 17 * * *' # 02:00 Asia/Tokyo
   workflow_dispatch:
