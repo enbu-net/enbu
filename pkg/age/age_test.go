@@ -101,3 +101,21 @@ func taggedHybridRecipient(t testing.TB) string {
 	}
 	return h.String()
 }
+
+func TestParseRecipientReusesAParsedRecipient(t *testing.T) {
+	kp, err := age.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := age.ParseRecipient(kp.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := age.ParseRecipient(kp.PublicKey)
+	if err != nil || second != first {
+		t.Fatalf("second parse = %v, %v; want the first recipient", second, err)
+	}
+	if _, err := age.ParseRecipient(kp.PublicKey + "x"); err == nil {
+		t.Fatal("a damaged recipient was accepted")
+	}
+}

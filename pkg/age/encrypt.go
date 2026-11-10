@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"filippo.io/age"
 	"filippo.io/age/tag"
@@ -51,9 +53,34 @@ func Decrypt(ciphertext []byte, identities ...age.Identity) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
+// A recipient is a long bech32 string whose decoding (checksum and ML-KEM key
+// expansion) costs far more than encrypting to it, and the same few members are
+// parsed again on every Control verification and every encryption. Parsed
+// recipients are immutable, so up to maxParsedRecipients of them are kept.
+const maxParsedRecipients = 1024
+
+var (
+	parsedRecipients sync.Map // string -> age.Recipient
+	parsedCount      atomic.Int64
+)
+
 // ParseRecipient accepts the hybrid ML-KEM-768 + X25519 and the tagged hybrid
 // ML-KEM-768 + P-256 age encodings.
 func ParseRecipient(s string) (age.Recipient, error) {
+	if r, ok := parsedRecipients.Load(s); ok {
+		return r.(age.Recipient), nil
+	}
+	r, err := parseRecipient(s)
+	if err != nil {
+		return nil, err
+	}
+	if parsedCount.Add(1) <= maxParsedRecipients {
+		parsedRecipients.Store(s, r)
+	}
+	return r, nil
+}
+
+func parseRecipient(s string) (age.Recipient, error) {
 	switch {
 	case strings.HasPrefix(s, prefixTagHybrid):
 		return tag.ParseRecipient(s)
