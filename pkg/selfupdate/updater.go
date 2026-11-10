@@ -246,10 +246,10 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Only a failed read is a download failure; a failed local write is not.
-	body := &bodyReader{r: resp.Body}
-	n, err := io.Copy(w, io.LimitReader(body, maxDownloadSize+1))
-	if body.err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrDownload, url, body.err)
+	n, err := io.Copy(w, io.LimitReader(bodyReader{resp.Body}, maxDownloadSize+1))
+	var read readError
+	if errors.As(err, &read) {
+		return fmt.Errorf("%w: %s: %w", ErrDownload, url, read.err)
 	}
 	if err != nil {
 		return err
@@ -260,16 +260,19 @@ func (u *Updater) download(ctx context.Context, url string, w io.Writer) error {
 	return nil
 }
 
-// bodyReader remembers the error of a failed read.
-type bodyReader struct {
-	r   io.Reader
-	err error
-}
+// bodyReader marks the errors of failed reads, so that io.Copy's result
+// tells them apart from failed writes.
+type bodyReader struct{ r io.Reader }
 
-func (b *bodyReader) Read(p []byte) (int, error) {
+func (b bodyReader) Read(p []byte) (int, error) {
 	n, err := b.r.Read(p)
 	if err != nil && err != io.EOF {
-		b.err = err
+		err = readError{err}
 	}
 	return n, err
 }
+
+type readError struct{ err error }
+
+func (e readError) Error() string { return e.err.Error() }
+func (e readError) Unwrap() error { return e.err }

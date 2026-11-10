@@ -280,3 +280,14 @@ func TestCheckBoundsTheReleaseLookup(t *testing.T) {
 		t.Errorf("lookup deadline = %v, want within %v", deadline, lookupTimeout)
 	}
 }
+
+func TestAFailedWriteWinsOverAFailedRead(t *testing.T) {
+	srv := shortBodyServer(t)
+	u := &Updater{Client: srv.Client()}
+	// The body arrives short and the write of what came fails too: io.Copy
+	// reports the write, which is not a download failure.
+	err := u.download(context.Background(), srv.URL, failingWriter{})
+	if err == nil || errors.Is(err, ErrDownload) {
+		t.Errorf("download() = %v, want the write error", err)
+	}
+}
