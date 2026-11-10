@@ -54,10 +54,15 @@ func (a *App) WriteConfig(content string) (err error) {
 			return err
 		}
 	}
-	if err := a.ensureGitignore(cfg); err != nil {
-		return fmt.Errorf("updating .gitignore: %w", err)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	// The saved config is valid on its own. An output file Git does not ignore
+	// could still be committed, so a failed update is reported, not skipped.
+	if err := a.ensureGitignore(cfg); err != nil {
+		return fmt.Errorf("enbu.toml was saved, but updating .gitignore failed: %w", err)
+	}
+	return nil
 }
 
 // checkProtectedConfig refuses an edit of enbu.toml that changes what the
