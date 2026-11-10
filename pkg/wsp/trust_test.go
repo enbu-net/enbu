@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/clock"
@@ -125,19 +126,56 @@ func TestTrustReplaceKeepsOtherPins(t *testing.T) {
 		t.Fatalf("another checkout's pin: %v %v", got, err)
 	}
 
-	for name, file := range map[string]string{
-		"another corrupt pin": `{"workspaces":{"ws":"nope","other":"nope"}}`,
-		"not a trust file":    `{`,
+	// A file that is not a trust file at all is not reset.
+	if err := os.WriteFile(path, []byte(`{`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.Pin(root("ws", "g"), "", PinReplace); err == nil {
+		t.Fatal("replace reset a file that is not a trust file")
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != `{` {
+		t.Fatalf("the file changed: %s %v", b, err)
+	}
+}
+
+// A damaged pin of one workspace or checkout stops only that workspace or
+// checkout, and survives the other pins being written.
+func TestTrustCorruptPinStopsOnlyItsOwnWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trust.json")
+	tr := OpenTrust(dir, clock.New())
+	file := `{"workspaces":{"broken":"nope"},"repositories":{"/b/enbu.toml":"broken","/c/enbu.toml":""}}`
+	if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ws := root("ws", "g")
+	if err := tr.Check(ws, "/a/enbu.toml", PinFirst); err != nil {
+		t.Fatalf("another workspace's damaged pin stopped this one: %v", err)
+	}
+	if _, err := tr.Pin(ws, "/a/enbu.toml", PinFirst); err != nil {
+		t.Fatalf("pin beside a damaged pin: %v", err)
+	}
+	if got, err := tr.Pinned("ws"); err != nil || got != ws {
+		t.Fatalf("pinned = %v %v", got, err)
+	}
+	if got, err := tr.Repository("/a/enbu.toml"); err != nil || got != ws {
+		t.Fatalf("repository = %v %v", got, err)
+	}
+	for name, read := range map[string]func() error{
+		"workspace":           func() error { _, err := tr.Pinned("broken"); return err },
+		"its checkout":        func() error { _, err := tr.Repository("/b/enbu.toml"); return err },
+		"an empty checkout":   func() error { _, err := tr.Repository("/c/enbu.toml"); return err },
+		"check of the root":   func() error { return tr.Check(root("broken", "g"), "", PinFirst) },
+		"check of a checkout": func() error { return tr.Check(ws, "/c/enbu.toml", PinFirst) },
 	} {
-		if err := os.WriteFile(path, []byte(file), 0o600); err != nil {
-			t.Fatal(err)
+		if err := read(); err == nil || !strings.Contains(err.Error(), path) {
+			t.Fatalf("%s: damaged pin read as %v", name, err)
 		}
-		if _, err := tr.Pin(root("ws", "g"), "", PinReplace); err == nil {
-			t.Fatalf("%s: replace reset the file", name)
-		}
-		if b, err := os.ReadFile(path); err != nil || string(b) != file {
-			t.Fatalf("%s: the file changed: %s %v", name, b, err)
-		}
+	}
+	// Writing this workspace's pin kept the damaged ones for a person to repair.
+	b, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(b), `"broken": "nope"`) || !strings.Contains(string(b), `"/c/enbu.toml": ""`) {
+		t.Fatalf("damaged pins were dropped: %s %v", b, err)
 	}
 }
 

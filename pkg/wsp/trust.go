@@ -72,52 +72,21 @@ func OpenTrust(dir string, c clock.Clock) *Trust {
 	return &Trust{clock: c, path: filepath.Join(dir, "trust.json")}
 }
 
-func (t *Trust) read() (trustFile, error) {
-	f, bad, err := t.load()
-	if err == nil && !bad.empty() {
-		err = fmt.Errorf("corrupt trust file %s", t.path)
-	}
-	return f, err
-}
-
-// invalidPins names the entries of a trust file that do not hold a pin.
-type invalidPins struct {
-	workspaces   []string
-	repositories []string
-}
-
-func (b invalidPins) empty() bool { return len(b.workspaces) == 0 && len(b.repositories) == 0 }
-
-// only reports whether every invalid entry is the pin of workspace or of the
-// enbu.toml at repo.
-func (b invalidPins) only(workspace, repo string) bool {
-	for _, ws := range b.workspaces {
-		if ws != workspace {
-			return false
-		}
-	}
-	for _, r := range b.repositories {
-		if repo == "" || r != repo {
-			return false
-		}
-	}
-	return true
-}
-
-// load reads the trust file, setting aside the entries that do not hold a
-// valid pin. A file that is not a trust file at all is an error.
-func (t *Trust) load() (trustFile, invalidPins, error) {
+// load reads the trust file. A file that is not a trust file at all is an
+// error; an entry that does not hold a valid pin is kept as it is, and is an
+// error only for the workspace or checkout it belongs to, so one damaged pin
+// does not stop every other workspace on the device.
+func (t *Trust) load() (trustFile, error) {
 	f := trustFile{Workspaces: map[string]digest.Digest{}, Repositories: map[string]string{}}
-	var bad invalidPins
 	b, err := os.ReadFile(t.path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return f, bad, nil
+		return f, nil
 	}
 	if err != nil {
-		return f, bad, err
+		return f, err
 	}
 	if json.Unmarshal(b, &f) != nil {
-		return trustFile{}, bad, fmt.Errorf("corrupt trust file %s", t.path)
+		return trustFile{}, fmt.Errorf("corrupt trust file %s", t.path)
 	}
 	if f.Workspaces == nil {
 		f.Workspaces = map[string]digest.Digest{}
@@ -125,24 +94,50 @@ func (t *Trust) load() (trustFile, invalidPins, error) {
 	if f.Repositories == nil {
 		f.Repositories = map[string]string{}
 	}
-	for ws, g := range f.Workspaces {
-		if ws == "" || validDigest(g) != nil {
-			bad.workspaces = append(bad.workspaces, ws)
-			delete(f.Workspaces, ws)
-		}
+	return f, nil
+}
+
+// checkWorkspace fails when the pin of workspace is present but invalid.
+func (t *Trust) checkWorkspace(f trustFile, workspace string) error {
+	if g, ok := f.Workspaces[workspace]; ok && (workspace == "" || validDigest(g) != nil) {
+		return fmt.Errorf("corrupt pin of workspace %q in trust file %s; remove that entry and run enbu init again", workspace, t.path)
 	}
-	for repo, ws := range f.Repositories {
-		if repo == "" || ws == "" {
-			bad.repositories = append(bad.repositories, repo)
-			delete(f.Repositories, repo)
-		}
+	return nil
+}
+
+// checkRepository fails when the pin of the enbu.toml at repo, or of the
+// workspace it names, is present but invalid.
+func (t *Trust) checkRepository(f trustFile, repo string) error {
+	ws, ok := f.Repositories[repo]
+	if !ok {
+		return nil
 	}
-	return f, bad, nil
+	if repo == "" || ws == "" {
+		return fmt.Errorf("corrupt pin of %q in trust file %s; remove that entry and run enbu init again", repo, t.path)
+	}
+	return t.checkWorkspace(f, ws)
+}
+
+// checkRoot fails when a pin that mode does not let root replace is invalid.
+func (t *Trust) checkRoot(f trustFile, root Root, repo string, mode PinMode) error {
+	if mode == PinReplace {
+		return nil
+	}
+	if err := t.checkWorkspace(f, root.Workspace); err != nil {
+		return err
+	}
+	if repo == "" || mode == PinFounded {
+		return nil
+	}
+	return t.checkRepository(f, repo)
 }
 
 // Pinned returns the root pinned for workspace, or a zero Root.
 func (t *Trust) Pinned(workspace string) (Root, error) {
-	f, err := t.read()
+	f, err := t.load()
+	if err == nil {
+		err = t.checkWorkspace(f, workspace)
+	}
 	if err != nil {
 		return Root{}, err
 	}
@@ -152,7 +147,10 @@ func (t *Trust) Pinned(workspace string) (Root, error) {
 // Repository returns the root pinned for the enbu.toml at repo: its workspace
 // and the genesis pinned for that workspace, or a zero Root.
 func (t *Trust) Repository(repo string) (Root, error) {
-	f, err := t.read()
+	f, err := t.load()
+	if err == nil {
+		err = t.checkRepository(f, repo)
+	}
 	if err != nil {
 		return Root{}, err
 	}
@@ -192,7 +190,10 @@ func (t *Trust) Check(root Root, repo string, mode PinMode) error {
 	if mode == PinReplace {
 		return nil
 	}
-	f, err := t.read()
+	f, err := t.load()
+	if err == nil {
+		err = t.checkRoot(f, root, repo, mode)
+	}
 	if err != nil {
 		return err
 	}
@@ -218,14 +219,14 @@ func (t *Trust) Pin(root Root, repo string, mode PinMode) (Root, error) {
 		return Root{}, err
 	}
 	defer release()
-	f, bad, err := t.load()
+	f, err := t.load()
+	if err == nil {
+		// Confirming a new root repairs only its own pins: the pins of other
+		// workspaces and checkouts are written back as they were.
+		err = t.checkRoot(f, root, repo, mode)
+	}
 	if err != nil {
 		return Root{}, err
-	}
-	if !bad.empty() && (mode != PinReplace || !bad.only(root.Workspace, repo)) {
-		// Confirming a new root repairs only its own pins: the pins of other
-		// workspaces and checkouts are not reset along with it.
-		return Root{}, fmt.Errorf("corrupt trust file %s", t.path)
 	}
 	if pinned := f.conflict(root, repo, mode); pinned != (Root{}) {
 		return pinned, &TrustRootChangedError{Pinned: pinned, Configured: root}
