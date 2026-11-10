@@ -8,6 +8,9 @@ import { Create as $Create } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as apperr$0 from "../pkg/apperr/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as selfupdate$0 from "../pkg/selfupdate/models.js";
 
 export class AuthStatus {
     "authenticated": boolean;
@@ -719,6 +722,16 @@ export class StorageSettings {
         return new StorageSettings($$parsedSource as Partial<StorageSettings>);
     }
 }
+
+/**
+ * UpdateStatus is what the settings screen shows about updates.
+ */
+export const UpdateStatus = selfupdate$0.Status;
+
+/**
+ * UpdateStatus is what the settings screen shows about updates.
+ */
+export type UpdateStatus = selfupdate$0.Status;
 
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);

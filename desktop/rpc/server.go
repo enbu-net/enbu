@@ -82,6 +82,9 @@ var Methods = []string{
 	"ReadConfig",
 	"WriteConfig",
 	"GetAppVersion",
+	"CheckForUpdate",
+	"InstallUpdate",
+	"RestartApp",
 }
 
 // Methods handled by the server itself rather than desktop.Service.
