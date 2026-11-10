@@ -3,15 +3,17 @@ package cli
 import (
 	"bytes"
 	"context"
-	"github.com/enbu-net/enbu/pkg/identity"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app/apptest"
+	"github.com/enbu-net/enbu/pkg/identity"
 
 	"github.com/enbu-net/enbu/app"
 )
 
 func TestIdentityCommandsWithoutAuthentication(t *testing.T) {
-	store := &staticKeyStore{}
+	store := &apptest.Identities{}
 	a := &app.App{Identities: store, RepoDetector: &deleteTestRepoDetector{}}
 	prepareCLIApp(t, a)
 	created := executeJSON(t, NewWithApp("test", a), "identity", "create", "--json")
@@ -29,7 +31,7 @@ func TestIdentityCommandsWithoutAuthentication(t *testing.T) {
 	}
 }
 
-type doctorKeyStore struct{ staticKeyStore }
+type doctorKeyStore struct{ apptest.Identities }
 
 func (*doctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{
@@ -39,7 +41,7 @@ func (*doctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 	}
 }
 
-type lockedDoctorKeyStore struct{ staticKeyStore }
+type lockedDoctorKeyStore struct{ apptest.Identities }
 
 func (*lockedDoctorKeyStore) Doctor(context.Context) identity.Diagnosis {
 	return identity.Diagnosis{

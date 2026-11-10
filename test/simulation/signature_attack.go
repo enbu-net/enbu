@@ -59,7 +59,7 @@ func (w *World) StateSignatureAttack(ctx context.Context) error {
 				// include two-device worlds, where device 0 is the other signer.
 				who, domain = (1+1)%len(w.Devices), signing.DomainState
 			}
-			signer, err := w.Devices[who].Keys.LoadSigner(cfg.WorkspaceID)
+			signer, err := w.Devices[who].Keys.Signer(cfg.WorkspaceID)
 			if err != nil {
 				return err
 			}

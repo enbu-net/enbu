@@ -175,7 +175,7 @@ func TestJSONInit(t *testing.T) {
 		Storage:       store,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		Identities:    &staticKeyStore{},
+		Identities:    &apptest.Identities{},
 		Git:           &jsonInitGit{root: dir},
 	}
 	envelope := executeJSON(t, NewWithApp("test", a), "init", "--json")
@@ -213,7 +213,7 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 	// Another device already created the workspace and stored a secret. Its
 	// enbu.toml, with the trusted genesis, is what the repository shares.
 	store := storagetest.NewMemory()
-	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &staticKeyStore{}, RepositoryDir: t.TempDir()}
+	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &apptest.Identities{}, RepositoryDir: t.TempDir()}
 	bootstrapCLIApp(t, founder, store)
 	if err := founder.AddSecret(context.Background(), "default", "KEY", "value"); err != nil {
 		t.Fatal(err)
@@ -230,7 +230,7 @@ func TestJSONInitJoinWithoutIdentityUpdatesGitignore(t *testing.T) {
 		Storage:       store,
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		Identities:    &staticKeyStore{},
+		Identities:    &apptest.Identities{},
 		Git:           &jsonInitGit{root: dir},
 		CheckpointDir: t.TempDir(),
 	}
@@ -289,7 +289,7 @@ func (g *jsonInitGit) Inspect(context.Context, string) (gitprovider.Repository, 
 func TestJSONInitAcceptNewGenesis(t *testing.T) {
 	dir := enterTempRepository(t)
 	store := storagetest.NewMemory()
-	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &staticKeyStore{}, RepositoryDir: t.TempDir()}
+	founder := &app.App{TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{}, Identities: &apptest.Identities{}, RepositoryDir: t.TempDir()}
 	bootstrapCLIApp(t, founder, store)
 	trusted, err := config.LoadProjectFrom(founder.RepositoryDir)
 	if err != nil {
@@ -302,7 +302,7 @@ func TestJSONInitAcceptNewGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(rivalDir, &rival); err != nil {
 		t.Fatal(err)
 	}
-	if err := apptest.Control(context.Background(), store, rivalDir, &staticKeyStore{}); err != nil {
+	if err := apptest.Control(context.Background(), store, rivalDir, &apptest.Identities{}); err != nil {
 		t.Fatal(err)
 	}
 	rivalCfg, err := config.LoadProjectFrom(rivalDir)
@@ -312,7 +312,7 @@ func TestJSONInitAcceptNewGenesis(t *testing.T) {
 
 	newApp := func() *app.App {
 		return &app.App{Storage: store, TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{},
-			Identities: &staticKeyStore{}, Git: &jsonInitGit{root: dir}, RepositoryDir: dir}
+			Identities: &apptest.Identities{}, Git: &jsonInitGit{root: dir}, RepositoryDir: dir}
 	}
 	checkpoints := t.TempDir()
 	run := func(args ...string) (map[string]any, error) {

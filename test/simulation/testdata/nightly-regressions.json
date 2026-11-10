@@ -1046,7 +1046,7 @@
     "Seed": 389,
     "Plan": {
       "Devices": 6,
-      "Scenario": "partial-key-promotion-after",
+      "Scenario": "partial-key-lost",
       "Actions": [
         {
           "Kind": "parallel",
@@ -1206,7 +1206,7 @@
     "Seed": 395,
     "Plan": {
       "Devices": 5,
-      "Scenario": "disaster-retired-key-cold",
+      "Scenario": "disaster-all-stale-cold",
       "Actions": [
         {
           "Kind": "rejoin",
@@ -2854,7 +2854,7 @@
     "Seed": 461,
     "Plan": {
       "Devices": 8,
-      "Scenario": "partial-key-signing",
+      "Scenario": "partial-key-lost",
       "Actions": [
         {
           "Kind": "add",
@@ -3147,7 +3147,7 @@
     "Seed": 466,
     "Plan": {
       "Devices": 6,
-      "Scenario": "partial-key-promotion-before",
+      "Scenario": "partial-key-lost",
       "Actions": [
         {
           "Kind": "parallel",
@@ -3263,7 +3263,7 @@
     "Seed": 467,
     "Plan": {
       "Devices": 7,
-      "Scenario": "partial-key-promotion-after",
+      "Scenario": "partial-key-lost",
       "Actions": [
         {
           "Kind": "compact",
@@ -5279,7 +5279,7 @@
     "Seed": 11012636119122646160,
     "Plan": {
       "Devices": 7,
-      "Scenario": "partial-key-pending-after-approval",
+      "Scenario": "partial-key-lost",
       "Actions": [
         {
           "Kind": "add",

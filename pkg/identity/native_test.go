@@ -3,17 +3,13 @@
 package identity
 
 import (
-	"bytes"
-	"crypto/rand"
-	"crypto/x509"
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"os"
 	"slices"
 	"testing"
-	"time"
 
-	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/clock"
+
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
@@ -27,24 +23,18 @@ func TestTPMNativeLifecycle(t *testing.T) {
 	if d := b.Probe(); !d.Available {
 		t.Fatalf("native hardware unavailable: %+v", d)
 	}
-	id, md, err := b.Create()
+	m := &Manager{Dir: t.TempDir(), Mode: "hardware", Hardware: b}
+	d, info, _, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := age.EncryptForPublicKeys([]byte("native TPM"), []string{id.Recipient().String()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = id.Close()
-	loaded, err := b.Load(md)
+	_ = d.Close()
+	loaded, err := m.Load("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = loaded.Close() }()
-	out, err := age.Decrypt(ct, loaded)
-	if err != nil || string(out) != "native TPM" {
-		t.Fatalf("native decrypt: %q %v", out, err)
-	}
+	roundTrip(t, loaded, info.Recipient)
 }
 
 // TestTPMNativeKeyOrigin checks, on the real TPM, the properties the identity
@@ -75,37 +65,24 @@ func TestTPMNativeKeyOrigin(t *testing.T) {
 		}
 		return &sharedRecording{rec: rec, next: next}, nil
 	}}
-	id, md, err := b.Create()
+	md := &Metadata{}
+	key, s, err := b.Create(md)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = id.Close() }()
-	if !slices.Equal(rec.sensitive, []int{0}) {
+	defer func() { _ = key.Close(); _ = s.Close() }()
+	if !slices.Equal(rec.sensitive, []int{0, 0}) {
 		t.Fatalf("TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
 	}
-	ct, err := age.EncryptForPublicKeys([]byte("native TPM"), []string{id.Recipient().String()})
-	if err != nil {
+	before := len(rec.sent())
+	if _, err := key.ECDH(key.PublicKey()); err != nil {
 		t.Fatal(err)
 	}
-	before := len(rec.sent())
-	if out, err := age.Decrypt(ct, id); err != nil || string(out) != "native TPM" {
-		t.Fatalf("native decrypt: %q %v", out, err)
-	}
 	if !slices.Contains(rec.sent()[before:], tpm2.TPMCCECDHZGen) {
-		t.Fatal("decryption did not run ECDH_ZGen on the host TPM")
+		t.Fatal("ECDH did not run ECDH_ZGen on the host TPM")
 	}
 	if md.Device != native.Device {
 		t.Fatalf("metadata device = %q, want %q", md.Device, native.Device)
-	}
-
-	rec.sensitive = nil
-	s, _, err := b.CreateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = s.Close() }()
-	if !slices.Equal(rec.sensitive, []int{0}) {
-		t.Fatalf("signer TPM2_Create carried caller sensitive data of sizes %v", rec.sensitive)
 	}
 	before = len(rec.sent())
 	sig, err := s.Sign(signing.DomainState, []byte("native TPM"))
@@ -148,63 +125,3 @@ func (s *sharedRecording) Send(command []byte) ([]byte, error) {
 }
 
 func (s *sharedRecording) Close() error { return s.next.Close() }
-
-// TestTPMNativeAttestation runs the attestation on the real TPM: it needs an
-// EK certificate in the TPM's NV, and checks that the AK certifies new keys
-// and that the TPM answers a challenge encrypted to its EK. The EK chain is
-// not checked here, since the maker's roots are not part of the test.
-func TestTPMNativeAttestation(t *testing.T) {
-	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
-		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a TPM 2.0 device")
-	}
-	b, ok := platformHardware(clock.New()).(*TPMBackend)
-	if !ok {
-		t.Fatalf("platform hardware is %T, want a TPM", platformHardware(clock.New()))
-	}
-	id, md, err := b.Create()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = id.Close()
-	s, smd, err := b.CreateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	if md.TPMCertified == nil || smd.TPMCertified == nil {
-		c, err := b.acquire()
-		if err == nil {
-			c.mu.Lock()
-			var ak *tpm2.CreatePrimaryResponse
-			if ak, err = createAK(c.t); err == nil {
-				_ = flush(c.t, ak.ObjectHandle)
-			}
-			c.mu.Unlock()
-			_ = b.release(c)
-		}
-		t.Fatalf("the TPM did not certify the new keys (attestation key: %v)", err)
-	}
-	ev, err := b.Evidence(*md.TPMCertified, *smd.TPMCertified)
-	if err != nil {
-		t.Fatalf("evidence: %v", err)
-	}
-	leaf, err := x509.ParseCertificate(ev.EKCertificates[0])
-	if err != nil {
-		t.Fatalf("EK certificate: %v", err)
-	}
-	t.Logf("EK certificate: issuer %q, %T, AIA %v", leaf.Issuer.String(), leaf.PublicKey, leaf.IssuingCertificateURL)
-	att, err := attestKeys(ev, leaf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	secret, blob, encrypted, err := att.Challenge(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := time.Now()
-	got, err := b.Activate(blob, encrypted)
-	if err != nil || !bytes.Equal(got, secret) {
-		t.Fatalf("activate: %v", err)
-	}
-	t.Logf("challenge answered in %v", time.Since(start))
-}

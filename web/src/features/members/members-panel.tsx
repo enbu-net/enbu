@@ -291,7 +291,6 @@ export function PendingRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {request.algorithm.toUpperCase()}
-          {request.key_update ? ` · ${m.members_keyUpdate()}` : ""}
           {time ? ` · ${m.members_requestedAt({ time })}` : ""}
         </Text>
       </Box>
@@ -323,7 +322,6 @@ export function MemberRow({
         </Text>
         <Text fontSize="2xs" color="fg.muted">
           {member.algorithm.toUpperCase()}
-          {member.post_quantum ? ` · ${m.device_postQuantum()}` : ""}
           {member.self ? ` · ${m.members_you()}` : ""}
         </Text>
       </Box>

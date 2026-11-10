@@ -9,7 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
-var AdminRaces = []string{"approve-two", "remove-two", "remove-versus-promote", "promote-two", "demote-admin", "remove-admin", "approve-same", "remove-same", "promote-versus-demote", "remove-versus-key-update"}
+var AdminRaces = []string{"approve-two", "remove-two", "remove-versus-promote", "promote-two", "demote-admin", "remove-admin", "approve-same", "remove-same", "promote-versus-demote"}
 
 func (w *World) AdminRace(ctx context.Context, kind string) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
@@ -30,11 +30,6 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 	}
 	if kind == "promote-versus-demote" {
 		if err := a.SetAdmin(ctx, w.Devices[2].ID, true); err != nil {
-			return err
-		}
-	}
-	if kind == "remove-versus-key-update" {
-		if _, err := w.Devices[2].App.UpgradeIdentity(ctx); err != nil {
 			return err
 		}
 	}
@@ -69,10 +64,6 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 	case "promote-versus-demote":
 		left = func(int) error { return a.SetAdmin(ctx, w.Devices[2].ID, false) }
 		right = func(int) error { return b.SetAdmin(ctx, w.Devices[2].ID, true) }
-	case "remove-versus-key-update":
-		left = func(int) error { return a.RemoveMember(ctx, w.Devices[2].ID) }
-		right = func(int) error { return b.ApproveMember(ctx, w.Devices[2].ID) }
-		delete(expected, w.Devices[2].ID)
 	case "remove-two":
 		left = func(int) error { return a.RemoveMember(ctx, w.Devices[2].ID) }
 		right = func(int) error { return b.RemoveMember(ctx, w.Devices[3].ID) }

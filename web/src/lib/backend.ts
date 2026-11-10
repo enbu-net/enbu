@@ -17,7 +17,6 @@ import type {
   InitResult,
   StorageSettings,
   JoinRequest,
-  KeyUpdateResult,
   Member,
   OAuthStart,
   OAuthStatus,
@@ -93,7 +92,6 @@ export interface Backend {
   identity(): Promise<PublicInfo>;
   diagnoseIdentity(): Promise<Diagnosis>;
   /** Switches this device to a post-quantum key; a member's waits for an admin. */
-  upgradeIdentity(): Promise<KeyUpdateResult>;
 
   readConfig(): Promise<string>;
   writeConfig(content: string): Promise<void>;
@@ -198,7 +196,6 @@ export function createServiceBackend(svc: ServiceClient): Backend {
 
     identity: () => call(svc.GetIdentity()),
     diagnoseIdentity: () => call(svc.DiagnoseIdentity()),
-    upgradeIdentity: () => call(svc.UpgradeIdentity()),
 
     readConfig: () => call(svc.ReadConfig()),
     writeConfig: (content) => call(svc.WriteConfig(content)),

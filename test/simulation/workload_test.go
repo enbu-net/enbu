@@ -2,8 +2,8 @@ package simulation
 
 import "testing"
 
-func TestRejoinAfterKeyUpdate(t *testing.T) {
-	exercise(t, 811, Plan{Devices: 3, Scenario: "key-update", Actions: []Action{
+func TestRejoinAfterMembership(t *testing.T) {
+	exercise(t, 811, Plan{Devices: 3, Scenario: "membership", Actions: []Action{
 		{Kind: "rejoin", Device: 0},
 		{Kind: "rejoin", Device: 1},
 		{Kind: "add", Device: 1, Key: "AFTER_REJOIN", Value: "preserved"},

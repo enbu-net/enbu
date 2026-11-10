@@ -53,7 +53,7 @@ func Shared() *Client { return shared() }
 // Exec starts path as the bridge server.
 func Exec(path string) (*Conn, error) {
 	cmd := exec.Command(path, "identity", "bridge", "--stdio")
-	cmd.Stderr = os.Stderr // Windows Hello and TPM messages
+	cmd.Stderr = os.Stderr // TPM messages
 	w, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func Exec(path string) (*Conn, error) {
 }
 
 // closeGrace is how long enbu.exe gets to exit after its stdin closes. One
-// stuck on a Windows Hello prompt or a hung TPM call is killed after it, so
+// stuck on a hung TPM call is killed after it, so
 // the WSL command can always end.
 var closeGrace = 5 * time.Second
 
@@ -226,101 +226,33 @@ func (c *Client) status() *identity.WSLStatus {
 
 func ws(id string) workspaceParams { return workspaceParams{WorkspaceID: id} }
 
-func (c *Client) Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error) {
-	return c.create(methodCreate, workspaceID)
-}
-
-func (c *Client) CreatePending(workspaceID string) (identity.Identity, identity.PublicInfo, string, error) {
-	return c.create(methodCreatePending, workspaceID)
-}
-
-func (c *Client) create(method, workspaceID string) (identity.Identity, identity.PublicInfo, string, error) {
-	var r identityResult
-	gen, err := c.open(method, ws(workspaceID), &r)
+func (c *Client) Create(workspaceID string) (*identity.Device, identity.PublicInfo, string, error) {
+	var r deviceResult
+	gen, err := c.open(methodCreate, ws(workspaceID), &r)
 	if err != nil {
 		return nil, identity.PublicInfo{}, "", err
 	}
-	id, err := c.identity(gen, r)
+	d, err := c.device(gen, r)
 	if err != nil {
 		return nil, identity.PublicInfo{}, "", err
 	}
 	r.Info.Created = r.Created
-	return id, r.Info, r.Warning, nil
+	return d, r.Info, r.Warning, nil
 }
 
-func (c *Client) Load(workspaceID string) (identity.Identity, error) {
-	var r identityResult
+func (c *Client) Load(workspaceID string) (*identity.Device, error) {
+	var r deviceResult
 	gen, err := c.open(methodLoad, ws(workspaceID), &r)
 	if err != nil {
 		return nil, err
 	}
-	return c.identity(gen, r)
-}
-
-func (c *Client) LoadRetained(workspaceID string) ([]identity.Identity, error) {
-	var r retainedResult
-	gen, err := c.open(methodLoadRetained, ws(workspaceID), &r)
-	if err != nil {
-		return nil, err
-	}
-	ids := make([]identity.Identity, 0, len(r.Identities))
-	for _, ir := range r.Identities {
-		id, err := c.identity(gen, ir)
-		if err != nil {
-			for _, open := range ids {
-				_ = open.Close()
-			}
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
+	return c.device(gen, r)
 }
 
 func (c *Client) Info(workspaceID string) (identity.PublicInfo, error) {
-	return c.info(methodInfo, workspaceID)
-}
-
-func (c *Client) PendingInfo(workspaceID string) (identity.PublicInfo, error) {
-	return c.info(methodPendingInfo, workspaceID)
-}
-
-func (c *Client) info(method, workspaceID string) (identity.PublicInfo, error) {
 	var r infoResult
-	if err := c.call(method, ws(workspaceID), &r); err != nil {
+	if err := c.call(methodInfo, ws(workspaceID), &r); err != nil {
 		return identity.PublicInfo{}, err
-	}
-	r.Info.Created = r.Created
-	return r.Info, nil
-}
-
-func (c *Client) PromotePending(workspaceID string) error {
-	return c.call(methodPromotePending, ws(workspaceID), nil)
-}
-
-func (c *Client) CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error) {
-	var r signerResult
-	gen, err := c.open(methodCreateSigner, ws(workspaceID), &r)
-	if err != nil {
-		return nil, identity.SignerInfo{}, "", err
-	}
-	r.Info.Created = r.Created
-	return &remoteSigner{c: c, gen: gen, handle: r.Handle, public: r.Public}, r.Info, r.Warning, nil
-}
-
-func (c *Client) LoadSigner(workspaceID string) (signing.Signer, error) {
-	var r signerResult
-	gen, err := c.open(methodLoadSigner, ws(workspaceID), &r)
-	if err != nil {
-		return nil, err
-	}
-	return &remoteSigner{c: c, gen: gen, handle: r.Handle, public: r.Public}, nil
-}
-
-func (c *Client) SignerInfo(workspaceID string) (identity.SignerInfo, error) {
-	var r signerInfoResult
-	if err := c.call(methodSignerInfo, ws(workspaceID), &r); err != nil {
-		return identity.SignerInfo{}, err
 	}
 	r.Info.Created = r.Created
 	return r.Info, nil
@@ -343,16 +275,16 @@ func (c *Client) Doctor(ctx context.Context) identity.Diagnosis {
 	return d
 }
 
-func (c *Client) identity(gen uint64, r identityResult) (identity.Identity, error) {
+func (c *Client) device(gen uint64, r deviceResult) (*identity.Device, error) {
+	signer := &remoteSigner{c: c, gen: gen, handle: r.Signer, public: r.Public}
 	parsed, err := enbuage.ParseRecipient(r.Recipient)
-	if err != nil {
-		return nil, fmt.Errorf("the Windows enbu.exe returned an invalid recipient: %w", err)
-	}
 	recipient, ok := parsed.(identity.Recipient)
-	if !ok {
+	if err != nil || !ok {
+		_ = c.release(gen, r.Identity)
+		_ = signer.Close()
 		return nil, errors.New("the Windows enbu.exe returned an invalid recipient")
 	}
-	return &remoteIdentity{c: c, gen: gen, handle: r.Handle, recipient: recipient}, nil
+	return &identity.Device{Identity: &remoteIdentity{c: c, gen: gen, handle: r.Identity, recipient: recipient}, Signer: signer}, nil
 }
 
 func (c *Client) release(gen, h uint64) error {

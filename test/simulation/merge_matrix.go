@@ -97,7 +97,7 @@ func (w *World) publishNodeAtControl(ctx context.Context, actor int, epoch diges
 	if err != nil {
 		return storage.Object{}, err
 	}
-	signer, err := d.Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := d.Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return storage.Object{}, err
 	}

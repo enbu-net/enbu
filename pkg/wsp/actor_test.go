@@ -23,7 +23,7 @@ func newActor(t *testing.T, admin bool) actor {
 		t.Fatal(err)
 	}
 	s := signing.NewEd25519Signer(k)
-	id, err := age.GenerateX25519Identity()
+	id, err := age.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -152,12 +152,12 @@ func TestResolvingAControlForkReencryptsForTheSurvivors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := LoadIdentities(dave.Identities, mustWorkspace(t, dave))
+	d, err := loadDevice(dave.Identities, mustWorkspace(t, dave))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer CloseIdentities(ids)
-	if _, err := decryptSecretsObject(ciphertext, ids...); err == nil {
+	defer func() { _ = d.Close() }()
+	if _, err := decryptSecretsObject(ciphertext, d.Identity); err == nil {
 		t.Fatal("the current revision is still encrypted for the member the resolution dropped")
 	}
 	if read.heads[0].Control != cur.head.Digest {

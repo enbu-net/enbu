@@ -149,7 +149,7 @@ func (w *World) HiddenRequestConflict(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	signer, err := w.Devices[target].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[target].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,10 @@ func (w *World) HiddenRequestConflict(ctx context.Context) error {
 	}
 	ordered := []digest.Digest{first}
 	spammer := &Keys{Tape: w.Tape, Device: len(w.Devices)}
-	spamSigner, _, _, err := spammer.CreateSigner(cfg.WorkspaceID)
+	if _, _, _, err := spammer.Create(cfg.WorkspaceID); err != nil {
+		return err
+	}
+	spamSigner, err := spammer.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}

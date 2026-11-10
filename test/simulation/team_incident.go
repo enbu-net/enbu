@@ -125,7 +125,7 @@ func (w *World) TeamIncident(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			_, err = age.Decrypt(blob, id)
+			_, err = age.Decrypt(blob, id.Identity)
 			var noMatch *agecrypto.NoIdentityMatchError
 			if !errors.As(err, &noMatch) {
 				return fmt.Errorf("departed key decrypts %s: %v", env, err)

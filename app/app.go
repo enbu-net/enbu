@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/apperr"
 	"net/url"
-	"oras.land/oras-go/v2/registry/remote/auth"
 	"path/filepath"
 	"strings"
 	"uuid"
+
+	"github.com/enbu-net/enbu/pkg/apperr"
+	"oras.land/oras-go/v2/registry/remote/auth"
 
 	enbuauth "github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"

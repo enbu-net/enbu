@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -43,7 +44,7 @@ func TestS3StorageConfiguration(t *testing.T) {
 
 func TestHistoryOrdersRapidUpdates(t *testing.T) {
 	ctx := context.Background()
-	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
+	a := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}}
 	prepareApp(t, a, "default")
 	if _, err := a.InitializeRepository(ctx); err != nil {
 		t.Fatal(err)
@@ -71,7 +72,7 @@ func TestHistoryOrdersRapidUpdates(t *testing.T) {
 
 func TestInitializeRejectsCorruptControl(t *testing.T) {
 	ctx := context.Background()
-	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
+	a := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}}
 	prepareApp(t, a, "default")
 	if _, err := a.InitializeRepository(ctx); err != nil {
 		t.Fatal(err)
@@ -99,12 +100,12 @@ func TestInitializeRejectsCorruptControl(t *testing.T) {
 // already holds: nothing there says whose it is.
 func TestInitializeRefusesAStorageThatAlreadyHoldsAWorkspace(t *testing.T) {
 	ctx := context.Background()
-	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
+	a := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}}
 	prepareApp(t, a, "default")
 	if _, err := a.InitializeRepository(ctx); err != nil {
 		t.Fatal(err)
 	}
-	other := &App{Storage: a.Storage, Identities: newMemKeyStore()}
+	other := &App{Storage: a.Storage, Identities: &apptest.Identities{}}
 	prepareApp(t, other, "default") // same workspace id, but no control_genesis
 	if _, err := other.InitializeRepository(ctx); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("adopting an existing workspace without a genesis: %v", err)

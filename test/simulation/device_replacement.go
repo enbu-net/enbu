@@ -94,7 +94,7 @@ func (w *World) DeviceReplacement(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = age.Decrypt(oldCipher, newKey)
+	_, err = age.Decrypt(oldCipher, newKey.Identity)
 	_ = newKey.Close()
 	var noMatch *agecrypto.NoIdentityMatchError
 	if !errors.As(err, &noMatch) {
@@ -106,7 +106,7 @@ func (w *World) DeviceReplacement(ctx context.Context) error {
 	}
 	defer func() { _ = oldKey.Close() }()
 	// Revocation cannot erase past knowledge. The fixture must retain that threat.
-	if _, err := age.Decrypt(oldCipher, oldKey); err != nil {
+	if _, err := age.Decrypt(oldCipher, oldKey.Identity); err != nil {
 		return fmt.Errorf("lost laptop did not retain its old key: %w", err)
 	}
 	view, err = wsp.LoadControl(ctx, w.Devices[0].Store, cfg.WorkspaceID, digest.Digest(cfg.ControlGenesis), nil)
@@ -122,7 +122,7 @@ func (w *World) DeviceReplacement(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		_, err = age.Decrypt(blob, oldKey)
+		_, err = age.Decrypt(blob, oldKey.Identity)
 		if !errors.As(err, &noMatch) {
 			return fmt.Errorf("lost laptop decrypted rotated ciphertext: %v", err)
 		}

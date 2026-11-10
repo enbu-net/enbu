@@ -55,12 +55,12 @@ func TestNativeTPMCLI(t *testing.T) {
 	h.run("edit", "DATABASE_URL", "second")
 
 	// Verify that sync encrypts for both the hardware Identity and an ordinary
-	// X25519 recipient, and that both recover the actual saved secret value.
-	x, err := agecrypto.GenerateX25519Identity()
+	// software recipient, and that both recover the actual saved secret value.
+	x, err := agecrypto.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	approveX25519(t, h, x)
+	approveSoftware(t, h, x)
 	h.run("sync")
 	assertSecret(t, h.run("pull"), "second")
 	plaintext := decryptCurrent(t, h, x)
@@ -69,7 +69,7 @@ func TestNativeTPMCLI(t *testing.T) {
 	if err != nil || secrets["DATABASE_URL"] != "second" {
 		t.Fatalf("software recipient recovered wrong bundle: %v %v", secrets, err)
 	}
-	t.Log("sync: both native TPM and X25519 recipients decrypted the saved bundle")
+	t.Log("sync: both native TPM and software recipients decrypted the saved bundle")
 
 	diff := h.run("history", "diff", "1", "2")
 	modified, ok := diff["modified"].([]any)

@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
@@ -21,7 +20,7 @@ type Probe struct {
 	Fault     Fault
 }
 
-var ProbeOperations = []string{"add", "edit", "delete", "import", "sync", "pull", "pull-file", "history", "diff", "restore", "compact", "purge", "approve", "remove", "admin", "upgrade"}
+var ProbeOperations = []string{"add", "edit", "delete", "import", "sync", "pull", "pull-file", "history", "diff", "restore", "compact", "purge", "approve", "remove", "admin"}
 
 func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 	ctx = wsp.WithSerialHeadReads(ctx)
@@ -110,9 +109,6 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 			return a.RemoveMember(ctx, w.Devices[1].ID)
 		case "admin":
 			return a.SetAdmin(ctx, w.Devices[1].ID, true)
-		case "upgrade":
-			_, e := a.UpgradeIdentity(ctx)
-			return e
 		default:
 			return fmt.Errorf("unknown probe %s", p.Operation)
 		}
@@ -190,18 +186,15 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 	// Retry only when the durable state says the effect has not committed.
 	retry := !reflect.DeepEqual(got, after)
 	switch p.Operation {
-	case "approve", "remove", "admin", "upgrade":
+	case "approve", "remove", "admin":
 		members, e := a.ListMembers(ctx)
 		if e != nil {
 			return nil, e
 		}
-		present, admin, pq := false, false, false
+		present, admin := false, false
 		for _, m := range members {
 			if m.DeviceID == w.Devices[1].ID {
 				present, admin = true, m.Admin
-			}
-			if m.DeviceID == w.Devices[0].ID {
-				pq = age.IsPostQuantum(m.Recipient)
 			}
 		}
 		switch p.Operation {
@@ -211,8 +204,6 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 			retry = present
 		case "admin":
 			retry = !admin
-		case "upgrade":
-			retry = !pq
 		}
 	case "purge":
 		envs, e := a.ListEnvironments()

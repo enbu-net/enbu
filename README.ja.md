@@ -246,9 +246,7 @@ age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号�
 新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
 TPMはまだML-KEMを実行できないため、P-256はTPM内に置き、ML-KEMのseedはTPMで封印します（macOSではSecure Enclave鍵へ暗号化して保存）。
-全メンバーがハイブリッド鍵のときだけファイルは耐量子になり、古典鍵のメンバーが1人でもいれば古典として暗号化されます。
-切り替え前に作ったメンバーは`enbu identity upgrade`で移行します（フィンガープリントは変わりません）。管理者が`enbu member approve`で新しい鍵を承認し、`enbu member list`で移行済みの人数を確認できます。
-ハイブリッド鍵に対応する前のenbuを使っているメンバーは、先にenbuを更新する必要があります。
+Identityはすべてハイブリッド鍵で、古典鍵だけのIdentityには対応しません。古いenbuで作った端末は新しいIdentityを作り、管理者が承認します。
 
 | OS | ハードウェア | 新規作成時のfallback |
 |----|--------------|---------------------|
@@ -265,10 +263,8 @@ TPMがないLinuxでは、ロックが解除されたSecret Serviceが必要で�
 enbu doctor                   # 認証不要・永続鍵を作らず検査
 enbu identity create          # 現在のリポジトリ用Identityを作成・再利用
 enbu identity show            # backend、algorithm、recipient、deviceを表示
-enbu identity upgrade         # この端末を耐量子ハイブリッド鍵へ移行
 export ENBU_IDENTITY_BACKEND=auto  # 既定。hardware利用不可ならkeyring
 # hardware: ハードウェア必須 / keyring: OS keyringのソフトウェア鍵
-export ENBU_IDENTITY_CLASSICAL=1  # 古いenbuのメンバー向けに従来の鍵（X25519 / P-256）を作る
 ```
 
 
@@ -307,11 +303,11 @@ Linux／Windowsの実TPMでは、`ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=
 
 ### WSL
 
-WSL（1 / 2）の中では、enbu は Linux に鍵を置きません。コマンドごとに Windows の enbu.exe を 1 つ起動し（`enbu.exe identity bridge --stdio`）、鍵の作成、ファイル鍵の復号、署名、GitHub トークンの保管だけを任せます。秘密鍵、TPM、Windows Hello は Windows の中に残るので、WSL でも Windows と同じ保護になり、Windows とすべてのディストリビューションが 1 台の端末として 1 回のサインインで済みます。ストレージ、git、`.env`、`enbu run` は WSL の中で動き、ファイルパスは渡しません。
+WSL（1 / 2）の中では、enbu は Linux に鍵を置きません。コマンドごとに Windows の enbu.exe を 1 つ起動し（`enbu.exe identity bridge --stdio`）、鍵の作成、ファイル鍵の復号、署名、GitHub トークンの保管だけを任せます。秘密鍵と TPM は Windows の中に残るので、WSL でも Windows と同じ保護になり、Windows とすべてのディストリビューションが 1 台の端末として 1 回のサインインで済みます。ストレージ、git、`.env`、`enbu run` は WSL の中で動き、ファイルパスは渡しません。
 
 Windows にも同じ版の enbu を入れてください。enbu は、WSL が Windows から足す PATH 上の `enbu.exe`、または `ENBU_WINDOWS_EXE` を使います。見つからないときや interop が無効なとき（`/etc/wsl.conf` の `[interop] enabled=false`）は、どちらかを示して `identity_unavailable` で止まり、Linux の keyring には落ちません。`enbu auth login` は Windows で動き、ブラウザも Windows で開きます（enbu.exe がなければ同じく `identity_unavailable` で止まります）。そのとき `enbu auth status` は、`GITHUB_TOKEN` がなければ未サインインと表示します。`enbu doctor` は Windows の enbu.exe の場所と版、Windows 側の TPM と keyring の状態を表示します。VS Code 拡張も WSL のウィンドウで同じように使えます。
 
-Windows 側は WSL ではなく Windows の環境変数を読みます。`ENBU_IDENTITY_BACKEND` などを WSL から効かせるには `WSLENV` で渡します。ディストリビューションの中のどの Linux ユーザーも、ほかの Windows のプログラムと同じく、同じ Windows ユーザーとして enbu.exe を起動できます。Windows Hello を有効にしていれば承認が加わります。
+Windows 側は WSL ではなく Windows の環境変数を読みます。`ENBU_IDENTITY_BACKEND` などを WSL から効かせるには `WSLENV` で渡します。ディストリビューションの中のどの Linux ユーザーも、ほかの Windows のプログラムと同じく、同じ Windows ユーザーとして enbu.exe を起動できます。
 
 ## JSON出力
 

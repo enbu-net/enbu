@@ -28,10 +28,10 @@ func openOCIStore(t *testing.T, h *cliHarness) storage.Store {
 	return store
 }
 
-// approveX25519 makes x a member through the production CLI: it is another
+// approveSoftware makes x a member through the production CLI: it is another
 // device, with its own software signing key, that leaves a signed join request
 // in the workspace's storage; h's admin then approves it from the list.
-func approveX25519(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) {
+func approveSoftware(t *testing.T, h *cliHarness, x *agecrypto.HybridIdentity) {
 	t.Helper()
 	ctx := context.Background()
 	store := openOCIStore(t, h)
@@ -57,7 +57,7 @@ func approveX25519(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) {
 // decryptCurrent reads the current secrets state the way a client does, but as
 // the holder of x: it verifies the Control DAG and the signed revisions before
 // decrypting. It fails if x is not a recipient.
-func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.X25519Identity) []byte {
+func decryptCurrent(t *testing.T, h *cliHarness, x *agecrypto.HybridIdentity) []byte {
 	t.Helper()
 	ctx := context.Background()
 	store := openOCIStore(t, h)

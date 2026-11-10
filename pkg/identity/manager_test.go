@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdh"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/mlkem"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/signing"
 )
 
 type memoryVault map[string][]byte
@@ -27,134 +30,252 @@ func (v memoryVault) Load(_, key string) ([]byte, error) {
 	}
 	return bytes.Clone(b), nil
 }
-func (v memoryVault) Delete(_, key string) error { delete(v, key); return nil }
+func (v memoryVault) Delete(_, key string) error  { delete(v, key); return nil }
+func (v memoryVault) Probe(context.Context) error { return nil }
 
+// softwareHardwareKey is a P-256 key in memory standing in for a hardware key.
+type softwareHardwareKey struct {
+	*ecdh.PrivateKey
+	closed bool
+	calls  int
+}
+
+func (k *softwareHardwareKey) ECDH(p *ecdh.PublicKey) ([]byte, error) {
+	k.calls++
+	return k.PrivateKey.ECDH(p)
+}
+func (k *softwareHardwareKey) Close() error { k.closed = true; return nil }
+
+// fakeHardware keeps its keys in memory, indexed by the blob it records in
+// the metadata, like the Secure Enclave backend.
 type fakeHardware struct {
-	available   bool
+	unavailable bool
 	createError error
 	creates     int
 	loads       int
+	ecdh        map[string]*ecdh.PrivateKey
+	sign        map[string]signing.Signer
+}
+
+func newFakeHardware() *fakeHardware {
+	return &fakeHardware{ecdh: map[string]*ecdh.PrivateKey{}, sign: map[string]signing.Signer{}}
 }
 
 func (h *fakeHardware) Probe() Diagnosis {
-	return Diagnosis{Backend: "tpm", Available: h.available, Reason: "no TPM device"}
+	if h.unavailable {
+		return Diagnosis{Backend: "secure-enclave", Reason: "no Secure Enclave"}
+	}
+	return Diagnosis{Backend: "secure-enclave", Available: true}
 }
-func (h *fakeHardware) Create() (Identity, *Metadata, error) {
+
+func (h *fakeHardware) Create(md *Metadata) (HardwareKey, signing.Signer, error) {
 	h.creates++
-	return nil, nil, h.createError
+	if h.createError != nil {
+		return nil, nil, h.createError
+	}
+	k, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	s, err := newP256Signer()
+	if err != nil {
+		return nil, nil, err
+	}
+	blob := make([]byte, 16)
+	_, _ = rand.Read(blob)
+	h.ecdh[string(blob)], h.sign[string(blob)] = k, s
+	md.Backend, md.Device, md.Enclave = "secure-enclave", "fake", &EnclaveKeys{ECDH: blob, Sign: blob}
+	return &softwareHardwareKey{PrivateKey: k}, s, nil
 }
-func (h *fakeHardware) Load(*Metadata) (Identity, error) {
+
+func (h *fakeHardware) Load(md *Metadata) (HardwareKey, signing.Signer, error) {
 	h.loads++
-	return nil, errors.New("broken hardware key")
+	if md.Enclave == nil {
+		return nil, nil, errors.New("no key data")
+	}
+	k, ok := h.ecdh[string(md.Enclave.ECDH)]
+	if !ok {
+		return nil, nil, errors.New("unknown key data")
+	}
+	return &softwareHardwareKey{PrivateKey: k}, h.sign[string(md.Enclave.Sign)], nil
+}
+
+func newP256Signer() (signing.Signer, error) {
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return signing.NewP256Signer(k)
 }
 
 func newManager(t *testing.T) *Manager {
 	t.Helper()
-	return &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: &fakeHardware{}}
+	h := newFakeHardware()
+	h.unavailable = true
+	return &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: h}
 }
 
-func TestManagerFallbackReuseAndMetadata(t *testing.T) {
+func roundTrip(t *testing.T, d *Device, recipient string) {
+	t.Helper()
+	ct, err := age.EncryptForPublicKeys([]byte("secret"), []string{recipient})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := age.Decrypt(ct, d.Identity); err != nil || string(out) != "secret" {
+		t.Fatalf("decrypt: %q %v", out, err)
+	}
+	sig, err := d.Signer.Sign(signing.DomainState, []byte("x"))
+	if err != nil || signing.Verify(d.Signer.Public(), signing.DomainState, []byte("x"), sig) != nil {
+		t.Fatalf("sign: %v", err)
+	}
+}
+
+func TestManagerSoftwareFallbackReuseAndMetadata(t *testing.T) {
 	m := newManager(t)
-	id, info, warning, err := m.Create("owner/repo")
+	d, info, warning, err := m.Create("owner/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = id.Close() }()
-	if info.Backend != "keyring" || !strings.Contains(warning, "no TPM device") {
-		t.Fatalf("%+v %q", info, warning)
+	defer func() { _ = d.Close() }()
+	if !info.Created || info.Backend != "keyring" || info.Algorithm != "MLKEM768-X25519" || !strings.HasPrefix(info.Recipient, "age1pq1") {
+		t.Fatalf("info: %+v", info)
 	}
-	id2, info2, warning, err := m.Create("owner/repo")
+	if !strings.Contains(warning, "no Secure Enclave") || !strings.Contains(warning, "OS keyring") {
+		t.Fatalf("warning: %q", warning)
+	}
+	if info.DeviceID != string(d.Signer.Public().DeviceID()) || info.Fingerprint == "" {
+		t.Fatalf("device id: %+v", info)
+	}
+	roundTrip(t, d, info.Recipient)
+
+	again, info2, warning, err := m.Create("owner/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = id2.Close() }()
-	if info2.Recipient != info.Recipient || info2.Created || !info.Created || warning != "" {
+	defer func() { _ = again.Close() }()
+	if info2.Created || info2.Recipient != info.Recipient || info2.DeviceID != info.DeviceID || warning != "" {
 		t.Fatalf("did not reuse: %+v %q", info2, warning)
 	}
-	md, err := m.read("owner/repo")
-	if err != nil {
-		t.Fatal(err)
+	roundTrip(t, again, info.Recipient)
+	if got, err := m.Info("owner/repo"); err != nil || got.DeviceID != info.DeviceID {
+		t.Fatalf("Info = %+v %v", got, err)
 	}
-	if md.Version != 1 || md.Reference == "" || strings.Contains(string(md.PublicKey), "SECRET") {
-		t.Fatalf("invalid metadata: %+v", md)
-	}
+
 	stat, err := os.Stat(m.Path("owner/repo"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Windows reports synthesized mode bits; access is controlled by ACLs.
-	// Metadata holds only public information, opaque references and TPM blobs.
 	if runtime.GOOS != "windows" && stat.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("metadata permissions: %v", stat.Mode())
 	}
-	ciphertext, err := age.EncryptForPublicKeys([]byte("secret"), []string{info.Recipient})
+	saved, _ := os.ReadFile(m.Path("owner/repo"))
+	for _, secret := range m.Vault.(memoryVault) {
+		if bytes.Contains(saved, secret) || bytes.Contains(saved, []byte("AGE-SECRET")) {
+			t.Fatal("private key stored in metadata")
+		}
+	}
+}
+
+func TestManagerCreatesHybridHardwareDevice(t *testing.T) {
+	h := newFakeHardware()
+	m := &Manager{Dir: t.TempDir(), Vault: memoryVault{}, Hardware: h}
+	d, info, warning, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := age.Decrypt(ciphertext, id2)
-	if err != nil || string(out) != "secret" {
-		t.Fatalf("reload: %q %v", out, err)
+	if info.Backend != "secure-enclave" || info.Algorithm != "MLKEM768-P256" || !strings.HasPrefix(info.Recipient, "age1tagpq1") || warning != "" {
+		t.Fatalf("info: %+v %q", info, warning)
 	}
-	if _, err := m.Info("owner/repo"); err != nil {
+	roundTrip(t, d, info.Recipient)
+	_ = d.Close()
+	if len(m.Vault.(memoryVault)) != 0 {
+		t.Fatal("a hardware device put key material in the keyring")
+	}
+	md, err := m.read("o/r")
+	if err != nil || len(md.SealedSeed) == 0 {
+		t.Fatalf("the ML-KEM seed is not sealed: %+v %v", md, err)
+	}
+	loaded, err := m.Load("o/r")
+	if err != nil {
 		t.Fatal(err)
+	}
+	roundTrip(t, loaded, info.Recipient)
+	_ = loaded.Close()
+
+	md.SealedSeed[len(md.SealedSeed)-1] ^= 1
+	if err := saveJSON(m.Path("o/r"), md); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Load("o/r"); err == nil {
+		t.Fatal("loaded a device with a corrupted sealed seed")
 	}
 }
 
 func TestManagerNeverReplacesSavedOrPartiallyCreatedKey(t *testing.T) {
 	for _, mode := range []string{"auto", "hardware"} {
 		t.Run(mode, func(t *testing.T) {
-			m := newManager(t)
-			m.Mode = mode
-			h := &fakeHardware{available: true, createError: errors.New("creation failed")}
-			m.Hardware = h
+			h := newFakeHardware()
+			h.createError = errors.New("creation failed")
+			m := &Manager{Dir: t.TempDir(), Mode: mode, Vault: memoryVault{}, Hardware: h}
 			if _, _, _, err := m.Create("o/r"); err == nil {
 				t.Fatal("silently fell back after create failure")
 			}
 			if len(m.Vault.(memoryVault)) != 0 {
 				t.Fatal("created fallback key")
 			}
-			md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "tpm", Algorithm: "P-256", Recipient: "saved"}, PublicKey: []byte{1}}
-			if err := saveMetadata(m.Path("o/r"), md); err != nil {
+			md := &Metadata{Backend: "secure-enclave", Algorithm: algHardware, Recipient: "saved", SigningKey: mustSigner(t).Public(), Enclave: &EnclaveKeys{}}
+			if err := saveJSON(m.Path("o/r"), md); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, _, err := m.Create("o/r"); err == nil {
 				t.Fatal("silently replaced broken saved key")
 			}
 			if h.creates != 1 || h.loads != 1 {
-				t.Fatalf("calls: %+v", h)
+				t.Fatalf("calls: creates %d loads %d", h.creates, h.loads)
 			}
 		})
 	}
 }
 
+func mustSigner(t *testing.T) signing.Signer {
+	t.Helper()
+	s, err := newP256Signer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
 func TestManagerDetectsTampering(t *testing.T) {
-	for _, field := range []string{"version", "recipient", "public_key", "reference", "secret", "empty"} {
+	for _, field := range []string{"recipient", "signing_key", "reference", "secret", "algorithm", "empty"} {
 		t.Run(field, func(t *testing.T) {
 			m := newManager(t)
-			id, _, _, err := m.Create("o/r")
+			d, _, _, err := m.Create("o/r")
 			if err != nil {
 				t.Fatal(err)
 			}
-			_ = id.Close()
+			_ = d.Close()
 			md, err := m.read("o/r")
 			if err != nil {
 				t.Fatal(err)
 			}
 			switch field {
-			case "version":
-				md.Version = 2
 			case "recipient":
-				md.Recipient = "age1wrong"
-			case "public_key":
-				md.PublicKey = []byte("wrong")
+				other, _ := agecrypto.GenerateHybridIdentity()
+				md.Recipient = other.Recipient().String()
+			case "signing_key":
+				md.SigningKey = mustSigner(t).Public()
 			case "reference":
 				md.Reference = "missing"
 			case "secret":
 				m.Vault.(memoryVault)[md.Reference] = []byte("corrupt")
+			case "algorithm":
+				md.Algorithm = algHardware
 			case "empty":
-				md.PublicKey = nil
+				md.Recipient = ""
 			}
-			if err := saveMetadata(m.Path("o/r"), md); err != nil {
+			if err := saveJSON(m.Path("o/r"), md); err != nil {
 				t.Fatal(err)
 			}
 			before, _ := os.ReadFile(m.Path("o/r"))
@@ -172,250 +293,101 @@ func TestManagerDetectsTampering(t *testing.T) {
 func TestBackendSelectionAndDoctor(t *testing.T) {
 	m := newManager(t)
 	m.Mode = "hardware"
-	if _, _, _, err := m.Create("o/r"); err == nil {
-		t.Fatal("hardware mode fell back")
+	if _, _, _, err := m.Create("o/r"); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("hardware mode fell back: %v", err)
 	}
 	m.Mode = "unknown"
 	if _, _, _, err := m.Create("o/r"); err == nil {
 		t.Fatal("accepted invalid mode")
 	}
 	m.Mode = "keyring"
-	id, _, warning, err := m.Create("o/r")
+	m.Hardware.(*fakeHardware).unavailable = false
+	d, info, warning, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = id.Close()
-	if warning != "" {
-		t.Fatalf("explicit keyring warning: %s", warning)
+	_ = d.Close()
+	if info.Backend != "keyring" || warning != "" {
+		t.Fatalf("explicit keyring: %+v %q", info, warning)
 	}
 	m.Mode = "hardware"
 	if _, err := m.Load("o/r"); err == nil {
 		t.Fatal("hardware mode loaded keyring identity")
 	}
-	d := m.Doctor(context.Background())
-	if d.Available || !d.FallbackAvailable {
-		t.Fatalf("doctor: %+v", d)
+	diag := m.Doctor(context.Background())
+	if !diag.Available || !diag.FallbackAvailable {
+		t.Fatalf("doctor: %+v", diag)
 	}
 	if m.Hardware.(*fakeHardware).creates != 0 {
 		t.Fatal("doctor created a key")
 	}
 }
 
-type softwareHardwareKey struct {
-	*ecdh.PrivateKey
-	closed bool
-	calls  int
-}
-
-func (k *softwareHardwareKey) ECDH(p *ecdh.PublicKey) ([]byte, error) {
-	k.calls++
-	return k.PrivateKey.ECDH(p)
-}
-func (k *softwareHardwareKey) Close() error { k.closed = true; return nil }
-
-func TestMixedRecipientsAndMalformedStanzas(t *testing.T) {
+func newHybridHardware(t *testing.T) (Identity, *softwareHardwareKey) {
+	t.Helper()
 	k, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := &softwareHardwareKey{PrivateKey: k}
-	id, err := NewHardwareIdentity(h)
+	seed := make([]byte, mlkem.SeedSize)
+	_, _ = rand.Read(seed)
+	id, err := NewHybridHardwareIdentity(h, seed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	x, err := agecrypto.GenerateX25519Identity()
+	return id, h
+}
+
+func TestHybridHardwareIdentityUsesBothKeys(t *testing.T) {
+	id, h := newHybridHardware(t)
+	soft, err := agecrypto.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := age.EncryptForPublicKeys([]byte("mixed"), []string{id.Recipient().String(), x.Recipient().String()})
+	ct, err := age.EncryptForPublicKeys([]byte("hybrid"), []string{id.Recipient().String(), soft.Recipient().String()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, i := range []agecrypto.Identity{id, x} {
-		out, err := age.Decrypt(ct, i)
-		if err != nil || string(out) != "mixed" {
-			t.Fatalf("mixed decryption: %q %v", out, err)
+	if !strings.Contains(string(ct), "-> mlkem768p256tag ") {
+		t.Fatal("no tagged hybrid stanza")
+	}
+	for _, i := range []agecrypto.Identity{id, soft} {
+		if out, err := age.Decrypt(ct, i); err != nil || string(out) != "hybrid" {
+			t.Fatalf("decrypt: %q %v", out, err)
 		}
 	}
-	if _, err := id.Unwrap([]*agecrypto.Stanza{{Type: "p256tag"}}); err == nil {
-		t.Fatal("accepted malformed stanza")
+	if h.calls != 1 {
+		t.Fatalf("hardware ECDH calls = %d, want 1", h.calls)
 	}
-	if _, err := id.Unwrap([]*agecrypto.Stanza{{Type: "X25519"}}); !errors.Is(err, agecrypto.ErrIncorrectIdentity) {
+	// The hardware half alone is not enough.
+	seed := make([]byte, mlkem.SeedSize)
+	_, _ = rand.Read(seed)
+	sameDevice, err := NewHybridHardwareIdentity(h, seed)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := id.Close(); err != nil {
-		t.Fatal(err)
+	if _, err := age.Decrypt(ct, sameDevice); err == nil {
+		t.Fatal("decrypted without the matching ML-KEM key")
 	}
-	if !h.closed {
-		t.Fatal("hardware key leaked")
+	if _, err := id.Unwrap([]*agecrypto.Stanza{{Type: "mlkem768p256tag"}}); err == nil || errors.Is(err, agecrypto.ErrIncorrectIdentity) {
+		t.Fatalf("malformed stanza: %v", err)
+	}
+	if err := id.Close(); err != nil || !h.closed {
+		t.Fatalf("close: %v", err)
 	}
 	if _, err := age.Decrypt(ct, id); err == nil {
-		t.Fatal("used closed hardware key")
+		t.Fatal("used a closed identity")
 	}
 }
 
-func TestMetadataHasNoPrivateKey(t *testing.T) {
-	m := newManager(t)
-	id, _, _, err := m.Create("o/r")
-	if err != nil {
-		t.Fatal(err)
+func TestHybridHardwareIdentityRequiresValidKeys(t *testing.T) {
+	k, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	if _, err := NewHybridHardwareIdentity(&softwareHardwareKey{PrivateKey: k}, make([]byte, mlkem.SeedSize)); err == nil {
+		t.Fatal("accepted a non-P-256 hardware key")
 	}
-	_ = id.Close()
-	b, err := os.ReadFile(m.Path("o/r"))
-	if err != nil {
-		t.Fatal(err)
+	p, _ := ecdh.P256().GenerateKey(rand.Reader)
+	if _, err := NewHybridHardwareIdentity(&softwareHardwareKey{PrivateKey: p}, make([]byte, 10)); err == nil {
+		t.Fatal("accepted a short ML-KEM seed")
 	}
-	var md map[string]any
-	if err := json.Unmarshal(b, &md); err != nil {
-		t.Fatal(err)
-	}
-	for _, secret := range m.Vault.(memoryVault) {
-		if bytes.Contains(b, secret) {
-			t.Fatal("private key stored in metadata")
-		}
-	}
-}
-
-func TestPromotePendingKeepsCurrentWhenSecondRenameFails(t *testing.T) {
-	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: memoryVault{}}
-	current, _, _, err := m.Create("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = current.Close()
-	pending, _, _, err := m.CreatePending("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = pending.Close()
-	before, err := os.ReadFile(m.Path("o/r"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	failure := errors.New("rename failed")
-	next := m.slotPath("o/r", "next")
-	original := renameFile
-	renameFile = func(from, to string) error {
-		if from == next {
-			return failure
-		}
-		return original(from, to)
-	}
-	t.Cleanup(func() { renameFile = original })
-	if err := m.PromotePending("o/r"); !errors.Is(err, failure) {
-		t.Fatalf("PromotePending = %v, want the rename failure", err)
-	}
-	after, err := os.ReadFile(m.Path("o/r"))
-	if err != nil {
-		t.Fatalf("current identity is gone: %v", err)
-	}
-	if !bytes.Equal(before, after) {
-		t.Fatal("current identity changed")
-	}
-	if _, err := os.Stat(next); err != nil {
-		t.Fatalf("pending identity is gone: %v", err)
-	}
-	if _, err := m.Load("o/r"); err != nil {
-		t.Fatalf("Load after the failed promotion: %v", err)
-	}
-}
-
-func TestPromotePendingMovesCurrentToPrevious(t *testing.T) {
-	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: memoryVault{}}
-	current, info, _, err := m.Create("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = current.Close()
-	pending, pendingInfo, _, err := m.CreatePending("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = pending.Close()
-	if err := m.PromotePending("o/r"); err != nil {
-		t.Fatal(err)
-	}
-	got, err := m.Info("o/r")
-	if err != nil || got.Recipient != pendingInfo.Recipient {
-		t.Fatalf("current after promotion = %+v, %v; want %s", got, err, pendingInfo.Recipient)
-	}
-	prev, err := m.readPath(m.slotPath("o/r", "previous"))
-	if err != nil || prev.Recipient != info.Recipient {
-		t.Fatalf("previous = %+v, %v; want %s", prev, err, info.Recipient)
-	}
-}
-
-// A second promotion deletes the oldest identity and its key material.
-func TestPromotePendingDeletesTheOldestIdentity(t *testing.T) {
-	vault := memoryVault{}
-	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
-	first, _, _, err := m.Create("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = first.Close()
-	oldest, err := m.readPath(m.Path("o/r"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		pending, _, _, err := m.CreatePending("o/r")
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = pending.Close()
-		if err := m.PromotePending("o/r"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, ok := vault[oldest.Reference]; ok {
-		t.Fatal("the oldest identity's key is still in the vault")
-	}
-	if _, err := m.loadPath(m.slotPath("o/r", "previous")); err != nil {
-		t.Fatalf("previous identity no longer loads: %v", err)
-	}
-}
-
-// A promotion that stopped after copying the current identity to the previous
-// slot, but before replacing it, finishes when run again, and keeps the key
-// material of the identity that stays current until then.
-func TestPromotePendingFinishesAnInterruptedPromotion(t *testing.T) {
-	vault := memoryVault{}
-	m := &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
-	current, info, _, err := m.Create("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = current.Close()
-	pending, pendingInfo, _, err := m.CreatePending("o/r")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = pending.Close()
-	saved, err := os.ReadFile(m.Path("o/r"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(m.slotPath("o/r", "previous"), saved, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	keys := len(vault)
-	if err := m.PromotePending("o/r"); err != nil {
-		t.Fatal(err)
-	}
-	if len(vault) != keys {
-		t.Fatalf("vault has %d keys, want %d: the identity that was current lost its key", len(vault), keys)
-	}
-	got, err := m.Info("o/r")
-	if err != nil || got.Recipient != pendingInfo.Recipient {
-		t.Fatalf("current = %+v, %v; want %s", got, err, pendingInfo.Recipient)
-	}
-	prev, err := m.loadPath(m.slotPath("o/r", "previous"))
-	if err != nil {
-		t.Fatalf("previous identity no longer loads: %v", err)
-	}
-	if prev.Recipient().String() != info.Recipient {
-		t.Fatalf("previous = %s, want %s", prev.Recipient(), info.Recipient)
-	}
-	_ = prev.Close()
 }

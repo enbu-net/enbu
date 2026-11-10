@@ -2,12 +2,13 @@ package cli
 
 import (
 	"fmt"
-	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/spf13/cobra"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/spf13/cobra"
 )
 
 func newInitCommand(a *app.App) *cobra.Command {

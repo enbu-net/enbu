@@ -38,7 +38,7 @@ func newJoiner(t *testing.T, founder *app.App) *app.App {
 		t.Fatal(err)
 	}
 	return &app.App{Storage: founder.Storage, TokenProvider: &deleteTestTokenProvider{}, RepoDetector: &deleteTestRepoDetector{},
-		Identities: &staticKeyStore{}, RepositoryDir: dir, CheckpointDir: t.TempDir()}
+		Identities: &apptest.Identities{}, RepositoryDir: dir, CheckpointDir: t.TempDir()}
 }
 
 // requestJoin leaves a join request the way `enbu init` does for a new device.

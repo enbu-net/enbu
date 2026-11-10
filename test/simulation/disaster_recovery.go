@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -13,7 +12,6 @@ import (
 	"reflect"
 	"slices"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -176,7 +174,7 @@ func (w *World) restoreRecoveryStore(ctx context.Context, backup []storage.Objec
 // freshness without it. Keep this boundary distinct from a failed recovery.
 func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) error {
 	switch mode {
-	case "witness", "all-stale", "retired-key", "compacted", "compacted-no-record", "compacted-old-data":
+	case "witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data":
 	default:
 		return fmt.Errorf("unknown disaster recovery mode %q", mode)
 	}
@@ -228,14 +226,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 		}
 		w.Model[env] = latest
 	}
-	if mode == "retired-key" {
-		if _, err := w.Devices[1].App.UpgradeIdentity(ctx); err != nil {
-			return err
-		}
-		if err := a.ApproveMember(ctx, w.Devices[1].ID); err != nil {
-			return err
-		}
-	} else if err := a.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
+	if err := a.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
 		return err
 	}
 	for _, env := range []string{"default", "staging"} {
@@ -293,7 +284,7 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 			return err
 		}
 	}
-	if mode != "retired-key" && !compacted {
+	if !compacted {
 		if err := w.restoreRecoveryStore(ctx, oldStore); err != nil {
 			return err
 		}
@@ -353,14 +344,9 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 				if err := requireCode(d.App.AddSecret(ctx, env, "MUST_NOT_WRITE", "recovery-canary"), apperr.CodeRollback); err != nil {
 					return err
 				}
-			} else if mode == "retired-key" && i == 1 {
-				var noMatch *agecrypto.NoIdentityMatchError
-				if !errors.As(err, &noMatch) || got != nil {
-					return fmt.Errorf("retired key recovered a newer encrypted state: %w", err)
-				}
 			} else {
 				want := w.Model[env]
-				if mode != "retired-key" && !compacted {
+				if !compacted {
 					want = oldModels[env]
 				}
 				if err != nil || !reflect.DeepEqual(got, want) {
@@ -374,11 +360,6 @@ func (w *World) DisasterRecovery(ctx context.Context, mode string, cold bool) er
 	}
 	if err := w.restoreRecoveryStore(ctx, currentStore); err != nil {
 		return err
-	}
-	if mode == "retired-key" {
-		if err := w.restoreRecoveryDevice(1, currentDevices[1], cold); err != nil {
-			return err
-		}
 	}
 	for _, env := range []string{"default", "staging"} {
 		if err := w.Check(ctx, env); err != nil {

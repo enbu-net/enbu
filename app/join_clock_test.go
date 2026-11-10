@@ -1,11 +1,12 @@
 package app
 
 import (
+	"testing"
+	"time"
+
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/jonboulle/clockwork"
-	"testing"
-	"time"
 )
 
 func TestJoinRequestHelperUsesInjectedClock(t *testing.T) {
