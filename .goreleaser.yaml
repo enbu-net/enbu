@@ -32,6 +32,26 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    # Reproducible archives: every entry gets the commit time and a fixed
+    # owner, so neither the checkout time nor the build user leaks in.
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+      owner: root
+      group: root
+      mode: 0755
+    files:
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
+          owner: root
+          group: root
+          mode: 0644
+      - src: README*.md
+        info:
+          mtime: "{{ .CommitDate }}"
+          owner: root
+          group: root
+          mode: 0644
 
 # The CLI as native Linux packages. The binary is static, so one package per
 # architecture installs on any distribution of that family.

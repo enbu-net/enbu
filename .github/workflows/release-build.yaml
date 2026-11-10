@@ -14,8 +14,12 @@ on:
 permissions: {}
 
 jobs:
-  cli:
-    name: Build CLI
+  # The CLI archives and packages, the Windows desktop app and the VS Code
+  # extensions are reproducible: `task release/build` gives the same bytes from
+  # the same tag on any machine (docs/reproducible-builds.md). This job builds
+  # the assets that are published; reproduce builds them again elsewhere.
+  reproducible:
+    name: Build reproducible assets
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -27,31 +31,93 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: $/.github/actions/setup-go
+      - parallel:
+          - uses: $/.github/actions/setup-go
 
-      - name: Build CLI artifacts
-        uses: goreleaser/goreleaser-action@v7.3.0
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --skip=publish
+          - uses: $/.github/actions/setup-tools
+
+          - uses: $/.github/actions/setup-frontend
+
+          - uses: $/.github/actions/desktop-deps
+
+      - name: Build reproducible assets
         env:
-          GORELEASER_CURRENT_TAG: ${{ inputs.version }}
+          VERSION: ${{ inputs.version }}
+        run: task release/build VERSION="$VERSION"
 
-      - name: Upload CLI artifacts
+      - name: Upload reproducible assets
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: release-cli
+          name: release-reproducible
           compression-level: 0
           path: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.deb
-            dist/*.rpm
-            dist/*.apk
-            dist/*.pkg.tar.zst
+            dist/enbu_*.tar.gz
+            dist/enbu_*.zip
+            dist/enbu_*.deb
+            dist/enbu_*.rpm
+            dist/enbu_*.apk
+            dist/enbu_*.pkg.tar.zst
+            dist/enbu-desktop_*_windows_*.zip
+            dist/enbu-vscode_*.vsix
           if-no-files-found: error
           retention-days: 1
+
+  # An independent rebuild: another runner, another CPU architecture, another
+  # checkout path, and no Go, tool or dependency cache. Nothing is signed or
+  # published unless every asset it builds matches the uploaded one bit for bit.
+  reproduce:
+    name: Rebuild and compare
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    needs: [reproducible]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.version }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - parallel:
+          - uses: $/.github/actions/setup-go
+            with:
+              cache: "false"
+
+          - uses: $/.github/actions/setup-tools
+            with:
+              cache: "false"
+
+          - uses: $/.github/actions/setup-frontend
+            with:
+              cache: "false"
+
+          - uses: $/.github/actions/desktop-deps
+
+      # A fresh clone in another directory, so nothing of the checkout above
+      # (paths, file times) can make the two builds agree by accident.
+      - name: Rebuild reproducible assets
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git clone --quiet --no-local "$GITHUB_WORKSPACE" "$RUNNER_TEMP/rebuild/enbu"
+          cd "$RUNNER_TEMP/rebuild/enbu"
+          git checkout --quiet "refs/tags/$VERSION"
+          task release/build VERSION="$VERSION"
+          cp dist/reproducible.sha256 "$GITHUB_WORKSPACE/rebuilt.sha256"
+
+      - name: Download the assets to publish
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-reproducible
+          path: published
+
+      - name: Compare
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find published -type f | wc -l)" -eq "$(wc -l < rebuilt.sha256)"
+          (cd published && sha256sum --strict -c ../rebuilt.sha256)
 
   frontend:
     name: Build frontend
@@ -95,12 +161,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2025
-            suffix: windows_amd64
-            package: zip
-          - os: windows-11-arm
-            suffix: windows_arm64
-            package: zip
           - os: macos-15
             suffix: darwin_arm64
             package: dmg
@@ -191,27 +251,6 @@ jobs:
             enbu \
             "release/enbu-desktop_${VERSION}_${DESKTOP_SUFFIX}.dmg"
 
-      - name: Package desktop app
-        if: matrix.package == 'zip'
-        shell: pwsh
-        env:
-          DESKTOP_SUFFIX: ${{ matrix.suffix }}
-          VERSION: ${{ inputs.version }}
-        run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          $binary = Get-ChildItem desktop/wails/build/bin -Filter *.exe | Select-Object -First 1
-          if ($null -eq $binary) {
-            throw "Wails did not produce a Windows executable"
-          }
-          $staging = Join-Path $env:RUNNER_TEMP "enbu-desktop"
-          New-Item -ItemType Directory -Force -Path $staging | Out-Null
-          Copy-Item `
-            -Path $binary.FullName `
-            -Destination (Join-Path $staging "enbu-desktop.exe")
-          Compress-Archive `
-            -Path (Join-Path $staging "enbu-desktop.exe") `
-            -DestinationPath "release/enbu-desktop_${env:VERSION}_${env:DESKTOP_SUFFIX}.zip"
-
       - name: Upload desktop artifact
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -221,87 +260,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  vscode:
-    name: Build VS Code extension
-    runs-on: ubuntu-26.04
-    timeout-minutes: 20
-    needs: [cli]
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: refs/tags/${{ inputs.version }}
-          persist-credentials: false
-
-      - uses: $/.github/actions/setup-tools
-
-      - uses: $/.github/actions/setup-frontend
-
-      - name: Download CLI artifacts
-        uses: actions/download-artifact@v8.0.2
-        with:
-          name: release-cli
-          path: cli-archives
-
-      - name: Build extension
-        run: task vscode/build
-
-      # One VSIX per VS Code target, each carrying the CLI binary built above
-      # for that platform. The Marketplace and `code --install-extension` pick
-      # the VSIX for the user's platform, so enbu installs with the extension.
-      - name: Package extension
-        shell: bash
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          for pair in \
-            linux_amd64:linux-x64 \
-            linux_arm64:linux-arm64 \
-            darwin_amd64:darwin-x64 \
-            darwin_arm64:darwin-arm64 \
-            windows_amd64:win32-x64 \
-            windows_arm64:win32-arm64; do
-            suffix="${pair%%:*}"
-            target="${pair##*:}"
-            bin_dir="$RUNNER_TEMP/enbu-$suffix"
-            mkdir -p "$bin_dir"
-            case "$suffix" in
-              windows_*)
-                unzip -o -j "cli-archives/enbu_${VERSION}_${suffix}.zip" enbu.exe -d "$bin_dir"
-                binary="$bin_dir/enbu.exe"
-                ;;
-              *)
-                tar -xzf "cli-archives/enbu_${VERSION}_${suffix}.tar.gz" -C "$bin_dir" enbu
-                binary="$bin_dir/enbu"
-                ;;
-            esac
-            node vscode/scripts/package.mjs \
-              --enbu "$binary" \
-              --target "$target" \
-              --version "$VERSION" \
-              --out "release/enbu-vscode_${VERSION}_${suffix}.vsix"
-          done
-
-      - name: Upload VS Code extension artifacts
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: release-vscode
-          compression-level: 0
-          path: release/*.vsix
-          if-no-files-found: error
-          retention-days: 1
-
   assets:
     name: Sign and attest assets
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     needs:
-      - cli
+      - reproducible
+      - reproduce
       - desktop
-      - vscode
     permissions:
       contents: read
       id-token: write
