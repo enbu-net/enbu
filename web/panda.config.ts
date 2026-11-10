@@ -144,8 +144,10 @@ export default defineConfig({
             success: { value: { _light: "#16835d", _dark: "#3dd68c" } },
             successMuted: { value: { _light: "#eaf7f1", _dark: "#0f2a1f" } },
             successBorder: { value: { _light: "#b9e4d1", _dark: "#1f5a40" } },
-            danger: { value: { _light: "#e5484d", _dark: "#ec5d5e" } },
+            danger: { value: { _light: "#e5484d", _dark: "#e5484d" } },
             dangerMuted: { value: { _light: "#fff1f2", _dark: "#3b1219" } },
+            // Text on a status.danger background.
+            dangerFg: { value: { _light: "#ffffff", _dark: "#ffffff" } },
           },
           // The enbu.toml editor stays dark in both themes, like Monaco's vs-dark.
           editor: {
