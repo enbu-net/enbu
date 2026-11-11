@@ -514,29 +514,36 @@ func TestCIJobsFollowTheChangesSelection(t *testing.T) {
 	}
 }
 
-// The cancel job holds a write token for Actions: only for this repository's
-// branches, with nothing else writable, and never while another open pull
-// request of the branch still needs the runs.
-func TestCancelClosedIsScopedToThisRepositoryAndItsOwnPullRequest(t *testing.T) {
-	root := readYAML(t, "../../.github/workflows/cancel-closed.yaml")
-	types := field(field(field(root, "on"), "pull_request"), "types")
-	if types == nil || len(types.Content) != 1 || types.Content[0].Value != "closed" {
-		t.Fatal("runs are cancelled on events other than closing")
-	}
-	if p := field(root, "permissions"); p == nil || p.Kind != yaml.MappingNode || len(p.Content) != 0 {
-		t.Fatal("the workflow token must default to no permissions")
-	}
-	job := field(field(root, "jobs"), "cancel")
-	if condition := field(job, "if"); condition == nil || condition.Value != "github.event.pull_request.head.repo.full_name == github.repository" {
-		t.Fatal("a fork's branch name can cancel this repository's runs")
-	}
-	permissions := field(job, "permissions")
-	if permissions == nil || len(permissions.Content) != 4 || field(permissions, "actions").Value != "write" || field(permissions, "pull-requests").Value != "read" {
-		t.Fatal("the cancel job may write more than Actions")
-	}
-	script := field(field(job, "steps").Content[0], "run").Value
-	if !strings.Contains(script, "state=open") || !strings.Contains(script, `"$SELF"`) {
-		t.Fatal("the cancel job may cancel another open pull request's runs or itself")
+// Closing a pull request must cancel its checks without a runner: a cancelling
+// job would wait in the same jammed queue as the runs it cancels. A closed
+// event joins the PR's concurrency group with a run whose jobs all skip.
+func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
+	const notClosed = "github.event.action != 'closed'"
+	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "simulation.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			root := readYAML(t, "../../.github/workflows/"+name)
+			closed := false
+			for _, n := range field(field(field(root, "on"), "pull_request"), "types").Content {
+				closed = closed || n.Value == "closed"
+			}
+			if !closed {
+				t.Fatal("closing a pull request leaves its runs queued")
+			}
+			if cancel := field(field(root, "concurrency"), "cancel-in-progress"); cancel == nil || !strings.Contains(cancel.Value, "true") && !strings.Contains(cancel.Value, "pull_request") {
+				t.Fatal("the closed run cannot cancel the runs of its group")
+			}
+			jobs := field(root, "jobs")
+			for i := 0; i < len(jobs.Content); i += 2 {
+				job := jobs.Content[i+1]
+				condition := field(job, "if")
+				if len(jobNeeds(job)) > 0 && (condition == nil || !strings.HasPrefix(condition.Value, "always()")) {
+					continue // skipped with the jobs it needs
+				}
+				if condition == nil || !strings.Contains(condition.Value, notClosed) {
+					t.Fatalf("%s takes a runner when the pull request closes", jobs.Content[i].Value)
+				}
+			}
+		})
 	}
 }
 

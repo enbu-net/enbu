@@ -30,12 +30,13 @@ func statusJob(t *testing.T, file, name string) *yaml.Node {
 }
 
 // A skipped required check counts as passing, so a status job skipped by
-// !cancelled() would let a cancelled run merge. always() makes it fail instead.
+// !cancelled() would let a cancelled run merge. always() makes it fail instead;
+// it skips only in the run a closed pull request starts to cancel the others.
 func TestStatusJobsFailCancelledWorkflows(t *testing.T) {
 	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status", "tobari.yaml": "status-check"} {
 		t.Run(file, func(t *testing.T) {
 			condition := field(statusJob(t, file, name), "if")
-			if condition == nil || strings.TrimSpace(condition.Value) != "always()" {
+			if condition == nil || strings.TrimSpace(condition.Value) != "always() && github.event.action != 'closed'" {
 				t.Fatal("status job must run, and fail, when its workflow is cancelled")
 			}
 		})
