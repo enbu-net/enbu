@@ -68,10 +68,10 @@ the assets that are published, and the `reproduce` job builds them again from
 a fresh clone in another directory, with no Go, tool or dependency cache. The
 arm64 Linux runner also rebuilds the cross-built assets the amd64 one
 publishes, so those are compared across CPU architectures as well. Nothing is
-signed or published unless every asset matches. CI does the same on every pull
-request that changes a build input (each platform twice, with and without
-caches; `scripts/ci_changes.py` lists the inputs) and every night on main, so a
-change that breaks reproducibility is caught before a release.
+signed or published unless every asset matches. A dry run of the release
+workflow (Run workflow with "Dry run" checked, on any branch) does the same
+builds and comparison without tagging, signing or publishing, so a change that
+breaks reproducibility can be caught before a release.
 
 ## Rebuild a release yourself
 
