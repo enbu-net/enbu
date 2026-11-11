@@ -12,11 +12,13 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 	"uuid"
 
 	"github.com/BurntSushi/toml"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/fsutil"
+	"golang.org/x/text/unicode/norm"
 )
 
 const currentVersion = "v1alpha2"
@@ -117,8 +119,10 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 		env := cfg.Environments[name]
 		output := strings.TrimSpace(env.Output)
 		// Shared configuration must mean the same relative path on every OS.
-		// Backslashes, drive prefixes and NTFS alternate streams are not portable.
-		if output != env.Output || strings.ContainsAny(output, "\\:") {
+		// Backslashes, drive prefixes, NTFS alternate streams, the other
+		// characters Windows refuses in a name, and control characters are not
+		// portable.
+		if output != env.Output || strings.ContainsAny(output, "\\:<>\"|?*") || strings.ContainsFunc(output, unicode.IsControl) {
 			return fmt.Errorf("environment %q output must use a portable relative path", name)
 		}
 		if output == "" {
@@ -131,7 +135,9 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			return fmt.Errorf("environment %q output must stay within the repository", name)
 		}
 		for _, previous := range outputs {
-			if strings.EqualFold(previous, clean) {
+			// macOS and Windows match names regardless of letter case, and macOS
+			// regardless of Unicode normalization.
+			if strings.EqualFold(norm.NFC.String(previous), norm.NFC.String(clean)) {
 				return fmt.Errorf("environment %q output collides with another environment", name)
 			}
 		}

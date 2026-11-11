@@ -24,8 +24,8 @@ func validateRepoPath(
 	gitClient gitprovider.Client,
 	path string,
 ) (*SelectedRepo, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
+	// A folder name may begin or end with a space, so the path is not trimmed.
+	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
 

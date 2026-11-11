@@ -24,7 +24,7 @@ func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, over
 	defer apperr.NormalizeInto(&err)
 	secrets, err := dotenv.Parse(content)
 	if err != nil {
-		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
+		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file (save it as UTF-8)", err, nil)
 	}
 	return a.ImportSecrets(ctx, env, secrets, overwrite)
 }

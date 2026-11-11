@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
@@ -500,8 +500,10 @@ func appendUnique(slice []string, val string) []string {
 	return append(result, val)
 }
 
+// repoPathKey compares two spellings of a repository path. Windows matches
+// names in any letter case, also for a folder that no longer exists.
 func repoPathKey(path string) string {
-	key := filepath.Clean(path)
+	key := fsutil.Canonical(path)
 	if runtime.GOOS == "windows" {
 		key = strings.ToLower(key)
 	}

@@ -14,6 +14,16 @@ describe("resolveBinary", () => {
     );
   });
 
+  it("uses the bundled binary under a Japanese home folder", () => {
+    const extension = join("/Users", "山田 太郎", ".vscode", "extensions", "enbu-net.enbu-1.0.0");
+    expect(resolveBinary("", extension, "darwin", "arm64", all)).toBe(
+      join(extension, "bin", "darwin-arm64", "enbu"),
+    );
+    expect(resolveBinary(" C:\\Users\\山田 太郎\\enbu.exe ", "/ext", "win32", "x64", all)).toBe(
+      "C:\\Users\\山田 太郎\\enbu.exe",
+    );
+  });
+
   it("uses the binary bundled for this platform", () => {
     expect(resolveBinary("", "/ext", "linux", "x64", all)).toBe(
       join("/ext", "bin", "linux-x64", "enbu"),
@@ -43,11 +53,14 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   if (msg.method === "initialize") reply({ protocol_version: protocol ?? 1, app_version: "9.9.9", methods: ["GetAppVersion"], events: [] });
   if (msg.method === "GetAppVersion") reply("9.9.9");
   if (msg.method === "Exit") process.exit(3);
+  if (msg.method === "Echo") reply(msg.params);
 });
 `;
 
 describe.skipIf(process.platform === "win32")("startSidecar", () => {
-  const dir = mkdtempSync(join(tmpdir(), "enbu-vscode-"));
+  // The extension and the workspace often live under a home folder with
+  // Japanese and spaces in its name (/Users/山田 太郎/.vscode/extensions).
+  const dir = mkdtempSync(join(tmpdir(), "enbu vscode 日本語 "));
   const binary = join(dir, "enbu");
   writeFileSync(binary, fake);
   chmodSync(binary, 0o755);
@@ -91,6 +104,23 @@ describe.skipIf(process.platform === "win32")("startSidecar", () => {
       }
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  it("relays Japanese paths unchanged", async () => {
+    const sidecar = await startSidecar({
+      binary,
+      cwd: dir,
+      handlers,
+      log: () => {},
+      onExit: () => {},
+    });
+    try {
+      // Long enough that the reply arrives in more than one chunk.
+      const path = `/Users/山田 太郎/開発 プロジェクト/${"🔑リポジトリ".repeat(20_000)}`;
+      await expect(sidecar.client.request("Echo", [path])).resolves.toEqual([path]);
+    } finally {
+      sidecar.dispose();
     }
   });
 

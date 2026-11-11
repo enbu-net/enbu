@@ -18,8 +18,11 @@ import { useSession } from "../../lib/session";
 import type { RepoInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
+// The backend gives every repository one canonical path (letter case on
+// Windows, Unicode normalization on macOS), so paths compare as they are.
+// Folding case here would merge two repositories on Linux.
 function pathKey(path = "") {
-  return path.replaceAll("\\", "/").toLowerCase();
+  return path;
 }
 
 /**

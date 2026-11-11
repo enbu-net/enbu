@@ -107,3 +107,16 @@ func TestCaseOnlyRenamePreservesEnvironmentLineage(t *testing.T) {
 		t.Fatalf("portable mixed-case configuration was rejected: %v", err)
 	}
 }
+
+// Outputs may use Japanese and spaces: they are the same relative path on
+// every OS.
+func TestParseProjectAcceptsNonASCIIOutputs(t *testing.T) {
+	cfg, err := ParseProject("version = 'v1alpha2'\n[env.prod]\noutput = '設定/本番 環境.env'\n[env.staging]\noutput = 'secrets/ステージング.env'\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := cfg.Environment("prod")
+	if err != nil || env.Output != "設定/本番 環境.env" {
+		t.Fatalf("prod = %+v, %v", env, err)
+	}
+}

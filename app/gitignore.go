@@ -25,7 +25,9 @@ func gitignoreEntries(cfg *config.ProjectConfig) []string {
 			continue
 		}
 		output := strings.TrimSpace(env.Output)
-		if output == "" || filepath.IsAbs(output) {
+		// A leading slash is rooted on Windows too, where filepath.IsAbs
+		// needs a drive letter.
+		if output == "" || strings.HasPrefix(output, "/") || filepath.IsAbs(output) {
 			continue
 		}
 		entries = append(entries, gitignoreLiteral(filepath.ToSlash(output)))
