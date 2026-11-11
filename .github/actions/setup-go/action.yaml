@@ -1,5 +1,5 @@
 name: Setup Go with a workload cache
-description: Keep native, instrumented, and desktop build caches from competing for one immutable key
+description: Restore the Go build and module caches of this workload from main; only main saves them
 inputs:
   cache-scope:
     description: Workload whose compiled packages should be retained
@@ -10,18 +10,51 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Select Go build cache workload
+    - uses: actions/setup-go@v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+
+    # Native, race, instrumented and desktop builds each keep their own cache
+    # (the scope), so one workload's packages never push out another's.
+    - name: Locate the Go caches
+      id: go
+      if: inputs.cache == 'true'
       shell: bash
       env:
         CACHE_SCOPE: ${{ inputs.cache-scope }}
       run: |
-        mkdir -p .tmp
-        printf '%s\n' "$CACHE_SCOPE" > .tmp/go-cache-scope
-    - uses: actions/setup-go@v7.0.0
+        {
+          echo "build=$(go env GOCACHE)"
+          echo "modules=$(go env GOMODCACHE)"
+          echo "prefix=go-$RUNNER_OS-$RUNNER_ARCH-$CACHE_SCOPE-"
+        } >> "$GITHUB_OUTPUT"
+
+    # A key that never changes until go.sum does is saved once and then
+    # restored forever, so every run recompiled everything main changed since.
+    # main's nightly and manual runs save a new entry each time instead, and
+    # every other run restores the newest one without saving: pull requests
+    # all start from last night's main, and their entries do not crowd main's
+    # out of the repository's cache space.
+    - name: Restore and save the Go caches on main
+      if: inputs.cache == 'true' && github.ref == 'refs/heads/main'
+      uses: actions/cache@v6.1.0
       with:
-        go-version-file: go.mod
-        cache: ${{ inputs.cache == 'true' }}
-        cache-dependency-path: |
-          go.sum
-          tools/wails3/go.sum
-          .tmp/go-cache-scope
+        path: |
+          ${{ steps.go.outputs.build }}
+          ${{ steps.go.outputs.modules }}
+        key: ${{ steps.go.outputs.prefix }}${{ hashFiles('go.sum', 'tools/wails3/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          ${{ steps.go.outputs.prefix }}${{ hashFiles('go.sum', 'tools/wails3/go.sum') }}-
+          ${{ steps.go.outputs.prefix }}
+    - name: Restore the Go caches
+      if: inputs.cache == 'true' && github.ref != 'refs/heads/main'
+      uses: actions/cache/restore@v6.1.0
+      with:
+        path: |
+          ${{ steps.go.outputs.build }}
+          ${{ steps.go.outputs.modules }}
+        key: ${{ steps.go.outputs.prefix }}${{ hashFiles('go.sum', 'tools/wails3/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          ${{ steps.go.outputs.prefix }}${{ hashFiles('go.sum', 'tools/wails3/go.sum') }}-
+          ${{ steps.go.outputs.prefix }}
