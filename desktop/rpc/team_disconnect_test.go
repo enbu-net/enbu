@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
@@ -154,7 +155,7 @@ func TestTeamPublicationSurvivesRPCDisconnect(t *testing.T) {
 						if err != nil || len(members) != 2 {
 							t.Fatalf("committed removal was lost: %+v err=%v", members, err)
 						}
-						if _, err := world.Devices[1].App.InitializeRepository(ctx); err != nil {
+						if _, err := world.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 							t.Fatal(err)
 						}
 						if err := a.ApproveMember(ctx, world.Devices[1].ID); err != nil {

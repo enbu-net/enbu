@@ -36,7 +36,7 @@ func TestInitReportsAnUnusableIdentityBackend(t *testing.T) {
 			a := &App{Storage: newMemRegistry(), TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 				RepoDetector: &staticRepoDetector{owner: "o", repo: "r"}, Identities: store, CheckpointDir: t.TempDir()}
 			prepareApp(t, a, "default")
-			_, err := a.InitializeRepository(bg)
+			_, err := a.InitializeRepository(bg, InitOptions{})
 			if !apperr.Is(err, apperr.CodeIdentityUnavailable) {
 				t.Fatalf("code = %v, want identity_unavailable", err)
 			}
@@ -124,7 +124,7 @@ func TestLoadingAnUnreachableIdentityReportsWhy(t *testing.T) {
 			a := &App{Storage: newMemRegistry(), TokenProvider: &staticTokenProvider{token: "tok", username: "alice"},
 				RepoDetector: &staticRepoDetector{owner: "o", repo: "r"}, Identities: keys, CheckpointDir: t.TempDir()}
 			prepareApp(t, a, "default")
-			if _, err := a.InitializeRepository(bg); err != nil {
+			if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 				t.Fatal(err)
 			}
 			a.Identities = &lostBackend{memKeyStore: keys, signer: tc.signer}

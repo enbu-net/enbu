@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -193,7 +194,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 		if _, err := w.Devices[1].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
 			return fmt.Errorf("removed attacker regained access: %v", err)
 		}
-		if _, err := w.Devices[1].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {

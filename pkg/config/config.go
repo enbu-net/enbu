@@ -22,11 +22,11 @@ import (
 const currentVersion = "v1alpha2"
 
 type StorageConfig struct {
-	URL       string `toml:"url"`
-	Region    string `toml:"region,omitempty"`
-	Endpoint  string `toml:"endpoint,omitempty"`
-	PathStyle bool   `toml:"path_style,omitempty"`
-	PlainHTTP bool   `toml:"plain_http,omitempty"`
+	URL       string `toml:"url" json:"url"`
+	Region    string `toml:"region,omitempty" json:"region"`
+	Endpoint  string `toml:"endpoint,omitempty" json:"endpoint"`
+	PathStyle bool   `toml:"path_style,omitempty" json:"path_style"`
+	PlainHTTP bool   `toml:"plain_http,omitempty" json:"plain_http"`
 }
 
 type ProjectConfig struct {

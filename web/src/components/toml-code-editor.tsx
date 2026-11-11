@@ -128,12 +128,12 @@ export function TomlCodeEditor({
           enbu.toml
         </Text>
         <Flex align="center" gap="2">
-          <Box aria-hidden="true" w="6px" h="6px" borderRadius="full" bg={errorCount ? "status.danger" : "status.success"} />
+          <Box aria-hidden="true" w="6px" h="6px" borderRadius="full" bg={errorCount ? "editor.danger" : "status.success"} />
           <Text
             role="status"
             aria-live="polite"
             aria-atomic="true"
-            color={errorCount ? "status.danger" : "editor.accent"}
+            color={errorCount ? "editor.danger" : "editor.accent"}
             fontFamily="mono"
             fontSize="2xs"
           >
@@ -159,7 +159,7 @@ export function TomlCodeEditor({
         borderColor="editor.border"
         bg="editor.surface"
       >
-        <Text color={errorCount ? "status.danger" : "editor.muted"} fontSize="2xs">
+        <Text color={errorCount ? "editor.danger" : "editor.muted"} fontSize="2xs">
           {errorCount
             ? "Fix diagnostics before saving"
             : "Ctrl/Cmd + S save · Ctrl/Cmd +/− zoom · Ctrl/Cmd 0 reset"}

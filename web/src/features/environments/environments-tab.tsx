@@ -8,7 +8,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Environment } from "../../lib/types";
+import type { EnvInfo } from "../../lib/types";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal } from "../secrets/environment-selector";
 import { m } from "../../paraglide/messages";
@@ -18,9 +18,9 @@ import { m } from "../../paraglide/messages";
  * `enbu switch --move`, `--delete [--purge]` and `--purge-incarnation` do.
  */
 export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
-  const [renaming, setRenaming] = useState<Environment | null>(null);
+  const [renaming, setRenaming] = useState<EnvInfo | null>(null);
   const [newName, setNewName] = useState("");
-  const [deleting, setDeleting] = useState<Environment | null>(null);
+  const [deleting, setDeleting] = useState<EnvInfo | null>(null);
   const [purge, setPurge] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
@@ -46,7 +46,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
 
   function purgeIncarnation(incarnation: string) {
     return run(async () => {
-      setPurged(await backend.purgeIncarnation(incarnation));
+      setPurged(await backend.PurgeIncarnation(incarnation));
       setKept(null);
     });
   }
@@ -145,7 +145,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
           const to = newName.trim();
           await run(async () => {
             if (to !== from) {
-              await backend.renameEnvironment(from, to);
+              await backend.RenameEnvironment(from, to);
               await workspace.refresh();
             }
           });
@@ -164,7 +164,7 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
         onConfirm={async () => {
           const name = deleting?.name ?? "";
           await run(async () => {
-            const result = await backend.deleteEnvironment(name, purge);
+            const result = await backend.DeleteEnvironment(name, purge);
             setKept(result.incarnation ? { name, incarnation: result.incarnation } : null);
             setPurged(purge ? result.purged : null);
             await workspace.refresh();

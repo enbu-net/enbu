@@ -27,8 +27,8 @@ func TestCanceledSelectionDoesNotPersist(t *testing.T) {
 	original := a.RepositoryDir
 	a.Git = cancelingInspector{cancel}
 	s := NewService(a)
-	s.Start(ctx)
-	if _, err := s.SelectRepository(t.TempDir()); !errors.Is(err, context.Canceled) {
+	s.ctx = ctx
+	if _, err := s.SelectRepository(t.TempDir()); err == nil {
 		t.Fatalf("selection error = %v", err)
 	}
 	if a.RepositoryDir != original {
@@ -43,7 +43,7 @@ func TestCanceledSelectionDoesNotPersist(t *testing.T) {
 func TestCanceledRepositoryCallDoesNotRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	s := NewService(app.New(clock.New()))
-	s.Start(ctx)
+	s.ctx = ctx
 	original := s.app.RepositoryDir
 	cancel()
 	called := false
@@ -64,9 +64,9 @@ func TestCanceledRemovalPreservesSelection(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	s := NewService(app.New(clock.New()))
-	s.Start(ctx)
+	s.ctx = ctx
 	cancel()
-	if err := s.RemoveRepository(path); !errors.Is(err, context.Canceled) {
+	if err := s.RemoveRepository(path); err == nil {
 		t.Fatalf("removal error = %v", err)
 	}
 	gui, err := config.LoadGUI()

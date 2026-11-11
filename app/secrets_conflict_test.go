@@ -150,10 +150,14 @@ func TestConcurrentEditsOfOneKeyStopForAPersonToChoose(t *testing.T) {
 	}
 
 	// Settling every conflict publishes a merge revision.
-	if err := bob.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{}); !apperr.Is(err, apperr.CodeSecretConflict) {
+	if err := bob.ResolveSecrets(bg, "default", set.Heads, []SecretChoice{}); !apperr.Is(err, apperr.CodeSecretConflict) {
 		t.Fatalf("resolving nothing: %v", err)
 	}
-	if err := bob.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
+	twice := []SecretChoice{{Key: "KEY", Value: "a"}, {Key: "KEY", Delete: true}}
+	if err := bob.ResolveSecrets(bg, "default", set.Heads, twice); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("a key decided twice: %v", err)
+	}
+	if err := bob.ResolveSecrets(bg, "default", set.Heads, []SecretChoice{{Key: "KEY", Value: "alice's"}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, who := range []*App{alice, bob} {
@@ -184,7 +188,7 @@ func TestResolveCanDeleteAndLateWritesStillConflict(t *testing.T) {
 	if !deleted {
 		t.Fatal("the deletion is not offered as a candidate")
 	}
-	if err := alice.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Delete: true}}); err != nil {
+	if err := alice.ResolveSecrets(bg, "default", set.Heads, []SecretChoice{{Key: "KEY", Delete: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := listOK(t, bob); len(got) != 0 {
@@ -287,7 +291,7 @@ func TestResolveRefusesWhenAValueAppearedAfterTheListing(t *testing.T) {
 	baseRev := read.heads[0].Parents
 	publishRevision(t, alice.Storage, bob, s.workspace, s.resource("default"), s.head.Digest, third, baseRev...)
 
-	err = alice.ResolveSecrets(bg, "default", set.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}})
+	err = alice.ResolveSecrets(bg, "default", set.Heads, []SecretChoice{{Key: "KEY", Value: "alice's"}})
 	if !apperr.Is(err, apperr.CodeConflict) {
 		t.Fatalf("resolving against a stale listing: %v", err)
 	}
@@ -295,7 +299,7 @@ func TestResolveRefusesWhenAValueAppearedAfterTheListing(t *testing.T) {
 	if err != nil || fresh.ID == set.ID || len(fresh.Conflicts[0].Candidates) != 3 {
 		t.Fatalf("the new value is not offered: %+v %v", fresh, err)
 	}
-	if err := alice.ResolveSecrets(bg, "default", fresh.Heads, map[string]SecretChoice{"KEY": {Value: "alice's"}}); err != nil {
+	if err := alice.ResolveSecrets(bg, "default", fresh.Heads, []SecretChoice{{Key: "KEY", Value: "alice's"}}); err != nil {
 		t.Fatalf("resolving the listing that was shown: %v", err)
 	}
 }

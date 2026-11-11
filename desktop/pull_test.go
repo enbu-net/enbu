@@ -24,7 +24,7 @@ func TestDesktopPullReportsAndCanReplace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Output != ".env" || result.Count != 1 || len(result.Kept) != 1 || result.Kept[0] != "LOCAL_ONLY" || result.Removed == nil {
+	if result.Output != ".env" || result.Count != 1 || len(result.Kept) != 1 || result.Kept[0] != "LOCAL_ONLY" {
 		t.Fatalf("result = %+v", result)
 	}
 

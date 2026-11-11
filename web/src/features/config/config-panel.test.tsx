@@ -34,7 +34,7 @@ async function renderPanel() {
 
 describe("ConfigPanel", () => {
   it("keeps where an environment is stored when its output file changes", async () => {
-    mocked.readConfig.mockResolvedValueOnce(config);
+    mocked.ReadConfig.mockResolvedValueOnce(config);
     await renderPanel();
 
     const output = container.querySelector<HTMLInputElement>("#config-output-dev");
@@ -44,7 +44,7 @@ describe("ConfigPanel", () => {
     await act(async () => queryButton("Save")?.click());
     await settle();
 
-    const saved = parseToml(String(mocked.writeConfig.mock.lastCall?.[0])) as {
+    const saved = parseToml(String(mocked.WriteConfig.mock.lastCall?.[0])) as {
       env: Record<string, { output: string; incarnation?: string }>;
     };
     expect(saved.env.dev).toEqual({
@@ -55,8 +55,8 @@ describe("ConfigPanel", () => {
   });
 
   it("shows a refused save as a display error", async () => {
-    mocked.readConfig.mockResolvedValueOnce(config);
-    mocked.writeConfig.mockRejectedValueOnce(new Error("config_protected raw"));
+    mocked.ReadConfig.mockResolvedValueOnce(config);
+    mocked.WriteConfig.mockRejectedValueOnce(new Error("config_protected raw"));
     await renderPanel();
 
     typeInto(container.querySelector<HTMLInputElement>("#config-output-dev"), ".env.x");

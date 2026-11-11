@@ -108,7 +108,7 @@ func Register(user string) Step {
 func Join(user string) Step {
 	return StepFunc(fmt.Sprintf("%s requests to join", user), func(t *testing.T, s *ScenarioState) {
 		u := s.user(t, user)
-		res, err := u.svc.InitializeRepository(s.ctx)
+		res, err := u.svc.InitializeRepository(s.ctx, enbuapp.InitOptions{})
 		if err != nil {
 			t.Fatalf("%s init: %v", user, err)
 		}
@@ -126,7 +126,7 @@ func Approve(admin, user string) Step {
 		if err := s.user(t, admin).svc.ApproveMember(s.ctx, u.deviceID); err != nil {
 			t.Fatalf("%s approves %s: %v", admin, user, err)
 		}
-		if _, err := u.svc.InitializeRepository(s.ctx); err != nil {
+		if _, err := u.svc.InitializeRepository(s.ctx, enbuapp.InitOptions{}); err != nil {
 			t.Fatalf("%s init after approval: %v", user, err)
 		}
 	})
@@ -143,7 +143,7 @@ func Remove(admin, user string) Step {
 
 func (s *ScenarioState) register(t *testing.T, u *testUser) {
 	t.Helper()
-	res, err := u.svc.InitializeRepository(s.ctx)
+	res, err := u.svc.InitializeRepository(s.ctx, enbuapp.InitOptions{})
 	if err != nil {
 		t.Fatalf("%s init: %v", u.name, err)
 	}
@@ -161,7 +161,7 @@ func (s *ScenarioState) register(t *testing.T, u *testUser) {
 	if err := s.founder.svc.ApproveMember(s.ctx, res.DeviceID); err != nil {
 		t.Fatalf("%s approves %s: %v", s.founder.name, u.name, err)
 	}
-	if res, err = u.svc.InitializeRepository(s.ctx); err != nil || res.Pending {
+	if res, err = u.svc.InitializeRepository(s.ctx, enbuapp.InitOptions{}); err != nil || res.Pending {
 		t.Fatalf("%s init after approval: pending=%v err=%v", u.name, res != nil && res.Pending, err)
 	}
 }

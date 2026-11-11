@@ -43,8 +43,8 @@ async function renderDashboard(info = repo()) {
 
 describe("Dashboard", () => {
   beforeEach(() => {
-    mocked.listEnvironments.mockResolvedValue([{ name: "default", current: true }]);
-    mocked.listSecrets.mockResolvedValue({
+    mocked.ListEnvironments.mockResolvedValue([{ name: "default", current: true }]);
+    mocked.ListSecrets.mockResolvedValue({
       environment: "default",
       secrets: [{ key: "KEY", value: "value" }],
     });
@@ -72,34 +72,35 @@ describe("Dashboard", () => {
       key?.form?.requestSubmit();
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(mocked.addSecret).toHaveBeenCalledWith("NEW", "v", "default");
+    expect(mocked.AddSecret).toHaveBeenCalledWith("default", "NEW", "v");
     expect(key?.value).toBe("");
   });
 
   it("shows a workspace that cannot load as a display error", async () => {
-    mocked.listEnvironments.mockRejectedValueOnce(new Error("token=secret"));
+    mocked.ListEnvironments.mockRejectedValueOnce(new Error("token=secret"));
     await renderDashboard();
     expect(container.textContent).toContain("An unexpected error occurred");
     expect(container.textContent).not.toContain("token=secret");
   });
 
   it("trims duplicate keys before validation and does not call the backend", async () => {
-    mocked.addSecret.mockClear();
+    mocked.AddSecret.mockClear();
     await renderDashboard();
 
     typeInto(container.querySelector<HTMLInputElement>('input[aria-label="Key"]'), " KEY ");
     act(() => queryButton("Add")?.click());
 
-    expect(mocked.addSecret).not.toHaveBeenCalled();
+    expect(mocked.AddSecret).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Secret "KEY" already exists.');
   });
 
   it("asks for a value when concurrent edits conflict, then shows the resolved secrets", async () => {
-    mocked.listSecrets.mockRejectedValueOnce(
+    mocked.ListSecrets.mockRejectedValueOnce(
       new AppError({ code: "secret_conflict", params: { keys: "KEY" } }),
     );
     const set = {
       environment: "default",
+      id: "c1",
       heads: ["h1", "h2"],
       conflicts: [
         {
@@ -111,8 +112,8 @@ describe("Dashboard", () => {
         },
       ],
     };
-    mocked.listConflicts.mockResolvedValueOnce(set);
-    mocked.resolveConflicts.mockResolvedValueOnce(undefined);
+    mocked.ListConflicts.mockResolvedValueOnce(set);
+    mocked.ResolveConflicts.mockResolvedValueOnce(undefined);
     await renderDashboard();
 
     expect(container.textContent).toContain("Choose a value");
@@ -124,7 +125,7 @@ describe("Dashboard", () => {
       for (let i = 0; i < 6; i++) await Promise.resolve();
     });
 
-    expect(mocked.resolveConflicts).toHaveBeenCalledWith(
+    expect(mocked.ResolveConflicts).toHaveBeenCalledWith(
       "default",
       ["h1", "h2"],
       [{ key: "KEY", value: "bob", delete: false }],
@@ -134,10 +135,10 @@ describe("Dashboard", () => {
   });
 
   it("asks before overwriting an output file it cannot read, then reports what it kept", async () => {
-    mocked.pullSecrets.mockReset();
-    mocked.pullSecrets
-      .mockRejectedValueOnce(new AppError({ code: "output_unreadable", params: { file: ".env" } }))
-      .mockResolvedValueOnce({ output: ".env", count: 1, kept: ["LOCAL"], removed: [] });
+    mocked.PullSecrets.mockReset();
+    mocked.PullSecrets.mockRejectedValueOnce(
+      new AppError({ code: "output_unreadable", params: { file: ".env" } }),
+    ).mockResolvedValueOnce({ output: ".env", count: 1, kept: ["LOCAL"], removed: [] });
     await renderDashboard();
     vi.useFakeTimers();
 
@@ -145,14 +146,14 @@ describe("Dashboard", () => {
       queryButton("Pull")?.click();
       await vi.advanceTimersByTimeAsync(3000);
     });
-    expect(mocked.pullSecrets).toHaveBeenLastCalledWith("default", false);
+    expect(mocked.PullSecrets).toHaveBeenLastCalledWith("default", false);
     expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Overwrite .env?");
 
     await act(async () => {
       queryButton("Overwrite: Overwrite .env?")?.click();
       await vi.advanceTimersByTimeAsync(3000);
     });
-    expect(mocked.pullSecrets).toHaveBeenLastCalledWith("default", true);
+    expect(mocked.PullSecrets).toHaveBeenLastCalledWith("default", true);
     expect(container.querySelector('[role="dialog"]')).toBeNull();
     expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
   });
@@ -162,12 +163,12 @@ describe("Dashboard", () => {
     const row = container.querySelector('input[aria-label="Value: KEY"]');
     expect(row).not.toBeNull();
 
-    mocked.pullSecrets.mockResolvedValueOnce({ output: ".env", count: 1, kept: [], removed: [] });
-    mocked.listEnvironments.mockClear();
-    mocked.listEnvironments.mockImplementationOnce(() => new Promise(() => {}));
+    mocked.PullSecrets.mockResolvedValueOnce({ output: ".env", count: 1, kept: [], removed: [] });
+    mocked.ListEnvironments.mockClear();
+    mocked.ListEnvironments.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => queryButton("Pull")?.click());
     await settle();
-    expect(mocked.listEnvironments).toHaveBeenCalledTimes(1);
+    expect(mocked.ListEnvironments).toHaveBeenCalledTimes(1);
 
     expect(container.querySelector('input[aria-label="Value: KEY"]')).toBe(row);
   });

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
@@ -47,7 +48,7 @@ func (w *World) GeneratedTeamGroup(ctx context.Context, key, value string) error
 		}
 	}
 	w.Restart(target)
-	if _, err := w.Devices[target].App.InitializeRepository(ctx); err != nil {
+	if _, err := w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[target].ID); err != nil {
