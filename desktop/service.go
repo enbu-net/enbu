@@ -48,7 +48,7 @@ type Service struct {
 	authMu     sync.Mutex
 	repoPath   string
 	sessions   map[string]*oauthSession
-	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
+	authLogin  func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error)
 	accounts   accountStore
 	emit       EventEmitter
 	updater    AppUpdater
@@ -74,8 +74,8 @@ func NewService(a *app.App) *Service {
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock
 	}
-	s.authLogin = func(ctx context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
-		return (auth.Client{Clock: s.clock}).Login(ctx, open)
+	s.authLogin = func(ctx context.Context, prompt auth.DevicePrompter) (*auth.StoredToken, error) {
+		return (auth.Client{Clock: s.clock}).Login(ctx, prompt)
 	}
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()

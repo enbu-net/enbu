@@ -309,12 +309,7 @@ func setActive(userID int64) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return fmt.Errorf("choosing the GitHub account: %w", err)
-	}
-	if err := fsutil.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := fsutil.WriteFileAtomic(path, data, 0o600); err != nil {
 		return fmt.Errorf("choosing the GitHub account: %w", err)
 	}
 	return nil

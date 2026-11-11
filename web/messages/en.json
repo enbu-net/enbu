@@ -184,7 +184,7 @@
   "auth_checkFailed": "Auth status unavailable",
   "auth_logout": "Log out",
   "auth_authorizeTitle": "GitHub Login",
-  "auth_browserInstruction": "Complete authorization in the GitHub page opened in your browser.",
+  "auth_deviceInstruction": "Enter this code at {url}",
   "common_skipToContent": "Skip to main content",
   "common_loading": "Loading...",
   "common_error": "Error",

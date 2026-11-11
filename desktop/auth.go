@@ -26,9 +26,13 @@ type AuthStatus struct {
 	Repo     *RepoInfo `json:"repo,omitempty"`
 }
 
+// OAuthStart is a GitHub Device Flow sign-in waiting for the user to enter
+// UserCode at VerificationURI.
 type OAuthStart struct {
-	SessionID string    `json:"session_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SessionID       string    `json:"session_id"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	UserCode        string    `json:"user_code"`
+	VerificationURI string    `json:"verification_uri"`
 }
 
 type OAuthStatus struct {
@@ -73,7 +77,7 @@ func (s *Service) StartOAuthLogin() (_ OAuthStart, err error) {
 	}
 	expiresAt := s.clock.Now().Add(10 * time.Minute)
 	loginCtx, cancel := clock.WithDeadline(s.context(), s.clock, expiresAt)
-	opened := make(chan struct{}, 1)
+	prompted := make(chan auth.DeviceAuthorization, 1)
 	finished := make(chan struct{})
 	s.authMu.Lock()
 	for _, session := range s.sessions {
@@ -91,14 +95,14 @@ func (s *Service) StartOAuthLogin() (_ OAuthStart, err error) {
 	go func() {
 		defer close(finished)
 		defer cancel()
-		token, err := s.authLogin(loginCtx, func(authorizeURL string) error {
-			if s.openURL == nil {
-				return errors.New("browser opener is unavailable")
+		token, err := s.authLogin(loginCtx, func(device auth.DeviceAuthorization) error {
+			// The code is shown in the app; opening the page is a convenience.
+			if s.openURL != nil {
+				if err := s.openURL(device.VerificationURI); err != nil {
+					slog.Warn("could not open the GitHub device page", "err", err)
+				}
 			}
-			if err := s.openURL(authorizeURL); err != nil {
-				return err
-			}
-			opened <- struct{}{}
+			prompted <- device
 			return nil
 		})
 		if err != nil {
@@ -118,8 +122,8 @@ func (s *Service) StartOAuthLogin() (_ OAuthStart, err error) {
 	}()
 
 	select {
-	case <-opened:
-		return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt}, nil
+	case device := <-prompted:
+		return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt, UserCode: device.UserCode, VerificationURI: device.VerificationURI}, nil
 	case <-finished:
 		status := s.GetOAuthLoginStatus(sessionID)
 		if status.State == "success" {

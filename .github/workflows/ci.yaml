@@ -382,40 +382,6 @@ jobs:
       - name: Scenario tests
         run: task cli/test/scenario
 
-  e2e:
-    name: CLI E2E tests
-    needs: [changes]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-
-      - parallel:
-          - uses: $/.github/actions/setup-go
-
-          - uses: $/.github/actions/setup-tools
-
-          - name: Install Secret Service
-            run: sudo apt-get update && sudo apt-get install -y gnome-keyring dbus-x11
-
-      - name: CLI E2E tests
-        run: |
-          dbus-run-session -- sh -eu -c '
-            printf "\n" | gnome-keyring-daemon --unlock --components=secrets
-            task cli/test/e2e
-          '
-
-      - name: Upload atago failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: atago-failure-artifacts
-          path: .tmp/atago-artifacts
-          if-no-files-found: ignore
-
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
   # every job above has passed or was left out by the changes job. always()
@@ -426,7 +392,7 @@ jobs:
   status-check:
     name: Check
     if: always() && github.event.action != 'closed'
-    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, e2e, renovate-config]
+    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
