@@ -4,11 +4,8 @@ import { Spinner, Text } from "../components/ui";
 import { PageCenter } from "../components/layout";
 import { SignIn } from "../features/auth/sign-in";
 import { Dashboard } from "../features/dashboard/dashboard";
-import {
-  RepositorySelect,
-  RepositorySetup,
-  setupStep,
-} from "../features/repository/repository-setup";
+import { RepositorySetup, setupStep } from "../features/repository/repository-setup";
+import { Welcome } from "../features/repository/welcome";
 import { useSession } from "../lib/session";
 import { m } from "../paraglide/messages";
 
@@ -17,8 +14,9 @@ export const Route = createFileRoute("/")({
 });
 
 /**
- * Leads the person through each step enbu needs, in order: sign in, choose a
- * repository, set it up, then work in the dashboard.
+ * Leads the person through each step enbu needs, in order: choose a
+ * repository on the welcome screen, sign in when its storage is on GHCR, set
+ * it up, then work in the dashboard.
  */
 export function HomePage() {
   const { status, loading, repo } = useSession();
@@ -33,9 +31,9 @@ export function HomePage() {
       </PageCenter>
     );
   }
+  if (!repo.path) return <Welcome />;
   // A workspace stored outside GHCR needs no GitHub sign-in.
   if (!status?.authenticated && !status?.workspace_configured) return <SignIn />;
-  if (!repo.path) return <RepositorySelect />;
   const step = setupStep(repo);
   if (step) return <RepositorySetup key={step} step={step} />;
   return <Dashboard key={repo.path} repo={repo} />;

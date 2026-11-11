@@ -2,22 +2,26 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
 import { createAppError } from "../../lib/app-error";
-import { noRepo, type InitResult, type RepoInfo, type StorageConfig } from "../../lib/types";
+import { type InitResult, type RepoInfo, type StorageConfig } from "../../lib/types";
 import {
   container,
-  labelledInput,
   queryButton,
   root,
   settle,
   setupDom,
-  submitForm,
   typeInto,
   withSession,
 } from "../../test/dom";
-import { RepositorySelect, RepositorySetup, setupStep } from "./repository-setup";
+import { openURL } from "../../lib/platform";
+import { setLocale } from "../../paraglide/runtime";
+import { RepositorySetup, setupStep } from "./repository-setup";
 
 vi.mock("../../lib/backend", async () => ({
   backend: (await import("../../test/backend-mock")).createBackendMock(),
+}));
+vi.mock("../../lib/platform", () => ({
+  openURL: vi.fn(),
+  onProgress: () => () => {},
 }));
 
 setupDom();
@@ -49,66 +53,35 @@ describe("setupStep", () => {
   });
 });
 
-describe("RepositorySelect", () => {
-  function renderSelect(setRepo = vi.fn()) {
-    act(() => {
-      root.render(<>{withSession(<RepositorySelect />, { setRepo })}</>);
-    });
-    return setRepo;
-  }
-
-  it("labels the path input and titles the screen with h1", () => {
-    renderSelect();
-    expect(labelledInput("Repository folder")?.placeholder).toBe("C:\\Users\\you\\src\\your-repo");
-    expect(container.querySelector("h1")?.textContent).toContain("Select repository");
-  });
-
-  it("selects the typed path on Enter and continues only with a path", async () => {
-    const selected = repoInfo();
-    mocked.SelectRepository.mockResolvedValueOnce(selected);
-    const setRepo = renderSelect();
-    expect(queryButton("Continue")?.disabled).toBe(true);
-
-    const input = container.querySelector<HTMLInputElement>("input");
-    typeInto(input, " /home/octo/app ");
-    expect(queryButton("Continue")?.disabled).toBe(false);
-    await act(async () => {
-      submitForm(input);
-    });
-    await settle();
-
-    expect(mocked.SelectRepository).toHaveBeenCalledWith("/home/octo/app");
-    expect(setRepo).toHaveBeenCalledWith(selected);
-  });
-
-  it("keeps the screen when the folder picker is cancelled", async () => {
-    mocked.BrowseRepository.mockResolvedValueOnce(noRepo);
-    const setRepo = renderSelect();
-    await act(async () => queryButton("Browse")?.click());
-    await settle();
-    expect(setRepo).not.toHaveBeenCalled();
-  });
-
-  it("shows a failed selection as a display error", async () => {
-    mocked.SelectRepository.mockRejectedValueOnce(new Error("EACCES /secret/path"));
-    renderSelect();
-    typeInto(container.querySelector<HTMLInputElement>("input"), "/x");
-    await act(async () => queryButton("Continue")?.click());
-    await settle();
-    expect(container.textContent).toContain("An unexpected error occurred");
-    expect(container.textContent).not.toContain("EACCES");
-  });
-});
-
 describe("RepositorySetup", () => {
-  it("shows the command for a folder without Git and checks again", async () => {
+  it("guides a folder without Git to GitHub Desktop or VS Code and checks again", async () => {
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="git" />, { reloadRepo })));
-    expect(container.querySelector("pre")?.textContent).toBe("git init");
+    expect(container.querySelector("h1")?.textContent).toBe("This folder is not on GitHub yet");
+    expect(container.textContent).toContain("create a repository");
+    expect(container.textContent).toContain("Publish to GitHub");
+    expect(container.textContent).toContain(".gitignore");
+    // The commands stay for terminal users, folded away.
+    expect(container.querySelector("details:not([open]) pre")?.textContent).toBe(
+      "git init\ngit remote add origin https://github.com/OWNER/REPO.git",
+    );
+    act(() => queryButton("Open the step-by-step guide")?.click());
+    expect(openURL).toHaveBeenCalledWith("https://enbu.net/docs/put-your-project-on-github/");
 
     await act(async () => queryButton("Check again")?.click());
     await settle();
     expect(reloadRepo).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the Japanese guide in Japanese", async () => {
+    await setLocale("ja", { reload: false });
+    try {
+      act(() => root.render(withSession(<RepositorySetup step="git" />)));
+      act(() => queryButton("詳しい手順を見る")?.click());
+      expect(openURL).toHaveBeenCalledWith("https://enbu.net/ja/docs/put-your-project-on-github/");
+    } finally {
+      await setLocale("en", { reload: false });
+    }
   });
 
   it("founds a workspace in the suggested storage and tells how to share it", async () => {
@@ -140,7 +113,10 @@ describe("RepositorySetup", () => {
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
     await settle();
-    expect(container.querySelector("pre")?.textContent).toContain("git remote add origin");
+    expect(container.textContent).toContain("Publish Branch");
+    expect(container.querySelector("details pre")?.textContent).toBe(
+      "git remote add origin https://github.com/OWNER/REPO.git",
+    );
     expect(queryButton("Found workspace")?.disabled).toBe(true);
 
     const input = container.querySelector<HTMLInputElement>("#init-storage")!;
