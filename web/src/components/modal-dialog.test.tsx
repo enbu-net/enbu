@@ -28,6 +28,9 @@ function Harness({
       <button type="button" onClick={() => setOpen(true)}>
         Open
       </button>
+      <button type="button" onClick={() => setOpen(false)}>
+        Hide
+      </button>
       {open && (
         <ModalDialog
           labelledBy="title"
@@ -86,13 +89,18 @@ describe("ModalDialog", () => {
     expect(openDialog()).toBeTruthy();
   });
 
-  it("closes the native dialog when the parent hides it", () => {
-    act(() => root.render(<Harness />));
-    act(() => queryButton("Open")?.click());
+  it("closes the native dialog when the parent hides it, without calling onClose", () => {
+    const onClose = vi.fn();
+    act(() => root.render(<Harness onClose={onClose} />));
+    const open = queryButton("Open");
+    open?.focus();
+    act(() => open?.click());
     const dialog = openDialog();
     const close = vi.spyOn(dialog!, "close");
-    act(() => pressEscape());
-    expect(close).toHaveBeenCalled();
+    // A control outside the dialog, as when an action finishes and the parent hides it.
+    act(() => queryButton("Hide")?.click());
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
     expect(container.querySelector("dialog")).toBeNull();
   });
 });

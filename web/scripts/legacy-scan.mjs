@@ -1,7 +1,7 @@
 // Runs Modern Web Guidance's legacy-scan (GoogleChrome/modern-web-guidance)
 // over the UI and fails on any finding. The scan covers the guides with
-// deterministic rules; the enbu Oxlint rules and src/index-html.test.ts check
-// more of the guidance.
+// deterministic rules; the enbu Oxlint rules (vp check) and src/index-html.test.ts
+// (vp test) check more of the guidance.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
