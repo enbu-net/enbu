@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,7 +66,7 @@ func TestNormalizeLeavesOrdinaryWorkflowsUnchanged(t *testing.T) {
 		t.Fatalf("ordinary workflow changed: %s %v", data, err)
 	}
 }
-func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
+func TestDSTTakesItsPlatformsFromThePlanAndFourDisjointLanesPerRunner(t *testing.T) {
 	data, err := os.ReadFile("../../.github/workflows/simulation.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -77,20 +78,13 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 	jobs := field(doc.Content[0], "jobs")
 	job := field(jobs, "simulation")
 	matrix := field(field(job, "strategy"), "matrix")
-	if len(matrix.Content) != 6 || len(field(matrix, "platform").Content) != 5 {
-		t.Fatal("DST matrix must contain five platforms, explicit runner groups, and the incremental exclusions")
+	// scripts/dst_plan.py owns the platform list and picks it per mode (its
+	// tests check the rotation), so the matrix must take it from the plan.
+	if len(matrix.Content) != 4 || field(matrix, "platform").Value != "${{ fromJSON(needs.plan.outputs.platforms) }}" {
+		t.Fatal("DST matrix must be the runner groups and the platforms the plan selected")
 	}
-	// The full exploration keeps every platform; incremental runs keep linux-amd64.
-	exclude := field(matrix, "exclude").Value
-	if !strings.Contains(exclude, "needs.plan.outputs.mode == 'full' && '[]'") || strings.Contains(exclude, "linux-amd64") {
-		t.Fatal("DST must run every platform in full mode and linux-amd64 in incremental mode")
-	}
-	for _, platform := range field(matrix, "platform").Content {
-		target := field(platform, "target").Value
-		pair := `{"target":"` + target + `","runner":"` + field(platform, "runner").Value + `"}`
-		if target != "linux-amd64" && !strings.Contains(exclude, pair) {
-			t.Fatalf("incremental DST must exclude %s by its whole platform entry", target)
-		}
+	if field(field(jobs, "plan"), "outputs") == nil || field(field(field(jobs, "plan"), "outputs"), "platforms") == nil {
+		t.Fatal("the plan job does not hand its platforms to the matrix")
 	}
 	var lanes []*yaml.Node
 	for _, step := range field(job, "steps").Content {
@@ -119,9 +113,32 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 	if field(field(job, "env"), "ENBU_SIM_SHARDS").Value != "${{ needs.plan.outputs.mode == 'full' && '32' || '4' }}" {
 		t.Fatal("lane/shard mismatch")
 	}
-	schedule := field(field(doc.Content[0], "on"), "schedule")
-	if field(schedule.Content[0], "cron").Value != "0 17 * * *" {
-		t.Fatal("full DST must start at 02:00 Asia/Tokyo")
+}
+
+// GitHub delays schedules that fire on the hour, when everyone's do, by hours;
+// a full DST that started five hours late held runners through the working
+// day. The nightly runs start off the hour, at least 30 minutes apart, and
+// in this order, so they do not queue for the same runners.
+func TestNightlySchedulesAreStaggeredOffTheHour(t *testing.T) {
+	var previous int
+	for i, name := range []string{"ci.yaml", "tobari.yaml", "simulation.yaml"} {
+		schedule := field(field(readYAML(t, "../../.github/workflows/"+name), "on"), "schedule")
+		if schedule == nil || len(schedule.Content) != 1 {
+			t.Fatalf("%s needs exactly one nightly schedule", name)
+		}
+		var minute, hour int
+		cron := field(schedule.Content[0], "cron").Value
+		if _, err := fmt.Sscanf(cron, "%d %d * * *", &minute, &hour); err != nil {
+			t.Fatalf("%s: %q is not a daily schedule: %v", name, cron, err)
+		}
+		if minute == 0 {
+			t.Fatalf("%s starts on the hour", name)
+		}
+		start := hour*60 + minute
+		if i > 0 && start-previous < 30 {
+			t.Fatalf("%s starts within 30 minutes of the run before it", name)
+		}
+		previous = start
 	}
 }
 
