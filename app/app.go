@@ -27,7 +27,6 @@ type App struct {
 
 	Storage       storage.Store
 	StorageURL    string
-	InitStorage   *config.StorageConfig
 	TokenProvider TokenProvider
 	Identities    IdentityStore
 	RepoDetector  RepoDetector
@@ -41,10 +40,6 @@ type App struct {
 	// stored revisions and the history index. Empty means the per-user data
 	// directory. Nothing in it is trusted or secret.
 	CacheDir string
-	// AcceptNewGenesis lets InitializeRepository replace the genesis this
-	// device pinned for the workspace with the one enbu.toml names. Only a
-	// person who confirmed the workspace was re-founded sets it.
-	AcceptNewGenesis bool
 }
 
 func (a *App) cacheDir() string {

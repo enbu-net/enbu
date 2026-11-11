@@ -7,7 +7,7 @@ import { FingerprintConfirmDialog } from "../../components/fingerprint-confirm-d
 import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
-import type { JoinRequest, Member } from "../../lib/types";
+import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 export function MembersPanel({
@@ -21,8 +21,8 @@ export function MembersPanel({
   onSetAdmin,
   onErrorDismiss,
 }: {
-  members: Member[];
-  requests: JoinRequest[];
+  members: MemberInfo[];
+  requests: JoinRequestInfo[];
   loading: boolean;
   error: DisplayError | null;
   onSync: () => void | Promise<void>;
@@ -31,9 +31,9 @@ export function MembersPanel({
   onSetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
   onErrorDismiss: () => void;
 }) {
-  const [approving, setApproving] = useState<JoinRequest | null>(null);
-  const [removing, setRemoving] = useState<Member | null>(null);
-  const [granting, setGranting] = useState<Member | null>(null);
+  const [approving, setApproving] = useState<JoinRequestInfo | null>(null);
+  const [removing, setRemoving] = useState<MemberInfo | null>(null);
+  const [granting, setGranting] = useState<MemberInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const approveTriggerRef = useRef<HTMLElement | null>(null);
@@ -262,7 +262,7 @@ export function PendingRow({
   last = false,
   onApprove,
 }: {
-  request: JoinRequest;
+  request: JoinRequestInfo;
   last?: boolean;
   onApprove: (trigger: HTMLElement) => void;
 }) {
@@ -293,7 +293,7 @@ export function MemberRow({
   onRemove,
   onToggleAdmin,
 }: {
-  member: Member;
+  member: MemberInfo;
   last?: boolean;
   onRemove?: (trigger: HTMLElement) => void;
   /** Grants or revokes admin; left out when this device cannot. */
@@ -361,7 +361,7 @@ export function MemberAvatar({ username }: { username: string }) {
         inset="0"
         display="grid"
         placeItems="center"
-        color="accent.default"
+        color="accent.text"
         bg="accent.subtle"
         borderRadius="full"
         fontSize="2xs"

@@ -73,3 +73,17 @@ func TestImportConflictPublicPayloadListsAllKeys(t *testing.T) {
 		t.Fatal("refused import changed secrets")
 	}
 }
+
+func TestImportDotenvParsesTheFile(t *testing.T) {
+	alice := newAlice(t)
+	res, err := alice.ImportDotenv(bg, "default", []byte("NEW=n\n# comment\nOTHER=\"quoted value\"\n"), false)
+	if err != nil || len(res.Added) != 2 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if got := mustSecrets(t, alice, "default"); got["OTHER"] != "quoted value" {
+		t.Fatalf("imported: %v", got)
+	}
+	if _, err := alice.ImportDotenv(bg, "default", []byte("not a dotenv line"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("invalid dotenv: %v", err)
+	}
+}

@@ -1,5 +1,6 @@
 import { m } from "../paraglide/messages";
 import { getLocale, type Locale } from "../paraglide/runtime";
+import type { AppErrorPayload } from "./webview-protocol";
 
 type Messages = typeof m;
 
@@ -8,11 +9,7 @@ export type ErrorCode = {
   [K in keyof Messages]: K extends `error_${infer Code}` ? Code : never;
 }[keyof Messages];
 
-export type AppErrorPayload = {
-  code: string;
-  message?: string;
-  params?: Record<string, string>;
-};
+export type { AppErrorPayload } from "./webview-protocol";
 
 declare const displayErrorBrand: unique symbol;
 

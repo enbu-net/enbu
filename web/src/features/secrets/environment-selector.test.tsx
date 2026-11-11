@@ -26,7 +26,7 @@ describe("environment selector", () => {
     });
 
     const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Current environment"]',
+      'button[aria-label^="Current environment"]',
     );
     await act(async () => {
       trigger?.click();

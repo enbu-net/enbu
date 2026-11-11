@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -66,9 +67,8 @@ func (w *World) Refounding(ctx context.Context) error {
 	}
 	// A failed explicit acceptance must not pin an unreachable replacement.
 	d := w.Devices[1]
-	d.App.AcceptNewGenesis = true
 	d.Store.Arm(Fault{"head", 1, "before"})
-	if _, err := d.App.InitializeRepository(ctx); err == nil {
+	if _, err := d.App.InitializeRepository(ctx, app.InitOptions{AcceptNewGenesis: true}); err == nil {
 		return fmt.Errorf("unreachable replacement accepted")
 	}
 	d.Store.Arm(Fault{})
@@ -91,8 +91,7 @@ func (w *World) Refounding(ctx context.Context) error {
 	}
 	// Every person confirms the root independently; confirmation is not membership.
 	for i, d := range w.Devices {
-		d.App.AcceptNewGenesis = true
-		result, err := d.App.InitializeRepository(ctx)
+		result, err := d.App.InitializeRepository(ctx, app.InitOptions{AcceptNewGenesis: true})
 		if err != nil {
 			return err
 		}

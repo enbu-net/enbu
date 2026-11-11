@@ -32,7 +32,7 @@ export function ImportButton({
   async function run(dotenv: string, overwrite: boolean, target: string) {
     setLoading(true);
     try {
-      await onImported(await backend.importSecrets(dotenv, overwrite, target));
+      await onImported(await backend.ImportSecrets(target, dotenv, overwrite));
       setPending(null);
     } catch (err) {
       const display = toDisplayError(err);

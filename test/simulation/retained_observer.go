@@ -74,7 +74,7 @@ func (w *World) RetainedObserver(ctx context.Context, cold, deleteChoice bool) e
 	if requireCode(err, apperr.CodeNotMember) != nil || got != nil {
 		return fmt.Errorf("removed synchronizer retained read authority: %v", err)
 	}
-	if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+	if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[2].ID); err != nil {
@@ -169,8 +169,7 @@ func (w *World) RetainedObserver(ctx context.Context, cold, deleteChoice bool) e
 			return err
 		}
 	}
-	choice := app.SecretChoice{Value: "team-choice", Delete: deleteChoice}
-	choices := map[string]app.SecretChoice{"K0": choice}
+	choices := []app.SecretChoice{{Key: "K0", Value: "team-choice", Delete: deleteChoice}}
 	if err := requireCode(observer.ResolveSecrets(ctx, "default", set.Heads[:2], choices), apperr.CodeConflict); err != nil {
 		return err
 	}

@@ -57,7 +57,7 @@ func (w *World) TeamIncident(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"BASE": {Value: "reviewed-release"}}); err != nil {
+	if err := a.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "BASE", Value: "reviewed-release"}}); err != nil {
 		return err
 	}
 	w.Model["default"]["BASE"] = "reviewed-release"
@@ -176,7 +176,7 @@ func (w *World) TeamIncident(ctx context.Context) error {
 		}
 	}
 	// Readmission is explicit and must not resurrect either poisoned branch.
-	if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+	if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[2].ID); err != nil {

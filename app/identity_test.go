@@ -47,7 +47,7 @@ func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.InitializeRepository(context.Background()); err == nil {
+	if _, err := a.InitializeRepository(context.Background(), InitOptions{}); err == nil {
 		t.Fatal("registration should fail")
 	}
 	saved, err := manager.Info(testWorkspaceID)
@@ -55,7 +55,7 @@ func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	fail = false
-	result, err := a.InitializeRepository(context.Background())
+	result, err := a.InitializeRepository(context.Background(), InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

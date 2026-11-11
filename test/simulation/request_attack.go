@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -138,7 +139,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 		return fmt.Errorf("ambiguous requester gained access: %v", err)
 	}
 	// Valid proof of possession still grants no read/write authority until approval.
-	result, err := w.Devices[attacker].App.InitializeRepository(ctx)
+	result, err := w.Devices[attacker].App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return err
 	}

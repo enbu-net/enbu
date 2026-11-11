@@ -1,29 +1,31 @@
-// The data the desktop backend exchanges with the UI. Most types come from the
+// The data the desktop backend exchanges with the UI. The types come from the
 // Go structs through the generated bindings, so a field changed in Go is a
-// type error here; only the shapes the UI builds itself are declared below.
+// type error here.
 export type {
   AuthStatus,
-  ConflictCandidate,
-  ConflictChoice,
   ConflictRetry,
-  ConflictSet,
-  Environment,
-  EnvironmentDeletion,
-  HistoryEntry,
-  InitResult,
-  JoinRequest,
-  Member,
+  IdentityDiagnosis,
   OAuthStart,
-  PullResult,
+  OAuthStatus,
   RepoInfo,
-  SecretConflict,
   SecretItem,
   SecretsResponse,
 } from "../bindings/github.com/enbu-net/enbu/desktop/models";
 export type {
+  ConflictCandidate,
+  ConflictSet,
   Diff,
+  EnvInfo,
+  EnvironmentDeletion,
+  HistoryEntry,
   ImportResult,
+  InitResult,
+  JoinRequestInfo,
+  MemberInfo,
   ProgressStep,
+  SecretChoice,
+  SecretConflict,
+  WrittenFile,
 } from "../bindings/github.com/enbu-net/enbu/app/models";
 export type { PublicInfo } from "../bindings/github.com/enbu-net/enbu/pkg/identity/models";
 export type {
@@ -32,26 +34,15 @@ export type {
 } from "../bindings/github.com/enbu-net/enbu/pkg/selfupdate/models";
 
 import type { RepoInfo } from "../bindings/github.com/enbu-net/enbu/desktop/models";
-export type { IdentityDiagnosis as Diagnosis } from "../bindings/github.com/enbu-net/enbu/desktop/models";
-import type { DisplayError } from "./app-error";
+import type { StorageConfig as StorageConfigModel } from "../bindings/github.com/enbu-net/enbu/pkg/config/models";
 
-/** The repository the app works on; repo is unset until one is selected. */
-export interface GUIRepoStatus {
-  selected: boolean;
-  repo?: RepoInfo;
-}
+/** Where Initialize founds a workspace. The UI builds it, so it is a plain object. */
+export type StorageConfig = Pick<StorageConfigModel, keyof StorageConfigModel>;
 
-export interface OAuthStatus {
-  state: "pending" | "success" | "expired" | "denied" | "error";
-  error?: DisplayError;
-  username?: string;
-}
-
-/** Where Initialize founds a workspace: the storage and `enbu init`'s flags for it. */
-export interface StorageSettings {
-  url: string;
-  region: string;
-  endpoint: string;
-  path_style: boolean;
-  plain_http: boolean;
-}
+/** What the backend reports when no repository is selected: no path. */
+export const noRepo: RepoInfo = {
+  initialized: false,
+  has_git: false,
+  has_remote: false,
+  storage_configured: false,
+};

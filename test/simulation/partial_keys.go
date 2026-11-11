@@ -3,6 +3,7 @@ package simulation
 import (
 	"context"
 	"fmt"
+	"github.com/enbu-net/enbu/app"
 	"os"
 	"path/filepath"
 
@@ -77,7 +78,7 @@ func (w *World) PartialKeys(ctx context.Context, kind string) error {
 		if err := admin.RemoveMember(ctx, oldID); err != nil {
 			return err
 		}
-		result, err := d.App.InitializeRepository(ctx)
+		result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if err != nil {
 			return err
 		}
@@ -105,7 +106,7 @@ func (w *World) PartialKeys(ctx context.Context, kind string) error {
 	if err := advanceTeam(); err != nil {
 		return err
 	}
-	result, err := d.App.InitializeRepository(ctx)
+	result, err := d.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return err
 	}

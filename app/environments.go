@@ -133,21 +133,46 @@ func (a *App) CreateEnvironment(name string) (err error) {
 	return a.setCurrent(cfg, name, previous)
 }
 
-func (a *App) DeleteEnvironment(name string) (err error) {
+// EnvironmentDeletion is what deleting an environment did to its stored
+// revisions: how many it purged, or the incarnation that still names them.
+type EnvironmentDeletion struct {
+	Purged int `json:"purged"`
+	// Incarnation is what `enbu switch --purge-incarnation` deletes the
+	// revisions by later; enbu.toml no longer names it.
+	Incarnation string `json:"incarnation,omitempty"`
+}
+
+// DeleteEnvironment removes an environment from enbu.toml. With purge its
+// stored revisions are deleted too (admin only). Every check runs first, so a
+// deletion that would be refused never deletes secrets: the revisions go only
+// when the environment can really be removed, and the environment stays in
+// enbu.toml until they are gone so a failure halfway can simply be repeated.
+func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (deletion EnvironmentDeletion, err error) {
 	defer apperr.NormalizeInto(&err)
 
 	cfg, err := a.loadProject()
 	if err != nil {
-		return err
+		return deletion, err
 	}
 	if err := checkDeletable(cfg, name); err != nil {
-		return err
+		return deletion, err
+	}
+	if purge {
+		s, err := a.openPurgeSession(ctx)
+		if err != nil {
+			return deletion, err
+		}
+		defer s.Close()
+		if deletion.Purged, err = s.purgeResource(ctx, cfg.Resource(name)); err != nil {
+			return deletion, err
+		}
+	} else {
+		deletion.Incarnation = cfg.Environments[name].Incarnation
 	}
 	if err := cfg.RemoveEnvironment(name); err != nil {
-		return err
+		return deletion, err
 	}
-
-	return a.saveProject(cfg)
+	return deletion, a.saveProject(cfg)
 }
 
 // checkDeletable is everything that can make deleting an environment fail, so
@@ -164,35 +189,6 @@ func checkDeletable(cfg *config.ProjectConfig, name string) error {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", name), apperr.Params{"name": name})
 	}
 	return nil
-}
-
-// DeleteEnvironmentPurging deletes an environment and its stored revisions.
-// Every check runs first, so a deletion that would be refused never deletes
-// secrets: the revisions go only when the environment can really be removed,
-// and the environment stays in enbu.toml until they are gone so a failure
-// halfway can simply be repeated.
-func (a *App) DeleteEnvironmentPurging(ctx context.Context, name string) (purged int, err error) {
-	defer apperr.NormalizeInto(&err)
-
-	cfg, err := a.loadProject()
-	if err != nil {
-		return 0, err
-	}
-	if err := checkDeletable(cfg, name); err != nil {
-		return 0, err
-	}
-	s, err := a.openPurgeSession(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer s.Close()
-	if purged, err = s.purgeResource(ctx, cfg.Resource(name)); err != nil {
-		return purged, err
-	}
-	if err := cfg.RemoveEnvironment(name); err != nil {
-		return purged, err
-	}
-	return purged, a.saveProject(cfg)
 }
 
 func (a *App) RenameEnvironment(oldName, newName string) (err error) {

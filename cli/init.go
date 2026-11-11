@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
@@ -34,19 +32,9 @@ func newInitCommand(a *app.App) *cobra.Command {
 		if a.StorageURL != "" {
 			settings.URL = a.StorageURL
 		}
-		a.InitStorage = &settings
-		a.AcceptNewGenesis = acceptNewGenesis
-		defer func() { a.InitStorage, a.AcceptNewGenesis = nil, false }()
-		result, err := a.InitializeRepository(cmd.Context())
+		result, err := a.InitializeRepository(cmd.Context(), app.InitOptions{Storage: &settings, AcceptNewGenesis: acceptNewGenesis})
 		if err != nil {
 			return err
-		}
-		if a.RepositoryDir != "" {
-			if err := ensureProjectGitignore(a.RepositoryDir, cfgOrDefault(cfg)); err != nil {
-				result.Warnings = append(result.Warnings, fmt.Sprintf("failed to update .gitignore: %v", err))
-			}
-		} else if err := ensureProjectGitignore(".", cfgOrDefault(cfg)); err != nil {
-			result.Warnings = append(result.Warnings, err.Error())
 		}
 		if jsonEnabled(cmd) {
 			return writeJSON(cmd, result, result.Warnings...)
@@ -86,97 +74,4 @@ func ghcrAccessHint(result *app.InitResult) string {
 	}
 	owner, pkg, _ := strings.Cut(path, "/")
 	return fmt.Sprintf("GHCR created the package %s private to you. So that teammates can join, open it on GitHub (%s → Packages → %s → Package settings), connect this repository and turn on 'Inherit access from repository'.", pkg, owner, pkg)
-}
-
-func cfgOrDefault(cfg *config.ProjectConfig) *config.ProjectConfig {
-	if cfg != nil {
-		return cfg
-	}
-	return config.NewProjectWithEnvironment(app.DefaultEnvironment)
-}
-
-var gitignoreEntries = []string{
-	".env",
-	".env.*",
-	"!.env.example",
-}
-
-func ensureProjectGitignore(repoRoot string, cfg *config.ProjectConfig) error {
-	return ensureGitignore(repoRoot, projectGitignoreEntries(cfg)...)
-}
-
-func projectGitignoreEntries(cfg *config.ProjectConfig) []string {
-	var entries []string
-	for _, name := range cfg.EnvironmentNames() {
-		env, err := cfg.Environment(name)
-		if err != nil {
-			continue
-		}
-		output := gitignorePatternForOutput(env.Output)
-		if output != "" {
-			entries = append(entries, output)
-		}
-	}
-	return entries
-}
-
-func gitignorePatternForOutput(output string) string {
-	output = strings.TrimSpace(output)
-	if output == "" || filepath.IsAbs(output) {
-		return ""
-	}
-	if strings.HasPrefix(output, "#") || strings.HasPrefix(output, "!") {
-		return `\` + output
-	}
-	return output
-}
-
-func ensureGitignore(repoRoot string, extraEntries ...string) error {
-	path := filepath.Join(repoRoot, ".gitignore")
-
-	existing := ""
-	if data, err := os.ReadFile(path); err == nil {
-		existing = string(data)
-	}
-
-	lines := strings.Split(existing, "\n")
-	lineSet := make(map[string]bool)
-	for _, l := range lines {
-		lineSet[strings.TrimSpace(l)] = true
-	}
-
-	entries := append([]string{}, gitignoreEntries...)
-	entries = append(entries, extraEntries...)
-
-	var toAdd []string
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		if !lineSet[entry] {
-			toAdd = append(toAdd, entry)
-			lineSet[entry] = true
-		}
-	}
-
-	if len(toAdd) == 0 {
-		return nil
-	}
-
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-
-	if existing != "" && !strings.HasSuffix(existing, "\n") {
-		if _, err := f.WriteString("\n"); err != nil {
-			return err
-		}
-	}
-
-	content := "\n# enbu - exclude .env files\n" + strings.Join(toAdd, "\n") + "\n"
-	_, err = f.WriteString(content)
-	return err
 }

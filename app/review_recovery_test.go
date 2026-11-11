@@ -44,7 +44,7 @@ func TestJoinRequestCleanupToleratesUnsupportedAndAlreadyDeleted(t *testing.T) {
 				}
 				return failure
 			}})
-			result, err := bob.InitializeRepository(bg)
+			result, err := bob.InitializeRepository(bg, InitOptions{})
 			if calls != 1 {
 				t.Fatalf("cleanup calls %d", calls)
 			}
@@ -113,7 +113,7 @@ func TestFoundingRecoversAfterOnlyWorkspacePinCommits(t *testing.T) {
 		}
 		return nil
 	}})
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("repository pin write did not fail")
 	}
 	genesis := genesisInConfig(t, a)
@@ -127,7 +127,7 @@ func TestFoundingRecoversAfterOnlyWorkspacePinCommits(t *testing.T) {
 	if err := os.Rename(pin+".backup", pin); err != nil {
 		t.Fatal(err)
 	}
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil || !result.Founded || result.ControlGenesis != genesis {
 		t.Fatalf("partial-pin recovery: %+v %v", result, err)
 	}
@@ -152,7 +152,7 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 		}
 		return next.Publish(ctx, obj)
 	}})
-	if _, err := a.InitializeRepository(bg); err != nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	original, err := config.LoadProjectFrom(a.RepositoryDir)
@@ -167,7 +167,7 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 		writes++
 		return errors.New("read-only credential")
 	}})
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil || result.Founded || writes != 0 {
 		t.Fatalf("completed init needs write: %+v %v writes=%d", result, err, writes)
 	}
@@ -178,7 +178,7 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 	if err := config.SaveProjectTo(a.RepositoryDir, nextConfig); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.InitializeRepository(bg); err != nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	newer, err := a.repositoryTrustRoot().Pinned()
@@ -192,7 +192,7 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 		t.Fatal(err)
 	}
 	a.Storage = real
-	if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeTrustRootChanged) {
 		t.Fatalf("stale authorization rerooted: %v", err)
 	}
 	after, err := a.repositoryTrustRoot().Pinned()

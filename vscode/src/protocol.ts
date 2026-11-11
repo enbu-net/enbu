@@ -1,17 +1,11 @@
-import type { AppErrorPayload } from "./rpc";
+import type {
+  AppErrorPayload,
+  HostMessage,
+  WebviewMessage,
+} from "../../web/src/lib/webview-protocol";
 
-/**
- * Messages between the webview and the extension host. web/src/lib/vscode.ts
- * is the other side.
- */
-export type WebviewMessage =
-  | { type: "call"; id: number; method: string; params: unknown[] }
-  | { type: "openExternal"; url: string };
-
-export type HostMessage =
-  | { type: "result"; id: number; result: unknown }
-  | { type: "error"; id: number; error: AppErrorPayload }
-  | { type: "event"; name: string; data: unknown };
+// The messages are defined once, beside the webview side in web/src/lib.
+export type { AppErrorPayload, HostMessage, WebviewMessage };
 
 /**
  * Checks a message from the webview. Calls must name a method enbu serves, and

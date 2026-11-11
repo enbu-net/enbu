@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
-import type { Member } from "../../lib/types";
+import type { MemberInfo } from "../../lib/types";
 import { container, queryButton, root, settle, setupDom } from "../../test/dom";
 import { MembersTab } from "./members-tab";
 
@@ -13,9 +13,10 @@ setupDom();
 
 const mocked = vi.mocked(backend);
 
-const member = (fingerprint: string): Member => ({
+const member = (fingerprint: string): MemberInfo => ({
   device_id: "d".repeat(64),
   fingerprint,
+  recipient: "age1pq1test",
   algorithm: "p256",
   admin: false,
   self: false,
@@ -35,15 +36,15 @@ function renderTab(repoPath: string, transfer = runTransfer) {
 
 describe("MembersTab", () => {
   it("reloads members by repository path and ignores stale completions", async () => {
-    let resolveA!: (value: Member[]) => void;
-    let resolveB!: (value: Member[]) => void;
-    mocked.listMembers
-      .mockImplementationOnce(() => new Promise((resolve) => (resolveA = resolve)))
-      .mockImplementationOnce(() => new Promise((resolve) => (resolveB = resolve)));
+    let resolveA!: (value: MemberInfo[]) => void;
+    let resolveB!: (value: MemberInfo[]) => void;
+    mocked.ListMembers.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveA = resolve)),
+    ).mockImplementationOnce(() => new Promise((resolve) => (resolveB = resolve)));
 
     renderTab("/a");
     renderTab("/b");
-    expect(mocked.listMembers).toHaveBeenCalledTimes(2);
+    expect(mocked.ListMembers).toHaveBeenCalledTimes(2);
 
     await act(async () => resolveB([member("new-key")]));
     await settle();
@@ -56,23 +57,23 @@ describe("MembersTab", () => {
   });
 
   it("syncs the current environment and reloads the members", async () => {
-    mocked.listMembers.mockResolvedValue([]);
+    mocked.ListMembers.mockResolvedValue([]);
     const transfer = vi.fn(runTransfer);
     renderTab("/a", transfer);
     await settle();
-    mocked.listMembers.mockClear();
+    mocked.ListMembers.mockClear();
 
     await act(async () => queryButton("Sync")?.click());
     await settle();
 
     expect(transfer).toHaveBeenCalledWith("sync", expect.any(Function));
-    expect(mocked.syncSecrets).toHaveBeenCalledWith("default");
-    expect(mocked.listMembers).toHaveBeenCalledTimes(1);
+    expect(mocked.SyncSecrets).toHaveBeenCalledWith("default");
+    expect(mocked.ListMembers).toHaveBeenCalledTimes(1);
   });
 
   it("shows a failed sync as a display error", async () => {
-    mocked.listMembers.mockResolvedValue([]);
-    mocked.syncSecrets.mockRejectedValueOnce(new Error("registry down"));
+    mocked.ListMembers.mockResolvedValue([]);
+    mocked.SyncSecrets.mockRejectedValueOnce(new Error("registry down"));
     renderTab("/a");
     await settle();
 

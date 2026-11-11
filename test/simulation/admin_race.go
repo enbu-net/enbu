@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -42,7 +43,7 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			if err := a.RemoveMember(ctx, w.Devices[i].ID); err != nil {
 				return err
 			}
-			if _, err := w.Devices[i].App.InitializeRepository(ctx); err != nil {
+			if _, err := w.Devices[i].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			delete(expected, w.Devices[i].ID)
@@ -151,7 +152,7 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			if err := requireCode(d.App.AddSecret(ctx, "default", "REMOVED", "x"), apperr.CodeNotMember); err != nil {
 				return err
 			}
-			if _, err := d.App.InitializeRepository(ctx); err != nil {
+			if _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			if err := a.ApproveMember(ctx, d.ID); err != nil {
