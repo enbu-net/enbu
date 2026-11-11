@@ -30,8 +30,8 @@ func TestLargerTeamRejectsInvalidCountsBeforeBootstrap(t *testing.T) {
 	}
 }
 
+// Serial: indexedCase sets ENBU_SIM_CASE_STRIDE for each case.
 func TestLargerTeamClocks(t *testing.T) {
-	t.Parallel()
 	exploration(t)
 	scenes := []string{"swarm-disjoint-add", "swarm-disjoint-mixed", "swarm-identical-edit", "swarm-identical-delete", "swarm-distinct-edit", "swarm-edit-delete", "swarm-conflicting-import", "swarm-offline-observer", "team-incident"}
 	for _, mode := range []string{"witness", "all-stale", "compacted", "compacted-no-record", "compacted-old-data"} {

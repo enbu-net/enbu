@@ -106,11 +106,17 @@ def collect(suite: str) -> int:
                 ),
             }
             # The parent test name is supplied by the Identity CLI harness.
+            # One block per package, so parallel packages never interleave.
             result = subprocess.run(
                 ["go", "test", "-count=1", "-shuffle=on", "-race", package],
                 cwd=ROOT,
                 env=package_env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
             )
+            if result.stdout:
+                print(result.stdout, end="", flush=True)
             report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
             if not report.is_file():
                 print(f"Missing package report: {package}", flush=True)
