@@ -4,10 +4,41 @@ import json
 import os
 import re
 import subprocess
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SIM = ROOT / "test" / "simulation"
+
+PLATFORMS = [
+    {"target": "linux-amd64", "runner": "ubuntu-26.04"},
+    {"target": "linux-arm64", "runner": "ubuntu-26.04-arm"},
+    {"target": "darwin-arm64", "runner": "macos-15"},
+    {"target": "windows-amd64", "runner": "windows-2025"},
+    {"target": "windows-arm64", "runner": "windows-11-arm"},
+]
+
+# A full exploration of every platform takes about 90 runner-hours, most of it
+# on Windows, so a nightly run of all five ran well into the next working day
+# and held DST runners while pull requests queued. Each night explores both
+# Linux platforms and one of the slower ones in turn, so every platform still
+# gets the complete exploration every third night; a manual run explores all.
+ROTATION = ["darwin-arm64", "windows-amd64", "windows-arm64"]
+
+
+def platforms(mode: str, event: str, day: date) -> list[dict]:
+    if mode != "full":
+        # A push holds one DST runner instead of five.
+        return PLATFORMS[:1]
+    if event != "schedule":
+        return PLATFORMS
+    tonight = ROTATION[day.toordinal() % len(ROTATION)]
+    return [
+        p
+        for p in PLATFORMS
+        if p["target"].startswith("linux-") or p["target"] == tonight
+    ]
+
 
 SCENARIO_SOURCES = {
     "file_lifecycle.go",
@@ -243,6 +274,14 @@ def main() -> None:
     full = os.environ["GITHUB_EVENT_NAME"] in {"schedule", "workflow_dispatch"}
     paths = [] if full else changed(event)
     plan = select(paths, full)
+    plan["platforms"] = json.dumps(
+        platforms(
+            plan["mode"],
+            os.environ["GITHUB_EVENT_NAME"],
+            datetime.now(UTC).date(),
+        ),
+        separators=(",", ":"),
+    )
     with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
         for key, value in plan.items():
             print(
@@ -253,6 +292,7 @@ def main() -> None:
     if summary:
         with Path(summary).open("a") as output:
             print("DST mode: " + plan["mode"], file=output)
+            print("Platforms: " + plan["platforms"], file=output)
             print(
                 "\nChanged paths:\n" + "\n".join("- " + path for path in paths),
                 file=output,

@@ -1,5 +1,6 @@
 import re
 import subprocess
+from datetime import date
 
 import pytest
 
@@ -508,3 +509,31 @@ def test_full_signature_seed_is_retained_in_every_selected_native_exploration(pa
     assert plan["run"]
     assert selected(plan, "TestFullSignatureAttackSeedRegressionSmoke")
     assert selected(plan, "TestStateSignatureAttackSmoke")
+
+
+def targets(platforms):
+    return [p["target"] for p in platforms]
+
+
+def test_incremental_dst_runs_linux_amd64_only():
+    assert targets(dst_plan.platforms("incremental", "push", date(2026, 11, 11))) == [
+        "linux-amd64"
+    ]
+
+
+def test_manual_full_dst_explores_every_platform():
+    assert dst_plan.platforms("full", "workflow_dispatch", date(2026, 11, 11)) == (
+        dst_plan.PLATFORMS
+    )
+
+
+def test_nightly_dst_explores_linux_and_rotates_the_slower_platforms():
+    seen = set()
+    for offset in range(len(dst_plan.ROTATION)):
+        day = date.fromordinal(date(2026, 11, 11).toordinal() + offset)
+        tonight = targets(dst_plan.platforms("full", "schedule", day))
+        assert tonight[:2] == ["linux-amd64", "linux-arm64"]
+        assert len(tonight) == 3
+        seen |= set(tonight)
+    # Every platform gets the complete exploration within the rotation.
+    assert seen == set(targets(dst_plan.PLATFORMS))

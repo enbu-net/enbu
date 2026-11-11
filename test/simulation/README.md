@@ -197,14 +197,21 @@ without simulation dependencies do not run DST. The planner prints the changed
 paths and selected tests in the Actions summary. Push exploration uses two seeds
 per lane, 32 actions and representative fault positions. Finite matrices execute one deterministic eighth of their named cases, selected by the commit SHA; scenario smoke cases and generated seed workloads are never sampled. The upper hash bits select samples independently of lane assignment. A fault matrix's measurement run (`baseline`) is never sampled; only its child cases are, so each child is in exactly one sample instead of only when the parent and child names share one. Daily/manual full mode and mutation controls force stride 1, so every finite case remains enabled there.
 
-Full exploration runs daily at **02:00 Asia/Tokyo (17:00 UTC)** and on manual
-dispatch. It uses all tests, exhaustive fault positions, and 1,024 seeds × 256
-actions per platform, half fixed and half derived from the commit SHA.
-Scheduled full runs are not cancelled by incremental pushes.
+Full exploration runs nightly at **00:07 Asia/Tokyo (15:07 UTC)**, after the
+nightly CI and Coverage runs, and on manual dispatch. It uses all tests,
+exhaustive fault positions, and 1,024 seeds × 256 actions per platform, half
+fixed and half derived from the commit SHA. Scheduled full runs are not
+cancelled by incremental pushes.
 
-Both modes cover Linux x64, Linux ARM64, macOS ARM64, Windows x64 and Windows
-ARM64. Each job uses GitHub Actions `parallel` for four lanes. Incremental mode
-runs one job per platform with logical shards 0–3; full mode runs eight jobs per
+Pushes run linux-amd64 only. A manual full run covers Linux x64, Linux ARM64,
+macOS ARM64, Windows x64 and Windows ARM64. A nightly run covers both Linux
+platforms and one of macOS ARM64, Windows x64 and Windows ARM64 in turn
+(`scripts/dst_plan.py` picks them by date), so each platform gets the complete
+exploration at least every third night: all five took about 90 runner-hours,
+most of it on Windows, and ran well into the next working day.
+
+Each job uses GitHub Actions `parallel` for four lanes. Incremental mode
+runs one job with logical shards 0–3; full mode runs eight jobs per
 platform (see Full-run scheduling). Go runs with `-parallel=1`; each lane has
 separate logs, recordings and an App coverage profile. The seed partition test
 proves the full partition retains the original 1,024 workloads per platform.
