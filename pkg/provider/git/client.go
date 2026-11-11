@@ -5,12 +5,8 @@
 package git
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,10 +52,7 @@ func (FileClient) Inspect(ctx context.Context, path string) (Repository, error) 
 		if found {
 			repository.Root = fsutil.Canonical(dir)
 			repository.HasGit = true
-			url, err := originURL(gitDir)
-			if err != nil {
-				return Repository{}, err
-			}
+			url := originURL(gitDir)
 			repository.OriginURL = url
 			repository.HasRemote = url != ""
 			return repository, nil
@@ -105,8 +98,9 @@ func isGitDir(dir string) bool {
 }
 
 // originURL reads remote.origin.url from the repository's config, which a
-// worktree shares with its main repository through commondir.
-func originURL(gitDir string) (string, error) {
+// worktree shares with its main repository through commondir. A config that
+// cannot be read leaves the repository without a remote, not undetected.
+func originURL(gitDir string) string {
 	common := gitDir
 	if data, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
 		target := strings.TrimRight(string(data), "\r\n")
@@ -116,13 +110,10 @@ func originURL(gitDir string) (string, error) {
 		common = target
 	}
 	data, err := os.ReadFile(filepath.Join(common, "config"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return "", nil
-	}
 	if err != nil {
-		return "", fmt.Errorf("reading git config: %w", err)
+		return ""
 	}
-	return configValue(data, "remote", "origin", "url"), nil
+	return configValue(data, "remote", "origin", "url")
 }
 
 // configValue returns the last value of section.subsection.key in a git
@@ -131,9 +122,8 @@ func originURL(gitDir string) (string, error) {
 func configValue(data []byte, section, subsection, key string) string {
 	var value string
 	inSection := false
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "[") {
 			name, sub, rest := parseHeader(line)
 			inSection = strings.EqualFold(name, section) && sub == subsection

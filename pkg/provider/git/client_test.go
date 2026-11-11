@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/fsutil"
@@ -185,5 +186,28 @@ func TestConfigValue(t *testing.T) {
 				t.Fatalf("configValue = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A config enbu cannot read still leaves a detected repository, only without
+// a remote.
+func TestInspectUnreadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	writeFile(t, filepath.Join(gitDir, "HEAD"), "ref: refs/heads/main\n")
+	if err := os.Mkdir(filepath.Join(gitDir, "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	repo := inspect(t, dir)
+	if !repo.HasGit || repo.HasRemote {
+		t.Fatalf("repository = %#v", repo)
+	}
+}
+
+// A line longer than any scanner buffer does not hide the values after it.
+func TestConfigValueAfterLongLine(t *testing.T) {
+	config := "[core]\n\tlong = " + strings.Repeat("x", 128*1024) + "\n[remote \"origin\"]\n\turl = https://github.com/octo/a.git\n"
+	if got := configValue([]byte(config), "remote", "origin", "url"); got != "https://github.com/octo/a.git" {
+		t.Fatalf("configValue = %q", got)
 	}
 }
