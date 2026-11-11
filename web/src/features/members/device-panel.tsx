@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Cpu, ShieldCheck } from "lucide-react";
+import { Cpu } from "lucide-react";
 import { Box, HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
@@ -9,23 +9,12 @@ import type { IdentityDiagnosis, PublicInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
- * This device's keys, as `enbu identity show` prints them, the hardware check
- * of `enbu doctor`, and the switch to a post-quantum key of `enbu identity upgrade`.
+ * This device's keys, as `enbu identity show` prints them, and the hardware
+ * check of `enbu doctor`.
  */
-export function DevicePanel({
-  repoPath,
-  postQuantum,
-  onUpgraded,
-}: {
-  repoPath: string;
-  /** Whether this device's member key is already hybrid ML-KEM. */
-  postQuantum: boolean;
-  /** Called after an upgrade, so the member list shows the new key. */
-  onUpgraded: () => void | Promise<void>;
-}) {
+export function DevicePanel({ repoPath }: { repoPath: string }) {
   const [info, setInfo] = useState<PublicInfo | null>(null);
   const [diagnosis, setDiagnosis] = useState<IdentityDiagnosis | null>(null);
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
 
@@ -76,11 +65,6 @@ export function DevicePanel({
           </Field>
         </Box>
       )}
-      {notice && (
-        <Text role="status" mt="3" fontSize="sm">
-          {notice}
-        </Text>
-      )}
       {diagnosis && (
         <VStack role="status" alignItems="stretch" gap="1" mt="3" fontSize="sm">
           <Text>
@@ -100,28 +84,6 @@ export function DevicePanel({
         </VStack>
       )}
       <HStack mt="3" gap="2" flexWrap="wrap">
-        {!postQuantum && (
-          <Button
-            size="sm"
-            variant="outline"
-            loading={busy}
-            title={m.device_upgradeHint()}
-            onClick={() =>
-              void run(async () => {
-                const result = await backend.UpgradeIdentity();
-                setNotice(
-                  result.pending
-                    ? m.device_upgradePending({ fingerprint: result.fingerprint })
-                    : m.device_upgraded(),
-                );
-                await Promise.all([load(), onUpgraded()]);
-              })
-            }
-          >
-            <ShieldCheck size={14} aria-hidden="true" />
-            {m.device_upgrade()}
-          </Button>
-        )}
         <Button
           size="sm"
           variant="ghost"

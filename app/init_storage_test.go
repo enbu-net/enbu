@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 )
@@ -17,7 +18,7 @@ func (failingRepoDetector) LoadRepo() (string, string, error) {
 
 func newFreshApp(t *testing.T, detector RepoDetector) *App {
 	t.Helper()
-	return &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), RepoDetector: detector,
+	return &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}, RepoDetector: detector,
 		RepositoryDir: t.TempDir(), CheckpointDir: t.TempDir()}
 }
 

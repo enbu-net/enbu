@@ -6,13 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/fsutil"
-	"github.com/enbu-net/enbu/pkg/identity"
-
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
@@ -40,22 +35,7 @@ type historyIndexFile struct {
 type historyIndex struct{ path string }
 
 func (a *App) openHistoryIndex(s *session, resource string) historyIndex {
-	var recipients []string
-	for _, id := range s.ids {
-		switch id := id.(type) {
-		case identity.Identity:
-			recipients = append(recipients, id.Recipient().String())
-		case *agecrypto.X25519Identity:
-			recipients = append(recipients, id.Recipient().String())
-		case *agecrypto.HybridIdentity:
-			recipients = append(recipients, id.Recipient().String())
-		default:
-			// An identity without a stable public name cannot share flags.
-			return historyIndex{}
-		}
-	}
-	slices.Sort(recipients)
-	sum := sha256.Sum256([]byte(s.workspace + "\x00" + resource + "\x00" + strings.Join(slices.Compact(recipients), "\x00")))
+	sum := sha256.Sum256([]byte(s.workspace + "\x00" + resource + "\x00" + s.id.Recipient().String()))
 	return historyIndex{path: filepath.Join(a.cacheDir(), "history", hex.EncodeToString(sum[:])+".json")}
 }
 

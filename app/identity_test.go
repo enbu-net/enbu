@@ -8,7 +8,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
@@ -26,7 +25,8 @@ func (v identityVault) Load(_, key string) ([]byte, error) {
 	}
 	return append([]byte(nil), b...), nil
 }
-func (v identityVault) Delete(_, key string) error { delete(v, key); return nil }
+func (v identityVault) Delete(_, key string) error  { delete(v, key); return nil }
+func (v identityVault) Probe(context.Context) error { return nil }
 
 func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	manager := &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityVault{}}
@@ -62,11 +62,11 @@ func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	if result.PublicKey != saved.Recipient {
 		t.Fatal("registration retry changed identity")
 	}
-	// One encryption key and one signing key: a retry must create neither again.
-	if len(manager.Vault.(identityVault)) != 2 {
+	// One device entry: a retry must not create another.
+	if len(manager.Vault.(identityVault)) != 1 {
 		t.Fatal("registration retry created another key")
 	}
-	if got, err := manager.SignerInfo(testWorkspaceID); err != nil || got.DeviceID != signing.DeviceID(result.DeviceID) {
-		t.Fatalf("registration retry changed the signing key: %v", err)
+	if saved.DeviceID != result.DeviceID {
+		t.Fatal("registration retry changed the signing key")
 	}
 }

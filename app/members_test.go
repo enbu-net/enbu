@@ -86,7 +86,7 @@ func TestForgedJoinRequestsAreIgnored(t *testing.T) {
 		}
 	}
 	plant([]byte("garbage"))
-	vs, _, _, err := victim.Identities.CreateSigner(ws)
+	vs, err := createSigner(victim, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,17 +96,17 @@ func TestForgedJoinRequestsAreIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = id.Close() }()
-	other, err := wsp.NewJoinRequest("0192f3a0-7c1e-7a55-9d3c-000000000000", id.Recipient().String(), time.Now(), vs)
+	other, err := wsp.NewJoinRequest("0192f3a0-7c1e-7a55-9d3c-000000000000", id.Identity.Recipient().String(), time.Now(), vs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	plant(other)
-	good, err := wsp.NewJoinRequest(ws, id.Recipient().String(), time.Now(), vs)
+	good, err := wsp.NewJoinRequest(ws, id.Identity.Recipient().String(), time.Now(), vs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	signed, _ := wsp.DecodeSigned(good)
-	ms, _ := mallory.Identities.LoadSigner(ws)
+	ms, _ := loadSigner(mallory, ws)
 	defer func() { _ = ms.Close() }()
 	forgedSig, _ := ms.Sign(signing.DomainJoin, signed.Body)
 	forged, _ := wsp.Signed{Body: signed.Body, Signature: forgedSig}.Encode()
@@ -128,7 +128,7 @@ func TestForgedControlIgnored(t *testing.T) {
 	alice := newAlice(t)
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
-	ms, _ := mallory.Identities.LoadSigner(mustWorkspace(t, mallory))
+	ms, _ := loadSigner(mallory, mustWorkspace(t, mallory))
 	defer func() { _ = ms.Close() }()
 	s, _ := alice.openSession(bg)
 	defer s.Close()

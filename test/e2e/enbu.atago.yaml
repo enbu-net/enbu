@@ -237,7 +237,7 @@ scenarios:
       - assert:
           dir:
             path: data/enbu/identities
-            count: 4 # Encryption and signing metadata, each with its retained OS lock file.
+            count: 2 # One device key set metadata file and its retained OS lock file.
 
   - name: JSON init returns structured repository and registry state
     tags: [init, json, registry]

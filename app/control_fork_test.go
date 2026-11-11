@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -220,12 +222,12 @@ func requireUnreadableBy(t *testing.T, alice, dave *App) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := LoadIdentities(dave.Identities, mustWorkspace(t, dave))
+	d, err := loadDevice(dave.Identities, mustWorkspace(t, dave))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer CloseIdentities(ids)
-	if _, err := decryptSecretsObject(ciphertext, ids...); err == nil {
+	defer func() { _ = d.Close() }()
+	if _, err := decryptSecretsObject(ciphertext, d.Identity); err == nil {
 		t.Fatal("the current revision is still encrypted for the member the resolution dropped")
 	}
 	if read.heads[0].Control != cur.head.Digest {
@@ -279,7 +281,7 @@ func TestResolvingAControlForkReportsIncompleteReencryption(t *testing.T) {
 // fork it could otherwise have joined.
 func TestControlForkReportsAnAdminsUnusableKeys(t *testing.T) {
 	alice, _ := forkDroppingDave(t)
-	alice.Identities = &lostBackend{memKeyStore: alice.Identities.(*memKeyStore), signer: true}
+	alice.Identities = lostBackend{alice.Identities.(*apptest.Identities)}
 	_, err := alice.ListMembers(bg)
 	requireIdentityUnavailable(t, err, "keyring unavailable")
 }

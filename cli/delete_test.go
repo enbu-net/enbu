@@ -2,8 +2,6 @@ package cli
 
 import (
 	"testing"
-
-	"github.com/enbu-net/enbu/app/apptest"
 )
 
 type deleteTestTokenProvider struct{}
@@ -32,18 +30,4 @@ func TestDeleteCommandBuildsOnTheRevisionItRead(t *testing.T) {
 	if got := secretsOf(t, a); len(got) != 0 {
 		t.Fatalf("secret not deleted: %v", got)
 	}
-}
-
-type staticKeyStore struct {
-	apptest.Signers
-	key []byte
-}
-
-func (s *staticKeyStore) storeSecret(_, _ string, value []byte) error {
-	s.key = value
-	return nil
-}
-
-func (s *staticKeyStore) loadSecret(string, string) ([]byte, error) {
-	return s.key, nil
 }

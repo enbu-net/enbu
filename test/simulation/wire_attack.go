@@ -152,7 +152,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	for i := range members {
 		members[i].Self = false
 	}
-	signer, err := w.Devices[0].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[0].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -201,12 +201,12 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 		return err
 	}
 	defer func() { _ = id.Close() }()
-	requestSigner, _, _, err := keys.CreateSigner(cfg.WorkspaceID)
+	requestSigner, err := keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = requestSigner.Close() }()
-	request, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Recipient().String(), a.Runtime.Clock.Now(), requestSigner)
+	request, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Identity.Recipient().String(), a.Runtime.Clock.Now(), requestSigner)
 	if err != nil {
 		return err
 	}

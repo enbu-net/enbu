@@ -64,16 +64,15 @@ type Identity interface {
 	Close() error
 }
 
+// PublicInfo describes a device's keys without any private material.
 type PublicInfo struct {
-	Created   bool   `json:"-"`
-	Backend   string `json:"backend"`
-	Algorithm string `json:"algorithm"`
-	Recipient string `json:"recipient"`
-	Device    string `json:"device,omitempty"`
-	// DeviceID and Fingerprint describe the separate signing key. They are
-	// filled in by the app layer, not stored with the encryption identity.
-	DeviceID    string `json:"device_id,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
+	Created     bool   `json:"-"`
+	Backend     string `json:"backend"`
+	Algorithm   string `json:"algorithm"`
+	Recipient   string `json:"recipient"`
+	Device      string `json:"device,omitempty"`
+	DeviceID    string `json:"device_id"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 // HardwareKey has deliberately no private-key export method.
@@ -82,53 +81,24 @@ type HardwareKey interface {
 	Close() error
 }
 
-// taggedIdentity unwraps age tag stanzas with a hardware P-256 key: either
-// classical p256tag, or mlkem768p256tag when an ML-KEM-768 key is paired with
-// it. In the hybrid case only the P-256 half is hardware-bound; the ML-KEM
-// half runs in software because TPMs and the Secure Enclave APIs enbu uses
-// cannot run ML-KEM yet.
+// taggedIdentity unwraps age mlkem768p256tag stanzas with a hardware P-256
+// key paired with a software ML-KEM-768 key. Only the P-256 half is
+// hardware-bound: TPMs and the Secure Enclave APIs enbu uses cannot run
+// ML-KEM yet.
 type taggedIdentity struct {
 	mu        sync.Mutex
 	key       HardwareKey
 	hpke      hpke.PrivateKey
 	recipient *tag.Recipient
-	stanza    tagStanza
 	closed    bool
 }
 
-type tagStanza struct {
-	typ     string
-	label   string
-	encSize int
-}
-
-var (
-	p256Tag = tagStanza{typ: "p256tag", label: "age-encryption.org/p256tag", encSize: 65}
-	// The hybrid enc is the ML-KEM-768 ciphertext followed by the P-256 share.
-	mlkem768P256Tag = tagStanza{typ: "mlkem768p256tag", label: "age-encryption.org/mlkem768p256tag", encSize: mlkem.CiphertextSize768 + 65}
+const (
+	tagStanzaType  = "mlkem768p256tag"
+	tagStanzaLabel = "age-encryption.org/mlkem768p256tag"
+	// The enc is the ML-KEM-768 ciphertext followed by the P-256 share.
+	tagEncSize = mlkem.CiphertextSize768 + 65
 )
-
-func NewHardwareIdentity(key HardwareKey) (Identity, error) {
-	pk := key.PublicKey()
-	if pk == nil || pk.Curve() != ecdh.P256() {
-		return nil, errors.New("hardware identity requires a P-256 public key")
-	}
-	// crypto/ecdh has already validated the SEC1 point. Compress its encoding
-	// for the age tag recipient without handling private key material.
-	uncompressed := pk.Bytes()
-	compressed := make([]byte, 33)
-	compressed[0] = 2 | (uncompressed[64] & 1)
-	copy(compressed[1:], uncompressed[1:33])
-	r, err := tag.NewClassicRecipient(compressed)
-	if err != nil {
-		return nil, err
-	}
-	k, err := hpke.NewDHKEMPrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return &taggedIdentity{key: key, hpke: k, recipient: r, stanza: p256Tag}, nil
-}
 
 // NewHybridHardwareIdentity pairs a hardware P-256 key with a software
 // ML-KEM-768 key, given as its 64-byte seed, into a tagged hybrid identity.
@@ -151,7 +121,7 @@ func NewHybridHardwareIdentity(key HardwareKey, mlkemSeed []byte) (Identity, err
 	if err != nil {
 		return nil, err
 	}
-	return &taggedIdentity{key: key, hpke: k, recipient: r, stanza: mlkem768P256Tag}, nil
+	return &taggedIdentity{key: key, hpke: k, recipient: r}, nil
 }
 
 func (i *taggedIdentity) Recipient() Recipient { return i.recipient }
@@ -173,19 +143,19 @@ func (i *taggedIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
 		return nil, errors.New("identity is closed")
 	}
 	for _, s := range stanzas {
-		if s.Type != i.stanza.typ {
+		if s.Type != tagStanzaType {
 			continue
 		}
 		if len(s.Args) != 2 || len(s.Body) != 32 {
-			return nil, fmt.Errorf("malformed %s stanza", i.stanza.typ)
+			return nil, fmt.Errorf("malformed %s stanza", tagStanzaType)
 		}
 		hint, err := base64.RawStdEncoding.Strict().DecodeString(s.Args[0])
 		if err != nil || len(hint) != 4 {
-			return nil, fmt.Errorf("malformed %s hint", i.stanza.typ)
+			return nil, fmt.Errorf("malformed %s hint", tagStanzaType)
 		}
 		enc, err := base64.RawStdEncoding.Strict().DecodeString(s.Args[1])
-		if err != nil || len(enc) != i.stanza.encSize {
-			return nil, fmt.Errorf("malformed %s encapsulated key", i.stanza.typ)
+		if err != nil || len(enc) != tagEncSize {
+			return nil, fmt.Errorf("malformed %s encapsulated key", tagStanzaType)
 		}
 		expected, err := i.recipient.Tag(enc)
 		if err != nil {
@@ -194,7 +164,7 @@ func (i *taggedIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
 		if subtle.ConstantTimeCompare(hint, expected) != 1 {
 			continue
 		}
-		r, err := hpke.NewRecipient(enc, i.hpke, hpke.HKDFSHA256(), hpke.ChaCha20Poly1305(), []byte(i.stanza.label))
+		r, err := hpke.NewRecipient(enc, i.hpke, hpke.HKDFSHA256(), hpke.ChaCha20Poly1305(), []byte(tagStanzaLabel))
 		if err != nil {
 			return nil, fmt.Errorf("hardware ECDH: %w", err)
 		}
@@ -206,14 +176,6 @@ func (i *taggedIdentity) Unwrap(stanzas []*age.Stanza) ([]byte, error) {
 	}
 	return nil, age.ErrIncorrectIdentity
 }
-
-type softwareIdentity struct{ *age.X25519Identity }
-
-func (i *softwareIdentity) Recipient() Recipient { return i.X25519Identity.Recipient() }
-func (i *softwareIdentity) Close() error         { return nil }
-
-// FromX25519 wraps a software identity in the common lifecycle interface.
-func FromX25519(i *age.X25519Identity) Identity { return &softwareIdentity{i} }
 
 type hybridSoftwareIdentity struct{ *age.HybridIdentity }
 

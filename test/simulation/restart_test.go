@@ -40,12 +40,10 @@ func TestRestartReconstructsProcessDependenciesFromDurableFixtures(t *testing.T)
 		t.Fatal(err)
 	}
 	keys := w.Devices[1].Keys
-	pending, _, _, err := keys.CreatePending(cfg.WorkspaceID)
+	before, err := keys.Info(cfg.WorkspaceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	recipient := pending.Recipient().String()
-	_ = pending.Close()
 	oldRuntime := a.Runtime
 	a.Runtime.NewID = func() string { return "process-only-poison" }
 	a.Runtime.Encrypt = func([]byte, []string) ([]byte, error) {
@@ -63,9 +61,9 @@ func TestRestartReconstructsProcessDependenciesFromDurableFixtures(t *testing.T)
 	if current, err := fresh.CurrentEnvironment(); err != nil || current != "personal" {
 		t.Fatalf("personal selection lost: %s %v", current, err)
 	}
-	info, err := w.Devices[1].Keys.PendingInfo(cfg.WorkspaceID)
-	if err != nil || info.Recipient != recipient {
-		t.Fatalf("durable pending key lost: %+v %v", info, err)
+	info, err := w.Devices[1].Keys.Info(cfg.WorkspaceID)
+	if err != nil || info != before {
+		t.Fatalf("durable device keys lost: %+v %v", info, err)
 	}
 	if err := fresh.AddSecret(ctx, "default", "AFTER_RESTART", "new process"); err != nil {
 		t.Fatal(err)

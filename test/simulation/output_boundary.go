@@ -21,11 +21,6 @@ import (
 
 func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 	for _, replace := range []bool{false, true} {
-		// Identity upgrade is a one-time transition. Use separate worlds for
-		// the two local-variable policies rather than upgrading it twice.
-		if strings.HasPrefix(kind, "upgraded-") && replace != (kind == "upgraded-replace-hardlink") {
-			continue
-		}
 		a := w.Devices[1].App
 		before := map[string]string{"BASE": "old-private-a", "TOKEN": "old-private-b"}
 		after := map[string]string{"BASE": "new-private-a", "TOKEN": "new-private-b"}
@@ -71,15 +66,6 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 				switch kind {
 				case "removed-hardlink":
 					peerErr = w.Devices[0].App.RemoveMember(ctx, w.Devices[1].ID)
-				case "upgraded-preserve-hardlink", "upgraded-replace-hardlink":
-					// A second client of this identity has its own storage-call
-					// lock; the export is paused inside its client's OpenBlob.
-					siblingStore := &Store{Store: base, Tape: w.Tape, Device: 1, advance: store.advance}
-					sibling := w.newApp(1, len(w.Devices), w.Devices[1].Keys, siblingStore)
-					_, peerErr = sibling.UpgradeIdentity(ctx)
-					if peerErr == nil {
-						peerErr = w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID)
-					}
 				}
 			}
 			if kind == "canceled-hardlink" {

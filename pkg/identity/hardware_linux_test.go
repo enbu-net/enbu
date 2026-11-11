@@ -4,11 +4,12 @@ package identity
 
 import (
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"io/fs"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 func TestExplainTPMOpenError(t *testing.T) {

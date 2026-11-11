@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
@@ -257,7 +258,7 @@ func TestJSONAuthStatus(t *testing.T) {
 		accounts: func() ([]string, string, error) {
 			return []string{"octo-work", "octo"}, "octo", nil
 		},
-		identityStore: &staticKeyStore{key: []byte(keyPair.Identity.String())},
+		identityStore: &apptest.Identities{Age: keyPair.Identity},
 	})
 	envelope := executeJSON(t, jsonTestRoot(status), "status", "--json")
 	data := objectField(t, envelope, "data")

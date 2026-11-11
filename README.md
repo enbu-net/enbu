@@ -269,11 +269,9 @@ New identities are post-quantum hybrids, so ciphertext stored today stays safe a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
 ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
 P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
-encrypted to the Secure Enclave key). A file is post-quantum only when every member has a hybrid key;
-with any classical member it is encrypted classically. Members created before this
-switch with `enbu identity upgrade`, which keeps their fingerprint; an admin approves
-the new key with `enbu member approve`, and `enbu member list` shows how many members
-have upgraded. Members on an enbu that predates hybrid keys must update enbu first.
+encrypted to the Secure Enclave key). Every identity is a hybrid; classical-only keys
+are not supported, so a device made by an older enbu creates a new identity that an
+admin approves.
 
 | OS | Hardware | Fallback for new identities |
 |----|----------|-----------------------------|
@@ -300,10 +298,8 @@ There is no file-based fallback. `enbu doctor` reports which case applies.
 enbu doctor                  # No authentication or persistent key creation
 enbu identity create         # Create or reuse this workspace's local Identity
 enbu identity show           # Backend, algorithm, recipient and device
-enbu identity upgrade        # Move this device to a post-quantum hybrid key
 export ENBU_IDENTITY_BACKEND=auto  # Default: hardware if available, otherwise keyring
 # Other choices: hardware (required), keyring (software key in the OS keyring)
-export ENBU_IDENTITY_CLASSICAL=1  # Create pre-hybrid keys (X25519 / P-256) for old teammates
 ```
 
 `enbu doctor` also checks workspace configuration, GHCR token validity (when
@@ -355,8 +351,8 @@ covering init/add/pull/edit/sync/history and Identity reload between CLI process
 
 Inside WSL (1 or 2), enbu keeps no keys in Linux. It starts the Windows enbu.exe
 once per command (`enbu.exe identity bridge --stdio`) and asks it only to create
-keys, decrypt file keys, sign, and keep the GitHub token. The private keys, the
-TPM and Windows Hello stay in Windows, so WSL gets the same protection as Windows,
+keys, decrypt file keys, sign, and keep the GitHub token. The private keys and the
+TPM stay in Windows, so WSL gets the same protection as Windows,
 and Windows and every distribution are one device with one sign-in. Storage, git,
 `.env` files and `enbu run` stay in WSL; no file path crosses over.
 
@@ -373,7 +369,7 @@ TPM and keyring. The VS Code extension works in a WSL window the same way.
 Windows reads its own environment, not WSL's: `ENBU_IDENTITY_BACKEND` and the like
 take effect in WSL only when passed through `WSLENV`. Any Linux user in the
 distribution can start enbu.exe as the same Windows user, as with any Windows
-program; Windows Hello adds an approval when it is enabled.
+program.
 
 ## JSON output
 

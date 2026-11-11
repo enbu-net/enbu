@@ -255,30 +255,6 @@ func TestWriteDoesNotForgetARevisionDeletedDuringPublish(t *testing.T) {
 	}
 }
 
-func TestHistoryIndexChangesWithLoadedIdentities(t *testing.T) {
-	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
-	s, err := a.openSession(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	resource := s.resource("default")
-	original := a.openHistoryIndex(s, resource)
-	s.ids = append(s.ids, mustKeyPair(t).Identity)
-	retained := a.openHistoryIndex(s, resource)
-	if retained.path == original.path {
-		t.Fatal("adding a retained identity reused the original flags")
-	}
-	s.ids[0], s.ids[1] = s.ids[1], s.ids[0]
-	if a.openHistoryIndex(s, resource).path != retained.path {
-		t.Fatal("identity order changed the cache key")
-	}
-	s.ids = s.ids[1:]
-	if a.openHistoryIndex(s, resource).path != original.path {
-		t.Fatal("removing the retained identity did not restore the original cache key")
-	}
-}
-
 // Local flags are display hints trusted as written. They cannot add revisions,
 // but editing them can hide entries and change the numeric history indices.
 func TestHistoryIndexTrustsLocalDisplayFlags(t *testing.T) {

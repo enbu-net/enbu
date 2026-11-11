@@ -9,17 +9,16 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/signing"
 )
 
 // The real key store's hardware/UI failure is outside DST, but the App's
 // response to a temporarily unavailable backend is part of the team contract.
 type lockedDeviceKeys struct{ *Keys }
 
-func (k lockedDeviceKeys) Create(string) (identity.Identity, identity.PublicInfo, string, error) {
+func (k lockedDeviceKeys) Create(string) (*identity.Device, identity.PublicInfo, string, error) {
 	return nil, identity.PublicInfo{}, "", &identity.UnavailableError{Reason: "simulated locked key store"}
 }
-func (k lockedDeviceKeys) LoadSigner(string) (signing.Signer, error) {
+func (k lockedDeviceKeys) Load(string) (*identity.Device, error) {
 	return nil, &identity.UnavailableError{Reason: "simulated locked key store"}
 }
 

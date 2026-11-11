@@ -41,24 +41,15 @@ func TestKeyringFailuresAreUnavailable(t *testing.T) {
 	if _, _, _, err := m.Create("ws"); !errors.Is(err, ErrUnavailable) || !errors.Is(err, errNoReply) {
 		t.Fatalf("Create with a failing store = %v", err)
 	}
-	if _, _, _, err := m.CreateSigner("ws"); !errors.Is(err, ErrUnavailable) || !errors.Is(err, errNoReply) {
-		t.Fatalf("CreateSigner with a failing store = %v", err)
-	}
 
 	vault := memoryVault{}
 	m = &Manager{Dir: t.TempDir(), Mode: "keyring", Vault: vault}
 	if _, _, _, err := m.Create("ws"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := m.CreateSigner("ws"); err != nil {
-		t.Fatal(err)
-	}
 	m.Vault = lockedVault{vault}
 	if _, err := m.Load("ws"); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Load from a locked keyring = %v", err)
-	}
-	if _, err := m.LoadSigner("ws"); !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("LoadSigner from a locked keyring = %v", err)
 	}
 	m.Vault = nil
 	if _, err := m.Load("ws"); !errors.Is(err, ErrUnavailable) {
@@ -67,8 +58,5 @@ func TestKeyringFailuresAreUnavailable(t *testing.T) {
 	m.Vault = memoryVault{}
 	if _, err := m.Load("ws"); errors.Is(err, ErrUnavailable) || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Load of a missing entry = %v, want fs.ErrNotExist and not unavailable", err)
-	}
-	if _, err := m.LoadSigner("ws"); errors.Is(err, ErrUnavailable) || !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("LoadSigner of a missing entry = %v, want fs.ErrNotExist and not unavailable", err)
 	}
 }

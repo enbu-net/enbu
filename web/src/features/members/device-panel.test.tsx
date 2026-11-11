@@ -16,39 +16,16 @@ describe("DevicePanel", () => {
   it("shows this device's keys", async () => {
     mocked.GetIdentity.mockResolvedValueOnce({
       backend: "tpm",
-      algorithm: "P-256",
-      recipient: "age1tag1example",
+      algorithm: "MLKEM768-P256",
+      recipient: "age1tagpq1example",
       device: "TPM 2.0",
+      device_id: "d",
       fingerprint: "aaaa-bbbb",
     });
-    await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
+    await renderAndSettle(<DevicePanel repoPath="/a" />);
     expect(container.textContent).toContain("aaaa-bbbb");
     expect(container.textContent).toContain("TPM 2.0");
-    expect(container.textContent).toContain("age1tag1example");
-    expect(queryButton("Switch to a post-quantum key")).toBeNull();
-  });
-
-  it("upgrades a classical key and says when an admin must approve it", async () => {
-    mocked.UpgradeIdentity.mockResolvedValueOnce({
-      backend: "keyring",
-      algorithm: "ML-KEM-768+X25519",
-      recipient: "age1pq",
-      device_id: "d",
-      fingerprint: "ffff-0000",
-      pending: true,
-    });
-    const onUpgraded = vi.fn();
-    await renderAndSettle(
-      <DevicePanel repoPath="/a" postQuantum={false} onUpgraded={onUpgraded} />,
-    );
-
-    await act(async () => queryButton("Switch to a post-quantum key")?.click());
-    await settle();
-
-    expect(mocked.UpgradeIdentity).toHaveBeenCalled();
-    expect(onUpgraded).toHaveBeenCalled();
-    expect(container.textContent).toContain("Ask an admin to approve the key update");
-    expect(container.textContent).toContain("ffff-0000");
+    expect(container.textContent).toContain("age1tagpq1example");
   });
 
   it("checks the hardware on request", async () => {
@@ -59,7 +36,7 @@ describe("DevicePanel", () => {
       fallback_available: true,
       keyring_locked: false,
     });
-    await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
+    await renderAndSettle(<DevicePanel repoPath="/a" />);
 
     await act(async () => queryButton("Check hardware")?.click());
     await settle();
@@ -76,7 +53,7 @@ describe("DevicePanel", () => {
       fallback_available: false,
       keyring_locked: true,
     });
-    await renderAndSettle(<DevicePanel repoPath="/a" postQuantum onUpgraded={() => {}} />);
+    await renderAndSettle(<DevicePanel repoPath="/a" />);
 
     await act(async () => queryButton("Check hardware")?.click());
     await settle();

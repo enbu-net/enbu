@@ -7,6 +7,8 @@ import (
 	"slices"
 	"time"
 
+	"uuid"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -15,7 +17,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
-	"uuid"
 )
 
 // DiagnosticCheck contains only safe descriptions and error codes, never
@@ -209,32 +210,26 @@ func (a *App) diagnoseDevice(s *session, r *DoctorReport) {
 		r.add("membership", "", "fail", "No identity store is configured.", apperr.New(apperr.CodeNotInitialized, "no identity store", nil))
 		return
 	}
-	signer, err := a.Identities.LoadSigner(s.workspace)
+	d, err := loadDevice(a.Identities, s.workspace)
 	if err != nil {
-		r.add("membership", "", "fail", "The saved signing key cannot be loaded; run enbu init if this device has not joined.", identityError(err))
+		r.add("membership", "", "fail", "The saved keys cannot be loaded; run enbu init if this device has not joined.", err)
 		return
 	}
-	s.signer = signer
+	s.signer = d.Signer
 	principal, ok := s.head.Principal(s.self())
 	if !ok {
+		_ = d.Identity.Close()
 		r.add("membership", "", "fail", "This device is not an approved member.", apperr.New(apperr.CodeNotMember, "device is not approved", nil))
 		return
 	}
 	r.add("membership", "", "ok", "The signing key belongs to an approved member.", nil)
-	s.ids, err = LoadIdentities(a.Identities, s.workspace)
-	if err != nil {
-		r.add("encryption_key", "", "fail", "The saved encryption identity cannot be loaded.", err)
+	if d.Identity.Recipient().String() != principal.Recipient {
+		_ = d.Identity.Close()
+		r.add("encryption_key", "", "fail", "The saved encryption identity does not match this device's approved recipient.", apperr.New(apperr.CodeNotInitialized, "approved encryption identity is unavailable", nil))
 		return
 	}
-	for _, id := range s.ids {
-		if key, ok := id.(identity.Identity); ok && key.Recipient().String() == principal.Recipient {
-			r.add("encryption_key", "", "ok", "A saved encryption identity matches this device's approved recipient.", nil)
-			return
-		}
-	}
-	CloseIdentities(s.ids)
-	s.ids = nil
-	r.add("encryption_key", "", "fail", "No saved encryption identity matches this device's approved recipient.", apperr.New(apperr.CodeNotInitialized, "approved encryption identity is unavailable", nil))
+	s.id = d.Identity
+	r.add("encryption_key", "", "ok", "The saved encryption identity matches this device's approved recipient.", nil)
 }
 
 func (s *session) diagnoseEnvironment(ctx context.Context, name string, r *DoctorReport) {
@@ -272,7 +267,7 @@ func (s *session) diagnoseEnvironment(ctx context.Context, name string, r *Docto
 		}
 	}
 	r.add("history", name, "ok", "Retained signatures, ciphertext digests and rollback checkpoints are valid.", nil)
-	if len(s.ids) == 0 {
+	if s.id == nil {
 		r.add("decrypt", name, "skip", "Decryption and conflict checks require this device's approved identity.", nil)
 		return
 	}

@@ -7,12 +7,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/google/go-tpm/tpm2/transport"
 )
@@ -22,7 +23,7 @@ import (
 // cannot check parameter-encrypted commands, so sessions stay unencrypted.
 func platformHardware(c clock.Clock) HardwareBackend {
 	endpoint := os.Getenv("ENBU_TEST_TPM_URL")
-	return &TPMBackend{Clock: c, Device: "test-only vTPM", plainSessions: true, Open: func() (transport.TPMCloser, error) {
+	return &TPMBackend{Device: "test-only vTPM", plainSessions: true, Open: func() (transport.TPMCloser, error) {
 		u, err := url.Parse(endpoint)
 		if err != nil || u.Scheme != "http" || (u.Hostname() != "127.0.0.1" && u.Hostname() != "::1") {
 			return nil, errors.New("test TPM requires an HTTP loopback endpoint")

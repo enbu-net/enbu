@@ -40,7 +40,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 			}
 		}
 	}
-	signer, err := w.Devices[attacker].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[attacker].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -55,7 +55,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 		if mode == "foreign-workspace" {
 			workspace = "00000000-0000-4000-8000-000000000000"
 		}
-		signed, err := wsp.NewJoinRequest(workspace, id.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now(), signer)
+		signed, err := wsp.NewJoinRequest(workspace, id.Identity.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now(), signer)
 		if err != nil {
 			return err
 		}
@@ -69,7 +69,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 		case "wrong-domain":
 			object.Signature, err = signer.Sign(signing.DomainControl, object.Body)
 		case "wrong-signer":
-			other, e := w.Devices[0].Keys.LoadSigner(cfg.WorkspaceID)
+			other, e := w.Devices[0].Keys.Signer(cfg.WorkspaceID)
 			if e != nil {
 				return e
 			}
@@ -115,7 +115,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ambiguous, err := wsp.NewJoinRequest(cfg.WorkspaceID, other.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now().AddDate(10, 0, 0), signer)
+	ambiguous, err := wsp.NewJoinRequest(cfg.WorkspaceID, other.Identity.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now().AddDate(10, 0, 0), signer)
 	_ = other.Close()
 	if err != nil {
 		return err
@@ -124,7 +124,7 @@ func (w *World) RequestSignatureAttack(ctx context.Context) error {
 		return err
 	}
 	if len(replayedRequest) == 0 {
-		actual, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now(), signer)
+		actual, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Identity.Recipient().String(), w.Devices[attacker].App.Runtime.Clock.Now(), signer)
 		if err != nil {
 			return err
 		}

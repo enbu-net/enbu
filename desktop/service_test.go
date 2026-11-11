@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/clock"
 
-	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -25,24 +23,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
-
-type desktopKeyStore struct {
-	apptest.Signers
-	values map[string][]byte
-}
-
-func (s *desktopKeyStore) storeSecret(_, key string, value []byte) error {
-	s.values[key] = value
-	return nil
-}
-
-func (s *desktopKeyStore) loadSecret(_, key string) ([]byte, error) {
-	value, ok := s.values[key]
-	if !ok {
-		return nil, fs.ErrNotExist
-	}
-	return value, nil
-}
 
 func TestValidateRepoPath(t *testing.T) {
 	repoDir := newGitRepo(t)
@@ -109,7 +89,7 @@ func TestSelectRepositoryClassifiesInvalidPaths(t *testing.T) {
 
 func TestStartOAuthLogin(t *testing.T) {
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	s.ctx = context.Background()
 	s.openURL = (func(url string) error {
@@ -231,7 +211,7 @@ func TestSelectRepositoryUpdatesHistory(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	s.ctx = context.Background()
 
@@ -284,7 +264,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 	}
 
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)
@@ -307,7 +287,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	keyStore := &desktopKeyStore{values: make(map[string][]byte)}
+	keyStore := &apptest.Identities{}
 	a := app.New(clock.New())
 	a.Identities = keyStore
 	s := NewService(a)
@@ -320,11 +300,7 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 		t.Fatal("repository reported initialized without a private key")
 	}
 
-	identity, err := agecrypto.GenerateX25519Identity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyStore.values["11111111-1111-4111-8111-111111111111"] = []byte(identity.String())
+	keyStore.Use("11111111-1111-4111-8111-111111111111", nil, nil)
 	info, err = s.GetRepoStatus()
 	if err != nil {
 		t.Fatal(err)
@@ -370,7 +346,7 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)
@@ -396,7 +372,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: make(map[string][]byte)}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	if _, err := s.SelectRepository(repoDir); err != nil {
 		t.Fatal(err)

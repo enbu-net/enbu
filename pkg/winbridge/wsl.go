@@ -1,8 +1,8 @@
 // Package winbridge lets enbu inside WSL keep its keys in Windows. The WSL
 // enbu starts the Windows-native enbu.exe once per process
 // (`enbu.exe identity bridge --stdio`) and asks it for the key operations
-// only: create, unwrap, sign, and the GitHub token. Private keys, the TPM and
-// Windows Hello stay in Windows; storage, git and files stay in WSL, so no
+// only: create, unwrap, sign, and the GitHub token. Private keys and the TPM
+// stay in Windows; storage, git and files stay in WSL, so no
 // path crosses the boundary.
 package winbridge
 

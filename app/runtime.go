@@ -1,11 +1,12 @@
 package app
 
 import (
+	"time"
+	"uuid"
+
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
-	"time"
-	"uuid"
 )
 
 // Runtime isolates clocks, identifiers, encryption and personal state without

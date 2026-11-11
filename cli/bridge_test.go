@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -27,8 +28,8 @@ func TestIdentityBridgeServesOnStdio(t *testing.T) {
 	a := &app.App{Identities: &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityMemVault{}}}
 	cmd := NewWithApp("v9.9.9", a)
 	var out, errOut bytes.Buffer
-	cmd.SetIn(strings.NewReader(`{"id":1,"method":"hello","params":{"protocol":1}}` + "\n" +
-		`{"id":2,"method":"identity.create","params":{"workspace_id":"ws"}}` + "\n"))
+	cmd.SetIn(strings.NewReader(`{"id":1,"method":"hello","params":{"protocol":2}}` + "\n" +
+		`{"id":2,"method":"device.create","params":{"workspace_id":"ws"}}` + "\n"))
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{"identity", "bridge", "--stdio"})
@@ -59,7 +60,7 @@ func TestIdentityBridgeServesOnStdio(t *testing.T) {
 }
 
 func TestIdentityBridgeNeedsStdio(t *testing.T) {
-	cmd := NewWithApp("test", &app.App{Identities: &staticKeyStore{}})
+	cmd := NewWithApp("test", &app.App{Identities: &apptest.Identities{}})
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"identity", "bridge"})
@@ -106,7 +107,7 @@ func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
 }
 
 type wslDoctorKeyStore struct {
-	staticKeyStore
+	apptest.Identities
 	status identity.WSLStatus
 	noKeys bool // Windows has neither hardware nor Credential Manager
 }
@@ -187,6 +188,8 @@ func (v identityMemVault) Load(_, key string) ([]byte, error) {
 }
 
 func (v identityMemVault) Delete(_, key string) error { delete(v, key); return nil }
+
+func (identityMemVault) Probe(context.Context) error { return nil }
 
 // A failed Windows login keeps its exit status and adds no second message.
 func TestRunInWindowsKeepsTheExitStatus(t *testing.T) {

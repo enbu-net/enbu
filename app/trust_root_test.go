@@ -172,7 +172,7 @@ func TestChangedWorkspaceAndGenesisStillStops(t *testing.T) {
 	original := mustWorkspace(t, alice)
 
 	// Mallory founds a workspace of their own and commits its enbu.toml.
-	mallory := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: t.TempDir()}
+	mallory := &App{Storage: alice.Storage, Identities: &apptest.Identities{}, CheckpointDir: t.TempDir(), RepositoryDir: t.TempDir()}
 	cfg, err := alice.loadProject()
 	if err != nil {
 		t.Fatal(err)

@@ -316,16 +316,6 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SyncSecrets", env);
 }
 
-/**
- * UpgradeIdentity switches this device to a hybrid ML-KEM key. A member's new
- * key waits for an admin's approval; an admin's own is switched at once.
- */
-export function UpgradeIdentity(): $CancellablePromise<app$0.KeyUpdateResult> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.UpgradeIdentity").then(($result: any) => {
-        return $$createType23($result);
-    });
-}
-
 export function WriteConfig(content: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content);
 }
@@ -354,4 +344,3 @@ const $$createType19 = $Create.Array($$createType0);
 const $$createType20 = $models.SecretsResponse.createFrom;
 const $$createType21 = app$0.WrittenFile.createFrom;
 const $$createType22 = $models.OAuthStart.createFrom;
-const $$createType23 = app$0.KeyUpdateResult.createFrom;

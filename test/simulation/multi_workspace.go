@@ -316,15 +316,12 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {
 		return err
 	}
-	// A pending/approved key upgrade has no authority to modify the other key.
+	// Membership changes in one workspace never touch the other's keys.
 	before, err := other.Devices[1].Keys.Info(secondConfig.WorkspaceID)
 	if err != nil {
 		return err
 	}
-	if _, err := w.Devices[1].App.UpgradeIdentity(ctx); err != nil {
-		return err
-	}
-	if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {
+	if err := w.Devices[0].App.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
 		return err
 	}
 	if err := checkBoth(); err != nil {
@@ -335,7 +332,7 @@ func (w *World) MultipleWorkspaces(ctx context.Context, sharedStorage bool) erro
 		return err
 	}
 	if !reflect.DeepEqual(before, after) {
-		return fmt.Errorf("key upgrade crossed workspace boundary")
+		return fmt.Errorf("a membership change crossed the workspace boundary")
 	}
 	for i := range w.Devices {
 		w.Restart(i)

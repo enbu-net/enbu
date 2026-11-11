@@ -3,12 +3,8 @@
 package identity
 
 import (
-	"bytes"
-	"crypto/mlkem"
 	"os"
 	"testing"
-
-	"github.com/enbu-net/enbu/pkg/age"
 )
 
 func TestSecureEnclaveConstantsAreCached(t *testing.T) {
@@ -27,15 +23,8 @@ func TestSecureEnclaveConstantsAreCached(t *testing.T) {
 
 func TestSecureEnclaveRefusesMetadataWithoutKeyData(t *testing.T) {
 	b := &enclaveBackend{}
-	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "secure-enclave", Algorithm: "P-256"}, Reference: "enbu.identity.v1.old"}
-	if _, err := b.Load(md); err == nil {
-		t.Fatal("loaded Keychain-reference metadata")
-	}
-	if _, err := b.LoadSigner(&SignerMetadata{Backend: "secure-enclave", Algorithm: "P-256", Reference: "enbu.signing.v1.old"}); err == nil {
-		t.Fatal("loaded Keychain-reference signing metadata")
-	}
-	if _, err := b.UnsealSeed(md); err == nil {
-		t.Fatal("unsealed without a sealed seed")
+	if _, _, err := b.Load(&Metadata{Backend: "secure-enclave", Algorithm: algHardware}); err == nil {
+		t.Fatal("loaded metadata without key data")
 	}
 }
 
@@ -47,74 +36,37 @@ func TestSecureEnclaveNativeLifecycle(t *testing.T) {
 	if d := b.Probe(); !d.Available {
 		t.Fatalf("native hardware unavailable: %+v", d)
 	}
-	id, md, err := b.Create()
+	m := &Manager{Dir: t.TempDir(), Mode: "hardware", Hardware: b}
+	d, info, _, err := m.Create("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(md.EnclaveKey) == 0 || md.Reference != "" {
-		t.Fatalf("metadata: %+v", md)
-	}
-	ct, err := age.EncryptForPublicKeys([]byte("native enclave"), []string{id.Recipient().String()})
+	_ = d.Close()
+	loaded, err := m.Load("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = id.Close()
-	loaded, err := b.Load(md)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = loaded.Close() }()
-	out, err := age.Decrypt(ct, loaded)
-	if err != nil || !bytes.Equal(out, []byte("native enclave")) {
-		t.Fatalf("native decrypt: %q %v", out, err)
-	}
+	roundTrip(t, loaded, info.Recipient)
+	_ = loaded.Close()
 
 	// A restore that yields another key must be refused, never used.
-	_, other, err := b.Create()
+	md, err := m.read("o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
+	other := &Metadata{}
+	key, s, err := b.Create(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = key.Close()
+	_ = s.Close()
 	swapped := *md
-	swapped.EnclaveKey = other.EnclaveKey
-	if _, err := b.Load(&swapped); err == nil {
+	swapped.Enclave = &EnclaveKeys{ECDH: other.Enclave.ECDH, ECDHPublic: md.Enclave.ECDHPublic, Sign: md.Enclave.Sign}
+	if _, _, err := b.Load(&swapped); err == nil {
 		t.Fatal("loaded another key's data under this public key")
 	}
 	// Changed key data is not tested here: a real Secure Enclave ignores
 	// some of its bytes (so a change there still restores this key, which
-	// the public-key check accepts) and was seen to block on others. A
-	// restore can only yield this key or be refused, as checked above.
-
-	seed := bytes.Repeat([]byte{3}, mlkem.SeedSize)
-	if err := b.SealSeed(md, seed); err != nil {
-		t.Fatal(err)
-	}
-	got, err := b.UnsealSeed(md)
-	if err != nil || !bytes.Equal(got, seed) {
-		t.Fatalf("unseal: %x %v", got, err)
-	}
-	other.EnclaveSeal = md.EnclaveSeal
-	if _, err := b.UnsealSeed(other); err == nil {
-		t.Fatal("another Secure Enclave key unsealed the seed")
-	}
-}
-
-func TestSecureEnclaveNativeSigner(t *testing.T) {
-	if os.Getenv("ENBU_TEST_NATIVE_IDENTITY") != "1" {
-		t.Skip("set ENBU_TEST_NATIVE_IDENTITY=1 on a Secure Enclave device")
-	}
-	b := &enclaveBackend{}
-	s, md, err := b.CreateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	md.PublicKey = s.Public()
-	_ = s.Close()
-	loaded, err := b.LoadSigner(md)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = loaded.Close() }()
-	if _, err := loaded.Sign("enbu-test", []byte("body")); err != nil {
-		t.Fatal(err)
-	}
+	// the public-key check accepts) and was seen to block on others.
 }
