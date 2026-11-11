@@ -14,14 +14,14 @@ import { getLocale } from "../../paraglide/runtime";
 
 /**
  * The step a selected folder still needs before enbu can manage it, if any:
- * Git, then founding a workspace, or joining the one enbu.toml names.
+ * founding a workspace, or joining the one enbu.toml names. Any folder will
+ * do; Git is not needed.
  */
-export type SetupStep = "git" | "found" | "join";
+export type SetupStep = "found" | "join";
 
 export function setupStep(repo: RepoInfo): SetupStep | null {
   if (repo.initialized) return null;
-  if (repo.storage_configured) return "join";
-  return repo.has_git ? "found" : "git";
+  return repo.storage_configured ? "join" : "found";
 }
 
 /**
@@ -90,31 +90,13 @@ const primaryButton = {
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
 } as const;
 
-/**
- * Sets up enbu in a selected folder, as `enbu init` does. A folder without Git
- * gets the command to run, as enbu leaves Git and GitHub to their own tools.
- */
+/** Sets up enbu in a selected folder, as `enbu init` does. */
 export function RepositorySetup({ step }: { step: SetupStep }) {
   const { reloadRepo } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
   const [done, setDone] = useState<InitResult | null>(null);
 
-  if (step === "git") {
-    return (
-      <SetupScreen
-        title={m.init_gitTitle()}
-        description={m.init_gitDescription()}
-        error={action.error}
-        onDismissError={dismiss}
-      >
-        <PublishGuide hasGit={false} />
-        <Button {...primaryButton} loading={action.loading} onClick={() => action.run(reloadRepo)}>
-          {m.init_checkAgain()}
-        </Button>
-      </SetupScreen>
-    );
-  }
   if (done) return <InitDone result={done} onContinue={reloadRepo} />;
 
   async function initialize(storage: StorageConfig, acceptNewGenesis: boolean) {
@@ -256,7 +238,13 @@ function FoundWorkspace({
       {suggested === "" && !hasRemote && (
         <VStack alignItems="stretch" gap="2">
           <Text fontSize="sm">{m.init_noSuggestion()}</Text>
-          <PublishGuide hasGit />
+          <Button
+            variant="outline"
+            borderColor="border.strong"
+            onClick={() => openURL(publishGuideURL())}
+          >
+            {m.publish_openGuide()}
+          </Button>
           <Button
             variant="outline"
             loading={action.loading}
@@ -339,64 +327,6 @@ function InitDone({ result, onContinue }: { result: InitResult; onContinue: () =
 export function publishGuideURL() {
   const prefix = getLocale() === "ja" ? "/ja" : "";
   return `https://enbu.net${prefix}/docs/put-your-project-on-github/`;
-}
-
-/**
- * How to put the folder on GitHub with the tools a beginner already has,
- * GitHub Desktop or VS Code, with the commands kept for terminal users. enbu
- * leaves Git and GitHub to those tools.
- */
-function PublishGuide({ hasGit }: { hasGit: boolean }) {
-  const ways = [
-    { name: "GitHub Desktop", how: hasGit ? m.publish_desktopRemote() : m.publish_desktopInit() },
-    { name: "VS Code", how: hasGit ? m.publish_vscodeRemote() : m.publish_vscodeInit() },
-  ];
-  return (
-    <VStack alignItems="stretch" gap="3">
-      <styled.ul display="flex" flexDirection="column" gap="2">
-        {ways.map((way) => (
-          <styled.li
-            key={way.name}
-            p="3"
-            borderWidth="1px"
-            borderColor="border.default"
-            borderRadius="md"
-            bg="bg.surface"
-          >
-            <Text fontWeight="semibold">{way.name}</Text>
-            <Text fontSize="sm" color="fg.subtle">
-              {way.how}
-            </Text>
-          </styled.li>
-        ))}
-      </styled.ul>
-      <Text fontSize="sm" color="status.danger">
-        {m.publish_secretsWarning()}
-      </Text>
-      <styled.details fontSize="sm">
-        <styled.summary cursor="pointer" color="fg.subtle">
-          {m.publish_terminal()}
-        </styled.summary>
-        <Box mt="2">
-          <Text color="fg.subtle" mb="2">
-            {m.publish_terminalNote()}
-          </Text>
-          <Command>
-            {hasGit
-              ? "git remote add origin https://github.com/OWNER/REPO.git"
-              : "git init\ngit remote add origin https://github.com/OWNER/REPO.git"}
-          </Command>
-        </Box>
-      </styled.details>
-      <Button
-        variant="outline"
-        borderColor="border.strong"
-        onClick={() => openURL(publishGuideURL())}
-      >
-        {m.publish_openGuide()}
-      </Button>
-    </VStack>
-  );
 }
 
 function Command({ children }: { children: string }) {

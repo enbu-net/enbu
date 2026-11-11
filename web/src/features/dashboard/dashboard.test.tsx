@@ -33,7 +33,6 @@ const repo = (overrides: Partial<RepoInfo> = {}): RepoInfo => ({
   owner: "acme",
   repo: "a",
   initialized: true,
-  has_git: true,
   has_remote: true,
   storage_configured: true,
   ...overrides,

@@ -15,7 +15,6 @@ type SelectedRepo struct {
 	Path      string `json:"path,omitempty"`
 	Owner     string `json:"owner,omitempty"`
 	Repo      string `json:"repo,omitempty"`
-	HasGit    bool   `json:"has_git"`
 	HasRemote bool   `json:"has_remote"`
 }
 
@@ -56,7 +55,6 @@ func validateRepoPath(
 		Path:      repository.Root,
 		Owner:     owner,
 		Repo:      repo,
-		HasGit:    repository.HasGit,
 		HasRemote: repository.HasRemote,
 	}, nil
 }

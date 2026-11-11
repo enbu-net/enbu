@@ -15,7 +15,6 @@ type RepoInfo struct {
 	Owner             string `json:"owner,omitempty"`
 	Repo              string `json:"repo,omitempty"`
 	Initialized       bool   `json:"initialized"`
-	HasGit            bool   `json:"has_git"`
 	HasRemote         bool   `json:"has_remote"`
 	StorageConfigured bool   `json:"storage_configured"`
 }
@@ -183,7 +182,6 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 		Path:      repo.Path,
 		Owner:     repo.Owner,
 		Repo:      repo.Repo,
-		HasGit:    repo.HasGit,
 		HasRemote: repo.HasRemote,
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {

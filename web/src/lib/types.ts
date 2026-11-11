@@ -42,7 +42,6 @@ export type StorageConfig = Pick<StorageConfigModel, keyof StorageConfigModel>;
 /** What the backend reports when no repository is selected: no path. */
 export const noRepo: RepoInfo = {
   initialized: false,
-  has_git: false,
   has_remote: false,
   storage_configured: false,
 };

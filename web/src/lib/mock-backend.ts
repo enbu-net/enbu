@@ -130,7 +130,6 @@ const mockRepoHistory: RepoInfo[] = [
     owner: "enbu-net",
     repo: "enbu",
     initialized: true,
-    has_git: true,
     has_remote: true,
     storage_configured: true,
   },

@@ -25,7 +25,6 @@ function repoInfo(path: string, owner = "", repo = ""): RepoInfo {
     owner,
     repo,
     initialized: true,
-    has_git: true,
     has_remote: true,
     storage_configured: true,
   };

@@ -22,7 +22,6 @@ function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
     owner: "acme",
     repo: "workspace",
     initialized: true,
-    has_git: true,
     has_remote: true,
     storage_configured: true,
     ...overrides,
@@ -60,20 +59,20 @@ describe("HomePage", () => {
     expect(queryButton("Connect with GitHub")).toBeTruthy();
   });
 
-  it("guides a folder without Git to GitHub", async () => {
+  it("founds a workspace in a folder without Git", async () => {
     await renderHome({
-      repo: repoInfo({ initialized: false, has_git: false, storage_configured: false }),
+      repo: repoInfo({ initialized: false, has_remote: false, storage_configured: false }),
     });
-    expect(container.textContent).toContain("This folder is not on GitHub yet");
+    expect(container.textContent).toContain("This folder has no enbu.toml yet");
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {
     await renderHome({
       status: { authenticated: false, workspace_configured: true },
-      repo: repoInfo({ has_git: false, has_remote: false }),
+      repo: repoInfo({ has_remote: false }),
     });
     expect(backend.ListSecrets).toHaveBeenCalled();
     expect(container.textContent).not.toContain("Connect with GitHub");
-    expect(container.textContent).not.toContain("This folder is not on GitHub yet");
+    expect(container.textContent).not.toContain("This folder has no enbu.toml yet");
   });
 });
