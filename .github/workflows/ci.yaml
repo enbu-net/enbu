@@ -1,9 +1,14 @@
 name: CI
 
+# Check runs on pull requests, which every change to main goes through, so a
+# merge does not run it again. main gets one nightly run instead: it catches
+# pull requests that passed against an older main, and it keeps main's caches,
+# which every pull request restores from, warm.
 on:
-  push:
-    branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 16 * * *' # 01:00 Asia/Tokyo, before the nightly DST starts
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,14 +16,34 @@ permissions:
 env:
   AQUA_GITHUB_TOKEN: ${{ github.token }}
 
+# A newer push supersedes the run of the same pull request.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  # Only superseded PR runs cancel; main commits keep distinct queue slots.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A manual run on main must not cancel the nightly one, or the reverse.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Select jobs
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.select.outputs.code }}
+      release: ${{ steps.select.outputs.release }}
+    steps:
+      # The merge commit of the pull request and its first parent, the base tip.
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Select jobs from the changed paths
+        id: select
+        run: python3 scripts/ci_changes.py
+
   frontend:
     name: Build shared frontend
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
@@ -45,6 +70,8 @@ jobs:
 
   core-native:
     name: Core (${{ matrix.target }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
@@ -89,6 +116,8 @@ jobs:
 
   identity-e2e:
     name: Identity E2E (${{ matrix.runner }})
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     strategy:
@@ -147,6 +176,8 @@ jobs:
 
   storage-e2e:
     name: Storage E2E (OCI / RustFS)
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
@@ -349,6 +380,8 @@ jobs:
 
   e2e:
     name: CLI E2E tests
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     steps:
@@ -382,9 +415,13 @@ jobs:
   # Every release asset (task release/build) must come out the same twice on
   # each platform, once with caches and once without; the cross-built assets
   # also across the two Linux CPU architectures. So a change that breaks
-  # reproducibility fails here and not at release time.
+  # reproducibility fails here and not at release time. It runs only when a
+  # build input changed (scripts/ci_changes.py); a release builds every
+  # platform twice again before it publishes.
   reproducible:
     name: Reproducible build (${{ matrix.suffix }}, cache ${{ matrix.cache }})
+    needs: [changes]
+    if: needs.changes.outputs.release == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -474,13 +511,15 @@ jobs:
 
   # The required status check of the main ruleset. It keeps the name "Check"
   # so the ruleset needs no change: a PR (Renovate included) merges only after
-  # every job above has passed. always() makes a failed, cancelled or skipped
-  # job fail this check instead of skipping it: a skipped required check counts
-  # as passing, so a cancelled run must not be mergeable.
+  # every job above has passed or was left out by the changes job. always()
+  # makes a failed or cancelled job fail this check instead of skipping it: a
+  # skipped required check counts as passing, so a cancelled run must not be
+  # mergeable. A job is skipped only by its changes condition or by a failed or
+  # cancelled dependency, which is itself listed here and fails the check.
   status-check:
     name: Check
     if: always()
-    needs: [frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, e2e, reproducible, reproducible-compare, renovate-config]
+    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, e2e, reproducible, reproducible-compare, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
@@ -489,7 +528,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'
+          echo "$RESULTS" | jq -e '.changes.result == "success" and all(.[]; .result == "success" or .result == "skipped")'
 
   renovate-config:
     runs-on: ubuntu-26.04
@@ -503,5 +542,5 @@ jobs:
           node-version: '26'
       - name: Validate Renovate configuration
         env:
-          RENOVATE_VERSION: 44.221.6 # renovate: datasource=npm depName=renovate
+          RENOVATE_VERSION: 44.222.4 # renovate: datasource=npm depName=renovate
         run: npx --yes --package "renovate@$RENOVATE_VERSION" renovate-config-validator --strict renovate.json

@@ -69,8 +69,9 @@ a fresh clone in another directory, with no Go, tool or dependency cache. The
 arm64 Linux runner also rebuilds the cross-built assets the amd64 one
 publishes, so those are compared across CPU architectures as well. Nothing is
 signed or published unless every asset matches. CI does the same on every pull
-request (each platform twice, with and without caches), so a change that breaks
-reproducibility cannot be merged.
+request that changes a build input (each platform twice, with and without
+caches; `scripts/ci_changes.py` lists the inputs) and every night on main, so a
+change that breaks reproducibility is caught before a release.
 
 ## Rebuild a release yourself
 

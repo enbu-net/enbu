@@ -6,6 +6,13 @@ on:
   push:
     branches-ignore:
       - main
+    # Documentation never selects a simulation (same list as scripts/ci_changes.py).
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - LICENSE
+      - .coderabbit.yaml
+      - .github/pull_request_template.md
   schedule:
     - cron: '0 17 * * *' # 02:00 Asia/Tokyo
   workflow_dispatch:
