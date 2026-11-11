@@ -24,6 +24,10 @@ function outside(event: { clientX: number; clientY: number }, dialog: HTMLDialog
  *
  * dismissible false (while an action runs) keeps Esc and the backdrop from
  * closing it. A dismissible dialog closes from the backdrop too.
+ *
+ * onClose reports a dialog the browser already closed (Esc, the backdrop), so
+ * the parent must stop rendering ModalDialog then: a dialog kept mounted after
+ * onClose stays closed and does not show again.
  */
 export function ModalDialog({
   labelledBy,
