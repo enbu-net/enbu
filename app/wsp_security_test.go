@@ -520,10 +520,10 @@ func TestAnotherDevicesConfiguredGenesisIsNotAdopted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	own := cfg
+	own := *cfg
 	own.WorkspaceID = "44444444-4444-4444-8444-444444444444"
 	own.ControlGenesis = ""
-	if err := config.SaveProjectTo(bob.RepositoryDir, own); err != nil {
+	if err := config.SaveProjectTo(bob.RepositoryDir, &own); err != nil {
 		t.Fatal(err)
 	}
 	bob.Storage = newMemRegistry()
