@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 )
 
@@ -28,8 +29,15 @@ var (
 // escaped n/r/t/$; unquoted and single-quoted values remain literal.
 // It never performs variable expansion, reads the environment, or executes code.
 // Duplicate keys are rejected rather than silently overwriting a secret.
+//
+// The text is UTF-8, or UTF-16 with a byte order mark: what Windows
+// PowerShell 5.1 writes with > or Out-File.
 func Parse(data []byte) (map[string]string, error) {
-	if len(data) > MaxBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+	if len(data) > MaxBytes {
+		return nil, ErrInvalid
+	}
+	data = fromUTF16(data)
+	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return nil, ErrInvalid
 	}
 	secrets := map[string]string{}
@@ -147,4 +155,27 @@ func Format(secrets map[string]string) ([]byte, error) {
 		}
 	}
 	return []byte(result.String()), nil
+}
+
+// fromUTF16 converts UTF-16 text that starts with a byte order mark to UTF-8,
+// and returns any other data as it is. An unpaired surrogate becomes U+FFFD,
+// so the result is valid UTF-8.
+func fromUTF16(data []byte) []byte {
+	var order func([]byte) uint16
+	switch {
+	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
+		order = func(b []byte) uint16 { return uint16(b[0]) | uint16(b[1])<<8 }
+	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
+		order = func(b []byte) uint16 { return uint16(b[1]) | uint16(b[0])<<8 }
+	default:
+		return data
+	}
+	units := make([]uint16, 0, len(data)/2)
+	for i := 2; i+1 < len(data); i += 2 {
+		units = append(units, order(data[i:]))
+	}
+	if len(data)%2 != 0 {
+		units = append(units, utf8.RuneError)
+	}
+	return []byte(string(utf16.Decode(units)))
 }

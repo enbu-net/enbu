@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
@@ -466,4 +468,41 @@ func runGit(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %s: %v", args, out, err)
 	}
 	return string(bytes.TrimSpace(out))
+}
+
+// A repository whose path holds Japanese and spaces (and, outside Windows,
+// ends in a space) is selected, remembered in gui.toml and listed again by
+// the path the CLI resolves.
+func TestSelectRepositoryInNonASCIIPath(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", filepath.Join(t.TempDir(), "データ 置き場"))
+	name := "日本語 リポジトリ (テスト)"
+	if runtime.GOOS != "windows" {
+		name += " "
+	}
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "init")
+	runGit(t, dir, "remote", "add", "origin", "https://github.com/octo/hello.git")
+	a := app.New(clock.New())
+	a.Identities = &apptest.Identities{}
+	s := NewService(a)
+	s.ctx = context.Background()
+
+	want := fsutil.Canonical(dir)
+	selected, err := s.SelectRepository(filepath.Join(dir, "."))
+	if err != nil || selected.Path != want || selected.Owner != "octo" {
+		t.Fatalf("SelectRepository = %+v, %v, want path %q", selected, err, want)
+	}
+	repos, err := s.ListRepositories()
+	if err != nil || len(repos) != 1 || repos[0].Path != want {
+		t.Fatalf("ListRepositories = %+v, %v", repos, err)
+	}
+	if err := s.RemoveRepository(filepath.ToSlash(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if repos, err := s.ListRepositories(); err != nil || len(repos) != 0 {
+		t.Fatalf("after removal: %+v, %v", repos, err)
+	}
 }
