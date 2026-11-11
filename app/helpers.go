@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,7 +9,6 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 )
@@ -57,7 +57,27 @@ func decryptSecretsObject(ciphertext []byte, identities ...agecrypto.Identity) (
 	if err != nil {
 		return nil, err
 	}
-	return bundle.Unmarshal(plaintext)
+	return decodeSecrets(plaintext)
+}
+
+// encodeSecrets is the plaintext of every revision: a JSON object of strings.
+func encodeSecrets(secrets map[string]string) []byte {
+	if secrets == nil {
+		secrets = map[string]string{}
+	}
+	data, _ := json.Marshal(secrets)
+	return data
+}
+
+func decodeSecrets(data []byte) (map[string]string, error) {
+	var secrets map[string]string
+	if err := json.Unmarshal(data, &secrets); err != nil {
+		return nil, fmt.Errorf("parsing secrets: %w", err)
+	}
+	if secrets == nil {
+		return nil, errors.New("parsing secrets: expected a JSON object")
+	}
+	return secrets, nil
 }
 
 func IsNotFoundError(err error) bool {
@@ -104,11 +124,6 @@ func resolveEnvironment(load func() (*config.ProjectConfig, error), name string)
 		Name:   name,
 		Output: env.Output,
 	}, nil
-}
-
-func IsNotInitializedError(err error) bool {
-	return apperr.Is(err, apperr.CodeConfigNotFound) ||
-		apperr.Is(err, apperr.CodeNotInitialized)
 }
 
 func errorsIsNotFound(err error) bool { return errors.Is(err, storage.ErrNotFound) }

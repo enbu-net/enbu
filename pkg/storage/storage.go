@@ -264,20 +264,6 @@ func sortedScopes(names []string) []string {
 	return out
 }
 
-// ValidateKey checks that a name is a legal OCI tag and a legal file name.
-func ValidateKey(key string) error {
-	if key == "" || len(key) > 128 || key == "." || key == ".." {
-		return fmt.Errorf("invalid storage key %q", key)
-	}
-	for _, r := range key {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
-			continue
-		}
-		return fmt.Errorf("invalid storage key %q", key)
-	}
-	return nil
-}
-
 func ValidateDigest(d digest.Digest) error {
 	// Validate first: Algorithm panics on a digest without a separator.
 	if err := d.Validate(); err != nil {

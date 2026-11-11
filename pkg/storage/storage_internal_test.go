@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -24,8 +25,8 @@ func TestNameAndPrefix(t *testing.T) {
 	if err != nil || name != "s-"+scope+"-"+rev.Encoded() {
 		t.Fatalf("state name = %q %v", name, err)
 	}
-	if err := ValidateKey(name); err != nil || len(name) > 128 {
-		t.Fatalf("state name is not a legal tag: %v (%d)", err, len(name))
+	if !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$`).MatchString(name) {
+		t.Fatalf("state name is not a legal OCI tag: %q", name)
 	}
 	if name, _ := Name(KindControl, "", rev); name != "c-"+rev.Encoded() {
 		t.Fatalf("control name = %q", name)

@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/opencontainers/go-digest"
 	"io"
 	"sync"
+
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
 
 var ErrOffline = errors.New("simulated network partition")
