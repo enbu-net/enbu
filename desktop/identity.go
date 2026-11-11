@@ -56,9 +56,9 @@ func (s *Service) UpgradeIdentity() (app.KeyUpdateResult, error) {
 
 // ImportSecrets adds every variable of a dotenv file's content to env, as
 // `enbu import` does. The frontend reads the file the person chose.
-func (s *Service) ImportSecrets(env, dotenv string, overwrite bool) (app.ImportResult, error) {
+func (s *Service) ImportSecrets(env, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
-		result, err := s.app.ImportDotenv(s.context(), env, []byte(dotenv), overwrite)
+		result, err := s.app.ImportDotenv(s.context(), env, []byte(content), overwrite)
 		if err != nil {
 			return app.ImportResult{}, err
 		}

@@ -137,8 +137,8 @@ export function GetRepoStatus(): $CancellablePromise<$models.RepoInfo> {
  * ImportSecrets adds every variable of a dotenv file's content to env, as
  * `enbu import` does. The frontend reads the file the person chose.
  */
-export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ImportSecrets", env, dotenv, overwrite).then(($result: any) => {
+export function ImportSecrets(env: string, content: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ImportSecrets", env, content, overwrite).then(($result: any) => {
         return $$createType8($result);
     });
 }

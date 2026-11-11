@@ -23,6 +23,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/config"
+	gitprovider "github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 type desktopKeyStore struct {
@@ -46,7 +47,7 @@ func (s *desktopKeyStore) loadSecret(_, key string) ([]byte, error) {
 func TestValidateRepoPath(t *testing.T) {
 	repoDir := newGitRepo(t)
 
-	repo, err := ValidateRepoPath(repoDir)
+	repo, err := validateRepoPath(context.Background(), gitprovider.NewCLIClient(), repoDir)
 	if err != nil {
 		t.Fatalf("ValidateRepoPath: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestProgressEmitsEvents(t *testing.T) {
 }
 
 func TestValidateRepoPathRejectsMissingPath(t *testing.T) {
-	if _, err := ValidateRepoPath(filepath.Join(t.TempDir(), "missing")); err == nil {
+	if _, err := validateRepoPath(context.Background(), gitprovider.NewCLIClient(), filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("ValidateRepoPath succeeded for missing path")
 	}
 }

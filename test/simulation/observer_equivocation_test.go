@@ -2,9 +2,10 @@ package simulation
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
-	"testing"
 )
 
 func TestObserverEquivocationSmoke(t *testing.T) {

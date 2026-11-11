@@ -16,9 +16,8 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/enbu-net/enbu/pkg/merge"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -376,11 +375,11 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 	if err != nil {
 		return nil, "", 0, err
 	}
-	dotenv, err := bundle.ToDotEnv(result.Secrets)
+	data, err = dotenv.Format(result.Secrets)
 	if err != nil {
 		return nil, "", 0, err
 	}
-	return dotenv, result.Output, len(result.Secrets), nil
+	return data, result.Output, len(result.Secrets), nil
 }
 
 func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
@@ -465,7 +464,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	}
 	a.emitStepProgress("pull", "write", "start")
 	stored := func() (map[string]bool, error) { return a.storedKeys(ctx, result.Environment) }
-	dotenv, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace, stored)
+	data, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace, stored)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +473,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {
+	if err := writePrivateOutput(ctx, outputPath, data); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
@@ -539,7 +538,7 @@ const keptMarker = "# Local variables below are kept by enbu pull; enbu does not
 // hold now, and if it fails those variables are kept.
 // With replace the file's content is ignored.
 func dotenvWithLocal(path string, secrets map[string]string, replace bool, everStored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
-	data, err = bundle.ToDotEnv(secrets)
+	data, err = dotenv.Format(secrets)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -562,11 +561,11 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 		return apperr.Wrap(apperr.CodeOutputUnreadable,
 			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", name), err, apperr.Params{"file": name})
 	}
-	previous, err := secretmap.ImportDotenv(pulled)
+	previous, err := dotenv.Parse(pulled)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)
 	}
-	vars, err := secretmap.ImportDotenv(local)
+	vars, err := dotenv.Parse(local)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)
 	}
@@ -616,7 +615,7 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 		return data, nil, removed, nil
 	}
 	sort.Strings(kept)
-	extra, err := bundle.ToDotEnv(keep)
+	extra, err := dotenv.Format(keep)
 	if err != nil {
 		return nil, nil, nil, err
 	}

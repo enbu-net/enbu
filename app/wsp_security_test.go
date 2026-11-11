@@ -12,7 +12,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -134,7 +133,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	attacker := newDevice(t, alice)
 	requestJoin(t, attacker)
 	members, _ := alice.ListMembers(bg)
-	forged, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "evil"}), []string{members[0].Recipient})
+	forged, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "evil"}), []string{members[0].Recipient})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +213,7 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	}
 	// And a revision he signs by hand, claiming the control he knew, is set
 	// aside: it is not accepted as current and does not change what is read.
-	ciphertext, _ := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
+	ciphertext, _ := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
 	cur, _ := alice.openSession(bg)
 	defer cur.Close()
 	sv, err := cur.loadResource(bg, cur.resource("default"))

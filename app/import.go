@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 )
 
 // ImportResult names what one import did to an environment.
@@ -22,7 +22,7 @@ type ImportResult struct {
 // ImportSecrets does.
 func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, overwrite bool) (result *ImportResult, err error) {
 	defer apperr.NormalizeInto(&err)
-	secrets, err := secretmap.ImportDotenv(content)
+	secrets, err := dotenv.Parse(content)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
 	}
