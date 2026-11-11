@@ -32,7 +32,6 @@ function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
   return {
     path: "/home/octo/app",
     initialized: false,
-    has_git: false,
     has_remote: false,
     storage_configured: false,
     ...overrides,
@@ -40,11 +39,10 @@ function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
 }
 
 describe("setupStep", () => {
-  it("asks for Git, then founds a workspace", () => {
-    expect(setupStep(repoInfo())).toBe("git");
-    expect(setupStep(repoInfo({ has_git: true }))).toBe("found");
-    expect(setupStep(repoInfo({ has_git: true, has_remote: true }))).toBe("found");
-    expect(setupStep(repoInfo({ has_git: true, initialized: true }))).toBeNull();
+  it("founds a workspace in any folder, with or without Git", () => {
+    expect(setupStep(repoInfo())).toBe("found");
+    expect(setupStep(repoInfo({ has_remote: true }))).toBe("found");
+    expect(setupStep(repoInfo({ initialized: true }))).toBeNull();
   });
 
   it("joins the workspace enbu.toml already names", () => {
@@ -54,35 +52,11 @@ describe("setupStep", () => {
 });
 
 describe("RepositorySetup", () => {
-  it("guides a folder without Git to GitHub Desktop or VS Code and checks again", async () => {
-    const reloadRepo = vi.fn(async () => {});
-    act(() => root.render(withSession(<RepositorySetup step="git" />, { reloadRepo })));
-    expect(container.querySelector("h1")?.textContent).toBe("This folder is not on GitHub yet");
-    expect(container.textContent).toContain("create a repository");
-    expect(container.textContent).toContain("Publish to GitHub");
-    expect(container.textContent).toContain(".gitignore");
-    // A secret committed before is on GitHub once published, whatever .gitignore says.
-    expect(container.textContent).toContain(
-      "check that no tracked file or earlier commit holds a secret",
-    );
-    // The commands only prepare Git and the remote; they do not publish.
-    expect(container.querySelector("details")?.textContent).toContain("commit and push later");
-    // The commands stay for terminal users, folded away.
-    expect(container.querySelector("details:not([open]) pre")?.textContent).toBe(
-      "git init\ngit remote add origin https://github.com/OWNER/REPO.git",
-    );
-    act(() => queryButton("Open the step-by-step guide")?.click());
-    expect(openURL).toHaveBeenCalledWith("https://enbu.net/docs/put-your-project-on-github/");
-
-    await act(async () => queryButton("Check again")?.click());
-    await settle();
-    expect(reloadRepo).toHaveBeenCalledTimes(1);
-  });
-
   it("opens the Japanese guide in Japanese", async () => {
     await setLocale("ja", { reload: false });
     try {
-      act(() => root.render(withSession(<RepositorySetup step="git" />)));
+      act(() => root.render(withSession(<RepositorySetup step="found" />)));
+      await settle();
       act(() => queryButton("詳しい手順を見る")?.click());
       expect(openURL).toHaveBeenCalledWith("https://enbu.net/ja/docs/put-your-project-on-github/");
     } finally {
@@ -114,15 +88,13 @@ describe("RepositorySetup", () => {
     expect(reloadRepo).toHaveBeenCalledTimes(1);
   });
 
-  it("asks for a storage or a GitHub remote when there is no suggestion", async () => {
+  it("asks for a storage, pointing to the GitHub guide, when there is no suggestion", async () => {
     mocked.Initialize.mockResolvedValueOnce(initResult());
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
     await settle();
-    expect(container.textContent).toContain("Publish Branch");
-    expect(container.querySelector("details pre")?.textContent).toBe(
-      "git remote add origin https://github.com/OWNER/REPO.git",
-    );
+    act(() => queryButton("Open the step-by-step guide")?.click());
+    expect(openURL).toHaveBeenCalledWith("https://enbu.net/docs/put-your-project-on-github/");
     expect(queryButton("Found workspace")?.disabled).toBe(true);
 
     const input = container.querySelector<HTMLInputElement>("#init-storage")!;
@@ -155,10 +127,10 @@ describe("RepositorySetup", () => {
   });
 
   it("does not ask for a GitHub remote the repository already has", async () => {
-    const repo = repoInfo({ has_git: true, has_remote: true });
+    const repo = repoInfo({ has_remote: true });
     act(() => root.render(withSession(<RepositorySetup step="found" />, { repo })));
     await settle();
-    expect(container.querySelector("pre")).toBeNull();
+    expect(queryButton("Open the step-by-step guide")).toBeNull();
     expect(container.textContent).toContain("not one GHCR accepts");
   });
 

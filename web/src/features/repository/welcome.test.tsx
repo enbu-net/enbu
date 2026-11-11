@@ -34,7 +34,6 @@ function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
     owner: "octo",
     repo: "app",
     initialized: true,
-    has_git: true,
     has_remote: true,
     storage_configured: true,
     ...overrides,

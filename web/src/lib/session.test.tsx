@@ -53,7 +53,6 @@ describe("SessionProvider", () => {
     const repo = {
       path: "/s3",
       initialized: true,
-      has_git: false,
       has_remote: false,
       storage_configured: true,
     };

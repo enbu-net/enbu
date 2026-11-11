@@ -200,7 +200,6 @@ export class RepoInfo {
     "owner"?: string;
     "repo"?: string;
     "initialized": boolean;
-    "has_git": boolean;
     "has_remote": boolean;
     "storage_configured": boolean;
 
@@ -208,9 +207,6 @@ export class RepoInfo {
     constructor($$source: Partial<RepoInfo> = {}) {
         if (!("initialized" in $$source)) {
             this["initialized"] = false;
-        }
-        if (!("has_git" in $$source)) {
-            this["has_git"] = false;
         }
         if (!("has_remote" in $$source)) {
             this["has_remote"] = false;

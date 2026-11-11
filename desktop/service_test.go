@@ -356,7 +356,7 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.StorageConfigured || info.HasGit || info.HasRemote {
+	if !info.StorageConfigured || info.HasRemote {
 		t.Fatalf("%+v", info)
 	}
 	if status := s.GetAuthStatus(); !status.WorkspaceConfigured {
