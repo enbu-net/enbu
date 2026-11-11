@@ -14,12 +14,8 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func testObject(kind Kind, scope, head string, blobs ...string) Object {
-	o := Object{Kind: kind, Scope: scope, Rev: digest.FromString(head), Head: []byte(head)}
-	for _, b := range blobs {
-		o.Blobs = append(o.Blobs, []byte(b))
-	}
-	return o
+func testObject(kind Kind, scope, head, payload string) Object {
+	return Object{Kind: kind, Scope: scope, Rev: digest.FromString(head), Head: []byte(head), Payload: []byte(payload)}
 }
 
 func TestNameAndPrefix(t *testing.T) {
@@ -83,15 +79,13 @@ func TestValidateObject(t *testing.T) {
 		t.Fatal(err)
 	}
 	cases := map[string]func(*Object){
-		"wrong digest":    func(o *Object) { o.Rev = digest.FromString("other") },
-		"empty head":      func(o *Object) { o.Head = nil },
-		"oversized head":  func(o *Object) { o.Head = bytes.Repeat([]byte("x"), MaxHeadBytes+1) },
-		"oversized blob":  func(o *Object) { o.Blobs = [][]byte{bytes.Repeat([]byte("x"), MaxPayloadBytes+1)} },
-		"empty blob":      func(o *Object) { o.Blobs = [][]byte{{}} },
-		"too many blobs":  func(o *Object) { o.Blobs = make([][]byte, MaxBlobs+1) },
-		"bad scope":       func(o *Object) { o.Scope = "bad" },
-		"unknown kind":    func(o *Object) { o.Kind = "other" },
-		"scope on a head": func(o *Object) { o.Kind = KindControl },
+		"wrong digest":      func(o *Object) { o.Rev = digest.FromString("other") },
+		"empty head":        func(o *Object) { o.Head = nil },
+		"oversized head":    func(o *Object) { o.Head = bytes.Repeat([]byte("x"), MaxHeadBytes+1) },
+		"oversized payload": func(o *Object) { o.Payload = bytes.Repeat([]byte("x"), MaxPayloadBytes+1) },
+		"bad scope":         func(o *Object) { o.Scope = "bad" },
+		"unknown kind":      func(o *Object) { o.Kind = "other" },
+		"scope on a head":   func(o *Object) { o.Kind = KindControl },
 	}
 	for name, mutate := range cases {
 		o := good
@@ -101,63 +95,64 @@ func TestValidateObject(t *testing.T) {
 		}
 	}
 	// What a state or a control may attach is the protocol's business, not storage's.
-	for _, o := range []Object{testObject(KindControl, "", "head"), testObject(KindControl, "", "head", "x", "y"), testObject(KindState, scope, "head")} {
+	for _, o := range []Object{testObject(KindControl, "", "head", ""), testObject(KindControl, "", "head", "x"), testObject(KindState, scope, "head", "")} {
 		if err := ValidateObject(o); err != nil {
-			t.Fatalf("%s with %d blobs: %v", o.Kind, len(o.Blobs), err)
+			t.Fatalf("%s with a %d-byte payload: %v", o.Kind, len(o.Payload), err)
 		}
 	}
 }
 
-func TestFrameLayoutReachesEachPartWithoutTheOthers(t *testing.T) {
+func TestFrameReachesTheHeadAndThePayloadSeparately(t *testing.T) {
 	scope := StateScope("ws", "r")
-	o := testObject(KindState, scope, "the head", "first", "second blob")
+	o := testObject(KindState, scope, "the head", "the payload")
 	data := frame(o)
 	r := bytes.NewReader(data)
-	head, layout, err := readHead(r, int64(len(data)), o.Rev)
+	head, offset, err := readHead(r, int64(len(data)), o.Rev)
 	if err != nil || string(head) != "the head" {
 		t.Fatalf("head = %q %v", head, err)
 	}
-	for i, want := range []string{"first", "second blob"} {
-		section, err := blobSection(r, layout, i)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got := make([]byte, section.Size())
-		if _, err := section.ReadAt(got, 0); err != nil && string(got) != want {
-			t.Fatalf("blob %d = %q %v", i, got, err)
-		}
-		if string(got) != want {
-			t.Fatalf("blob %d = %q", i, got)
-		}
+	section, err := payloadSection(r, int64(len(data)), offset)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := blobSection(r, layout, 2); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("a blob past the end: %v", err)
+	got := make([]byte, section.Size())
+	if _, err := section.ReadAt(got, 0); err != nil || string(got) != "the payload" {
+		t.Fatalf("payload = %q %v", got, err)
+	}
+
+	bare := frame(testObject(KindControl, "", "the head", ""))
+	_, offset, err = readHead(bytes.NewReader(bare), int64(len(bare)), o.Rev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := payloadSection(bytes.NewReader(bare), int64(len(bare)), offset); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an object without a payload: %v", err)
 	}
 }
 
 func TestFrameRejectsMalformedAndTampered(t *testing.T) {
 	scope := StateScope("ws", "r")
-	o := testObject(KindState, scope, "the head", "blob")
+	o := testObject(KindState, scope, "the head", "payload")
 	good := frame(o)
 	tampered := append([]byte(nil), good...)
-	tampered[len(tampered)-6] ^= 1 // inside the head
+	tampered[2] ^= 1 // inside the head
 	for name, data := range map[string][]byte{
 		"empty":           nil,
-		"zero parts":      {0},
-		"too many parts":  {200, 1},
-		"length past end": append([]byte{1, 100}, 'x'),
-		"trailing bytes":  append(append([]byte(nil), good...), 'x'),
-		"short":           good[:len(good)-1],
+		"length past end": append([]byte{100}, 'x'),
+		"short head":      good[:5],
 		"tampered head":   tampered,
 		// 2^64-1 as a length: it must be refused before it is added to anything.
-		"length of 2^64-1":  {2, 5, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01},
-		"blob over the cap": append([]byte{2, 1}, append(binary.AppendUvarint(nil, MaxPayloadBytes+1), 'x')...),
-		"head over the cap": append([]byte{1}, append(binary.AppendUvarint(nil, MaxHeadBytes+1), 'x')...),
-		"zero-length head":  {1, 0},
+		"length of 2^64-1":  {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 'x'},
+		"head over the cap": append(binary.AppendUvarint(nil, MaxHeadBytes+1), 'x'),
+		"zero-length head":  {0, 'x'},
 	} {
 		if _, _, err := readHead(bytes.NewReader(data), int64(len(data)), o.Rev); !errors.Is(err, ErrCorrupt) {
 			t.Fatalf("%s: %v", name, err)
 		}
+	}
+	// A payload over the cap is refused from the size alone, without reading it.
+	if _, _, err := readHead(bytes.NewReader(good), int64(len(good))+MaxPayloadBytes, o.Rev); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("payload over the cap: %v", err)
 	}
 }
 
@@ -165,7 +160,7 @@ func TestLocalRejectsCorruptionAndSymlinks(t *testing.T) {
 	dir := t.TempDir()
 	st := NewLocal(dir)
 	ctx := context.Background()
-	o := testObject(KindControl, "", "head-control")
+	o := testObject(KindControl, "", "head-control", "")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +196,7 @@ func TestLocalDiscoverIgnoresForeignFiles(t *testing.T) {
 	dir := t.TempDir()
 	st := NewLocal(dir)
 	ctx := context.Background()
-	o := testObject(KindRequest, "", "head-request")
+	o := testObject(KindRequest, "", "head-request", "")
 	if err := st.Publish(ctx, o); err != nil {
 		t.Fatal(err)
 	}

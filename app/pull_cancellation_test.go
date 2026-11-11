@@ -59,12 +59,12 @@ func TestCanceledPullPreservesOriginalOutput(t *testing.T) {
 					}
 					return next.Discover(ctx, kind, scope)
 				},
-				OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+				OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 					blobs++
 					if phase == "history-blob" && blobs == 2 {
 						cancel()
 					}
-					return next.OpenBlob(ctx, kind, scope, rev, index)
+					return next.OpenPayload(ctx, kind, scope, rev)
 				},
 			})
 			if phase == "write-replace" {

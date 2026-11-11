@@ -38,6 +38,14 @@ func TestJoinApproveAndShareSecrets(t *testing.T) {
 	if err := bob.AddSecret(bg, "default", "BOB", "x"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("pending device wrote secrets: %v", err)
 	}
+	// An unknown environment needs only the local enbu.toml, so it is reported
+	// before membership is checked.
+	if _, err := bob.ListSecrets(bg, "missing"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device read an unknown environment: %v", err)
+	}
+	if err := bob.AddSecret(bg, "missing", "BOB", "x"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device wrote an unknown environment: %v", err)
+	}
 	// Alice picks bob from the list.
 	reqs, err := alice.ListJoinRequests(bg)
 	if err != nil || len(reqs) != 1 || reqs[0].DeviceID != res.DeviceID || reqs[0].Fingerprint != res.Fingerprint {
@@ -118,7 +126,7 @@ func TestRecipientInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +155,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	resource := s.resource("default")
 	t.Run("unsigned state", func(t *testing.T) {
 		junk := []byte("not a signed state")
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
@@ -171,7 +179,7 @@ func TestFakeSecretRejected(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {

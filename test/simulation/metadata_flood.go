@@ -52,9 +52,9 @@ func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 		if kind == storage.KindState {
 			objectScope = scope
 		}
-		object := storagetest.Object(kind, objectScope, "malformed metadata")
+		object := storagetest.Object(kind, objectScope, "malformed metadata", "")
 		if kind == storage.KindState {
-			object.Blobs = [][]byte{[]byte("must-not-decrypt")}
+			object.Payload = []byte("must-not-decrypt")
 		}
 		if err := w.Devices[0].Store.Publish(ctx, object); err != nil {
 			return err
@@ -120,12 +120,12 @@ func (w *World) MetadataFlood(ctx context.Context, mode string) error {
 			deletes++
 			return next.Delete(ctx, k, s, rev)
 		},
-		OpenBlob: func(ctx context.Context, next storage.Store, k storage.Kind, s string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, k storage.Kind, s string, rev digest.Digest) (io.ReadCloser, error) {
 			blobs++
 			if duplicate && rev == injected.Rev {
 				badBlobs++
 			}
-			return next.OpenBlob(ctx, k, s, rev, index)
+			return next.OpenPayload(ctx, k, s, rev)
 		},
 	})
 	for _, d := range w.Devices {

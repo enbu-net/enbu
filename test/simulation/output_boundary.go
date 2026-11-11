@@ -55,8 +55,8 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 		base := store.Store
 		fired := false
 		var peerErr error
-		store.Store = storagetest.Wrap(base, storagetest.Hooks{OpenBlob: func(c context.Context, next storage.Store, k storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
-			r, err := next.OpenBlob(c, k, scope, rev, index)
+		store.Store = storagetest.Wrap(base, storagetest.Hooks{OpenPayload: func(c context.Context, next storage.Store, k storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			r, err := next.OpenPayload(c, k, scope, rev)
 			if err != nil || fired || k != storage.KindState {
 				return r, err
 			}

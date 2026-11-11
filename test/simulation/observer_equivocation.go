@@ -67,11 +67,11 @@ func hideObserverRevisions(base storage.Store, kind storage.Kind, scope string, 
 			}
 			return next.FetchHead(ctx, k, resource, rev)
 		},
-		OpenBlob: func(ctx context.Context, next storage.Store, k storage.Kind, resource string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, k storage.Kind, resource string, rev digest.Digest) (io.ReadCloser, error) {
 			if hides(k, resource, rev) {
 				return nil, storage.ErrNotFound
 			}
-			return next.OpenBlob(ctx, k, resource, rev, index)
+			return next.OpenPayload(ctx, k, resource, rev)
 		},
 	})
 }

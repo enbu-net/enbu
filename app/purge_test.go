@@ -1,16 +1,22 @@
 package app
 
 import (
+	"context"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/opencontainers/go-digest"
 )
 
 // noDelete is a backend that cannot delete, like a registry without a provider API.
 type noDelete struct{ storage.Store }
 
-func (noDelete) Capabilities() storage.Capabilities { return storage.Capabilities{} }
+func (noDelete) CanDelete() bool { return false }
+
+func (noDelete) Delete(context.Context, storage.Kind, string, digest.Digest) error {
+	return storage.ErrUnsupported
+}
 
 // Purging must not delete secrets for a deletion that will then be refused.
 func TestDeleteEnvironmentPurgingChecksEverythingBeforeDeleting(t *testing.T) {

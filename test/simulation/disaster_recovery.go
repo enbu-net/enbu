@@ -137,11 +137,11 @@ func (w *World) backupRecoveryStore(ctx context.Context) ([]storage.Object, erro
 				}
 				object := storage.Object{Kind: kind, Scope: scope, Rev: rev, Head: head}
 				if kind == storage.KindState {
-					blob, err := storage.ReadBlob(ctx, s, kind, scope, rev, 0, storage.MaxPayloadBytes)
+					blob, err := storage.ReadPayload(ctx, s, kind, scope, rev, storage.MaxPayloadBytes)
 					if err != nil {
 						return nil, err
 					}
-					object.Blobs = [][]byte{blob}
+					object.Payload = blob
 				}
 				out = append(out, object)
 			}

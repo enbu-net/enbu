@@ -218,7 +218,7 @@ func requireUnreadableBy(t *testing.T, alice, dave *App) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,7 +34,7 @@ func TestInspectRepository(t *testing.T) {
 		{output: "C:/repo"},
 		{output: "git@github.com:octo/example.git"},
 	}}
-	client := NewCLIClientWithRunner(runner)
+	client := &CLIClient{runner: runner}
 
 	repo, err := client.Inspect(context.Background(), "C:/repo/subdir")
 	if err != nil {
@@ -53,7 +53,7 @@ func TestInspectRepository(t *testing.T) {
 
 func TestInspectNonRepository(t *testing.T) {
 	runner := &fakeRunner{results: []runResult{{err: errors.New("not a repository")}}}
-	client := NewCLIClientWithRunner(runner)
+	client := &CLIClient{runner: runner}
 
 	repo, err := client.Inspect(context.Background(), ".")
 	if err != nil {

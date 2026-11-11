@@ -33,10 +33,6 @@ func NewCLIClient() *CLIClient {
 	return &CLIClient{runner: ExecRunner{}}
 }
 
-func NewCLIClientWithRunner(runner Runner) *CLIClient {
-	return &CLIClient{runner: runner}
-}
-
 func (c *CLIClient) Inspect(ctx context.Context, path string) (Repository, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
