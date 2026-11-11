@@ -58,8 +58,10 @@ gh attestation verify enbu_vX.Y.Z_linux_amd64.tar.gz --repo enbu-net/enbu \
 
 ### 1. Choose storage
 
-In a repository whose `origin` is on GitHub, sign in and run `init`. The workspace is
-stored on GHCR beside the repository, at `oci://ghcr.io/OWNER/REPO-enbu`:
+In a repository whose `origin` is on GitHub, sign in and run `init`. `auth login` uses
+the GitHub Device Flow: it shows a code to enter at github.com/login/device, so it
+works over SSH too. The workspace is stored on GHCR beside the repository, at
+`oci://ghcr.io/OWNER/REPO-enbu`:
 
 ```bash
 enbu auth login
@@ -264,10 +266,10 @@ enbu history compact --keep 50  # admin: delete revisions older than the latest 
 ## Identity storage
 
 New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
-Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
-X25519 recipients can be included in the same encrypted file.
+Hardware P-256 private keys stay on the device. Each device keeps one key set per
+workspace: an encryption identity and a separate signing key.
 
-New identities are post-quantum hybrids, so ciphertext stored today stays safe against a
+Every identity is a post-quantum hybrid, so ciphertext stored today stays safe against a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
 ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
 P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is
@@ -389,8 +391,7 @@ Errors enbu cannot classify show a generic message; set `ENBU_DEBUG=1` to print
 the underlying cause on stderr.
 `enbu pull --json` does not write an `.env` file; it returns the decrypted secrets in `data.secrets`.
 Do not log or persist this response.
-`enbu auth login --device --json` is unsupported because Device Flow must display a code before authentication finishes.
-Use `enbu auth login --json` for browser authentication.
+`enbu auth login --json` prints the Device Flow code on stderr; stdout holds only the JSON result.
 
 ## Test coverage
 
@@ -452,19 +453,16 @@ but a device that has not yet seen the removal still accepts it.
 sequenceDiagram
     participant User
     participant CLI as enbu CLI
-    participant Auth as auth.enbu.net
     participant GitHub as GitHub OAuth
     participant GHCR as Storage
 
     User->>CLI: enbu auth login
-    CLI->>CLI: Start 127.0.0.1 callback listener
-    CLI->>Auth: Create PKCE session
-    Auth-->>CLI: GitHub authorization URL
-    CLI-->>User: Open browser
-    User->>GitHub: Authorize in browser
-    GitHub-->>CLI: Authorization code via loopback callback
-    CLI->>Auth: Exchange code with PKCE verifier
-    Auth-->>CLI: Access token
+    CLI->>GitHub: Request a device code
+    GitHub-->>CLI: User code
+    CLI-->>User: Show the code, open github.com/login/device
+    User->>GitHub: Enter the code and authorize
+    CLI->>GitHub: Poll for the token
+    GitHub-->>CLI: Access token
     CLI->>CLI: Store token in OS keychain
     CLI-->>User: ✓ Authenticated
 

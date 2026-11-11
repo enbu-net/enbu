@@ -131,9 +131,15 @@ export class IdentityDiagnosis {
     }
 }
 
+/**
+ * OAuthStart is a GitHub Device Flow sign-in waiting for the user to enter
+ * UserCode at VerificationURI.
+ */
 export class OAuthStart {
     "session_id": string;
     "expires_at": string;
+    "user_code": string;
+    "verification_uri": string;
 
     /** Creates a new OAuthStart instance. */
     constructor($$source: Partial<OAuthStart> = {}) {
@@ -142,6 +148,12 @@ export class OAuthStart {
         }
         if (!("expires_at" in $$source)) {
             this["expires_at"] = "0001-01-01T00:00:00.000Z";
+        }
+        if (!("user_code" in $$source)) {
+            this["user_code"] = "";
+        }
+        if (!("verification_uri" in $$source)) {
+            this["verification_uri"] = "";
         }
 
         Object.assign(this, $$source);

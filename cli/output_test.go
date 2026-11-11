@@ -191,40 +191,15 @@ func TestCompletionNoDescriptions(t *testing.T) {
 }
 
 func TestJSONAuthLoginEmitsOnlyFinalResult(t *testing.T) {
-	login := newAuthLoginCommandWithDeps(authLoginDeps{
-		browserLogin: func(_ context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
-			if err := open("https://github.com/login/oauth/authorize"); err != nil {
-				return nil, err
-			}
-			return &auth.StoredToken{Username: "octo"}, nil
-		},
-		openBrowser: func(string) error { return nil },
-	})
+	// The device code goes to stderr; stdout holds only the JSON envelope.
+	login := newAuthLoginCommandWithDeps(authLoginDeps{login: func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
+		return &auth.StoredToken{Username: "octo"}, nil
+	}})
 	root := jsonTestRoot(login)
 	envelope := executeJSON(t, root, "login", "--json")
 	data := objectField(t, envelope, "data")
 	if got := stringField(t, data, "username"); got != "octo" {
 		t.Fatalf("username = %q", got)
-	}
-}
-
-func TestJSONAuthDeviceIsRejectedBeforeLogin(t *testing.T) {
-	called := false
-	login := newAuthLoginCommandWithDeps(authLoginDeps{
-		deviceLogin: func(context.Context, string, auth.DevicePrompter) (*auth.StoredToken, error) {
-			called = true
-			return nil, errors.New("unexpected call")
-		},
-	})
-	envelope, err := executeJSONResult(t, jsonTestRoot(login), "login", "--device", "--json")
-	if err == nil {
-		t.Fatal("execution unexpectedly succeeded")
-	}
-	if called {
-		t.Fatal("device login started before rejecting JSON mode")
-	}
-	if ok, _ := envelope["ok"].(bool); ok {
-		t.Fatalf("response unexpectedly succeeded: %#v", envelope)
 	}
 }
 

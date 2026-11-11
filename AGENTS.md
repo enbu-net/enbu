@@ -4,7 +4,7 @@ This file provides guidance to Agent tool when working with code in this reposit
 
 ## What is enbu
 
-Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Authorization Code Flow with PKCE) is used only to reach GHCR.
+Keyless `.env` management. Encrypts secrets with age for each member's device key and stores only signed ciphertext in a storage the team chooses: any OCI registry (GHCR included) or an S3 bucket prefix. No shared master key: each device has its own age recipient and a separate signing key, and the member list is a signed Control rooted in `enbu.toml`. GitHub sign-in (Device Flow) is used only to reach GHCR.
 
 ## Notes
 
@@ -71,7 +71,7 @@ pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipie
 pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
 pkg/winbridge/          → inside WSL, hands key operations and the GitHub token to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, JSON over stdio, one protocol version, no paths cross); WSL never uses the Linux keystore
 pkg/dotenv/              → .env parsing and rendering
-pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
+pkg/auth/                → GitHub Device Flow sign-in, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows

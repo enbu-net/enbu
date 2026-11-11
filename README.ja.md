@@ -73,7 +73,7 @@ GitHub でパッケージの設定を開き、リポジトリを接続して「I
 トークンは OS keyring に置き、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
 別の `XDG_DATA_HOME` では別のアカウントを選べます。`GITHUB_TOKEN` があればどのアカウントよりも優先します。
 
-ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
+`enbu auth login` は GitHub Device Flow を使います。表示されたコードを github.com/login/device で入力するので、SSH 越しでも使えます。
 それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
 その他の OCI レジストリは Docker の認証設定を使います:
 
@@ -251,7 +251,7 @@ enbu history compact --keep 50  # 管理者: 最新50件より古い revision �
 
 新規IdentityはLinux／WindowsでTPM 2.0、macOSでSecure Enclaveを優先します。
 ハードウェアのP-256秘密鍵は端末から取り出しません。
-age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号化できます。
+端末はワークスペースごとに、暗号化用のIdentityと別の署名鍵を1組持ちます。
 
 新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
@@ -334,8 +334,7 @@ VS Code拡張などのプロセスからenbuを実行する場合は、任意の
 分類できないエラーは汎用メッセージだけを出します。`ENBU_DEBUG=1` を付けると原因を stderr に表示します。
 `enbu pull --json` は `.env` を書き込まず、復号したシークレットを `data.secrets` で返します。
 このレスポンスをログへ記録したり、永続化したりしないでください。
-Device Flowは認証完了前にコードを表示する必要があるため、`enbu auth login --device --json` には対応していません。
-ブラウザ認証には `enbu auth login --json` を使います。
+`enbu auth login --json` は Device Flow のコードを stderr に表示し、stdout には JSON の結果だけを出します。
 
 ## 仕組み
 
@@ -370,19 +369,16 @@ Storageは信頼しません。名前は場所を示すヒントにすぎず、�
 sequenceDiagram
     participant User as ユーザー
     participant CLI as enbu CLI
-    participant Auth as auth.enbu.net
     participant GitHub as GitHub OAuth
     participant GHCR as GHCR
 
     User->>CLI: enbu auth login
-    CLI->>CLI: 127.0.0.1 callback listenerを開始
-    CLI->>Auth: PKCE sessionを作成
-    Auth-->>CLI: GitHub認可URL
-    CLI-->>User: ブラウザを開く
-    User->>GitHub: ブラウザで認証・承認
-    GitHub-->>CLI: loopback callbackで認可コード
-    CLI->>Auth: PKCE verifierでコード交換
-    Auth-->>CLI: Access Token
+    CLI->>GitHub: device codeを要求
+    GitHub-->>CLI: ユーザーコード
+    CLI-->>User: コードを表示し github.com/login/device を開く
+    User->>GitHub: コードを入力して承認
+    CLI->>GitHub: tokenをポーリング
+    GitHub-->>CLI: Access Token
     CLI->>CLI: tokenをOSキーチェーンへ保存
     CLI-->>User: ✓ Authenticated
 

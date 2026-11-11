@@ -79,7 +79,7 @@ func TestEveryServiceMethodFailsWithPublicError(t *testing.T) {
 	a := app.New(clock.New())
 	a.Identities = &apptest.Identities{}
 	s := NewService(a)
-	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
+	s.authLogin = func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
 		return nil, errors.New("login cause")
 	}
 	failures := 0
