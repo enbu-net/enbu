@@ -11,7 +11,9 @@ on:
     # waiting for a runner the way a cancelling job would.
     types: [opened, synchronize, reopened, closed]
   schedule:
-    - cron: '0 16 * * *' # 01:00 Asia/Tokyo, before the nightly DST starts
+    # Off the hour (GitHub delays on-the-hour schedules by hours), and before
+    # the nightly Coverage (23:37) and DST (00:07) runs.
+    - cron: '7 14 * * *' # 23:07 Asia/Tokyo
   workflow_dispatch:
 
 permissions:

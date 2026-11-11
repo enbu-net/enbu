@@ -14,7 +14,8 @@ on:
   # main gets one nightly report instead of a run per merge, which also keeps
   # the coverage jobs' caches on main warm for pull requests.
   schedule:
-    - cron: '0 18 * * *' # 03:00 Asia/Tokyo, after the nightly DST starts
+    # Off the hour, between the nightly CI (23:07) and DST (00:07) runs.
+    - cron: '37 14 * * *' # 23:37 Asia/Tokyo
   workflow_dispatch:
 
 permissions: {}
