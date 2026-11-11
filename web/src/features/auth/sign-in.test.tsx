@@ -51,7 +51,7 @@ describe("SignIn", () => {
 
     expect(queryButton("Connect with GitHub")).toBeTruthy();
     expect(container.querySelector("h1")?.textContent).toBe("Sign in to GitHub");
-    expect(container.textContent).toContain("GitHub Container Registry");
+    expect(container.textContent).toContain("GitHub Container Registry (GHCR), which it suggests");
     expect(container.querySelector("#theme-select")).toBeNull();
     expect(container.querySelector("#language-select")).toBeNull();
   });
