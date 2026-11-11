@@ -21,7 +21,7 @@ func (w *World) HistorySnapshot(ctx context.Context, operation, change string, c
 		return fmt.Errorf("invalid history snapshot operation %q", operation)
 	}
 	switch change {
-	case "edit", "remove", "upgrade", "compact":
+	case "edit", "remove", "compact":
 	default:
 		return fmt.Errorf("invalid history snapshot change %q", change)
 	}
@@ -106,13 +106,6 @@ func (w *World) HistorySnapshot(ctx context.Context, operation, change string, c
 		switch change {
 		case "remove":
 			peerErr = admin.RemoveMember(ctx, reader.ID)
-		case "upgrade":
-			siblingStore := &Store{Store: base, Tape: w.Tape, Device: 1, advance: reader.Store.advance}
-			sibling := w.newApp(1, len(w.Devices), reader.Keys, siblingStore)
-			_, peerErr = sibling.UpgradeIdentity(ctx)
-			if peerErr == nil {
-				peerErr = admin.ApproveMember(ctx, reader.ID)
-			}
 		case "compact":
 			_, peerErr = admin.CompactHistory(ctx, "default", 1)
 		}

@@ -15,7 +15,7 @@ import (
 // Protocol is the bridge protocol version. Both sides must speak the same
 // one; there is no compatibility layer, so the person installs the same enbu
 // in Windows and in WSL.
-const Protocol = 1
+const Protocol = 2
 
 // The wire format is a stream of JSON objects in each direction: one request,
 // then its response. The WSL side sends "hello" first.
@@ -33,17 +33,10 @@ type response struct {
 
 const (
 	methodHello              = "hello"
-	methodCreate             = "identity.create"
-	methodCreatePending      = "identity.create_pending"
-	methodLoad               = "identity.load"
-	methodLoadRetained       = "identity.load_retained"
-	methodInfo               = "identity.info"
-	methodPendingInfo        = "identity.pending_info"
-	methodPromotePending     = "identity.promote_pending"
+	methodCreate             = "device.create"
+	methodLoad               = "device.load"
+	methodInfo               = "device.info"
 	methodUnwrap             = "identity.unwrap"
-	methodCreateSigner       = "signer.create"
-	methodLoadSigner         = "signer.load"
-	methodSignerInfo         = "signer.info"
 	methodSign               = "signer.sign"
 	methodClose              = "close"
 	methodDoctor             = "doctor"
@@ -73,16 +66,16 @@ type handleParams struct {
 	Handle uint64 `json:"handle"`
 }
 
-type identityResult struct {
-	Handle    uint64              `json:"handle"`
+// deviceResult is a device's key set: a handle to its age identity and one
+// to its signing key, with their public halves.
+type deviceResult struct {
+	Identity  uint64              `json:"identity"`
 	Recipient string              `json:"recipient"`
+	Signer    uint64              `json:"signer"`
+	Public    signing.PublicKey   `json:"public"`
 	Info      identity.PublicInfo `json:"info"`
 	Created   bool                `json:"created,omitempty"`
 	Warning   string              `json:"warning,omitempty"`
-}
-
-type retainedResult struct {
-	Identities []identityResult `json:"identities"`
 }
 
 type infoResult struct {
@@ -97,19 +90,6 @@ type unwrapParams struct {
 
 type unwrapResult struct {
 	FileKey []byte `json:"file_key"`
-}
-
-type signerResult struct {
-	Handle  uint64              `json:"handle"`
-	Public  signing.PublicKey   `json:"public"`
-	Info    identity.SignerInfo `json:"info"`
-	Created bool                `json:"created,omitempty"`
-	Warning string              `json:"warning,omitempty"`
-}
-
-type signerInfoResult struct {
-	Info    identity.SignerInfo `json:"info"`
-	Created bool                `json:"created,omitempty"`
 }
 
 type signParams struct {

@@ -11,7 +11,6 @@ export {
     ImportResult,
     InitResult,
     JoinRequestInfo,
-    KeyUpdateResult,
     MemberInfo,
     ProgressStep,
     SecretChoice,

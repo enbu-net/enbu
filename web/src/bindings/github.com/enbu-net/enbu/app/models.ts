@@ -360,12 +360,6 @@ export class JoinRequestInfo {
     "algorithm": string;
     "requested_at": string;
 
-    /**
-     * KeyUpdate is set for a member asking to replace its recipient, as
-     * `enbu identity upgrade` does, rather than a new device asking to join.
-     */
-    "key_update": boolean;
-
     /** Creates a new JoinRequestInfo instance. */
     constructor($$source: Partial<JoinRequestInfo> = {}) {
         if (!("device_id" in $$source)) {
@@ -383,9 +377,6 @@ export class JoinRequestInfo {
         if (!("requested_at" in $$source)) {
             this["requested_at"] = "0001-01-01T00:00:00.000Z";
         }
-        if (!("key_update" in $$source)) {
-            this["key_update"] = false;
-        }
 
         Object.assign(this, $$source);
     }
@@ -399,52 +390,6 @@ export class JoinRequestInfo {
     }
 }
 
-export class KeyUpdateResult {
-    "backend": string;
-    "algorithm": string;
-    "recipient": string;
-    "device_id": string;
-    "fingerprint": string;
-
-    /**
-     * Pending is set while an admin still has to approve the new key. Until
-     * then this device decrypts with either key.
-     */
-    "pending": boolean;
-
-    /** Creates a new KeyUpdateResult instance. */
-    constructor($$source: Partial<KeyUpdateResult> = {}) {
-        if (!("backend" in $$source)) {
-            this["backend"] = "";
-        }
-        if (!("algorithm" in $$source)) {
-            this["algorithm"] = "";
-        }
-        if (!("recipient" in $$source)) {
-            this["recipient"] = "";
-        }
-        if (!("device_id" in $$source)) {
-            this["device_id"] = "";
-        }
-        if (!("fingerprint" in $$source)) {
-            this["fingerprint"] = "";
-        }
-        if (!("pending" in $$source)) {
-            this["pending"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new KeyUpdateResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): KeyUpdateResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new KeyUpdateResult($$parsedSource as Partial<KeyUpdateResult>);
-    }
-}
-
 export class MemberInfo {
     "device_id": string;
     "fingerprint": string;
@@ -452,12 +397,6 @@ export class MemberInfo {
     "algorithm": string;
     "admin": boolean;
     "self": boolean;
-
-    /**
-     * PostQuantum is set when the member's recipient is a hybrid ML-KEM key.
-     * Secrets are post-quantum only while every member's is.
-     */
-    "post_quantum": boolean;
 
     /** Creates a new MemberInfo instance. */
     constructor($$source: Partial<MemberInfo> = {}) {
@@ -478,9 +417,6 @@ export class MemberInfo {
         }
         if (!("self" in $$source)) {
             this["self"] = false;
-        }
-        if (!("post_quantum" in $$source)) {
-            this["post_quantum"] = false;
         }
 
         Object.assign(this, $$source);

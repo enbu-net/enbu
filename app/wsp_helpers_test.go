@@ -24,7 +24,7 @@ func publishRevision(t *testing.T, store storage.Store, author *App, workspace, 
 // ordering does not depend on the wall clock.
 func publishRevisionAt(t *testing.T, store storage.Store, author *App, workspace, resource string, control digest.Digest, ciphertext []byte, createdAt int64, parents ...digest.Digest) digest.Digest {
 	t.Helper()
-	signer, err := author.Identities.LoadSigner(workspace)
+	signer, err := loadSigner(author, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func publishRevisionAt(t *testing.T, store storage.Store, author *App, workspace
 		t.Fatal(err)
 	}
 	rev := digest.FromBytes(blob)
-	if err := store.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}); err != nil {
+	if err := store.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: rev, Head: blob, Payload: ciphertext}); err != nil {
 		t.Fatal(err)
 	}
 	return rev
@@ -63,7 +63,7 @@ var bg = context.Background()
 // and its own local checkpoints.
 func newDevice(t *testing.T, alice *App) *App {
 	t.Helper()
-	b := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: t.TempDir(),
+	b := &App{Storage: alice.Storage, Identities: &apptest.Identities{}, CheckpointDir: t.TempDir(), RepositoryDir: t.TempDir(),
 		TokenProvider: &staticTokenProvider{token: "tok", username: "bob"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
 	cfg, err := alice.loadProject()
 	if err != nil {
@@ -106,4 +106,24 @@ func mustWorkspace(t *testing.T, a *App) string {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// loadSigner returns the saved signing key of a's device in workspace.
+func loadSigner(a *App, workspace string) (signing.Signer, error) {
+	d, err := a.Identities.Load(workspace)
+	if err != nil {
+		return nil, err
+	}
+	_ = d.Identity.Close()
+	return d.Signer, nil
+}
+
+// createSigner creates or reuses a's device in workspace and returns its signing key.
+func createSigner(a *App, workspace string) (signing.Signer, error) {
+	d, _, _, err := a.Identities.Create(workspace)
+	if err != nil {
+		return nil, err
+	}
+	_ = d.Identity.Close()
+	return d.Signer, nil
 }

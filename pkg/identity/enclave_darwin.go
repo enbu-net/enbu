@@ -5,14 +5,15 @@ package identity
 import (
 	"bytes"
 	"crypto/ecdh"
-	"crypto/mlkem"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"runtime"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/enbu-net/enbu/pkg/signing"
 
 	"github.com/ebitengine/purego"
 )
@@ -346,75 +347,54 @@ func (a *securityAPI) wrapKey(ref uintptr) (*enclaveKey, error) {
 	return &enclaveKey{api: a, ref: ref, pk: pk}, nil
 }
 
-func (b *enclaveBackend) Create() (Identity, *Metadata, error) {
-	k, blob, err := b.generate()
+// Create makes the ECDH and signing keys, two Secure Enclave keys made the
+// same way and used only through key exchange and signing respectively.
+func (b *enclaveBackend) Create(md *Metadata) (HardwareKey, signing.Signer, error) {
+	key, ecdhBlob, err := b.generate()
 	if err != nil {
 		return nil, nil, err
 	}
-	id, err := NewHardwareIdentity(k)
+	sk, signBlob, err := b.generate()
 	if err != nil {
-		_ = k.Close()
+		_ = key.Close()
 		return nil, nil, err
 	}
-	md := &Metadata{Version: 1, PublicInfo: PublicInfo{Backend: "secure-enclave", Algorithm: "P-256", Recipient: id.Recipient().String(), Device: "Secure Enclave"}, PublicKey: k.pk.Bytes(), EnclaveKey: blob}
-	return id, md, nil
+	signer, err := newEnclaveSigner(sk)
+	if err != nil {
+		_ = key.Close()
+		_ = sk.Close()
+		return nil, nil, err
+	}
+	md.Backend, md.Device = "secure-enclave", "Secure Enclave"
+	md.Enclave = &EnclaveKeys{ECDH: ecdhBlob, ECDHPublic: key.pk.Bytes(), Sign: signBlob}
+	return key, signer, nil
 }
 
-func (b *enclaveBackend) Load(md *Metadata) (Identity, error) {
-	k, err := b.loadKey(md)
+// Load restores both keys and checks each against its saved public key.
+func (b *enclaveBackend) Load(md *Metadata) (HardwareKey, signing.Signer, error) {
+	if md.Backend != "secure-enclave" || md.Enclave == nil {
+		return nil, nil, errors.New("invalid Secure Enclave metadata")
+	}
+	key, err := b.restore(md.Enclave.ECDH, samePoint(md.Enclave.ECDHPublic))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	id, err := NewHardwareIdentity(k)
+	// The signing key is saved compressed, the form DeviceIDs are made of.
+	sk, err := b.restore(md.Enclave.Sign, func(point []byte) bool {
+		pk, err := signing.P256FromUncompressed(point)
+		return err == nil && pk.Equal(md.SigningKey)
+	})
 	if err != nil {
-		_ = k.Close()
+		_ = key.Close()
+		return nil, nil, err
 	}
-	return id, err
-}
-
-func (b *enclaveBackend) loadKey(md *Metadata) (*enclaveKey, error) {
-	if md.Backend != "secure-enclave" || !hardwareAlgorithm(md.Algorithm) || len(md.EnclaveKey) == 0 {
-		return nil, errors.New("invalid Secure Enclave metadata (identities from before enbu kept Secure Enclave keys out of the Keychain must be created again)")
-	}
-	return b.restore(md.EnclaveKey, samePoint(md.PublicKey))
-}
-
-// SealSeed encrypts the ML-KEM seed to the identity's Secure Enclave key, so
-// that opening it needs the same Secure Enclave, like a TPM-sealed seed.
-func (b *enclaveBackend) SealSeed(md *Metadata, seed []byte) error {
-	if len(seed) != mlkem.SeedSize {
-		return errors.New("ML-KEM seed must be 64 bytes")
-	}
-	pub, err := ecdh.P256().NewPublicKey(md.PublicKey)
+	signer, err := newEnclaveSigner(sk)
 	if err != nil {
-		return fmt.Errorf("Secure Enclave public key: %w", err)
+		_ = key.Close()
+		_ = sk.Close()
+		return nil, nil, err
 	}
-	sealed, err := sealToECDH(pub, seed)
-	if err != nil {
-		return err
-	}
-	md.EnclaveSeal = sealed
-	return nil
-}
-
-func (b *enclaveBackend) UnsealSeed(md *Metadata) ([]byte, error) {
-	if len(md.EnclaveSeal) == 0 {
-		return nil, errors.New("hybrid identity metadata has no sealed ML-KEM seed")
-	}
-	k, err := b.loadKey(md)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = k.Close() }()
-	seed, err := openFromECDH(k, md.EnclaveSeal)
-	if err != nil {
-		return nil, err
-	}
-	if len(seed) != mlkem.SeedSize {
-		clear(seed)
-		return nil, errors.New("sealed ML-KEM seed has the wrong size")
-	}
-	return seed, nil
+	return key, signer, nil
 }
 
 type enclaveKey struct {

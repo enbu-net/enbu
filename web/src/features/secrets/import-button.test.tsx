@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
 import { createAppError } from "../../lib/app-error";
-import { container, queryButton, renderAndSettle, settle, setupDom } from "../../test/dom";
+import {
+  container,
+  openDialog,
+  queryButton,
+  renderAndSettle,
+  settle,
+  setupDom,
+} from "../../test/dom";
 import { ImportButton } from "./import-button";
 
 vi.mock("../../lib/backend", async () => ({
@@ -39,14 +46,14 @@ describe("ImportButton", () => {
     await renderAndSettle(<ImportButton env="default" onImported={onImported} onError={vi.fn()} />);
     await choose("A=2\nB=3\n");
 
-    const dialog = container.querySelector('[role="dialog"]')!;
+    const dialog = openDialog()!;
     expect(dialog.textContent).toContain("A, B");
     await act(async () => queryButton("Replace", dialog)?.click());
     await settle();
 
     expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("default", "A=2\nB=3\n", true);
     expect(onImported).toHaveBeenCalled();
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(openDialog()).toBeNull();
   });
 
   it("reports other failures", async () => {
@@ -81,7 +88,7 @@ describe("ImportButton", () => {
     await choose("A=2\n");
     await renderAndSettle(<ImportButton env="production" {...props} />);
 
-    const dialog = container.querySelector('[role="dialog"]')!;
+    const dialog = openDialog()!;
     await act(async () => queryButton("Replace", dialog)?.click());
     await settle();
     expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("staging", "A=2\n", true);

@@ -91,6 +91,9 @@ func (a *App) CompactHistory(ctx context.Context, env string, keep int) (result 
 	if len(removed)+len(junk) == 0 {
 		return result, nil
 	}
+	if !storage.CanDelete(s.store) {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", nil)
+	}
 	// Publish the records before deleting anything: a device must never see a
 	// revision it accepted gone without the record that excuses it.
 	if err := s.publishCompaction(ctx, resource, floor, removed); err != nil {

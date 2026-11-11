@@ -152,7 +152,8 @@ function NumberSetting({
       step={1}
       value={text}
       w="96px"
-      h="34px"
+      h="auto"
+      minH="34px"
       onChange={(event) => {
         setText(event.target.value);
         commit(event.target.value);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
 import { hstack } from "styled-system/patterns";
 import { Button, Heading, Input, Text } from "../../components/ui";
@@ -92,6 +92,7 @@ const primaryButton = {
 export function RepositorySelect() {
   const { setRepo } = useSession();
   const [path, setPath] = useState("");
+  const pathId = useId();
   const action = useAction();
 
   return (
@@ -101,46 +102,58 @@ export function RepositorySelect() {
       error={action.error}
       onDismissError={() => action.setError(null)}
     >
-      <HStack>
-        <Input
-          aria-label={m.repo_pathPlaceholder()}
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && path.trim()) {
-              void action.run(async () => setRepo(await backend.SelectRepository(path.trim())));
-            }
-          }}
-          placeholder={m.repo_pathPlaceholder()}
-          h="38px"
-          borderColor="border.default"
-          borderRadius="md"
-        />
-        <Button
-          variant="outline"
-          h="38px"
-          borderColor="border.default"
-          color="fg.default"
-          fontWeight="semibold"
-          flexShrink={0}
-          onClick={() =>
-            action.run(async () => {
-              const next = await backend.BrowseRepository();
-              if (next.path) setRepo(next);
-            })
-          }
-        >
-          {m.repo_browse()}
-        </Button>
-      </HStack>
-      <Button
-        {...primaryButton}
-        loading={action.loading}
-        disabled={!path.trim()}
-        onClick={() => action.run(async () => setRepo(await backend.SelectRepository(path.trim())))}
+      {/* A form, so Enter submits natively, which an IME's confirming Enter does not. */}
+      <styled.form
+        display="flex"
+        flexDirection="column"
+        gap="5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!path.trim()) return;
+          void action.run(async () => setRepo(await backend.SelectRepository(path.trim())));
+        }}
       >
-        {m.repo_continue()}
-      </Button>
+        <Box>
+          <styled.label htmlFor={pathId} display="block" mb="2" fontSize="sm" fontWeight="semibold">
+            {m.repo_pathLabel()}
+          </styled.label>
+          <HStack>
+            <Input
+              id={pathId}
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder={m.repo_pathPlaceholder()}
+              autoComplete="off"
+              spellCheck={false}
+              h="auto"
+              minH="38px"
+              borderColor="border.default"
+              borderRadius="md"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              h="auto"
+              minH="38px"
+              borderColor="border.default"
+              color="fg.default"
+              fontWeight="semibold"
+              flexShrink={0}
+              onClick={() =>
+                action.run(async () => {
+                  const next = await backend.BrowseRepository();
+                  if (next.path) setRepo(next);
+                })
+              }
+            >
+              {m.repo_browse()}
+            </Button>
+          </HStack>
+        </Box>
+        <Button type="submit" {...primaryButton} loading={action.loading} disabled={!path.trim()}>
+          {m.repo_continue()}
+        </Button>
+      </styled.form>
     </SetupScreen>
   );
 }
@@ -262,7 +275,8 @@ function FoundWorkspace({
           onChange={(e) => set({ url: e.target.value })}
           placeholder="oci://ghcr.io/OWNER/REPO-enbu"
           fontFamily="mono"
-          h="38px"
+          h="auto"
+          minH="38px"
           borderColor="border.default"
           borderRadius="md"
         />
@@ -277,7 +291,8 @@ function FoundWorkspace({
             placeholder={m.init_region()}
             value={storage.region}
             onChange={(e) => set({ region: e.target.value })}
-            h="38px"
+            h="auto"
+            minH="38px"
             borderColor="border.default"
             borderRadius="md"
           />
@@ -286,7 +301,8 @@ function FoundWorkspace({
             placeholder={m.init_endpoint()}
             value={storage.endpoint}
             onChange={(e) => set({ endpoint: e.target.value })}
-            h="38px"
+            h="auto"
+            minH="38px"
             borderColor="border.default"
             borderRadius="md"
           />

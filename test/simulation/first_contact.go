@@ -89,12 +89,12 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		return err
 	}
 	defer func() { _ = key.Close() }()
-	signer, _, _, err := adversary.Keys.CreateSigner(cfg.WorkspaceID)
+	signer, err := adversary.Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = signer.Close() }()
-	genesis, root, err := wsp.NewGenesis(cfg.WorkspaceID, wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: key.Recipient().String(), Admin: true}, signer)
+	genesis, root, err := wsp.NewGenesis(cfg.WorkspaceID, wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: key.Identity.Recipient().String(), Admin: true}, signer)
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		if err != nil {
 			return err
 		}
-		signer, err := newcomer.Keys.LoadSigner(cfg.WorkspaceID)
+		signer, err := newcomer.Keys.Signer(cfg.WorkspaceID)
 		if err != nil {
 			return err
 		}
@@ -298,22 +298,17 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	}
 	for _, index := range []int{verified, fooled} {
 		d := w.Devices[index]
-		signer, err := d.Keys.LoadSigner(cfg.WorkspaceID)
-		if err != nil {
-			return err
-		}
-		id := signer.Public().DeviceID()
-		_ = signer.Close()
 		key, err := d.Keys.Load(cfg.WorkspaceID)
 		if err != nil {
 			return err
 		}
-		recipient := key.Recipient().String()
+		id := key.Signer.Public().DeviceID()
+		recipient := key.Identity.Recipient().String()
 		_ = key.Close()
 		found := false
 		for _, request := range requests {
 			if request.DeviceID == string(id) {
-				if request.Fingerprint != id.Fingerprint() || request.Recipient != recipient || request.KeyUpdate {
+				if request.Fingerprint != id.Fingerprint() || request.Recipient != recipient {
 					return fmt.Errorf("request did not match independently known identity")
 				}
 				found = true
@@ -348,18 +343,18 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		return err
 	}
 	var openedForeign atomic.Bool
-	guard := storagetest.Wrap(legitimate, storagetest.Hooks{OpenBlob: func(c context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	guard := storagetest.Wrap(legitimate, storagetest.Hooks{OpenPayload: func(c context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 		if kind == storage.KindState && slices.Contains(foreign, rev) {
 			openedForeign.Store(true)
 		}
-		return next.OpenBlob(c, kind, scope, rev, index)
+		return next.OpenPayload(c, kind, scope, rev)
 	}})
 	for _, d := range w.Devices[:len(w.Devices)-1] {
 		d.Store.Store = guard
 	}
 	// Exercise the guard using an actual recorded foreign payload read, then
 	// require subsequent application operations never to fetch those payloads.
-	probe, err := admin.Store.OpenBlob(ctx, storage.KindState, storage.StateScope(cfg.WorkspaceID, cfg.Resource("default")), foreign[0], 0)
+	probe, err := admin.Store.OpenPayload(ctx, storage.KindState, storage.StateScope(cfg.WorkspaceID, cfg.Resource("default")), foreign[0])
 	if err != nil {
 		return err
 	}
@@ -492,7 +487,7 @@ func (w *World) replayFirstContactBranch(ctx context.Context, source *Store, wor
 		if err != nil {
 			return nil, err
 		}
-		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: body, Blobs: [][]byte{ciphertext}}); err != nil {
+		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: body, Payload: ciphertext}); err != nil {
 			return nil, err
 		}
 	}

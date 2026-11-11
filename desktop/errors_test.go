@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/enbu-net/enbu/app/apptest"
 	"log/slog"
 	"reflect"
 	"strings"
@@ -75,7 +76,7 @@ func TestEveryServiceMethodFailsWithPublicError(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
 	a := app.New(clock.New())
-	a.Identities = &desktopKeyStore{values: map[string][]byte{}}
+	a.Identities = &apptest.Identities{}
 	s := NewService(a)
 	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
 		return nil, errors.New("login cause")

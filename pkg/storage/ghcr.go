@@ -10,18 +10,6 @@ import (
 	"strings"
 )
 
-// TagDeleter removes the registry version that a tag names. A registry has no
-// delete API for tags on its own, so a provider supplies one.
-type TagDeleter interface {
-	DeleteTag(ctx context.Context, tag string) error
-}
-
-// OCIOption configures an OCI store.
-type OCIOption func(*ociStore)
-
-// WithTagDeleter lets the store delete revisions, which plain OCI cannot.
-func WithTagDeleter(d TagDeleter) OCIOption { return func(s *ociStore) { s.deleter = d } }
-
 // GHCRPackages deletes package versions of ghcr.io through the GitHub Packages
 // API. The token needs read:packages and delete:packages.
 type GHCRPackages struct {

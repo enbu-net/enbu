@@ -54,7 +54,7 @@ func (g *teamRunGate) Read(p []byte) (int, error) {
 }
 
 func TestRunSnapshotDuringTeamChanges(t *testing.T) {
-	for _, change := range []string{"edit", "remove", "upgrade"} {
+	for _, change := range []string{"edit", "remove"} {
 		for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 			for _, unmasked := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/unmasked-%t", change, profile, unmasked), func(t *testing.T) {
@@ -111,13 +111,6 @@ func TestRunSnapshotDuringTeamChanges(t *testing.T) {
 					switch change {
 					case "remove":
 						if err := admin.RemoveMember(ctx, world.Devices[1].ID); err != nil {
-							t.Fatal(err)
-						}
-					case "upgrade":
-						if _, err := world.Devices[1].App.UpgradeIdentity(ctx); err != nil {
-							t.Fatal(err)
-						}
-						if err := admin.ApproveMember(ctx, world.Devices[1].ID); err != nil {
 							t.Fatal(err)
 						}
 					}

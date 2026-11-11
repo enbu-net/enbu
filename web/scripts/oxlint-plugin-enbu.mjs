@@ -3,7 +3,37 @@ const messages = {
     "Wails bindings and runtime may only be used through src/lib/backend.ts, src/lib/platform.ts and src/lib/types.ts.",
   errorAlertMessage: "ErrorAlert accepts typed DisplayError through the error prop.",
   rawErrorDetail: "User-visible errors must pass through toDisplayError.",
+  nativeElement:
+    "Use the native element: <button> for role=button, ModalDialog (a <dialog> opened with showModal) for role=dialog or aria-modal, and a popover for a menu (modern-web-guidance: accessibility, dialog, menu).",
+  pxFontSize:
+    "Size text with the fontSizes tokens or rem, not px, so it follows the user's text size (modern-web-guidance: typography).",
 };
+
+// Roles that a native element already provides, with its behavior built in.
+const nativeRoles = new Set(["button", "dialog", "alertdialog", "menu", "menuitem"]);
+
+function jsxAttribute(node, name) {
+  return node.attributes.find(
+    (attribute) =>
+      attribute.type === "JSXAttribute" &&
+      attribute.name?.type === "JSXIdentifier" &&
+      attribute.name.name === name,
+  );
+}
+
+// The string an attribute is set to: role="x" or role={"x"}.
+function staticString(attribute) {
+  const value = attribute?.value;
+  if (value?.type === "Literal") return value.value;
+  if (value?.type === "JSXExpressionContainer" && value.expression?.type === "Literal") {
+    return value.expression.value;
+  }
+  return undefined;
+}
+
+function isPx(value) {
+  return typeof value === "string" && /^-?\d*\.?\d+px$/.test(value.trim());
+}
 
 function isIdentifier(node, name) {
   return node?.type === "Identifier" && node.name === name;
@@ -144,10 +174,55 @@ const noRawErrorDisplay = {
   },
 };
 
+const preferNativeElement = {
+  meta: {
+    type: "problem",
+    messages: { forbidden: messages.nativeElement },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXOpeningElement(node) {
+        const role = jsxAttribute(node, "role");
+        if (role && nativeRoles.has(staticString(role))) {
+          context.report({ node: role, messageId: "forbidden" });
+        }
+        const modal = jsxAttribute(node, "aria-modal");
+        if (modal) context.report({ node: modal, messageId: "forbidden" });
+      },
+    };
+  },
+};
+
+const noPxFontSize = {
+  meta: {
+    type: "problem",
+    messages: { forbidden: messages.pxFontSize },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXOpeningElement(node) {
+        const size = jsxAttribute(node, "fontSize");
+        if (size && isPx(staticString(size)))
+          context.report({ node: size, messageId: "forbidden" });
+      },
+      Property(node) {
+        const key = node.key?.type === "Identifier" ? node.key.name : node.key?.value;
+        if ((key === "fontSize" || key === "font-size") && isPx(node.value?.value)) {
+          context.report({ node, messageId: "forbidden" });
+        }
+      },
+    };
+  },
+};
+
 export const rules = {
   "no-direct-wails-binding": noDirectWailsBinding,
   "no-error-alert-message": noErrorAlertMessage,
   "no-raw-error-display": noRawErrorDisplay,
+  "no-px-font-size": noPxFontSize,
+  "prefer-native-element": preferNativeElement,
 };
 
 export default {

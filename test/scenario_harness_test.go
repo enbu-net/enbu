@@ -8,10 +8,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 
 	enbuapp "github.com/enbu-net/enbu/app"
@@ -65,7 +63,7 @@ func RunScenario(t *testing.T, steps ...Step) {
 	owner, repo := uniqueRepo(t)
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.Storage = config.StorageConfig{URL: "oci://localhost:5000/" + owner + "/" + repo + "-enbu", PlainHTTP: true}
-	if err := config.SaveProject(cfg); err != nil {
+	if err := config.SaveProjectTo(workDir, cfg); err != nil {
 		t.Fatal(err)
 	}
 	state := &ScenarioState{
@@ -304,10 +302,8 @@ func setupTestUser(t *testing.T, owner, repo, username string) *testUser {
 	if err != nil {
 		t.Fatalf("loading scenario workspace: %v", err)
 	}
-	ks := newMockKeyStore()
-	if err := ks.storeSecret("enbu", cfg.WorkspaceID, []byte(kp.Identity.String())); err != nil {
-		t.Fatalf("storing key for %s: %v", username, err)
-	}
+	ks := &apptest.Identities{}
+	ks.Use(cfg.WorkspaceID, kp.Identity, nil)
 
 	st, err := storage.NewOCI("localhost:5000/"+owner+"/"+repo+"-enbu", nil, true)
 	if err != nil {
@@ -339,33 +335,6 @@ type mockRepoDetector struct {
 
 func (m *mockRepoDetector) LoadRepo() (string, string, error) {
 	return m.owner, m.repo, nil
-}
-
-type mockKeyStore struct {
-	apptest.Signers
-	mu   sync.RWMutex
-	data map[string][]byte
-}
-
-func newMockKeyStore() *mockKeyStore {
-	return &mockKeyStore{data: make(map[string][]byte)}
-}
-
-func (m *mockKeyStore) storeSecret(_, key string, value []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.data[key] = append([]byte(nil), value...)
-	return nil
-}
-
-func (m *mockKeyStore) loadSecret(_, key string) ([]byte, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	d, ok := m.data[key]
-	if !ok {
-		return nil, fs.ErrNotExist
-	}
-	return append([]byte(nil), d...), nil
 }
 
 func captureStdout(t *testing.T, fn func()) string {

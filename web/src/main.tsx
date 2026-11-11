@@ -6,6 +6,7 @@ import { host } from "./lib/host";
 import { installExternalLinkHandling } from "./lib/platform";
 import { startTextSize } from "./lib/settings";
 import { startTheme } from "./lib/theme";
+import { getLocale } from "./paraglide/runtime";
 import "./app.css";
 
 // A VS Code webview has no address to keep the route in, and its assets load
@@ -17,6 +18,9 @@ const router = createRouter(
 );
 
 installExternalLinkHandling();
+// Switching the language reloads the page, so the document language is set once:
+// screen readers pronounce by it and browsers pick CJK glyphs by it.
+document.documentElement.lang = getLocale();
 // Before the first render, so the page never shows the other theme first.
 startTheme();
 startTextSize();

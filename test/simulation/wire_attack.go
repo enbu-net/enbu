@@ -152,7 +152,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	for i := range members {
 		members[i].Self = false
 	}
-	signer, err := w.Devices[0].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[0].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -183,7 +183,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	if err != nil {
 		return err
 	}
-	original := storage.Object{Kind: storage.KindState, Scope: accepted.Scope(), Rev: accepted.Digest, Head: originalHead, Blobs: [][]byte{originalCipher}}
+	original := storage.Object{Kind: storage.KindState, Scope: accepted.Scope(), Rev: accepted.Digest, Head: originalHead, Payload: originalCipher}
 	floor, err := w.publishMergeNode(ctx, 0, map[string]string{"BASE": "must-not-accept"})
 	if err != nil {
 		return err
@@ -201,12 +201,12 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 		return err
 	}
 	defer func() { _ = id.Close() }()
-	requestSigner, _, _, err := keys.CreateSigner(cfg.WorkspaceID)
+	requestSigner, err := keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = requestSigner.Close() }()
-	request, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Recipient().String(), a.Runtime.Clock.Now(), requestSigner)
+	request, err := wsp.NewJoinRequest(cfg.WorkspaceID, id.Identity.Recipient().String(), a.Runtime.Clock.Now(), requestSigner)
 	if err != nil {
 		return err
 	}
@@ -217,11 +217,11 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 	base := w.Devices[0].Store.Store
 	var rejected digest.Digest
 	badBlobs := 0
-	observed := storagetest.Wrap(base, storagetest.Hooks{OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+	observed := storagetest.Wrap(base, storagetest.Hooks{OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 		if rev == rejected {
 			badBlobs++
 		}
-		return next.OpenBlob(ctx, kind, scope, rev, index)
+		return next.OpenPayload(ctx, kind, scope, rev)
 	}})
 	for _, d := range w.Devices {
 		d.Store.Store = observed
@@ -270,7 +270,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 				object.Scope = floor.Scope
 			}
 			if source.kind == storage.KindState {
-				object.Blobs = floor.Blobs
+				object.Scope, object.Payload = floor.Scope, floor.Payload
 			}
 			if err := w.Devices[0].Store.Publish(ctx, object); err != nil {
 				return err

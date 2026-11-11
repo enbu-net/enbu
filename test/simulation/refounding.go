@@ -24,7 +24,7 @@ func (w *World) Refounding(ctx context.Context) error {
 	if err := w.Check(ctx, "default"); err != nil {
 		return err
 	}
-	signer, err := w.Devices[1].Keys.LoadSigner(old.WorkspaceID)
+	signer, err := w.Devices[1].Keys.Signer(old.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ func (w *World) Refounding(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = key.Close() }()
-	genesis, root, err := wsp.NewGenesis(old.WorkspaceID, wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: key.Recipient().String(), Admin: true}, signer)
+	genesis, root, err := wsp.NewGenesis(old.WorkspaceID, wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: key.Identity.Recipient().String(), Admin: true}, signer)
 	if err != nil {
 		return err
 	}

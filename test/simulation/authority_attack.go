@@ -71,7 +71,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 	for _, p := range head.Principals {
 		expected[string(p.ID)] = p.Admin
 	}
-	signer, err := w.Devices[1].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[1].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 				return fmt.Errorf("unauthorized compaction excused rollback: %v", err)
 			}
 		}
-		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: current.Scope(), Rev: current.Digest, Head: signedState, Blobs: [][]byte{blob}}); err != nil {
+		if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindState, Scope: current.Scope(), Rev: current.Digest, Head: signedState, Payload: blob}); err != nil {
 			return err
 		}
 		if err := w.Devices[0].Store.Delete(ctx, floor.Kind, floor.Scope, floor.Rev); err != nil {
@@ -222,7 +222,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 // Even a genuine admin cannot smuggle new authority or a replacement recipient
 // through fork resolution; that action must only reconcile existing authority.
 func (w *World) forkResolutionAttack(ctx context.Context, mode string, cfg *config.ProjectConfig, head *wsp.Verified) error {
-	signer, err := w.Devices[0].Keys.LoadSigner(cfg.WorkspaceID)
+	signer, err := w.Devices[0].Keys.Signer(cfg.WorkspaceID)
 	if err != nil {
 		return err
 	}

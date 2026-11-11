@@ -14,7 +14,7 @@ import (
 // StateCase is an explicit cross product, not a randomly sampled coverage claim.
 type StateCase struct{ Operation, State, Role string }
 
-var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "upgrade", "resolve-stale", "resolve-empty", "file-pull", "initialize"}
+var StateOperations = []string{"add", "edit", "delete", "import", "read", "pull", "sync", "history", "diff", "restore", "compact", "conflicts", "members", "requests", "approve", "remove", "admin", "resolve-stale", "resolve-empty", "file-pull", "initialize"}
 var DataStates = []string{"empty", "populated", "deleted", "missing-environment"}
 var MemberStates = []string{"admin", "member", "pending", "removed"}
 
@@ -66,7 +66,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	}
 	controlOperation := false
 	switch c.Operation {
-	case "members", "requests", "approve", "remove", "admin", "upgrade", "initialize":
+	case "members", "requests", "approve", "remove", "admin", "initialize":
 		controlOperation = true
 	}
 	if c.Operation == "approve" {
@@ -168,8 +168,6 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		err = a.RemoveMember(ctx, w.Devices[2].ID)
 	case "admin":
 		err = a.SetAdmin(ctx, w.Devices[2].ID, true)
-	case "upgrade":
-		out, err = a.UpgradeIdentity(ctx)
 	default:
 		return fmt.Errorf("unknown state operation %s", c.Operation)
 	}
@@ -233,11 +231,6 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 			delete(membership, w.Devices[2].ID)
 		case "admin":
 			membership[w.Devices[2].ID] = true
-		case "upgrade":
-			update := out.(*app.KeyUpdateResult)
-			if update.Pending != (c.Role == "member") {
-				return fmt.Errorf("key approval bypass: %+v", update)
-			}
 		}
 	}
 	members, err := founder.ListMembers(ctx)
@@ -250,11 +243,6 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	}
 	if !reflect.DeepEqual(gotMembership, membership) {
 		return fmt.Errorf("membership differs: got %v want %v", gotMembership, membership)
-	}
-	if expected == "" && c.Operation == "upgrade" && c.Role == "member" {
-		if err := founder.ApproveMember(ctx, w.Devices[actor].ID); err != nil {
-			return err
-		}
 	}
 	if _, present := membership[w.Devices[2].ID]; !present {
 		if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {

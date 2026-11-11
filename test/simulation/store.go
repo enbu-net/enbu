@@ -182,14 +182,14 @@ func (s *Store) FetchHead(ctx context.Context, k storage.Kind, scope string, r d
 	})
 	return
 }
-func (s *Store) OpenBlob(ctx context.Context, k storage.Kind, scope string, r digest.Digest, index int) (io.ReadCloser, error) {
+func (s *Store) OpenPayload(ctx context.Context, k storage.Kind, scope string, r digest.Digest) (io.ReadCloser, error) {
 	var data []byte
 	short := false
-	e := s.effect("blob", []any{k, scope, r, index}, func(mode string) (any, error) {
+	e := s.effect("blob", []any{k, scope, r}, func(mode string) (any, error) {
 		if e := before(ctx, mode); e != nil {
 			return nil, e
 		}
-		rc, e := s.Store.OpenBlob(ctx, k, scope, r, index)
+		rc, e := s.Store.OpenPayload(ctx, k, scope, r)
 		if e != nil {
 			return nil, e
 		}
@@ -261,6 +261,10 @@ func (s *Store) Scopes(ctx context.Context) (out []string, err error) {
 	})
 	return
 }
+
+// CanDelete reports what the wrapped store reports.
+func (s *Store) CanDelete() bool { return storage.CanDelete(s.Store) }
+
 func (s *Store) Delete(ctx context.Context, k storage.Kind, scope string, r digest.Digest) error {
 	return s.effect("delete", []any{k, scope, r}, func(mode string) (any, error) {
 		if e := before(ctx, mode); e != nil {

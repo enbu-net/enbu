@@ -12,6 +12,7 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/merge"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -31,7 +32,7 @@ type session struct {
 	view      *wsp.ControlView
 	head      *wsp.Verified // the only head; nil while the Control is forked
 	cps       *wsp.Checkpoints
-	ids       []agecrypto.Identity
+	id        identity.Identity
 	signer    signing.Signer
 	// acceptNewGenesis replaces a different pinned trust root instead of failing.
 	acceptNewGenesis bool
@@ -45,7 +46,9 @@ type session struct {
 }
 
 func (s *session) Close() {
-	CloseIdentities(s.ids)
+	if s.id != nil {
+		_ = s.id.Close()
+	}
 	if s.signer != nil {
 		_ = s.signer.Close()
 	}
@@ -117,8 +120,17 @@ func wspError(err error) error {
 // with a 3-way merge first; any other device fails with CodeControlForked until
 // an admin does.
 func (a *App) openControl(ctx context.Context) (*session, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, err
+	}
+	return a.openControlWith(ctx, cfg)
+}
+
+// openControlWith is openControl on an enbu.toml already loaded.
+func (a *App) openControlWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
 	for attempt := 0; ; attempt++ {
-		s, err := a.openControlView(ctx)
+		s, err := a.openControlViewWith(ctx, cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -148,14 +160,15 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 	if a.Identities == nil {
 		return false, nil
 	}
-	signer, err := a.Identities.LoadSigner(s.workspace)
+	d, err := a.Identities.Load(s.workspace)
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil // a device without keys cannot join the heads; it reports the fork
 	}
 	if err != nil {
-		return false, identityError(fmt.Errorf("loading signing key: %w", err))
+		return false, identityError(fmt.Errorf("loading identity: %w", err))
 	}
-	defer func() { _ = signer.Close() }()
+	defer func() { _ = d.Close() }()
+	signer := d.Signer
 	author := signer.Public().DeviceID()
 	for _, h := range s.view.Heads {
 		if p, ok := h.Principal(author); !ok || !p.Admin {
@@ -190,7 +203,11 @@ func (a *App) openControlView(ctx context.Context) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := a.workspaceStorage(ctx)
+	return a.openControlViewWith(ctx, cfg)
+}
+
+func (a *App) openControlViewWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	store, err := a.workspaceStorage(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -264,27 +281,45 @@ func (a *App) verifyControl(ctx context.Context, s *session) error {
 // openSession also loads the encryption identity and the signing key, and
 // requires this device to be a principal of the verified Control.
 func (a *App) openSession(ctx context.Context) (*session, error) {
-	s, err := a.openControl(ctx)
+	cfg, err := a.loadProject()
 	if err != nil {
 		return nil, err
 	}
-	if a.Identities == nil {
-		return nil, fmt.Errorf("identity store is not initialized")
+	return a.openSessionWith(ctx, cfg)
+}
+
+// openEnvironment resolves env from enbu.toml before opening a session on the
+// same config, so an unknown environment is reported from the local file
+// before storage is reached or membership is checked.
+func (a *App) openEnvironment(ctx context.Context, env string) (*session, *ResolvedEnvironment, error) {
+	cfg, err := a.loadProject()
+	if err != nil {
+		return nil, nil, err
 	}
-	if s.signer, err = a.Identities.LoadSigner(s.workspace); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, apperr.New(apperr.CodeNotInitialized, "no signing key found (run 'enbu init' first)", nil)
-		}
-		return nil, identityError(fmt.Errorf("loading signing key: %w", err))
+	resolved, err := resolveEnvironment(func() (*config.ProjectConfig, error) { return cfg, nil }, env)
+	if err != nil {
+		return nil, nil, err
 	}
-	if _, ok := s.head.Principal(s.signer.Public().DeviceID()); !ok {
-		s.Close()
-		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.signer.Public().DeviceID().Fingerprint()})
+	s, err := a.openSessionWith(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
 	}
-	a.promoteApprovedKey(s)
-	if s.ids, err = LoadIdentities(a.Identities, s.workspace); err != nil {
-		s.Close()
+	return s, resolved, nil
+}
+
+func (a *App) openSessionWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
+	s, err := a.openControlWith(ctx, cfg)
+	if err != nil {
 		return nil, err
+	}
+	d, err := loadDevice(a.Identities, s.workspace)
+	if err != nil {
+		return nil, err
+	}
+	s.id, s.signer = d.Identity, d.Signer
+	if _, ok := s.head.Principal(s.self()); !ok {
+		s.Close()
+		return nil, apperr.New(apperr.CodeNotMember, "this device is not approved for the workspace yet", apperr.Params{"fingerprint": s.self().Fingerprint()})
 	}
 	return s, nil
 }
@@ -376,7 +411,7 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 	if err != nil {
 		return nil, wspError(err)
 	}
-	return decryptSecretsObject(ciphertext, s.ids...)
+	return decryptSecretsObject(ciphertext, s.id)
 }
 
 // readResource returns the merged current content of env. The heads must have
@@ -513,7 +548,8 @@ var errControlMoved = errors.New("workspace members changed while writing")
 
 // controlUnchanged loads the Control DAG again just before and after
 // publishing. Encrypting for a recipient set that has since changed would hand
-// new ciphertext to someone who was removed in the meantime.
+// new ciphertext to someone who was removed in the meantime, and leave a head
+// that someone approved in the meantime cannot read.
 func (s *session) controlUnchanged(ctx context.Context) error {
 	view, err := wsp.LoadControl(ctx, s.store, s.workspace, digest.Digest(s.cfg.ControlGenesis), nil)
 	if err != nil {
@@ -550,7 +586,7 @@ func (s *session) writeState(ctx context.Context, resource string, secrets map[s
 	if err != nil {
 		return nil, err
 	}
-	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Blobs: [][]byte{ciphertext}}
+	obj := storage.Object{Kind: storage.KindState, Scope: next.Scope(), Rev: rev, Head: blob, Payload: ciphertext}
 	if err := s.store.Publish(ctx, obj); err != nil {
 		return nil, fmt.Errorf("saving encrypted secrets: %w", storageError(err))
 	}

@@ -2,9 +2,7 @@ package app
 
 import (
 	"context"
-	"io/fs"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
@@ -26,43 +24,16 @@ type staticRepoDetector struct{ owner, repo string }
 
 func (s *staticRepoDetector) LoadRepo() (string, string, error) { return s.owner, s.repo, nil }
 
-type memKeyStore struct {
-	apptest.Signers
-	mu   sync.RWMutex
-	data map[string][]byte
-}
-
-func newMemKeyStore() *memKeyStore { return &memKeyStore{data: make(map[string][]byte)} }
-
-func (m *memKeyStore) storeSecret(_, key string, value []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.data[key] = append([]byte(nil), value...)
-	return nil
-}
-
-func (m *memKeyStore) loadSecret(_, key string) ([]byte, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	d, ok := m.data[key]
-	if !ok {
-		return nil, fs.ErrNotExist
-	}
-	return append([]byte(nil), d...), nil
-}
-
 // newTestApp builds an App wired with in-memory doubles.
 // It registers kp as both the recipient and the stored private key,
 // and pushes a single secret under the given env if secrets != nil.
 func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets map[string]string) *App {
 	t.Helper()
 	reg := newMemRegistry()
-	ks := newMemKeyStore()
+	ks := &apptest.Identities{}
 
 	// store private key
-	if err := ks.storeSecret(KeystoreService, testWorkspaceID, []byte(kp.Identity.String())); err != nil {
-		t.Fatalf("store private key: %v", err)
-	}
+	ks.Use(testWorkspaceID, kp.Identity, nil)
 
 	a := &App{
 		Storage:       reg,
@@ -149,10 +120,8 @@ func TestPullSecrets_ErrorWhenWrongKey(t *testing.T) {
 
 	// replace stored key with a different identity (cannot decrypt)
 	other := mustKeyPair(t)
-	ks := newMemKeyStore()
-	if err := ks.storeSecret(KeystoreService, testWorkspaceID, []byte(other.Identity.String())); err != nil {
-		t.Fatal(err)
-	}
+	ks := &apptest.Identities{}
+	ks.Use(testWorkspaceID, other.Identity, nil)
 	a.Identities = ks
 
 	_, _, _, err := a.PullSecrets(context.Background(), "default")

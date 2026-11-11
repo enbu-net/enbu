@@ -4,7 +4,16 @@ import { AppError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { openURL } from "../../lib/platform";
 import type { RepoInfo } from "../../lib/types";
-import { container, queryButton, root, settle, setupDom, typeInto } from "../../test/dom";
+import {
+  container,
+  labelledInput,
+  openDialog,
+  queryButton,
+  root,
+  settle,
+  setupDom,
+  typeInto,
+} from "../../test/dom";
 import { Dashboard } from "./dashboard";
 
 vi.mock("../../lib/backend", async () => ({
@@ -64,9 +73,9 @@ describe("Dashboard", () => {
 
   it("adds a secret on Enter and clears the form", async () => {
     await renderDashboard();
-    const key = container.querySelector<HTMLInputElement>('input[aria-label="Key"]');
+    const key = labelledInput("Key");
     typeInto(key, "NEW");
-    typeInto(container.querySelector<HTMLInputElement>('input[aria-label="Value"]'), "v");
+    typeInto(labelledInput("Value"), "v");
     vi.useFakeTimers();
     await act(async () => {
       key?.form?.requestSubmit();
@@ -87,7 +96,7 @@ describe("Dashboard", () => {
     mocked.AddSecret.mockClear();
     await renderDashboard();
 
-    typeInto(container.querySelector<HTMLInputElement>('input[aria-label="Key"]'), " KEY ");
+    typeInto(labelledInput("Key"), " KEY ");
     act(() => queryButton("Add")?.click());
 
     expect(mocked.AddSecret).not.toHaveBeenCalled();
@@ -147,14 +156,14 @@ describe("Dashboard", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(mocked.PullSecrets).toHaveBeenLastCalledWith("default", false);
-    expect(container.querySelector('[role="dialog"]')?.textContent).toContain("Overwrite .env?");
+    expect(openDialog()?.textContent).toContain("Overwrite .env?");
 
     await act(async () => {
       queryButton("Overwrite: Overwrite .env?")?.click();
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(mocked.PullSecrets).toHaveBeenLastCalledWith("default", true);
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(openDialog()).toBeNull();
     expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
   });
 

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -133,7 +134,7 @@ func newSeededApp(t *testing.T, secrets map[string]string) (*app.App, *stateReco
 	a := &app.App{
 		TokenProvider: &deleteTestTokenProvider{},
 		RepoDetector:  &deleteTestRepoDetector{},
-		Identities:    &staticKeyStore{},
+		Identities:    &apptest.Identities{},
 	}
 	rec := bootstrapCLIApp(t, a, storagetest.NewMemory())
 	for k, v := range secrets {

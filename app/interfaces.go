@@ -2,23 +2,20 @@ package app
 
 import (
 	"context"
+
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/signing"
 )
 
 type TokenProvider interface {
 	LoadToken() (accessToken string, username string, err error)
 }
 
+// IdentityStore keeps this device's keys, one set per workspace.
 type IdentityStore interface {
-	Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
-	Load(workspaceID string) (identity.Identity, error)
+	Create(workspaceID string) (*identity.Device, identity.PublicInfo, string, error)
+	Load(workspaceID string) (*identity.Device, error)
 	Info(workspaceID string) (identity.PublicInfo, error)
 	Doctor(context.Context) identity.Diagnosis
-	// The signing key is a separate keypair from the encryption identity.
-	CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error)
-	LoadSigner(workspaceID string) (signing.Signer, error)
-	SignerInfo(workspaceID string) (identity.SignerInfo, error)
 }
 
 type RepoDetector interface {

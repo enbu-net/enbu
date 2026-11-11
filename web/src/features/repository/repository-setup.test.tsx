@@ -5,10 +5,12 @@ import { createAppError } from "../../lib/app-error";
 import { noRepo, type InitResult, type RepoInfo, type StorageConfig } from "../../lib/types";
 import {
   container,
+  labelledInput,
   queryButton,
   root,
   settle,
   setupDom,
+  submitForm,
   typeInto,
   withSession,
 } from "../../test/dom";
@@ -57,9 +59,7 @@ describe("RepositorySelect", () => {
 
   it("labels the path input and titles the screen with h1", () => {
     renderSelect();
-    expect(container.querySelector("input[aria-label]")?.getAttribute("aria-label")).toBe(
-      "C:\\Users\\you\\src\\your-repo",
-    );
+    expect(labelledInput("Repository folder")?.placeholder).toBe("C:\\Users\\you\\src\\your-repo");
     expect(container.querySelector("h1")?.textContent).toContain("Select repository");
   });
 
@@ -73,7 +73,7 @@ describe("RepositorySelect", () => {
     typeInto(input, " /home/octo/app ");
     expect(queryButton("Continue")?.disabled).toBe(false);
     await act(async () => {
-      input?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      submitForm(input);
     });
     await settle();
 

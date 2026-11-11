@@ -317,9 +317,9 @@ func TestReadingOpensOnlyTheCiphertextsItUses(t *testing.T) {
 	opened := 0
 	count := func(a *App) {
 		a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
-			OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+			OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 				opened++
-				return next.OpenBlob(ctx, kind, scope, rev, index)
+				return next.OpenPayload(ctx, kind, scope, rev)
 			},
 		})
 	}

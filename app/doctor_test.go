@@ -129,7 +129,7 @@ func TestDoctorDetectsMissingAcceptedHistory(t *testing.T) {
 
 type doctorCorruptStore struct{ storage.Store }
 
-func (s doctorCorruptStore) OpenBlob(context.Context, storage.Kind, string, digest.Digest, int) (io.ReadCloser, error) {
+func (s doctorCorruptStore) OpenPayload(context.Context, storage.Kind, string, digest.Digest) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("corrupt ciphertext")), nil
 }
 
@@ -306,7 +306,7 @@ func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
 				defer cancel()
 			}
 			checks := 0
-			a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenBlob: func(got context.Context, store storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+			a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenPayload: func(got context.Context, store storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 				checks++
 				deadline, ok := got.Deadline()
 				want, wantOK := ctx.Deadline()
@@ -318,7 +318,7 @@ func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
 					<-ctx.Done()
 					return nil, ctx.Err()
 				}
-				return store.OpenBlob(got, kind, scope, rev, index)
+				return store.OpenPayload(got, kind, scope, rev)
 			}})
 			r := a.Diagnose(ctx)
 			if checks == 0 {
@@ -338,49 +338,29 @@ func TestDoctorUsesCallerBudgetAndReportsHistoryDeadline(t *testing.T) {
 
 type doctorKeys struct {
 	IdentityStore
-	active, retained identity.Identity
+	device *identity.Device
 }
 
-func (s doctorKeys) Load(string) (identity.Identity, error) { return s.active, nil }
-func (s doctorKeys) LoadRetained(string) ([]identity.Identity, error) {
-	if s.retained == nil {
-		return nil, nil
-	}
-	return []identity.Identity{s.retained}, nil
-}
+func (s doctorKeys) Load(string) (*identity.Device, error) { return s.device, nil }
 
 func TestDoctorChecksApprovedEncryptionRecipientWithoutHistory(t *testing.T) {
-	for _, retained := range []bool{false, true} {
-		t.Run(map[bool]string{false: "mismatch", true: "approved-retained-key"}[retained], func(t *testing.T) {
-			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
-			cfg, err := a.loadProject()
-			if err != nil {
-				t.Fatal(err)
-			}
-			approved, err := a.Identities.Load(cfg.WorkspaceID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			other := identity.FromX25519(mustKeyPair(t).Identity)
-			keys := doctorKeys{IdentityStore: a.Identities, active: other}
-			if retained {
-				keys.retained = approved
-			} else {
-				defer func() { _ = approved.Close() }()
-			}
-			a.Identities = keys
-			r := a.Diagnose(bg)
-			doctorCheck(t, r, "membership", "", "ok")
-			doctorCheck(t, r, "history", "default", "skip")
-			status := "fail"
-			if retained {
-				status = "ok"
-			}
-			doctorCheck(t, r, "encryption_key", "", status)
-			if r.Healthy != retained {
-				t.Fatalf("mismatched recipient health: %+v", r)
-			}
-		})
+	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), nil)
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := a.Identities.Load(cfg.WorkspaceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := identity.FromHybrid(mustKeyPair(t).Identity)
+	a.Identities = doctorKeys{IdentityStore: a.Identities, device: &identity.Device{Identity: other, Signer: approved.Signer}}
+	r := a.Diagnose(bg)
+	doctorCheck(t, r, "membership", "", "ok")
+	doctorCheck(t, r, "history", "default", "skip")
+	doctorCheck(t, r, "encryption_key", "", "fail")
+	if r.Healthy {
+		t.Fatalf("mismatched recipient health: %+v", r)
 	}
 }
 

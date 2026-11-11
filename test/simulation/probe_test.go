@@ -78,7 +78,7 @@ func TestWildcardFaultProbeIsReachable(t *testing.T) {
 }
 
 func TestActualContextCancellationRecovery(t *testing.T) {
-	for _, op := range []string{"edit", "approve", "remove", "upgrade", "compact", "purge", "pull-file"} {
+	for _, op := range []string{"edit", "approve", "remove", "compact", "purge", "pull-file"} {
 		t.Run(op, func(t *testing.T) {
 			measured := baseline(t, 79, Plan{Devices: 3, Probe: &Probe{Operation: op}})
 			counts := countsBetween(t, measured, "probe-start", "probe-result")

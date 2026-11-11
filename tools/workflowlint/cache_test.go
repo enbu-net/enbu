@@ -231,7 +231,7 @@ func TestSharedFrontendPrecedesParallelReadersAndAllCIResultsAreRequired(t *test
 	if !sharedRoutes {
 		t.Fatal("prebuilt GUI readers lack the generated router types")
 	}
-	for _, name := range []string{"check", "test", "desktop", "scenario"} {
+	for _, name := range []string{"lint", "test", "desktop", "scenario"} {
 		job := field(jobs, name)
 		if needs := field(job, "needs"); needs == nil || len(needs.Content) != 1 || needs.Content[0].Value != "frontend" {
 			t.Fatalf("%s may read frontend output before its producer finishes", name)

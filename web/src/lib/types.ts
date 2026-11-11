@@ -19,7 +19,6 @@ export type {
   EnvironmentDeletion,
   HistoryEntry,
   ImportResult,
-  KeyUpdateResult,
   InitResult,
   JoinRequestInfo,
   MemberInfo,

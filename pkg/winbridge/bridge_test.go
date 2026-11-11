@@ -63,6 +63,8 @@ func (v *memVault) Load(service, key string) ([]byte, error) {
 	return append([]byte(nil), b...), nil
 }
 
+func (v *memVault) Probe(context.Context) error { return nil }
+
 func (v *memVault) Delete(service, key string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -107,14 +109,11 @@ func pipeClient(t *testing.T, s *Server) *Client {
 // in the new one, so it is refused, and closing it sends nothing.
 func TestAHandleBelongsToItsProcess(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
-	old, info, _, err := c.Create("a")
+	device, info, _, err := c.Create("a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	signer, _, _, err := c.CreateSigner("a")
-	if err != nil {
-		t.Fatal(err)
-	}
+	old, signer := device.Identity, device.Signer
 	if err := c.Close(); err != nil { // the stream ends, as when enbu.exe dies
 		t.Fatal(err)
 	}
@@ -140,11 +139,12 @@ func TestAHandleBelongsToItsProcess(t *testing.T) {
 func TestIdentityRoundTrip(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
 
-	id, info, _, err := c.Create("ws")
+	device, info, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Created || info.Backend != "keyring" || info.Recipient != id.Recipient().String() {
+	id := device.Identity
+	if !info.Created || info.Backend != "keyring" || info.Recipient != id.Recipient().String() || info.DeviceID != string(device.Signer.Public().DeviceID()) {
 		t.Fatalf("info = %+v, recipient %s", info, id.Recipient())
 	}
 	ct, err := enbuage.EncryptForPublicKeys([]byte("secret"), []string{info.Recipient})
@@ -155,7 +155,7 @@ func TestIdentityRoundTrip(t *testing.T) {
 	if err != nil || string(pt) != "secret" {
 		t.Fatalf("decrypt = %q, %v", pt, err)
 	}
-	if err := id.Close(); err != nil {
+	if err := device.Close(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -163,14 +163,14 @@ func TestIdentityRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.Recipient().String() != info.Recipient {
+	if again.Identity.Recipient().String() != info.Recipient {
 		t.Fatal("Create made a second identity for the same workspace")
 	}
 	loaded, err := c.Load("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pt, err := enbuage.Decrypt(ct, loaded); err != nil || string(pt) != "secret" {
+	if pt, err := enbuage.Decrypt(ct, loaded.Identity); err != nil || string(pt) != "secret" {
 		t.Fatalf("decrypt with loaded = %q, %v", pt, err)
 	}
 	shown, err := c.Info("ws")
@@ -181,10 +181,11 @@ func TestIdentityRoundTrip(t *testing.T) {
 
 func TestAnotherRecipientIsNotAnError(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
-	id, _, _, err := c.Create("ws")
+	device, _, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
+	id := device.Identity
 	other, err := age.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
@@ -206,13 +207,11 @@ func TestAnotherRecipientIsNotAnError(t *testing.T) {
 
 func TestSignerRoundTrip(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
-	s, info, _, err := c.CreateSigner("ws")
+	device, _, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.Created || info.DeviceID == "" {
-		t.Fatalf("info = %+v", info)
-	}
+	s := device.Signer
 	sig, err := s.Sign(signing.DomainState, []byte("body"))
 	if err != nil {
 		t.Fatal(err)
@@ -220,16 +219,12 @@ func TestSignerRoundTrip(t *testing.T) {
 	if err := signing.Verify(s.Public(), signing.DomainState, []byte("body"), sig); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := c.LoadSigner("ws")
+	loaded, err := c.Load("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(loaded.Public().Bytes) != string(s.Public().Bytes) {
-		t.Fatal("LoadSigner returned another key")
-	}
-	shown, err := c.SignerInfo("ws")
-	if err != nil || shown.DeviceID != info.DeviceID {
-		t.Fatalf("SignerInfo = %+v, %v", shown, err)
+	if string(loaded.Signer.Public().Bytes) != string(s.Public().Bytes) {
+		t.Fatal("Load returned another signing key")
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
@@ -239,38 +234,13 @@ func TestSignerRoundTrip(t *testing.T) {
 	}
 }
 
-func TestKeyUpdateOverTheBridge(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
-	old, _, _, err := c.Create("ws")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, pending, _, err := c.CreatePending("ws")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := c.PendingInfo("ws"); err != nil || got.Recipient != pending.Recipient {
-		t.Fatalf("PendingInfo = %+v, %v", got, err)
-	}
-	retained, err := c.LoadRetained("ws")
-	if err != nil || len(retained) != 1 || retained[0].Recipient().String() != pending.Recipient {
-		t.Fatalf("LoadRetained = %v, %v", retained, err)
-	}
-	if err := c.PromotePending("ws"); err != nil {
-		t.Fatal(err)
-	}
-	if info, err := c.Info("ws"); err != nil || info.Recipient != pending.Recipient || info.Recipient == old.Recipient().String() {
-		t.Fatalf("Info after promote = %+v, %v", info, err)
-	}
-}
-
 func TestMissingIdentityIsNotExist(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
 	if _, err := c.Load("nope"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Load = %v, want fs.ErrNotExist", err)
 	}
-	if _, err := c.SignerInfo("nope"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("SignerInfo = %v, want fs.ErrNotExist", err)
+	if _, err := c.Info("nope"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("Info = %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -323,7 +293,7 @@ func TestNoBridgeIsUnavailable(t *testing.T) {
 
 func TestOtherProtocolIsRefused(t *testing.T) {
 	s := newServer(t.TempDir(), &memVault{})
-	in := strings.NewReader(`{"id":1,"method":"identity.load","params":{"workspace_id":"ws"}}` + "\n" +
+	in := strings.NewReader(`{"id":1,"method":"device.load","params":{"workspace_id":"ws"}}` + "\n" +
 		`{"id":2,"method":"hello","params":{"protocol":99}}` + "\n")
 	var out strings.Builder
 	if err := s.Serve(context.Background(), in, &out); err != nil {
@@ -362,7 +332,7 @@ func TestTheProcessBridge(t *testing.T) {
 	t.Setenv(serveEnv, t.TempDir())
 	c := &Client{Dial: func() (*Conn, error) { return Exec(exe) }}
 	t.Cleanup(func() { _ = c.Close() })
-	id, info, _, err := c.Create("ws")
+	device, info, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +340,7 @@ func TestTheProcessBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pt, err := enbuage.Decrypt(ct, id); err != nil || string(pt) != "over a pipe" {
+	if pt, err := enbuage.Decrypt(ct, device.Identity); err != nil || string(pt) != "over a pipe" {
 		t.Fatalf("decrypt = %q, %v", pt, err)
 	}
 }

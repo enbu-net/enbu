@@ -26,7 +26,7 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 			return nil, nil // stale listing
 		},
 	})
-	o := Object(storage.KindControl, "", "head")
+	o := Object(storage.KindControl, "", "head", "")
 	if err := wrapped.Publish(ctx, o); !errors.Is(err, boom) {
 		t.Fatalf("first publish: %v", err)
 	}
@@ -41,5 +41,18 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 	}
 	if _, err := wrapped.FetchHead(ctx, o.Kind, o.Scope, o.Rev); err != nil {
 		t.Fatalf("fetch passes through: %v", err)
+	}
+}
+
+type cannotDelete struct{ storage.Store }
+
+func (cannotDelete) CanDelete() bool { return false }
+
+func TestWrapForwardsCanDelete(t *testing.T) {
+	if !storage.CanDelete(Wrap(NewMemory(), Hooks{})) {
+		t.Fatal("a wrapped memory store must report that it can delete")
+	}
+	if storage.CanDelete(Wrap(cannotDelete{NewMemory()}, Hooks{})) {
+		t.Fatal("a wrapper must pass on that its store cannot delete")
 	}
 }

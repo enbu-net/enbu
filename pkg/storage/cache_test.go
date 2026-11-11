@@ -166,3 +166,16 @@ func TestHeadCacheRefetchesOversizedEntry(t *testing.T) {
 		t.Fatalf("head = %q, %v, fetches = %d", head, err, counting.fetches)
 	}
 }
+
+type cannotDelete struct{ storage.Store }
+
+func (cannotDelete) CanDelete() bool { return false }
+
+func TestHeadCachePassesOnWhetherItsStoreCanDelete(t *testing.T) {
+	if !storage.CanDelete(storage.WithHeadCache(storagetest.NewMemory(), t.TempDir())) {
+		t.Fatal("a cache over a store that can delete says it cannot")
+	}
+	if storage.CanDelete(storage.WithHeadCache(cannotDelete{storagetest.NewMemory()}, t.TempDir())) {
+		t.Fatal("a cache over a store that cannot delete says it can")
+	}
+}

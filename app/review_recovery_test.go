@@ -22,7 +22,7 @@ func TestJoinRequestCleanupToleratesUnsupportedAndAlreadyDeleted(t *testing.T) {
 			alice := newAlice(t)
 			bob := newDevice(t, alice)
 			ws := mustWorkspace(t, bob)
-			signer, _, _, err := bob.Identities.CreateSigner(ws)
+			signer, err := createSigner(bob, ws)
 			if err != nil {
 				t.Fatal(err)
 			}

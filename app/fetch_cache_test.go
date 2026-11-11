@@ -27,9 +27,9 @@ func countCalls(a *App) *storageCalls {
 			c.heads.Add(1)
 			return next.FetchHead(ctx, kind, scope, rev)
 		},
-		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 			c.blobs.Add(1)
-			return next.OpenBlob(ctx, kind, scope, rev, index)
+			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
 			if kind == storage.KindState {
@@ -204,14 +204,14 @@ func TestReadRecordsAfterAnotherProcessAcceptedMeanwhile(t *testing.T) {
 	real := a.Storage
 	done := false
 	a.Storage = storagetest.Wrap(real, storagetest.Hooks{
-		OpenBlob: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 			if !done {
 				done = true
 				if err := twin.AddSecret(ctx, "default", "B", "2"); err != nil {
 					t.Fatal(err)
 				}
 			}
-			return next.OpenBlob(ctx, kind, scope, rev, index)
+			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 	})
 	got, err := a.ListSecrets(context.Background(), "default")
@@ -252,30 +252,6 @@ func TestWriteDoesNotForgetARevisionDeletedDuringPublish(t *testing.T) {
 	after, err := s.cps.State(resource)
 	if err != nil || !reflect.DeepEqual(after, accepted) {
 		t.Fatalf("checkpoint = %v, %v; want %v", after, err, accepted)
-	}
-}
-
-func TestHistoryIndexChangesWithLoadedIdentities(t *testing.T) {
-	a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"A": "1"})
-	s, err := a.openSession(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	resource := s.resource("default")
-	original := a.openHistoryIndex(s, resource)
-	s.ids = append(s.ids, mustKeyPair(t).Identity)
-	retained := a.openHistoryIndex(s, resource)
-	if retained.path == original.path {
-		t.Fatal("adding a retained identity reused the original flags")
-	}
-	s.ids[0], s.ids[1] = s.ids[1], s.ids[0]
-	if a.openHistoryIndex(s, resource).path != retained.path {
-		t.Fatal("identity order changed the cache key")
-	}
-	s.ids = s.ids[1:]
-	if a.openHistoryIndex(s, resource).path != original.path {
-		t.Fatal("removing the retained identity did not restore the original cache key")
 	}
 }
 

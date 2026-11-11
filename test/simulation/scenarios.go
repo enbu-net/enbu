@@ -20,7 +20,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-var Scenarios = []string{"disaster-witness-warm", "disaster-witness-cold", "disaster-all-stale-warm", "disaster-all-stale-cold", "disaster-retired-key-warm", "disaster-retired-key-cold", "disaster-compacted-warm", "disaster-compacted-cold", "disaster-compacted-no-record-warm", "disaster-compacted-no-record-cold", "disaster-compacted-old-data-warm", "disaster-compacted-old-data-cold", "portable-config", "output-boundary-public", "output-boundary-hardlink", "output-boundary-canceled-hardlink", "output-boundary-removed-hardlink", "output-boundary-upgraded-preserve-hardlink", "output-boundary-upgraded-replace-hardlink", "wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
+var Scenarios = []string{"disaster-witness-warm", "disaster-witness-cold", "disaster-all-stale-warm", "disaster-all-stale-cold", "disaster-compacted-warm", "disaster-compacted-cold", "disaster-compacted-no-record-warm", "disaster-compacted-no-record-cold", "disaster-compacted-old-data-warm", "disaster-compacted-old-data-cold", "portable-config", "output-boundary-public", "output-boundary-hardlink", "output-boundary-canceled-hardlink", "output-boundary-removed-hardlink", "wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-lost"}
 
 func requireCode(e error, c apperr.Code) error {
 	if ErrorCode(e) != string(c) {
@@ -273,7 +273,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			if err != nil {
 				return err
 			}
-			_, err = age.Decrypt(blob, id)
+			_, err = age.Decrypt(blob, id.Identity)
 			var noMatch *agecrypto.NoIdentityMatchError
 			if !errors.As(err, &noMatch) {
 				return fmt.Errorf("removed key could decrypt current ciphertext: %v", err)
@@ -309,47 +309,6 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		}
 		if len(members) != len(w.Devices) {
 			return fmt.Errorf("membership count changed")
-		}
-		return w.Check(ctx, "default")
-	case "key-update":
-		r, e := b.UpgradeIdentity(ctx)
-		if e != nil {
-			return e
-		}
-		if !r.Pending {
-			return fmt.Errorf("member key updated without approval")
-		}
-		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {
-			return e
-		}
-		if e := w.Check(ctx, "default"); e != nil {
-			return e
-		}
-		r, e = a.UpgradeIdentity(ctx)
-		if e != nil {
-			return e
-		}
-		if r.Pending {
-			return fmt.Errorf("admin key still pending")
-		}
-
-		// Complete the transition as well as exercising mixed recipients.
-		for i := 2; i < len(w.Devices); i++ {
-			if _, e := w.Devices[i].App.UpgradeIdentity(ctx); e != nil {
-				return e
-			}
-			if e := a.ApproveMember(ctx, w.Devices[i].ID); e != nil {
-				return e
-			}
-		}
-		members, e := a.ListMembers(ctx)
-		if e != nil {
-			return e
-		}
-		for _, member := range members {
-			if !member.PostQuantum {
-				return fmt.Errorf("hybrid transition left a classical member")
-			}
 		}
 		return w.Check(ctx, "default")
 	case "concurrent-keys":
@@ -532,11 +491,9 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if err := w.Observe("diagnose", nil, report, nil); err != nil {
 			return err
 		}
-		ids, e := a.LoadWorkspaceIdentities()
-		if e != nil {
+		if _, e := a.IdentityInfo(); e != nil {
 			return e
 		}
-		app.CloseIdentities(ids)
 		if _, e := a.ListEnvironments(); e != nil {
 			return e
 		}
@@ -653,11 +610,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			if e != nil {
 				return e
 			}
-			blob, e := storage.ReadBlob(ctx, w.Devices[0].Store, storage.KindState, scope, rev, 0, storage.MaxPayloadBytes)
+			blob, e := storage.ReadPayload(ctx, w.Devices[0].Store, storage.KindState, scope, rev, storage.MaxPayloadBytes)
 			if e != nil {
 				return e
 			}
-			saved = append(saved, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Blobs: [][]byte{blob}})
+			saved = append(saved, storage.Object{Kind: storage.KindState, Scope: scope, Rev: rev, Head: head, Payload: blob})
 			if e := w.Devices[0].Store.Delete(ctx, storage.KindState, scope, rev); e != nil {
 				return e
 			}

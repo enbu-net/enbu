@@ -14,21 +14,13 @@ import (
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
-// Store is what the bridge exposes of this device's identities: the app's
-// identity store, key updates and retained identities. identity.Manager
-// implements it.
+// Store is what the bridge exposes of this device's keys: the app's identity
+// store. identity.Manager implements it.
 type Store interface {
-	Create(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
-	Load(workspaceID string) (identity.Identity, error)
+	Create(workspaceID string) (*identity.Device, identity.PublicInfo, string, error)
+	Load(workspaceID string) (*identity.Device, error)
 	Info(workspaceID string) (identity.PublicInfo, error)
 	Doctor(context.Context) identity.Diagnosis
-	CreateSigner(workspaceID string) (signing.Signer, identity.SignerInfo, string, error)
-	LoadSigner(workspaceID string) (signing.Signer, error)
-	SignerInfo(workspaceID string) (identity.SignerInfo, error)
-	CreatePending(workspaceID string) (identity.Identity, identity.PublicInfo, string, error)
-	PendingInfo(workspaceID string) (identity.PublicInfo, error)
-	PromotePending(workspaceID string) error
-	LoadRetained(workspaceID string) ([]identity.Identity, error)
 }
 
 // KeyringEntry is one OS keyring entry the bridge shares, such as the GitHub
@@ -37,7 +29,7 @@ type KeyringEntry struct{ Service, Key string }
 
 // Server answers one WSL enbu on r and w. Loaded identities and signers stay
 // open in this process until the WSL side closes them or the stream ends, so
-// a TPM connection and a Windows Hello approval are reused for one command.
+// a TPM connection is reused for one command.
 type Server struct {
 	Version    string
 	Identities Store
@@ -106,20 +98,16 @@ func (s *Server) hello(raw json.RawMessage) (any, error) {
 
 func (s *Server) dispatch(ctx context.Context, method string, raw json.RawMessage) (any, error) {
 	switch method {
-	case methodCreate, methodCreatePending:
+	case methodCreate:
 		p, err := decode[workspaceParams](raw)
 		if err != nil {
 			return nil, err
 		}
-		create := s.Identities.Create
-		if method == methodCreatePending {
-			create = s.Identities.CreatePending
-		}
-		id, info, warning, err := create(p.WorkspaceID)
+		d, info, warning, err := s.Identities.Create(p.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
-		r := s.identity(id, info)
+		r := s.device(d, info)
 		r.Warning = warning
 		return r, nil
 	case methodLoad:
@@ -127,45 +115,21 @@ func (s *Server) dispatch(ctx context.Context, method string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
-		id, err := s.Identities.Load(p.WorkspaceID)
+		d, err := s.Identities.Load(p.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
-		return s.identity(id, identity.PublicInfo{}), nil
-	case methodLoadRetained:
+		return s.device(d, identity.PublicInfo{}), nil
+	case methodInfo:
 		p, err := decode[workspaceParams](raw)
 		if err != nil {
 			return nil, err
 		}
-		ids, err := s.Identities.LoadRetained(p.WorkspaceID)
-		if err != nil {
-			return nil, err
-		}
-		r := retainedResult{Identities: []identityResult{}}
-		for _, id := range ids {
-			r.Identities = append(r.Identities, s.identity(id, identity.PublicInfo{}))
-		}
-		return r, nil
-	case methodInfo, methodPendingInfo:
-		p, err := decode[workspaceParams](raw)
-		if err != nil {
-			return nil, err
-		}
-		info := s.Identities.Info
-		if method == methodPendingInfo {
-			info = s.Identities.PendingInfo
-		}
-		i, err := info(p.WorkspaceID)
+		i, err := s.Identities.Info(p.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
 		return infoResult{Info: i, Created: i.Created}, nil
-	case methodPromotePending:
-		p, err := decode[workspaceParams](raw)
-		if err != nil {
-			return nil, err
-		}
-		return struct{}{}, s.Identities.PromotePending(p.WorkspaceID)
 	case methodUnwrap:
 		p, err := decode[unwrapParams](raw)
 		if err != nil {
@@ -180,36 +144,6 @@ func (s *Server) dispatch(ctx context.Context, method string, raw json.RawMessag
 			return nil, err
 		}
 		return unwrapResult{FileKey: key}, nil
-	case methodCreateSigner:
-		p, err := decode[workspaceParams](raw)
-		if err != nil {
-			return nil, err
-		}
-		signer, info, warning, err := s.Identities.CreateSigner(p.WorkspaceID)
-		if err != nil {
-			return nil, err
-		}
-		return signerResult{Handle: s.keep(signer), Public: signer.Public(), Info: info, Created: info.Created, Warning: warning}, nil
-	case methodLoadSigner:
-		p, err := decode[workspaceParams](raw)
-		if err != nil {
-			return nil, err
-		}
-		signer, err := s.Identities.LoadSigner(p.WorkspaceID)
-		if err != nil {
-			return nil, err
-		}
-		return signerResult{Handle: s.keep(signer), Public: signer.Public()}, nil
-	case methodSignerInfo:
-		p, err := decode[workspaceParams](raw)
-		if err != nil {
-			return nil, err
-		}
-		info, err := s.Identities.SignerInfo(p.WorkspaceID)
-		if err != nil {
-			return nil, err
-		}
-		return signerInfoResult{Info: info, Created: info.Created}, nil
 	case methodSign:
 		p, err := decode[signParams](raw)
 		if err != nil {
@@ -261,8 +195,9 @@ func (s *Server) dispatch(ctx context.Context, method string, raw json.RawMessag
 	return nil, fmt.Errorf("%s %q", errUnknownMethod, method)
 }
 
-func (s *Server) identity(id identity.Identity, info identity.PublicInfo) identityResult {
-	return identityResult{Handle: s.keep(id), Recipient: id.Recipient().String(), Info: info, Created: info.Created}
+func (s *Server) device(d *identity.Device, info identity.PublicInfo) deviceResult {
+	return deviceResult{Identity: s.keep(d.Identity), Recipient: d.Identity.Recipient().String(),
+		Signer: s.keep(d.Signer), Public: d.Signer.Public(), Info: info, Created: info.Created}
 }
 
 func (s *Server) keep(c io.Closer) uint64 {

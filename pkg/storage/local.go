@@ -29,8 +29,6 @@ func (s local) openRoot() (*os.Root, error) {
 	return os.OpenRoot(s.dir)
 }
 
-func (s local) Capabilities() Capabilities { return Capabilities{PhysicalDelete: true} }
-
 func rejectSymlink(r *os.Root, name string) error {
 	info, err := r.Lstat(name)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -172,9 +170,9 @@ func (s local) FetchHead(ctx context.Context, kind Kind, scope string, rev diges
 	return head, err
 }
 
-// OpenBlob streams one blob. The file stays open until the reader is closed, and
-// reads only that blob's range.
-func (s local) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest.Digest, index int) (io.ReadCloser, error) {
+// OpenPayload streams the payload. The file stays open until the reader is
+// closed, and reads only the payload's range.
+func (s local) OpenPayload(ctx context.Context, kind Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -191,12 +189,12 @@ func (s local) OpenBlob(ctx context.Context, kind Kind, scope string, rev digest
 	if err != nil {
 		return nil, err
 	}
-	_, layout, err := readHead(f, size, rev)
+	_, offset, err := readHead(f, size, rev)
 	if err != nil {
 		_ = f.Close()
 		return nil, err
 	}
-	section, err := blobSection(f, layout, index)
+	section, err := payloadSection(f, size, offset)
 	if err != nil {
 		_ = f.Close()
 		return nil, err

@@ -68,11 +68,11 @@ func TestSessionEncryptsForControlMembersOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stranger, err := agecrypto.GenerateX25519Identity()
+	stranger, err := agecrypto.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), rev, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), rev, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestSessionIgnoresRevisionsWithoutAuthority(t *testing.T) {
 
 	// Real ciphertext for the real recipients inside a "state" nobody signed.
 	garbage := []byte("not a signed state")
-	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Head: garbage, Blobs: [][]byte{raw}}); err != nil {
+	if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: scope, Rev: digest.FromBytes(garbage), Head: garbage, Payload: raw}); err != nil {
 		t.Fatal(err)
 	}
 	// A valid signature by a device that is not a principal.
@@ -135,12 +135,12 @@ func TestSessionRejectsStateOfAnotherResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, src, rev, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, src, rev, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Replaying a genuine staging state as the dev environment must fail.
-	replay := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(s.workspace, s.resource("dev")), Rev: rev, Head: head, Blobs: [][]byte{ciphertext}}
+	replay := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(s.workspace, s.resource("dev")), Rev: rev, Head: head, Payload: ciphertext}
 	if err := alice.Storage.Publish(bg, replay); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func extraPrincipal(t *testing.T) wsp.Principal {
 		t.Fatal(err)
 	}
 	signer := signing.NewEd25519Signer(key)
-	id, err := agecrypto.GenerateX25519Identity()
+	id, err := agecrypto.GenerateHybridIdentity()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestOpenControlIgnoresForgedControl(t *testing.T) {
 	alice := newAlice(t)
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
-	ms, err := mallory.Identities.LoadSigner(mustWorkspace(t, mallory))
+	ms, err := loadSigner(mallory, mustWorkspace(t, mallory))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,12 +383,12 @@ func principalOf(t *testing.T, d *App) wsp.Principal {
 		t.Fatal(err)
 	}
 	defer func() { _ = id.Close() }()
-	signer, err := d.Identities.LoadSigner(ws)
+	signer, err := loadSigner(d, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = signer.Close() }()
-	return wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: id.Recipient().String()}
+	return wsp.Principal{ID: signer.Public().DeviceID(), Signing: signer.Public(), Recipient: id.Identity.Recipient().String()}
 }
 
 func changeControl(t *testing.T, a *App, mutate func(*wsp.Control)) {

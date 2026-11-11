@@ -86,7 +86,7 @@ func TestSchedulerReplaysExactInterleaving(t *testing.T) {
 func TestAmbiguousPublishIsDurable(t *testing.T) {
 	s := &Store{Store: storagetest.NewMemory(), Tape: NewTape(0, "")}
 	s.Arm(Fault{"publish", 1, "after"})
-	o := storagetest.Object(storage.KindControl, "", "control")
+	o := storagetest.Object(storage.KindControl, "", "control", "")
 	if e := s.Publish(context.Background(), o); !errors.Is(e, ErrOffline) {
 		t.Fatal(e)
 	}
@@ -103,7 +103,7 @@ func TestActualCancellationStopsLaterEffects(t *testing.T) {
 			base := storagetest.NewMemory()
 			s := &Store{Store: base, Tape: NewTape(0, ""), cancel: cancel}
 			s.Arm(Fault{"publish", 1, mode})
-			first := storagetest.Object(storage.KindControl, "", "first")
+			first := storagetest.Object(storage.KindControl, "", "first", "")
 			if err := s.Publish(ctx, first); !errors.Is(err, context.Canceled) || !errors.Is(ctx.Err(), context.Canceled) {
 				t.Fatalf("operation context was not canceled: result=%v context=%v", err, ctx.Err())
 			}
@@ -111,7 +111,7 @@ func TestActualCancellationStopsLaterEffects(t *testing.T) {
 			if mode == "context-before" && !errors.Is(err, storage.ErrNotFound) || mode == "context-after" && err != nil {
 				t.Fatalf("wrong durable side of cancellation: %v", err)
 			}
-			second := storagetest.Object(storage.KindControl, "", "second")
+			second := storagetest.Object(storage.KindControl, "", "second", "")
 			if err := s.Publish(ctx, second); !errors.Is(err, context.Canceled) {
 				t.Fatalf("subsequent call ignored cancellation: %v", err)
 			}

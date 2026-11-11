@@ -87,7 +87,7 @@ func (w *World) TeamIncident(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		copied := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(cfg.WorkspaceID, cfg.Resource("production")), Rev: head.Digest, Head: signed, Blobs: [][]byte{blob}}
+		copied := storage.Object{Kind: storage.KindState, Scope: storage.StateScope(cfg.WorkspaceID, cfg.Resource("production")), Rev: head.Digest, Head: signed, Payload: blob}
 		if err := w.Devices[2].Store.Publish(ctx, copied); err != nil {
 			return err
 		}
@@ -125,7 +125,7 @@ func (w *World) TeamIncident(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			_, err = age.Decrypt(blob, id)
+			_, err = age.Decrypt(blob, id.Identity)
 			var noMatch *agecrypto.NoIdentityMatchError
 			if !errors.As(err, &noMatch) {
 				return fmt.Errorf("departed key decrypts %s: %v", env, err)

@@ -52,8 +52,6 @@ export function MembersTab({
   transfer: RunTransfer;
 }) {
   const { members, requests, loading, error, setError, refresh } = useMembers(repoPath);
-  // Until the members load, assume the key is current rather than offer an upgrade.
-  const postQuantum = members.find((member) => member.self)?.post_quantum ?? true;
   return (
     <>
       <MembersPanel
@@ -85,7 +83,7 @@ export function MembersTab({
         }}
         onErrorDismiss={() => setError(null)}
       />
-      <DevicePanel repoPath={repoPath} postQuantum={postQuantum} onUpgraded={refresh} />
+      <DevicePanel repoPath={repoPath} />
     </>
   );
 }

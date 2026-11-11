@@ -211,8 +211,8 @@ func TestSaveProject(t *testing.T) {
 	}
 
 	cfg := NewProjectWithEnvironment("dev")
-	if err := SaveProject(cfg); err != nil {
-		t.Fatalf("SaveProject: %v", err)
+	if err := SaveProjectTo("", cfg); err != nil {
+		t.Fatalf("SaveProjectTo: %v", err)
 	}
 
 	loaded, err := LoadProject()
@@ -437,11 +437,11 @@ func TestLocalState_RoundTrip(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
 	want := &LocalConfig{Previous: "dev"}
-	if err := SaveLocalState("myorg/myrepo", want); err != nil {
+	if err := SaveLocalStateTo(DataDir(), "myorg/myrepo", want); err != nil {
 		t.Fatalf("SaveLocalState: %v", err)
 	}
 
-	got, err := LoadLocalState("myorg/myrepo")
+	got, err := LoadLocalStateFrom(DataDir(), "myorg/myrepo")
 	if err != nil {
 		t.Fatalf("LoadLocalState: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestLocalState_RoundTrip(t *testing.T) {
 func TestLoadLocalState_Missing(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 
-	cfg, err := LoadLocalState("noorg/norepo")
+	cfg, err := LoadLocalStateFrom(DataDir(), "noorg/norepo")
 	if err != nil {
 		t.Fatalf("LoadLocalState: %v", err)
 	}

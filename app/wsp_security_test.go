@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -33,6 +34,14 @@ func TestJoinApproveAndShareSecrets(t *testing.T) {
 	}
 	if err := bob.AddSecret(bg, "default", "BOB", "x"); !apperr.Is(err, apperr.CodeNotMember) {
 		t.Fatalf("pending device wrote secrets: %v", err)
+	}
+	// An unknown environment needs only the local enbu.toml, so it is reported
+	// before membership is checked.
+	if _, err := bob.ListSecrets(bg, "missing"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device read an unknown environment: %v", err)
+	}
+	if err := bob.AddSecret(bg, "missing", "BOB", "x"); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("pending device wrote an unknown environment: %v", err)
 	}
 	// Alice picks bob from the list.
 	reqs, err := alice.ListJoinRequests(bg)
@@ -85,7 +94,7 @@ func TestRecipientInjection(t *testing.T) {
 	}
 	mallory := newDevice(t, alice)
 	requestJoin(t, mallory)
-	ms, _ := mallory.Identities.LoadSigner(ws)
+	ms, _ := loadSigner(mallory, ws)
 	defer func() { _ = ms.Close() }()
 	s, err := alice.openSession(bg)
 	if err != nil {
@@ -114,7 +123,7 @@ func TestRecipientInjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := storage.ReadBlob(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, 0, storage.MaxPayloadBytes)
+	ciphertext, err := storage.ReadPayload(bg, alice.Storage, storage.KindState, read.heads[0].Scope(), read.heads[0].Digest, storage.MaxPayloadBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +152,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	resource := s.resource("default")
 	t.Run("unsigned state", func(t *testing.T) {
 		junk := []byte("not a signed state")
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: storage.StateScope(ws, resource), Rev: digest.FromBytes(junk), Head: junk, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
@@ -167,7 +176,7 @@ func TestFakeSecretRejected(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Blobs: [][]byte{forged}}); err != nil {
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Payload: forged}); err != nil {
 			t.Fatal(err)
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
@@ -359,7 +368,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 func TestIncompatibleStorageRejected(t *testing.T) {
 	t.Run("storage already holds a workspace", func(t *testing.T) {
 		alice := newAlice(t)
-		other := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+		other := &App{Storage: alice.Storage, Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 		prepareApp(t, other, "default")
 		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("a workspace without a trusted genesis was adopted: %v", err)
@@ -367,7 +376,7 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {
 		alice := newAlice(t)
-		other := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
+		other := &App{Storage: newMemRegistry(), Identities: &apptest.Identities{}, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
 		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("trust root silently replaced: %v", err)
 		}
@@ -377,7 +386,7 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 func TestSigningKeyIsNotStoredInWorkspaceStorage(t *testing.T) {
 	alice := newAlice(t)
 	ws := mustWorkspace(t, alice)
-	signer, err := alice.Identities.LoadSigner(ws)
+	signer, err := loadSigner(alice, ws)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +408,7 @@ func TestSigningKeyIsNotStoredInWorkspaceStorage(t *testing.T) {
 // genesis control goes through publish, so a test can watch or fail the moment.
 func foundingApp(t *testing.T, publish func(ctx context.Context, data []byte) error) *App {
 	t.Helper()
-	a := &App{Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+	a := &App{Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
 		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
 			if o.Kind == storage.KindControl && publish != nil {

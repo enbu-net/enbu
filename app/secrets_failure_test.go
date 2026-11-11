@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -54,7 +55,7 @@ func TestSecretOperationsPropagateFailuresWithoutWriting(t *testing.T) {
 							t.Fatal(err)
 						}
 					case "identity":
-						a.Identities = newMemKeyStore()
+						a.Identities = &apptest.Identities{}
 						wantCode = apperr.CodeNotInitialized
 					case "storage":
 						a.Storage = storagetest.Wrap(base, storagetest.Hooks{
@@ -163,11 +164,9 @@ func TestPullSecretsToFilePreservesExistingFileOnFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			if failure == "decryption" {
-				store := newMemKeyStore()
+				store := &apptest.Identities{}
 				other := mustKeyPair(t)
-				if err := store.storeSecret(KeystoreService, testWorkspaceID, []byte(other.Identity.String())); err != nil {
-					t.Fatal(err)
-				}
+				store.Use(testWorkspaceID, other.Identity, nil)
 				a.Identities = store
 			}
 			if failure == "missing output directory" {

@@ -109,46 +109,40 @@ func (a *App) initializeRepository(ctx context.Context, opts InitOptions) (*Init
 	if err := a.saveProject(cfg); err != nil {
 		return nil, nil, err
 	}
-	id, info, warning, err := a.Identities.Create(cfg.WorkspaceID)
+	d, info, warning, err := a.Identities.Create(cfg.WorkspaceID)
 	if err != nil {
 		return nil, nil, identityError(err)
 	}
-	defer func() { _ = id.Close() }()
-	signer, _, signerWarning, err := a.Identities.CreateSigner(cfg.WorkspaceID)
-	if err != nil {
-		return nil, nil, identityError(err)
-	}
-	defer func() { _ = signer.Close() }()
+	defer func() { _ = d.Close() }()
+	id, signer := d.Identity, d.Signer
 	publicKey := id.Recipient().String()
 	device := signer.Public().DeviceID()
 
-	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID, ids: []agecrypto.Identity{id}, signer: signer, acceptNewGenesis: opts.AcceptNewGenesis}
+	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID, id: id, signer: signer, acceptNewGenesis: opts.AcceptNewGenesis}
 	if err := a.ensureControl(ctx, s, wsp.Principal{ID: device, Signing: signer.Public(), Recipient: publicKey, Admin: true}); err != nil {
 		return nil, nil, err
 	}
 	result := &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL,
 		KeyCreated: info.Created, Mode: "initialize", Founded: s.founded, DeviceID: string(device), Fingerprint: device.Fingerprint(),
 		ControlGenesis: cfg.ControlGenesis, ReplacedGenesis: string(s.replaced.Genesis)}
-	for _, w := range []string{warning, signerWarning} {
-		if w != "" {
-			result.Warnings = append(result.Warnings, w)
-			a.emit(w)
-		}
+	if warning != "" {
+		result.Warnings = append(result.Warnings, warning)
+		a.emit(warning)
 	}
 	resource := cfg.Resource(cfg.CurrentEnvironment())
 	if _, ok := s.head.Principal(device); !ok {
 		// Not a member: leave a request an admin can pick from a list. It carries
 		// no authority, so anyone able to write to storage can do the same.
-		// A removed device may have upgraded its encryption key since its
-		// original join. Remove its own obsolete signed requests before
-		// asking again, otherwise approval sees two different recipients.
-		// Never choose a request by its untrusted listing order or timestamp.
+		// A removed device may ask again with a new key. Remove its own
+		// obsolete signed requests first, otherwise approval sees two
+		// different recipients. Never choose a request by its untrusted
+		// listing order or timestamp.
 		requests, err := wsp.ListJoinRequests(ctx, store, cfg.WorkspaceID)
 		if err != nil {
 			return nil, nil, wspError(err)
 		}
 		for _, request := range requests {
-			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
+			if request.DeviceID() == device && request.Recipient != publicKey {
 				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil && !errors.Is(err, storage.ErrUnsupported) && !errors.Is(err, storage.ErrNotFound) {
 					return nil, nil, storageError(err)
 				}

@@ -10,7 +10,6 @@ import type {
   IdentityDiagnosis,
   ImportResult,
   InitResult,
-  KeyUpdateResult,
   JoinRequestInfo,
   MemberInfo,
   OAuthStart,
@@ -104,7 +103,6 @@ let mockMembers: MemberInfo[] = [
     algorithm: "p256",
     admin: true,
     self: true,
-    post_quantum: false,
   },
   {
     device_id: "11223344".repeat(8),
@@ -113,7 +111,6 @@ let mockMembers: MemberInfo[] = [
     algorithm: "ed25519",
     admin: false,
     self: false,
-    post_quantum: true,
   },
 ];
 
@@ -124,7 +121,6 @@ let mockJoinRequests: JoinRequestInfo[] = [
     recipient: "age1pq1demo-request",
     algorithm: "p256",
     requested_at: "2026-10-06T09:30:00Z",
-    key_update: false,
   },
 ];
 
@@ -401,7 +397,6 @@ export const mockBackend: Backend = {
         algorithm: request.algorithm,
         admin: false,
         self: false,
-        post_quantum: true,
       },
     ];
   },
@@ -421,8 +416,8 @@ export const mockBackend: Backend = {
     const self = mockMembers[0];
     return {
       backend: "keyring",
-      algorithm: self.post_quantum ? "ML-KEM-768+X25519" : "X25519",
-      recipient: self.post_quantum ? "age1pq1demo..." : "age1demo...",
+      algorithm: "MLKEM768-X25519",
+      recipient: "age1pq1demo...",
       device_id: self.device_id,
       fingerprint: self.fingerprint,
     };
@@ -434,20 +429,6 @@ export const mockBackend: Backend = {
       denied: false,
       fallback_available: true,
       keyring_locked: false,
-    };
-  },
-  async UpgradeIdentity(): Promise<KeyUpdateResult> {
-    mockMembers = mockMembers.map((m) =>
-      m.self ? Object.assign({}, m, { post_quantum: true }) : m,
-    );
-    const self = mockMembers[0];
-    return {
-      backend: "keyring",
-      algorithm: "ML-KEM-768+X25519",
-      recipient: "age1pq1demo...",
-      device_id: self.device_id,
-      fingerprint: self.fingerprint,
-      pending: false,
     };
   },
   async ReadConfig(): Promise<string> {

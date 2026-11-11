@@ -2,12 +2,13 @@ package app
 
 import (
 	"context"
+	"io"
+	"testing"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
-	"io"
-	"testing"
 )
 
 // Missing bytes of an acknowledged revision must never be classified as an
@@ -15,7 +16,7 @@ import (
 func TestMissingCiphertextNeverBecomesEmptyEnvironment(t *testing.T) {
 	a := newAlice(t)
 	before := revisionsOf(t, a, "default")
-	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenBlob: func(context.Context, storage.Store, storage.Kind, string, digest.Digest, int) (io.ReadCloser, error) {
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{OpenPayload: func(context.Context, storage.Store, storage.Kind, string, digest.Digest) (io.ReadCloser, error) {
 		return nil, storage.ErrNotFound
 	}})
 	if _, e := a.ListSecrets(bg, "default"); !apperr.Is(e, apperr.CodeRollback) {
