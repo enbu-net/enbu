@@ -403,11 +403,23 @@ jobs:
     timeout-minutes: 5
     permissions: {}
     steps:
+      # GitHub creates this check only once every job above has finished, and
+      # its page cannot link to the job that failed, so it names the failed jobs
+      # (as annotations on the pull request) and links the run.
       - name: Require every CI job to succeed
         env:
           RESULTS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          echo "$RESULTS" | jq -e '.changes.result == "success" and all(.[]; .result == "success" or .result == "skipped")'
+          failed=$(echo "$RESULTS" | jq -r 'to_entries[] | select(.value.result != "success" and (.key == "changes" or .value.result != "skipped")) | "\(.key)=\(.value.result)"')
+          if [ -z "$failed" ]; then
+            exit 0
+          fi
+          while IFS='=' read -r job result; do
+            echo "::error title=CI job ${job} ${result:-unknown}::Job '${job}' ended as '${result:-unknown}'. Open it from ${RUN_URL:-the run summary}"
+          done <<< "$failed"
+          echo "Failed jobs are listed in the run summary: ${RUN_URL:-}"
+          exit 1
 
   renovate-config:
     if: github.event.action != 'closed'
