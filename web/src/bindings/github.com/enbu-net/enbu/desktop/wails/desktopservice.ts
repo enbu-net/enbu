@@ -200,10 +200,6 @@ export function ResolveConflicts(env: string, heads: string[], choices: desktop$
     return $Call.ByID(839622030, env, heads, choices);
 }
 
-export function ResolveMemberFork(): $CancellablePromise<void> {
-    return $Call.ByID(904172669);
-}
-
 export function RestartApp(): $CancellablePromise<void> {
     return $Call.ByID(2858372495);
 }
