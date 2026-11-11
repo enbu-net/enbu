@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -16,12 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const defaultDeviceClientID = "Ov23li6nFmfdF4FW9ikd"
-
 type authLoginDeps struct {
-	browserLogin func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
-	deviceLogin  func(context.Context, string, auth.DevicePrompter) (*auth.StoredToken, error)
-	openBrowser  auth.BrowserOpener
+	login       func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error)
+	openBrowser func(string) error
 	// windows runs the login in the Windows enbu.exe instead, inside WSL:
 	// the token goes to the Windows keyring and Windows opens the browser.
 	windows func(ctx context.Context, cmd *cobra.Command, args ...string) error
@@ -56,11 +52,9 @@ func newAuthCommand(a *app.App) *cobra.Command {
 }
 
 func newAuthLoginCommand() *cobra.Command {
-	client := auth.Client{Clock: clock.New()}
 	deps := authLoginDeps{
-		browserLogin: client.Login,
-		deviceLogin:  client.LoginDevice,
-		openBrowser:  auth.OpenBrowser,
+		login:       auth.Client{Clock: clock.New()}.Login,
+		openBrowser: auth.OpenBrowser,
 	}
 	if inWSL() {
 		deps.windows = runInWindows
@@ -86,24 +80,19 @@ func runInWindows(ctx context.Context, cmd *cobra.Command, args ...string) error
 }
 
 func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
-	var deviceFlow bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "login",
 		Short: "Authenticate with GitHub, adding an account",
-		Long: `Authenticate with GitHub. Signing in with another account adds it beside the
-accounts already signed in and makes it the one in use; switch back with
-'enbu auth switch'.`,
+		Long: `Authenticate with GitHub through the Device Flow: enter the code shown at
+github.com/login/device, from any browser, so this works over SSH too. The code
+goes to stderr, so --json output stays clean. Signing in with another account
+adds it beside the accounts already signed in and makes it the one in use;
+switch back with 'enbu auth switch'.`,
+		Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if jsonEnabled(cmd) && deviceFlow {
-				return invalidArgument("--device cannot be used with --json", nil)
-			}
-
 			ctx := cmd.Context()
 			if deps.windows != nil {
 				args := []string{"auth", "login"}
-				if deviceFlow {
-					args = append(args, "--device")
-				}
 				if jsonEnabled(cmd) {
 					args = append(args, "--json")
 				}
@@ -116,35 +105,14 @@ accounts already signed in and makes it the one in use; switch back with
 				return nil
 			}
 
-			humanPrintf(cmd, "Initiating GitHub authentication...\n")
-			var token *auth.StoredToken
-			var err error
-			if deviceFlow {
-				clientID := os.Getenv("ENBU_CLIENT_ID")
-				if clientID == "" {
-					clientID = defaultDeviceClientID
+			token, err := deps.login(ctx, func(device auth.DeviceAuthorization) error {
+				cmd.PrintErrf("Enter the code %s at %s\n", device.UserCode, device.VerificationURI)
+				if err := deps.openBrowser(device.VerificationURI); err != nil {
+					cmd.PrintErrln("Could not open the browser automatically; open the URL above manually.")
 				}
-				token, err = deps.deviceLogin(ctx, clientID, func(device auth.DeviceAuthorization) error {
-					humanPrintf(cmd, "Code: %s\n", device.UserCode)
-					humanPrintf(cmd, "Verification URL: %s\n", device.VerificationURI)
-					if err := deps.openBrowser(device.VerificationURI); err != nil {
-						humanErrorf(cmd, "Could not open the browser automatically; open the URL above manually.\n")
-					} else {
-						humanPrintf(cmd, "→ Opened in your browser.\n")
-					}
-					humanPrintf(cmd, "Waiting for authorization...\n")
-					return nil
-				})
-			} else {
-				token, err = deps.browserLogin(ctx, func(authorizeURL string) error {
-					if err := deps.openBrowser(authorizeURL); err != nil {
-						return err
-					}
-					humanPrintf(cmd, "→ Opened GitHub in your browser.\n")
-					humanPrintf(cmd, "Waiting for authorization...\n")
-					return nil
-				})
-			}
+				cmd.PrintErrln("Waiting for authorization...")
+				return nil
+			})
 			if err != nil {
 				return err
 			}
@@ -159,9 +127,6 @@ accounts already signed in and makes it the one in use; switch back with
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&deviceFlow, "device", false, "Authenticate with GitHub Device Flow")
-
-	return cmd
 }
 
 func newAuthLogoutCommand() *cobra.Command {

@@ -66,8 +66,8 @@ Changes must preserve the following properties.
 
 ### Remote data
 
-Treat data from GitHub, GHCR, configuration files, imported credentials, and
-other external providers as untrusted input.
+Treat data from GitHub, storage (OCI registries, GHCR, S3), configuration files,
+imported credentials, and other external providers as untrusted input.
 
 Validate identifiers, formats, ownership assumptions, and integrity information
 before using remote data to make security-sensitive decisions.
@@ -98,7 +98,7 @@ Review:
 - what happens if the process exits between individual writes
 - whether a retry repeats an already-completed operation safely
 - whether concurrent writers can overwrite each other
-- whether optimistic concurrency checks are preserved
+- whether concurrency checks, such as the head recheck before publishing, are preserved
 - whether local configuration and remote state can diverge
 - whether destructive operations clearly identify the object being deleted
 
@@ -129,8 +129,8 @@ Changes to the following are user-facing interfaces:
 - exit behavior
 - configuration files
 - local state files
-- serialized secret/bundle formats
-- OCI artifact layout, tags, or metadata
+- signed protocol objects (Control, SignedState, join requests) and ciphertext
+- storage object names and layout (OCI tags and manifests, S3 keys)
 - desktop behavior
 
 For incompatible changes, verify that the PR either provides migration behavior

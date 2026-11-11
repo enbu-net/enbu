@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/enbu-net/enbu/pkg/clock"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
@@ -213,4 +215,53 @@ func assertFormValue(t *testing.T, values url.Values, key, want string) {
 
 func contains(value, substring string) bool {
 	return len(substring) <= len(value) && strings.Contains(value, substring)
+}
+
+func TestValidateTokenRequiresBearerAndNormalizedScopes(t *testing.T) {
+	valid := deviceTokenResponse{
+		AccessToken: "token",
+		TokenType:   "BEARER",
+		Scope:       "repo read:org write:packages",
+	}
+	if err := validateToken(valid); err != nil {
+		t.Fatalf("valid token rejected: %v", err)
+	}
+	for _, mutate := range []func(*deviceTokenResponse){
+		func(token *deviceTokenResponse) { token.AccessToken = "" },
+		func(token *deviceTokenResponse) { token.TokenType = "mac" },
+		func(token *deviceTokenResponse) { token.Scope = "repo read:org read:packages" },
+	} {
+		token := valid
+		mutate(&token)
+		if err := validateToken(token); err == nil {
+			t.Fatalf("invalid token accepted: %#v", token)
+		}
+	}
+}
+
+func TestDecodeJSONRejectsOversizeAndUnknownFields(t *testing.T) {
+	for _, body := range []string{
+		`{"access_token":"token","token_type":"bearer","scope":"repo","extra":true}`,
+		`{"value":"` + strings.Repeat("x", maxResponseBytes) + `"}`,
+	} {
+		response := &http.Response{
+			Header: http.Header{"Content-Type": []string{"application/json"}},
+			Body:   io.NopCloser(strings.NewReader(body)),
+		}
+		var result deviceTokenResponse
+		if err := decodeJSON(response, &result); err == nil {
+			t.Fatalf("decodeJSON accepted invalid body")
+		}
+	}
+}
+
+func TestClientIDDefaultsToEnbuAndHonorsOverride(t *testing.T) {
+	t.Setenv("ENBU_CLIENT_ID", "")
+	if got := clientID(); got != defaultClientID {
+		t.Fatalf("default client ID = %q", got)
+	}
+	t.Setenv("ENBU_CLIENT_ID", "custom-client-id")
+	if got := clientID(); got != "custom-client-id" {
+		t.Fatalf("overridden client ID = %q", got)
+	}
 }

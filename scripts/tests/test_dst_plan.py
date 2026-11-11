@@ -553,3 +553,16 @@ def test_main_hands_the_matrix_a_json_platform_list(tmp_path, monkeypatch):
     platforms = json.loads(lines["platforms"])
     assert len(platforms) == 3
     assert all(set(p) == {"target", "runner"} for p in platforms)
+
+
+@pytest.mark.parametrize(
+    ("split", "original"),
+    [
+        ("app/conflicts.go", "app/secrets.go"),
+        ("app/write.go", "app/secrets.go"),
+        ("app/join_requests.go", "app/members.go"),
+        ("app/reencrypt.go", "app/members.go"),
+    ],
+)
+def test_split_app_files_select_like_their_origin(split, original):
+    assert dst_plan.select([split]) == dst_plan.select([original])

@@ -2,12 +2,19 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
+
+	gh "github.com/enbu-net/enbu/pkg/provider/github"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/clock"
@@ -17,6 +24,10 @@ const (
 	deviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
 	deviceScopes       = "repo read:org write:packages"
 	maxDeviceValueSize = 2048
+	maxResponseBytes   = 4 * 1024
+	// defaultClientID is enbu's public GitHub OAuth app; ENBU_CLIENT_ID
+	// overrides it.
+	defaultClientID = "Ov23li6nFmfdF4FW9ikd"
 )
 
 var (
@@ -33,6 +44,20 @@ type DeviceAuthorization struct {
 }
 
 type DevicePrompter func(DeviceAuthorization) error
+
+// Client signs in to GitHub with the Device Flow: the user enters a code at
+// github.com/login/device, so no callback server or broker is involved.
+type Client struct {
+	Clock clock.Clock
+}
+
+var getGitHubUser = func(ctx context.Context, token string) (string, int64, error) {
+	user, err := gh.NewClient(token).GetUser(ctx)
+	if err != nil {
+		return "", 0, err
+	}
+	return user.Login, user.ID, nil
+}
 
 type deviceFlowClient struct {
 	clock         clock.Clock
@@ -60,7 +85,9 @@ type deviceTokenResponse struct {
 	Interval         int    `json:"interval"`
 }
 
-func (c Client) LoginDevice(ctx context.Context, clientID string, prompt DevicePrompter) (*StoredToken, error) {
+// Login shows prompt the code to enter, waits for the user to authorize it and
+// saves the token.
+func (c Client) Login(ctx context.Context, prompt DevicePrompter) (*StoredToken, error) {
 	if c.Clock == nil {
 		c.Clock = clock.New()
 	}
@@ -71,7 +98,7 @@ func (c Client) LoginDevice(ctx context.Context, clientID string, prompt DeviceP
 		http:          newHTTPClient(),
 		wait:          func(ctx context.Context, d time.Duration) error { return clock.Wait(ctx, c.Clock, d) },
 	}
-	return client.login(ctx, clientID, prompt)
+	return client.login(ctx, clientID(), prompt)
 }
 
 func (c *deviceFlowClient) login(
@@ -124,15 +151,10 @@ func (c *deviceFlowClient) login(
 		}
 		switch response.Error {
 		case "":
-			token := exchangeResponse{
-				AccessToken: response.AccessToken,
-				TokenType:   response.TokenType,
-				Scope:       response.Scope,
-			}
-			if err := validateToken(token); err != nil {
+			if err := validateToken(*response); err != nil {
 				return nil, fmt.Errorf("validating device token: %w", err)
 			}
-			return storeDeviceToken(ctx, token.AccessToken)
+			return storeDeviceToken(ctx, response.AccessToken)
 		case "authorization_pending":
 			continue
 		case "slow_down":
@@ -252,4 +274,76 @@ func storeDeviceToken(ctx context.Context, accessToken string) (*StoredToken, er
 		return nil, fmt.Errorf("saving token: %w", err)
 	}
 	return token, nil
+}
+
+func newHTTPClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           dialer.DialContext,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: 10 * time.Second,
+		},
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func validateToken(token deviceTokenResponse) error {
+	if token.AccessToken == "" || len(token.AccessToken) > 2048 {
+		return errors.New("invalid access token")
+	}
+	if !strings.EqualFold(token.TokenType, "bearer") {
+		return errors.New("unsupported token type")
+	}
+	if len(token.Scope) > 4096 {
+		return errors.New("invalid scope")
+	}
+	got := make(map[string]bool)
+	for scope := range strings.FieldsFuncSeq(token.Scope, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	}) {
+		got[scope] = true
+	}
+	for _, required := range []string{"repo", "read:org", "write:packages"} {
+		if !got[required] {
+			return fmt.Errorf("missing required scope %q", required)
+		}
+	}
+	return nil
+}
+
+func decodeJSON(resp *http.Response, result any) error {
+	defer func() { _ = resp.Body.Close() }()
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return errors.New("invalid response content type")
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return errors.New("reading response")
+	}
+	if len(data) > maxResponseBytes {
+		return errors.New("response body is too large")
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(result); err != nil {
+		return errors.New("invalid JSON response")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("invalid JSON response")
+	}
+	return nil
+}
+
+// clientID is the GitHub OAuth app to sign in with: ENBU_CLIENT_ID, or enbu's.
+func clientID() string {
+	if id := os.Getenv("ENBU_CLIENT_ID"); id != "" {
+		return id
+	}
+	return defaultClientID
 }

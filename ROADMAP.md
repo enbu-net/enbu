@@ -5,7 +5,8 @@ may change or be dropped.
 
 ## Interfaces
 
-enbu supports two interfaces: the CLI (`enbu`) and the desktop app.
+enbu has three interfaces: the CLI (`enbu`), the desktop app and the VS Code
+extension, which shows the desktop app's UI.
 
 ### Terminal UI
 

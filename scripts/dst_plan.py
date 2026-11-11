@@ -144,11 +144,11 @@ def select(paths: list[str], full: bool = False) -> dict:
             stem = Path(path).stem.removesuffix("_test")
             domain = None
             if path.startswith("app/"):
-                if stem in {"secrets", "resolve"}:
+                if stem in {"secrets", "conflicts", "write"}:
                     domain = "secrets"
                 elif stem.startswith(("history", "compact")):
                     domain = "history"
-                elif stem in {"members", "upgrade"}:
+                elif stem in {"members", "join_requests", "reencrypt"}:
                     domain = "members"
                 elif stem.startswith(("init", "trust")):
                     domain = "trust"
