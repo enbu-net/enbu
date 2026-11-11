@@ -350,7 +350,7 @@ Storage (OCI registry / S3 prefix)
 Storageは信頼しません。名前は場所を示すヒントにすぎず、権限は署名にあります。
 
 - **上書きしません。** 更新はすべて自分のdigestを名前にした新しいrevisionです。同時に保存した2人のrevisionは並んで残り、どちらの更新も失われません。次に読む人がGitのようにmergeします。別のシークレットは合流し、2通りに変更されたシークレットは `enbu resolve` で選ぶまで止まります。
-- **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは親の管理者が署名し、`enbu.toml` のgenesis digestから検証します。2人の管理者が同時にメンバーを変更するとControlが分岐し、`enbu member resolve-fork` まで全部が止まります。
+- **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは親の管理者が署名し、`enbu.toml` のgenesis digestから検証します。2人の管理者が同時にメンバーを変更するとControlが分岐し、両方の変更の管理者がenbuを使うまで全部が止まります。そのとき3-way mergeで合流します。両方の承認と昇格は残り、削除と降格は優先され、相手側で削除・降格された管理者の同時の変更は捨てられます。
 - **署名付きState** 暗号文のdigestと親revisionを、書き込んだ端末に結び付けます。読む側は作者と署名を確認してから復号し、メンバーでない者が置いたものは脇に置きます。
 - **ローカルcheckpoint** この端末が受け入れたControlとStateのheadを覚え、Storageが黙って隠せないようにします。一覧の反映遅れは再試行で、データの損失とは扱いません。
 - **信頼の根の固定** 各端末はワークスペースで最初に検証した `control_genesis` と、チェックアウトごとの `enbu.toml` が最初に指したワークスペースを、ローカルの `trust.json` 1つに覚えます。あとから `enbu.toml` が別のものを指すと、すべてのコマンドが `trust_root_changed` で止まります。管理者がワークスペースを作り直したことを別経路で確認してから `enbu init --accept-new-genesis` を実行してください。新しいフォルダへの新規cloneは、最初の `enbu.toml` を信頼します。

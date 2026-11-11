@@ -87,8 +87,6 @@ export interface Backend {
   approveMember(deviceID: string): Promise<void>;
   removeMember(deviceID: string): Promise<void>;
   setAdmin(deviceID: string, admin: boolean): Promise<void>;
-  /** Joins member changes two admins made at the same time. */
-  resolveMemberFork(): Promise<void>;
 
   /** This device's keys in the selected workspace. */
   identity(): Promise<PublicInfo>;
@@ -201,7 +199,6 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     approveMember: (deviceID) => call(svc.ApproveMember(deviceID)),
     removeMember: (deviceID) => call(svc.RemoveMember(deviceID)),
     setAdmin: (deviceID, admin) => call(svc.SetAdmin(deviceID, admin)),
-    resolveMemberFork: () => call(svc.ResolveMemberFork()),
 
     identity: () => call(svc.GetIdentity()),
     diagnoseIdentity: () => call(svc.DiagnoseIdentity()),

@@ -419,8 +419,10 @@ Storage is untrusted. A name is only a locator; signatures are the authority:
   stops until someone runs `enbu resolve`.
 - **Signed Control** lists the trusted devices, their signing keys and age recipients. Each new
   Control is signed by an admin of its parent, starting from the genesis digest in `enbu.toml`.
-  If two admins change the members at once, the Control forks and everything waits for
-  `enbu member resolve-fork`.
+  If two admins change the members at once, the Control forks and everything waits until an
+  admin of both changes runs enbu. That joins them with a 3-way merge: approvals and promotions
+  from both sides are kept, a removal or demotion wins, and the concurrent changes of an admin
+  the other side removed or demoted are discarded.
 - **Signed State** binds a ciphertext digest and its parent revisions to the device that wrote
   it. Readers verify the author and signature before decrypting, and set aside anything a
   non-member published.
