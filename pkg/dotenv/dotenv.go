@@ -1,4 +1,5 @@
-package secretmap
+// Package dotenv parses and renders .env files.
+package dotenv
 
 import (
 	"bytes"
@@ -10,21 +11,28 @@ import (
 	"unicode/utf8"
 )
 
-var (
-	ErrInvalidDotenv = errors.New("invalid dotenv")
-	envNamePattern   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+const (
+	MaxBytes    = 16 * 1024 * 1024
+	MaxEntries  = 4096
+	MaxKeyBytes = 1024
 )
 
-// ImportDotenv accepts assignments, optional export, comments, and single/double
+var (
+	ErrInvalid  = errors.New("invalid dotenv")
+	namePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	escaper     = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\r", "\\r", "\t", "\\t", "$", "\\$")
+)
+
+// Parse accepts assignments, optional export, comments, and single/double
 // quoted values (including multiline values). Double quotes support \\, \" and
 // escaped n/r/t/$; unquoted and single-quoted values remain literal.
 // It never performs variable expansion, reads the environment, or executes code.
 // Duplicate keys are rejected rather than silently overwriting a secret.
-func ImportDotenv(data []byte) (SecretMap, error) {
-	if len(data) > MaxPayloadBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
-		return nil, ErrInvalidDotenv
+func Parse(data []byte) (map[string]string, error) {
+	if len(data) > MaxBytes || !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
+		return nil, ErrInvalid
 	}
-	secrets := SecretMap{}
+	secrets := map[string]string{}
 	rest := strings.TrimPrefix(string(data), "\ufeff")
 	for {
 		rest = strings.TrimLeft(rest, " \t\r\n")
@@ -41,14 +49,14 @@ func ImportDotenv(data []byte) (SecretMap, error) {
 		line, _, _ := strings.Cut(rest, "\n")
 		equals := strings.IndexByte(line, '=')
 		if equals < 0 {
-			return nil, fmt.Errorf("%w: expected assignment", ErrInvalidDotenv)
+			return nil, fmt.Errorf("%w: expected assignment", ErrInvalid)
 		}
 		key := strings.TrimSpace(rest[:equals])
-		if len(key) > MaxKeyBytes || !envNamePattern.MatchString(key) {
-			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalidDotenv)
+		if len(key) > MaxKeyBytes || !namePattern.MatchString(key) {
+			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalid)
 		}
 		if _, exists := secrets[key]; exists {
-			return nil, fmt.Errorf("%w: duplicate variable", ErrInvalidDotenv)
+			return nil, fmt.Errorf("%w: duplicate variable", ErrInvalid)
 		}
 		rest = strings.TrimLeft(rest[equals+1:], " \t")
 		var value string
@@ -62,7 +70,7 @@ func ImportDotenv(data []byte) (SecretMap, error) {
 			tail, next, _ := strings.Cut(rest, "\n")
 			tail = strings.TrimSpace(tail)
 			if tail != "" && tail[0] != '#' {
-				return nil, fmt.Errorf("%w: trailing quoted value data", ErrInvalidDotenv)
+				return nil, fmt.Errorf("%w: trailing quoted value data", ErrInvalid)
 			}
 			rest = next
 		} else {
@@ -77,11 +85,8 @@ func ImportDotenv(data []byte) (SecretMap, error) {
 		}
 		secrets[key] = value
 		if len(secrets) > MaxEntries {
-			return nil, fmt.Errorf("%w: too many entries", ErrInvalidSecretMap)
+			return nil, fmt.Errorf("%w: too many entries", ErrInvalid)
 		}
-	}
-	if err := secrets.Validate(); err != nil {
-		return nil, err
 	}
 	return secrets, nil
 }
@@ -109,34 +114,36 @@ func parseQuoted(text string) (string, string, error) {
 			case '\\', '"', '$':
 				b = text[i]
 			default:
-				return "", "", fmt.Errorf("%w: unsupported escape", ErrInvalidDotenv)
+				return "", "", fmt.Errorf("%w: unsupported escape", ErrInvalid)
 			}
 		}
 		value.WriteByte(b)
 	}
-	return "", "", fmt.Errorf("%w: unterminated quoted value", ErrInvalidDotenv)
+	return "", "", fmt.Errorf("%w: unterminated quoted value", ErrInvalid)
 }
 
-// ExportDotenv returns sorted assignments. Env-name and NUL constraints are
-// exporter-specific; SecretMap itself has no environment-variable semantics.
-func ExportDotenv(secrets SecretMap) ([]byte, error) {
-	if err := secrets.Validate(); err != nil {
-		return nil, err
+// Format renders sorted, double-quoted assignments that Parse reads back. It
+// refuses secrets Parse would reject, so a written file can always be read again.
+func Format(secrets map[string]string) ([]byte, error) {
+	if len(secrets) > MaxEntries {
+		return nil, fmt.Errorf("%w: too many entries", ErrInvalid)
 	}
 	keys := make([]string, 0, len(secrets))
 	for key, value := range secrets {
-		if !envNamePattern.MatchString(key) || strings.ContainsRune(value, 0) {
-			return nil, ErrInvalidDotenv
+		if len(key) > MaxKeyBytes || !namePattern.MatchString(key) {
+			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalid)
+		}
+		if !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
+			return nil, fmt.Errorf("%w: invalid value", ErrInvalid)
 		}
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	escape := strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\r", "\\r", "\t", "\\t", "$", "\\$")
 	var result strings.Builder
 	for _, key := range keys {
-		fmt.Fprintf(&result, "%s=\"%s\"\n", key, escape.Replace(secrets[key]))
-		if result.Len() > MaxPayloadBytes {
-			return nil, fmt.Errorf("%w: output too large", ErrInvalidDotenv)
+		fmt.Fprintf(&result, "%s=\"%s\"\n", key, escaper.Replace(secrets[key]))
+		if result.Len() > MaxBytes {
+			return nil, fmt.Errorf("%w: output too large", ErrInvalid)
 		}
 	}
 	return []byte(result.String()), nil

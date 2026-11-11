@@ -9,7 +9,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -93,7 +92,7 @@ func TestReencryptionSkipsScopesWithoutATrustedRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"X": "junk"}), s.head.Recipients())
+	ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"X": "junk"}), s.head.Recipients())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +135,7 @@ func TestHistoryOmitsRevisionsSetAsideAsHeads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "planted"}), s.head.Recipients())
+	ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "planted"}), s.head.Recipients())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +177,7 @@ func TestScopeDiscoveryIsBounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"X": "junk"}), s.head.Recipients())
+	ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"X": "junk"}), s.head.Recipients())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +260,7 @@ func TestHistoryNeverShowsRevisionsFromNonMembers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "v2", "PLANTED": "x"}), s.head.Recipients())
+			ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "v2", "PLANTED": "x"}), s.head.Recipients())
 			if err != nil {
 				t.Fatal(err)
 			}

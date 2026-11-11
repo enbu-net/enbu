@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/enbu-net/enbu/pkg/storage"
-	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"reflect"
 	"testing"
+
+	"github.com/enbu-net/enbu/pkg/storage"
+	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 )
 
 func TestStoreContract(t *testing.T) {
