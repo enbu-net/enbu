@@ -6,6 +6,7 @@ import (
 )
 
 func TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, profile := range []string{"", "frozen", "backward", "skewed"} {
@@ -28,6 +29,7 @@ func TestAcceptanceEpochSurvivesReadmissionAndAuthorRemoval(t *testing.T) {
 }
 
 func TestAcceptanceEpochSmoke(t *testing.T) {
+	t.Parallel()
 	for _, after := range []bool{false, true} {
 		t.Run(fmt.Sprintf("accepted-after-%t", after), func(t *testing.T) {
 			exercise(t, 17, Plan{Devices: 3, Acceptance: &AcceptanceCase{AfterReadmission: after, Restart: true}})

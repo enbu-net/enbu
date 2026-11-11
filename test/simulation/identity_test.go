@@ -3,6 +3,7 @@ package simulation
 import "testing"
 
 func TestSyntheticIdentityCreationContract(t *testing.T) {
+	t.Parallel()
 	keys := &Keys{Tape: NewTape(5, "")}
 	first, info, _, err := keys.Create("workspace")
 	if err != nil {
@@ -23,6 +24,7 @@ func TestSyntheticIdentityCreationContract(t *testing.T) {
 }
 
 func TestSyntheticIdentitiesAreScopedPerWorkspace(t *testing.T) {
+	t.Parallel()
 	keys := &Keys{Tape: NewTape(5, "")}
 	_, a, _, err := keys.Create("a")
 	if err != nil {

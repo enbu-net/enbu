@@ -212,7 +212,9 @@ most of it on Windows, and ran well into the next working day.
 Each job uses GitHub Actions `parallel` for four lanes. Incremental mode
 runs one job with logical shards 0–3; full mode runs eight jobs per
 platform (see Full-run scheduling). Go runs with `-parallel=1`; each lane has
-separate logs, recordings and an App coverage profile. The seed partition test
+separate logs, recordings and an App coverage profile. Without `-parallel=1`
+(the ordinary unit test run), the tests and their cases run in parallel; only
+the native session tests, which swap `http.DefaultTransport`, stay serial. The seed partition test
 proves the full partition retains the original 1,024 workloads per platform.
 Each world keeps its own deterministic scheduler and strict replay. A timeout is
 failure. The full job is limited to six hours, with a 330-minute Go timeout

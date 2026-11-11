@@ -1,18 +1,9 @@
 name: Coverage
 
+# Coverage is a report, not a check: pull requests already run every one of
+# these suites in CI, so coverage runs once a night on main and by hand (on any
+# branch) instead of a second time per pull request.
 on:
-  pull_request:
-    # closed only cancels the PR's runs through the concurrency group (see ci.yaml).
-    types: [opened, synchronize, reopened, closed]
-    # Documentation never changes coverage (same list as scripts/ci_changes.py).
-    paths-ignore:
-      - '*.md'
-      - 'docs/**'
-      - LICENSE
-      - .coderabbit.yaml
-      - .github/pull_request_template.md
-  # main gets one nightly report instead of a run per merge, which also keeps
-  # the coverage jobs' caches on main warm for pull requests.
   schedule:
     # Off the hour, between the nightly CI (23:07) and DST (00:07) runs.
     - cron: '37 14 * * *' # 23:37 Asia/Tokyo
@@ -24,9 +15,8 @@ permissions: {}
 # so running suites side by side on one runner (parallel steps) was not faster.
 # The report job merges the per-suite Tobari JSON files.
 concurrency:
-  group: coverage-${{ github.event.pull_request.number || github.ref }}
-  # A manual run on main must not cancel the nightly one, or the reverse.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   unit:
@@ -105,7 +95,6 @@ jobs:
 
   identity:
     name: Identity E2E coverage
-    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -141,7 +130,6 @@ jobs:
   # Keep the build dependency free of tests so React failures cannot skip Go suites.
   embed:
     name: Build shared coverage frontend
-    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -246,18 +234,3 @@ jobs:
         with:
           tobari-json: .tmp/coverage/merged.json
           name: tobari-report
-
-  # Required status check for coverage: fails unless every coverage job passed.
-  status-check:
-    name: Coverage result
-    if: always() && github.event.action != 'closed'
-    needs: [unit, scenario, identity, frontend, coverage]
-    runs-on: ubuntu-26.04
-    timeout-minutes: 5
-    permissions: {}
-    steps:
-      - name: Require every coverage job to succeed
-        env:
-          RESULTS: ${{ toJSON(needs) }}
-        run: |
-          echo "$RESULTS" | jq -e 'all(.[]; .result == "success")'

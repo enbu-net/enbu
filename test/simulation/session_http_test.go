@@ -217,6 +217,8 @@ func (r sessionRoute) RoundTrip(req *http.Request) (*http.Response, error) {
 	return response, err
 }
 
+// The native session tests swap http.DefaultTransport, so they stay serial:
+// Go runs every parallel test of the package only after the serial ones end.
 func TestNativeSessionTeamSmoke(t *testing.T) {
 	shardCase(t)
 	nativeSessionTeam(t, 3, "frozen", "logout", false)

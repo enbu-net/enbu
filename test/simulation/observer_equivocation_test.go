@@ -9,8 +9,10 @@ import (
 )
 
 func TestObserverEquivocationSmoke(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"disjoint", "conflict"} {
 		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
 			shardCase(t)
 			exercise(t, 353, Plan{Devices: 3, Scenario: "observer-state-" + mode + "-cold"})
 		})
@@ -18,12 +20,14 @@ func TestObserverEquivocationSmoke(t *testing.T) {
 }
 
 func TestObserverEquivocationClocks(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for _, devices := range []int{3, 4, 8} {
 		for _, clock := range []string{"", "frozen", "backward", "skewed"} {
 			for _, mode := range []string{"disjoint", "conflict"} {
 				for _, cache := range []string{"warm", "cold"} {
 					t.Run(fmt.Sprintf("devices-%d/%s/%s/%s", devices, clock, mode, cache), func(t *testing.T) {
+						t.Parallel()
 						shardCase(t)
 						exercise(t, 353, Plan{Devices: devices, Clock: clock, Scenario: "observer-state-" + mode + "-" + cache})
 					})
@@ -34,6 +38,7 @@ func TestObserverEquivocationClocks(t *testing.T) {
 }
 
 func TestMetadataOnlyProbeRejectsRecordedPayloadReads(t *testing.T) {
+	t.Parallel()
 	tape := NewTape(353, "metadata-only-probe")
 	store := &Store{Store: storagetest.NewMemory(), Tape: tape}
 	object := storagetest.Object(storage.KindState, storage.StateScope("fixture", "default"), "head", "payload")

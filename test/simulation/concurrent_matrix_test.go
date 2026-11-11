@@ -9,6 +9,7 @@ import (
 )
 
 func TestConcurrentCompactionSmoke(t *testing.T) {
+	t.Parallel()
 	run := func(tape *Tape) {
 		t.Helper()
 		world, err := NewWorld(t.TempDir(), tape, 3)
@@ -53,6 +54,7 @@ func TestConcurrentCompactionSmoke(t *testing.T) {
 }
 
 func TestConcurrentOperationMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, left := range ConcurrentOperations {
@@ -73,10 +75,12 @@ func TestConcurrentOperationMatrix(t *testing.T) {
 }
 
 func TestConcurrentAdditions(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for _, same := range []bool{false, true} {
 		for seed := uint64(0); seed < 4; seed++ {
 			t.Run(fmt.Sprintf("same-%t/seed-%d", same, seed), func(t *testing.T) {
+				t.Parallel()
 				shardCase(t)
 				exercise(t, seed, Plan{Devices: 3, Concurrent: &ConcurrentCase{Left: "add", Right: "add", SameKey: same}})
 			})

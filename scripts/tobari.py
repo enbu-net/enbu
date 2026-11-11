@@ -5,6 +5,8 @@ import json
 import os
 import shutil
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -91,24 +93,43 @@ def collect(suite: str) -> int:
     targets = packages(env) if suite == "unit" else [f"{MODULE}/test"]
     if suite == "identity":
         targets = [f"{MODULE}/test/identitye2e"]
-    failed = False
-    for package in targets:
+
+    # Workers share sys.stdout, which is not thread-safe; one lock keeps each
+    # package's output whole.
+    output_lock = threading.Lock()
+
+    def report(text: str) -> None:
+        with output_lock:
+            print(text, end="", flush=True)
+
+    def run(package: str) -> bool:
         package_env = env | {
             "TOBARI_COVERDIR": str(
                 output / (package.removeprefix(MODULE).strip("/") or "main")
             ),
         }
         # The parent test name is supplied by the Identity CLI harness.
+        # One block per package, so parallel packages never interleave.
         result = subprocess.run(
             ["go", "test", "-count=1", "-shuffle=on", "-race", package],
             cwd=ROOT,
             env=package_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
-        failed = failed or result.returncode != 0
-        report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
-        if not report.is_file():
-            failed = True
-            print(f"Missing package report: {package}", flush=True)
+        if result.stdout:
+            report(result.stdout)
+        package_report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
+        if not package_report.is_file():
+            report(f"Missing package report: {package}\n")
+            return True
+        return result.returncode != 0
+
+    # Each package needs its own TOBARI_COVERDIR, so each gets its own go test;
+    # running them side by side keeps the CPUs as busy as go test ./... would.
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+        failed = any(list(pool.map(run, targets)))
     if suite == "identity" and not report_paths(output / "processes"):
         failed = True
         print(f"Missing child CLI reports: {suite}", flush=True)

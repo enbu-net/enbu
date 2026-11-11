@@ -6,6 +6,7 @@ import (
 )
 
 func TestConcurrentHistoryRestore(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, right := range []string{"edit", "delete", "import", "sync", "restore", "compact"} {

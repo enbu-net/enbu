@@ -72,6 +72,7 @@ func TestMutationArtifactsSurviveSourceCleanup(t *testing.T) {
 }
 
 func TestMutationTargetsMatchLFAndCRLF(t *testing.T) {
+	t.Parallel()
 	for _, tc := range mutationCases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("../..", tc.file))
@@ -141,6 +142,7 @@ var mutationCases = []struct{ name, file, old, new, scenario string }{
 // Mutation experiments edit only disposable copies. A compile error is not a
 // killed mutant: the intended behavioral test must report an actual failure.
 func TestOracleMutationExperiments(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("ENBU_SIM_MUTATION") != "1" {
 		t.Skip("set ENBU_SIM_MUTATION=1 for isolated source mutation experiments")
 	}

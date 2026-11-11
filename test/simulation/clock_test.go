@@ -10,6 +10,7 @@ import (
 )
 
 func TestMultiUserClockProfiles(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, clock := range []string{"frozen", "backward", "skewed"} {
@@ -28,6 +29,7 @@ func TestMultiUserClockProfiles(t *testing.T) {
 }
 
 func TestClockReadsDoNotAdvanceTimers(t *testing.T) {
+	t.Parallel()
 	for _, profile := range []string{"", "frozen", "backward", "skewed"} {
 		t.Run(profile, func(t *testing.T) {
 			tape := NewTape(0, "clock-contract")
@@ -61,6 +63,7 @@ func TestClockReadsDoNotAdvanceTimers(t *testing.T) {
 }
 
 func TestClockProfilesWithCompoundRaces(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, profile := range []string{"frozen", "backward", "skewed"} {

@@ -10,6 +10,7 @@ import (
 )
 
 func TestOperationFaultMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for index, op := range ProbeOperations {
 		if !ownsIndex(t, index) {
@@ -74,10 +75,12 @@ func countsBetween(t *testing.T, tape *Tape, start, end string) map[string]int {
 	return counts
 }
 func TestWildcardFaultProbeIsReachable(t *testing.T) {
+	t.Parallel()
 	exercise(t, 999, Plan{Devices: 3, Probe: &Probe{Operation: "add", Fault: Fault{"*", 1, "before"}}})
 }
 
 func TestActualContextCancellationRecovery(t *testing.T) {
+	t.Parallel()
 	for _, op := range []string{"edit", "approve", "remove", "compact", "purge", "pull-file"} {
 		t.Run(op, func(t *testing.T) {
 			measured := baseline(t, 79, Plan{Devices: 3, Probe: &Probe{Operation: op}})
@@ -95,6 +98,7 @@ func TestActualContextCancellationRecovery(t *testing.T) {
 						continue // Lost replies are modeled at durable-write boundaries.
 					}
 					t.Run(method+"-"+mode, func(t *testing.T) {
+						t.Parallel()
 						shardCase(t)
 						exercise(t, 79, Plan{Devices: 3, Probe: &Probe{op, Fault{method, counts[method], mode}}})
 					})
@@ -104,6 +108,7 @@ func TestActualContextCancellationRecovery(t *testing.T) {
 	}
 }
 func TestInvalidActionDeviceIsRejectedBeforeBootstrap(t *testing.T) {
+	t.Parallel()
 	for _, device := range []int{-1, 2} {
 		tape, err := Prepare(1, "", Plan{Devices: 2, Actions: []Action{{Kind: "read", Device: device}}})
 		if err != nil {

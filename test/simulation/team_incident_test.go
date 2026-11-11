@@ -6,6 +6,7 @@ import (
 )
 
 func TestTeamIncidentMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for devices := 3; devices <= 8; devices++ {

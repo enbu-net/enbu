@@ -3,6 +3,7 @@ package simulation
 import "testing"
 
 func TestMinimizePreservesFailingOperation(t *testing.T) {
+	t.Parallel()
 	actions := []Action{{Kind: "read"}, {Kind: "add", Key: "BUG"}, {Kind: "sync"}, {Kind: "history"}}
 	result := Minimize(actions, func(candidate []Action) bool {
 		for _, op := range candidate {

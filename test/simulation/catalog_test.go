@@ -18,6 +18,7 @@ import (
 // A newly exported application operation must get a simulation driver in the
 // same PR. This gate complements behavioral assertions; it is not code coverage.
 func TestEveryAppOperationHasSimulationDriver(t *testing.T) {
+	t.Parallel()
 	exports := map[string]bool{}
 	calls := map[string]bool{}
 	files, e := filepath.Glob("../../app/*.go")

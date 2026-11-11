@@ -396,7 +396,8 @@ Do not log or persist this response.
 ## Test coverage
 
 The Coverage workflow publishes Tobari reports for all Go unit tests, scenarios,
-CLI E2E, and Identity E2E, plus React coverage. See [test coverage](docs/testing.md)
+and Identity E2E, plus React coverage, every night on main (run it by
+hand from the Actions tab for a branch). See [test coverage](docs/testing.md)
 for local commands and report usage.
 
 ## How It Works

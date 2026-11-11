@@ -5,6 +5,7 @@ import (
 )
 
 func TestOperationStateMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for index, op := range StateOperations {
 		if !ownsIndex(t, index) {

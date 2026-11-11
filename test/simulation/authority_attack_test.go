@@ -6,11 +6,13 @@ import (
 )
 
 func TestAuthorityAttackSmoke(t *testing.T) {
+	t.Parallel()
 	for _, attack := range AuthorityAttacks {
 		t.Run(attack, func(t *testing.T) { exercise(t, 37, Plan{Devices: 3, AuthorityAttack: attack}) })
 	}
 }
 func TestAuthorityAttackMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, attack := range AuthorityAttacks {

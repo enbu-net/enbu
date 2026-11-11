@@ -7,6 +7,7 @@ import (
 )
 
 func TestGeneratedGroupsUseDistinctDevicesAndPreservePriorState(t *testing.T) {
+	t.Parallel()
 	for devices := 2; devices <= 8; devices++ {
 		actions := Generate(19, 64, devices)
 		groups := 0
@@ -43,6 +44,7 @@ func TestGeneratedGroupsUseDistinctDevicesAndPreservePriorState(t *testing.T) {
 	}})
 }
 func TestGeneratedConcurrentWorkloads(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for devices := 3; devices <= 8; devices++ {
 		for seed := uint64(0); seed < 4; seed++ {

@@ -33,9 +33,11 @@ func nightlyRegressions(t *testing.T) []nightlyRegression {
 // old boundary outputs. Every run checks the model and creates a fresh strict
 // replay, so changing the implementation cannot turn old outputs into an oracle.
 func TestGeneratedTeamGroupNightlyRegressions(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for _, regression := range nightlyRegressions(t) {
 		t.Run(regression.Name, func(t *testing.T) {
+			t.Parallel()
 			shardCase(t)
 			exercise(t, regression.Seed, regression.Plan)
 		})
@@ -43,6 +45,7 @@ func TestGeneratedTeamGroupNightlyRegressions(t *testing.T) {
 }
 
 func TestGeneratedTeamGroupNightlyRegressionSmoke(t *testing.T) {
+	t.Parallel()
 	seen := map[uint64]bool{}
 	for _, regression := range nightlyRegressions(t) {
 		// Keep representative disjoint and edit/delete failures in ordinary CI.
@@ -51,6 +54,7 @@ func TestGeneratedTeamGroupNightlyRegressionSmoke(t *testing.T) {
 		}
 		seen[regression.Seed] = true
 		t.Run(regression.Name, func(t *testing.T) {
+			t.Parallel()
 			shardCase(t)
 			exercise(t, regression.Seed, regression.Plan)
 		})
@@ -61,6 +65,7 @@ func TestGeneratedTeamGroupNightlyRegressionSmoke(t *testing.T) {
 }
 
 func TestGeneratedTeamGroupsPreservePriorWork(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for devices := 3; devices <= 8; devices++ {
@@ -87,6 +92,7 @@ func TestGeneratedTeamGroupsPreservePriorWork(t *testing.T) {
 }
 
 func TestGeneratedTeamGroupSmoke(t *testing.T) {
+	t.Parallel()
 	shardCase(t)
 	exercise(t, 3, Plan{Devices: 3, Actions: Generate(3, 32, 3)})
 }
@@ -95,6 +101,7 @@ func TestGeneratedTeamGroupSmoke(t *testing.T) {
 // observer had accepted the synchronizer's pre-removal head, which remained
 // a sibling even though every observer initially read the same plaintext.
 func TestGeneratedTeamGroupRetiredObserverSmoke(t *testing.T) {
+	t.Parallel()
 	shardCase(t)
 	exercise(t, 17913170502171862805, Plan{
 		Devices: 8, Scenario: "output-boundary-removed-hardlink",
@@ -108,6 +115,7 @@ func TestGeneratedTeamGroupRetiredObserverSmoke(t *testing.T) {
 }
 
 func TestGeneratedTeamGroupCISeed(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	shardCase(t)
 	const seed = 17913170502171862805

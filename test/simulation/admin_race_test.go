@@ -6,6 +6,7 @@ import (
 )
 
 func TestConcurrentAdminMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for index, kind := range AdminRaces {
 		if !ownsIndex(t, index) {
