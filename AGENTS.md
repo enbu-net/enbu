@@ -72,9 +72,9 @@ pkg/keystore/            → OS keyring access; on Linux each use first checks t
 pkg/winbridge/          → inside WSL, hands key operations and the GitHub token to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, JSON over stdio, one protocol version, no paths cross); WSL never uses the Linux keystore
 pkg/dotenv/              → .env parsing and rendering
 pkg/auth/                → GitHub Device Flow sign-in, token persistence
-pkg/provider/git/        → git CLI (repository root, remotes)
+pkg/provider/git/        → finds the repository root and origin remote from .git files (never runs git)
 pkg/provider/github/     → GitHub API client (the signed-in user)
-pkg/process/             → hides the console window of git child processes on Windows
+pkg/process/             → hardens the process (no core dumps or ptrace on Linux)
 pkg/fsutil/              → atomic file replacement (WriteFileAtomic) and a rename that retries transient Windows failures
 pkg/clock/               → injectable clock for timeouts and timestamps
 pkg/apperr/              → application error type, codes, and normalization helpers

@@ -78,7 +78,7 @@ func NewService(a *app.App) *Service {
 		return (auth.Client{Clock: s.clock}).Login(ctx, prompt)
 	}
 	if s.git == nil {
-		s.git = gitprovider.NewCLIClient()
+		s.git = gitprovider.NewClient()
 	}
 	a.Events = events{s}
 	s.loadSelectedRepo()

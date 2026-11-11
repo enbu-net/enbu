@@ -212,7 +212,7 @@ func (a *App) emitStepProgress(op, step, status string) {
 }
 
 func New(c clock.Clock) *App {
-	gitClient := gitprovider.NewCLIClient()
+	gitClient := gitprovider.NewClient()
 	return &App{
 		TokenProvider: &defaultTokenProvider{},
 		Runtime:       &Runtime{Clock: c},
