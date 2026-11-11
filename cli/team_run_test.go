@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/enbu-net/enbu/test/simulation"
@@ -152,7 +153,7 @@ func TestRunSnapshotDuringTeamChanges(t *testing.T) {
 						if strings.Contains(output.String(), "SNAPSHOT=") {
 							t.Fatal("denied export launched a child")
 						}
-						if _, err := world.Devices[1].App.InitializeRepository(ctx); err != nil {
+						if _, err := world.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 							t.Fatal(err)
 						}
 						if err := admin.ApproveMember(ctx, world.Devices[1].ID); err != nil {

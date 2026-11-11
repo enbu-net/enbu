@@ -75,7 +75,7 @@ export function UpdateSection() {
     setPhase("checking");
     setError(null);
     try {
-      setStatus(await backend.checkForUpdate());
+      setStatus(await backend.CheckForUpdate());
       setPhase("checked");
     } catch (err) {
       setError(toDisplayError(err));
@@ -87,7 +87,7 @@ export function UpdateSection() {
     setPhase("installing");
     setError(null);
     try {
-      setStatus(await backend.installUpdate());
+      setStatus(await backend.InstallUpdate());
       setPhase("installed");
     } catch (err) {
       setError(toDisplayError(err));
@@ -98,7 +98,7 @@ export function UpdateSection() {
   async function restart() {
     setError(null);
     try {
-      await backend.restartApp();
+      await backend.RestartApp();
     } catch (err) {
       setError(toDisplayError(err));
     }

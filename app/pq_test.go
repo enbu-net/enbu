@@ -63,7 +63,7 @@ func TestPostQuantumWorkspaceEndToEnd(t *testing.T) {
 	alice := &App{Storage: newMemRegistry(), Identities: pqKeys(t), CheckpointDir: t.TempDir(),
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
 	prepareApp(t, alice, "default")
-	if _, err := alice.InitializeRepository(bg); err != nil {
+	if _, err := alice.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.AddSecret(bg, "default", "KEY", "v1"); err != nil {
@@ -103,7 +103,7 @@ func newFounder(t *testing.T, keys *identity.Manager) *App {
 	a := &App{Storage: newMemRegistry(), Identities: keys, CheckpointDir: t.TempDir(),
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
 	prepareApp(t, a, "default")
-	if _, err := a.InitializeRepository(bg); err != nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	return a
@@ -249,7 +249,7 @@ func TestUpgradeIdentityRecoversFromFailedSelfApproval(t *testing.T) {
 	alice := &App{Storage: store, Identities: classicalKeys(t), CheckpointDir: t.TempDir(),
 		TokenProvider: &staticTokenProvider{token: "tok", username: "alice"}, RepoDetector: &staticRepoDetector{owner: "owner", repo: "repo"}}
 	prepareApp(t, alice, "default")
-	if _, err := alice.InitializeRepository(bg); err != nil {
+	if _, err := alice.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.AddSecret(bg, "default", "KEY", "v1"); err != nil {

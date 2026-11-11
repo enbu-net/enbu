@@ -139,10 +139,10 @@ func (w *World) Swarm(ctx context.Context, scene string) error {
 		if err != nil {
 			return err
 		}
-		choices := map[string]app.SecretChoice{"K": {Value: "resolved"}}
+		choices := []app.SecretChoice{{Key: "K", Value: "resolved"}}
 		want["K"] = "resolved"
 		if scene == "conflicting-import" {
-			choices["L"] = app.SecretChoice{Delete: true}
+			choices = append(choices, app.SecretChoice{Key: "L", Delete: true})
 			delete(want, "L")
 		}
 		if err := w.Devices[0].App.ResolveSecrets(ctx, "default", set.Heads, choices); err != nil {

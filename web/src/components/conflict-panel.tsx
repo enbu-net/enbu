@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Box, HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Text } from "./ui";
-import type { ConflictChoice, ConflictSet } from "../lib/types";
+import type { SecretChoice, ConflictSet } from "../lib/types";
 import { m } from "../paraglide/messages";
 
 /**
@@ -17,7 +17,7 @@ export function ConflictPanel({
 }: {
   set: ConflictSet;
   loading: boolean;
-  onResolve: (choices: ConflictChoice[]) => void | Promise<void>;
+  onResolve: (choices: SecretChoice[]) => void | Promise<void>;
 }) {
   const name = useId();
   // The index of the chosen candidate for each key.

@@ -55,9 +55,9 @@ func TestTheDesktopListsSwitchesAndSignsOutOfAccounts(t *testing.T) {
 	store := &memoryAccounts{logins: []string{"work", "home"}, current: "home"}
 	s.accounts = store
 
-	status, err := s.GetAuthStatus()
-	if err != nil || len(status.Accounts) != 2 || status.Accounts[0] != "work" || status.Accounts[1] != "home" {
-		t.Fatalf("GetAuthStatus = %+v, %v", status, err)
+	status := s.GetAuthStatus()
+	if len(status.Accounts) != 2 || status.Accounts[0] != "work" || status.Accounts[1] != "home" {
+		t.Fatalf("GetAuthStatus = %+v", status)
 	}
 	if err := s.SwitchAccount("work"); err != nil || store.current != "work" {
 		t.Fatalf("SwitchAccount = %v, current %q", err, store.current)

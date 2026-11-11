@@ -166,9 +166,9 @@ func inspectGoFile(root, path string) ([]string, map[string]int, error) {
 				position := fset.Position(current.Pos())
 				violations = append(violations, fmt.Sprintf("%s:%d: exported app operation %s must defer apperr.NormalizeInto", relative, position.Line, current.Name.Name))
 			}
-			if isDesktopBindingMethod(current) && returnsError(current) && !callsBindingHelper(current.Body) {
+			if isDesktopBindingMethod(relative, current) && returnsError(current) && !callsBindingHelper(current.Body) {
 				position := fset.Position(current.Pos())
-				violations = append(violations, fmt.Sprintf("%s:%d: exported DesktopService method %s must return its error through result or publicError", relative, position.Line, current.Name.Name))
+				violations = append(violations, fmt.Sprintf("%s:%d: exported desktop.Service method %s must return its error through withRepo, withRepoResult, publicError or publicInto", relative, position.Line, current.Name.Name))
 			}
 		}
 		return true
@@ -176,9 +176,11 @@ func inspectGoFile(root, path string) ([]string, map[string]int, error) {
 	return violations, usages, nil
 }
 
-func isDesktopBindingMethod(function *ast.FuncDecl) bool {
-	return function.Recv != nil && function.Name.IsExported() &&
-		receiverTypeName(function.Recv) == "DesktopService"
+// isDesktopBindingMethod reports whether function is bound for the frontend:
+// an exported method of desktop.Service.
+func isDesktopBindingMethod(relative string, function *ast.FuncDecl) bool {
+	return filepath.ToSlash(filepath.Dir(relative)) == "desktop" && function.Recv != nil &&
+		function.Name.IsExported() && receiverTypeName(function.Recv) == "Service"
 }
 
 func receiverTypeName(receiver *ast.FieldList) string {
@@ -219,7 +221,10 @@ func callsBindingHelper(body *ast.BlockStmt) bool {
 				name = ident.Name
 			}
 		}
-		found = name == "result" || name == "publicError"
+		switch name {
+		case "withRepo", "withRepoResult", "publicError", "publicInto":
+			found = true
+		}
 		return !found
 	})
 	return found

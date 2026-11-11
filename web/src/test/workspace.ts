@@ -1,9 +1,9 @@
 import { vi } from "vite-plus/test";
 import type { Workspace } from "../features/dashboard/use-workspace";
-import type { Environment } from "../lib/types";
+import type { EnvInfo } from "../lib/types";
 
 /** A loaded workspace whose refresh is a mock. */
-export function testWorkspace(environments: Environment[]): Workspace {
+export function testWorkspace(environments: EnvInfo[]): Workspace {
   return {
     environments,
     currentEnvironment: environments.find((env) => env.current)?.name ?? "",

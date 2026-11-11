@@ -40,7 +40,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
     // Drop the previous list, so its indexes cannot be restored in another environment.
     setEntries(null);
     try {
-      const list = await backend.listHistory(name);
+      const list = await backend.ListHistory(name);
       if (id !== request.current) return;
       setEntries(list);
       setTo(list.length);
@@ -148,7 +148,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                       aria-label={`${m.history_restore()}: ${m.history_revision({ index: String(entry.index) })}`}
                       onClick={() =>
                         void run(async () => {
-                          await backend.restoreHistory(env, entry.index);
+                          await backend.RestoreHistory(env, entry.index);
                           setRestored(entry.index);
                           await Promise.all([load(env), workspace.refresh()]);
                         })
@@ -178,7 +178,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                   variant="outline"
                   loading={busy}
                   onClick={() =>
-                    void run(async () => setDiff(await backend.diffHistory(env, from, to)))
+                    void run(async () => setDiff(await backend.DiffHistory(env, from, to)))
                   }
                 >
                   {m.history_compare()}
