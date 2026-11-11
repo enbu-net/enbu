@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { VStack } from "styled-system/jsx";
-import { Button } from "../../components/ui";
+import { Button, Heading, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
 import { useSession } from "../../lib/session";
@@ -10,8 +10,8 @@ import { useGitHubLogin } from "./use-github-login";
 import { m } from "../../paraglide/messages";
 
 /**
- * Signs in with GitHub: the browser completes the authorization while the app
- * polls for the result.
+ * Signs in with GitHub for a workspace on GHCR: the browser completes the
+ * authorization while the app polls for the result.
  */
 export function SignIn() {
   const { refresh, reloadRepo } = useSession();
@@ -33,6 +33,12 @@ export function SignIn() {
   return (
     <PageCenter>
       <VStack gap={5} w="full" maxW="480px" textAlign="center">
+        <VStack gap={2}>
+          <Heading as="h1" size="2xl" fontWeight="extrabold">
+            {m.auth_signInTitle()}
+          </Heading>
+          <Text color="fg.muted">{m.auth_signInDescription()}</Text>
+        </VStack>
         {error && <ErrorAlert error={error} onDismiss={clearError} />}
         <Button
           w="full"
