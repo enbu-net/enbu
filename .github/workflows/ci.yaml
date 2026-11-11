@@ -19,7 +19,8 @@ env:
 # A newer push supersedes the run of the same pull request.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A manual run on main must not cancel the nightly one, or the reverse.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:

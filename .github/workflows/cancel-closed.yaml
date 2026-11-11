@@ -20,6 +20,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       actions: write
+      pull-requests: read
     steps:
       - name: Cancel queued and running workflow runs
         env:
@@ -29,6 +30,12 @@ jobs:
           SELF: ${{ github.run_id }}
         run: |
           set -euo pipefail
+          # Another open pull request from the same branch still needs its runs.
+          open=$(gh api -X GET "repos/$GH_REPO/pulls" -f state=open -f head="${GH_REPO%%/*}:$BRANCH" --jq length)
+          if [ "$open" != "0" ]; then
+            echo "Another open pull request uses $BRANCH; nothing cancelled."
+            exit 0
+          fi
           for status in queued in_progress waiting pending requested; do
             gh api --paginate -X GET "repos/$GH_REPO/actions/runs" \
               -f branch="$BRANCH" -f status="$status" -f per_page=100 \
