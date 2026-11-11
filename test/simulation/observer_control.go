@@ -204,11 +204,6 @@ func (w *World) ObserverControlEquivocation(ctx context.Context, cold bool) erro
 				return fmt.Errorf("reader %d %s: %w", i, operation.name, err)
 			}
 		}
-		if code == apperr.CodeRollback {
-			if err := requireCode(a.ResolveControlFork(ctx), code); err != nil {
-				return err
-			}
-		}
 		return requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:])
 	}
 	for i := 2; i < len(w.Devices); i++ {
@@ -229,30 +224,25 @@ func (w *World) ObserverControlEquivocation(ctx context.Context, cold bool) erro
 			return err
 		}
 	}
-	for i := range w.Devices {
+	// Neither unilateral promotion authorizes joining the complete fork.
+	for i := 2; i < len(w.Devices); i++ {
 		if err := reject(i, apperr.CodeControlForked); err != nil {
 			return err
 		}
 	}
-	// Neither unilateral promotion authorizes resolving the complete fork.
-	for _, i := range []int{2, 3} {
-		start := len(w.Tape.Recording.Entries)
-		if err := requireCode(w.Devices[i].App.ResolveControlFork(ctx), apperr.CodeAccessDenied); err != nil {
-			return err
-		}
-		if err := requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
-			return err
-		}
-	}
-	if err := w.Devices[0].App.ResolveControlFork(ctx); err != nil {
+	// Device 0 is an admin of both heads, so its next operation joins them.
+	if _, err := w.Devices[0].App.ListSecrets(ctx, "default"); err != nil {
 		return err
 	}
 	resolution, err := nextControl()
 	if err != nil {
 		return err
 	}
+	// The 3-way merge keeps both promotions.
+	mergedRoles := maps.Clone(leftRoles)
+	mergedRoles[w.Devices[3].ID] = true
 	for i := range w.Devices {
-		if err := checkRoles(i, baseRoles); err != nil {
+		if err := checkRoles(i, mergedRoles); err != nil {
 			return err
 		}
 	}
@@ -271,9 +261,9 @@ func (w *World) ObserverControlEquivocation(ctx context.Context, cold bool) erro
 		}
 		w.Restart(i)
 	}
-	// After conservative resolution, an explicit new grant is allowed. This
-	// produces the same role map as the earlier left branch, with new ancestry.
-	if err := w.Devices[1].App.SetAdmin(ctx, w.Devices[2].ID, true); err != nil {
+	// After the merge, an explicit new change is allowed. This produces the
+	// same role map as the earlier left branch, with new ancestry.
+	if err := w.Devices[1].App.SetAdmin(ctx, w.Devices[3].ID, false); err != nil {
 		return err
 	}
 	grant, err := nextControl()

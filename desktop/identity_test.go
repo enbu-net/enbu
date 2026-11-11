@@ -62,13 +62,6 @@ func isAdmin(t *testing.T, s *Service, device string) bool {
 	return false
 }
 
-func TestResolveMemberForkRefusesAnUnforkedWorkspace(t *testing.T) {
-	f := newMembersFixture(t)
-	if err := f.alice.ResolveMemberFork(); !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("resolve without a fork: %v", err)
-	}
-}
-
 func TestGetIdentityDescribesThisDevice(t *testing.T) {
 	f := newMembersFixture(t)
 	info, err := f.alice.GetIdentity()

@@ -570,12 +570,6 @@ func (s *Service) SetAdmin(deviceID string, admin bool) error {
 	return s.withRepo(func() error { return s.app.SetAdmin(s.context(), deviceID, admin) })
 }
 
-// ResolveMemberFork joins member changes two admins made at the same time,
-// keeping only the members and admin rights both agree on.
-func (s *Service) ResolveMemberFork() error {
-	return s.withRepo(func() error { return s.app.ResolveControlFork(s.context()) })
-}
-
 func (s *Service) ReadConfig() (string, error) {
 	return withRepoResult(s, func() (string, error) {
 		return s.app.ReadConfig()

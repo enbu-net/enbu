@@ -189,9 +189,10 @@ func VerifyGenesis(workspace string, blob []byte, trusted digest.Digest) (*Verif
 // VerifyChild verifies blob as a Control whose parents are all verified. Its
 // legitimacy comes from them: the author must be an admin of every parent and
 // the signature must verify under that admin's key. A Control with several
-// parents resolves a fork, so it may only keep principals the parents already
-// listed and may not make anyone an admin who was not already one.
-func VerifyChild(parents []*Verified, blob []byte) (*Verified, error) {
+// parents resolves a fork and must list exactly the principals MergePrincipals
+// computes from them; get looks up their verified ancestors and is used only
+// then.
+func VerifyChild(parents []*Verified, blob []byte, get func(digest.Digest) (*Verified, bool)) (*Verified, error) {
 	if len(parents) == 0 {
 		return nil, invalid("control has no parent")
 	}
@@ -236,31 +237,28 @@ func VerifyChild(parents []*Verified, blob []byte) (*Verified, error) {
 		return nil, invalid("control signature: %v", err)
 	}
 	if len(parents) > 1 {
-		if err := checkResolution(parents, c); err != nil {
+		if err := checkResolution(parents, c, get); err != nil {
 			return nil, err
 		}
 	}
 	return &Verified{Control: c, Digest: digest.FromBytes(blob)}, nil
 }
 
-func checkResolution(parents []*Verified, c Control) error {
-	for _, p := range c.Principals {
-		listed, wasAdmin := false, false
-		for _, parent := range parents {
-			if old, ok := parent.Principal(p.ID); ok {
-				if old.Signing.DeviceID() != p.Signing.DeviceID() || old.Recipient != p.Recipient {
-					return invalid("resolution changes principal %s", p.ID)
-				}
-				listed = true
-				wasAdmin = wasAdmin || old.Admin
-			}
-		}
-		if !listed {
-			return invalid("resolution adds principal %s", p.ID)
-		}
-		if p.Admin && !wasAdmin {
-			return invalid("resolution makes %s an admin", p.ID)
-		}
+// checkResolution requires a resolution to list exactly the 3-way merge of its
+// parents, so whoever signs it decides nothing: every admin of all heads would
+// publish the same principals.
+func checkResolution(parents []*Verified, c Control, get func(digest.Digest) (*Verified, bool)) error {
+	if get == nil {
+		return invalid("resolution cannot be checked without its ancestors")
+	}
+	heads := append([]*Verified(nil), parents...)
+	sortVerified(heads)
+	want, err := MergePrincipals(heads, get)
+	if err != nil {
+		return err
+	}
+	if !samePrincipals(c.canonical().Principals, want) {
+		return invalid("resolution does not list the merge of its parents")
 	}
 	return nil
 }
