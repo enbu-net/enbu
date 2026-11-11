@@ -3,8 +3,13 @@ package simulation
 import (
 	"context"
 	"errors"
-	agecrypto "filippo.io/age"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+
+	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -13,10 +18,6 @@ import (
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
-	"os"
-	"path/filepath"
-	"reflect"
-	"strings"
 )
 
 var Scenarios = []string{"disaster-witness-warm", "disaster-witness-cold", "disaster-all-stale-warm", "disaster-all-stale-cold", "disaster-retired-key-warm", "disaster-retired-key-cold", "disaster-compacted-warm", "disaster-compacted-cold", "disaster-compacted-no-record-warm", "disaster-compacted-no-record-cold", "disaster-compacted-old-data-warm", "disaster-compacted-old-data-cold", "portable-config", "output-boundary-public", "output-boundary-hardlink", "output-boundary-canceled-hardlink", "output-boundary-removed-hardlink", "output-boundary-upgraded-preserve-hardlink", "output-boundary-upgraded-replace-hardlink", "wire-format-warm", "wire-format-cold", "contention-add-exhausted", "contention-add-yield", "contention-edit-exhausted", "contention-edit-yield", "contention-delete-exhausted", "contention-delete-yield", "contention-import-exhausted", "contention-import-yield", "contention-sync-exhausted", "contention-sync-yield", "environments", "history", "membership", "key-update", "concurrent-keys", "conflicting-edits", "control-fork", "trust-root", "write-faults", "read-faults", "file-output", "public-surface", "local-corruption", "adversarial-storage", "delete-faults", "partition-recovery", "stale-writer", "concurrent-environments", "concurrent-faults", "forged-state-signature", "team-incident", "team-migration", "locked-device", "rejected-edits", "request-signature-attack", "refounding", "first-member", "secret-formats", "same-user-processes", "lost-device-replacement", "multiple-workspaces", "shared-storage-workspaces", "metadata-control-count", "metadata-state-count", "metadata-compaction-count", "metadata-control-duplicate", "metadata-state-duplicate", "request-flood", "hidden-request-conflict", "git-worktrees", "partial-key-signing", "partial-key-current", "partial-key-pending-before-approval", "partial-key-pending-after-approval", "partial-key-previous", "partial-key-promotion-before", "partial-key-promotion-after"}
@@ -403,10 +404,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := w.Batch(ctx, "publish", []func(int) error{func(int) error { return allowFork(a.SetAdmin(ctx, w.Devices[2].ID, true)) }, func(int) error { return allowFork(b.SetAdmin(ctx, w.Devices[2].ID, false)) }}); e != nil {
 			return e
 		}
-		if _, e := a.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeControlForked) != nil {
+		if _, e := w.Devices[2].App.ListSecrets(ctx, "default"); requireCode(e, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("forked read accepted: %v", e)
 		}
-		if e := a.ResolveControlFork(ctx); e != nil {
+		// a is an admin of both heads, so its next operation joins them.
+		if _, e := a.ListSecrets(ctx, "default"); e != nil {
 			return e
 		}
 		return w.Check(ctx, "default")

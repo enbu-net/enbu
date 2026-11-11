@@ -3,13 +3,14 @@ package simulation
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"reflect"
+	"sort"
+
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/wsp"
-	"math/rand/v2"
-	"reflect"
-	"sort"
 )
 
 type Action struct {

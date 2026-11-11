@@ -3,6 +3,7 @@ package simulation
 import (
 	"context"
 	"fmt"
+
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
