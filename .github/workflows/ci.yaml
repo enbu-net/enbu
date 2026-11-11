@@ -163,6 +163,10 @@ jobs:
       - name: Identity package tests
         if: runner.os != 'Linux'
         run: go test -v ./pkg/identity
+      # Core runs pkg/storage without cgo, so the race detector covers it here.
+      - name: Storage race tests
+        if: runner.os != 'Linux'
+        run: go test -v -race ./pkg/storage
       # Locks the keyring at the end, so it runs after the steps that need it unlocked.
       - name: Secret Service probe (unlocked, then locked)
         if: runner.os == 'Linux'

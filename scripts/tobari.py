@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -93,6 +94,14 @@ def collect(suite: str) -> int:
     if suite == "identity":
         targets = [f"{MODULE}/test/identitye2e"]
 
+    # Workers share sys.stdout, which is not thread-safe; one lock keeps each
+    # package's output whole.
+    output_lock = threading.Lock()
+
+    def report(text: str) -> None:
+        with output_lock:
+            print(text, end="", flush=True)
+
     def run(package: str) -> bool:
         package_env = env | {
             "TOBARI_COVERDIR": str(
@@ -110,10 +119,10 @@ def collect(suite: str) -> int:
             text=True,
         )
         if result.stdout:
-            print(result.stdout, end="", flush=True)
-        report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
-        if not report.is_file():
-            print(f"Missing package report: {package}", flush=True)
+            report(result.stdout)
+        package_report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
+        if not package_report.is_file():
+            report(f"Missing package report: {package}\n")
             return True
         return result.returncode != 0
 

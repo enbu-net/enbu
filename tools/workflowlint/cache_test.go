@@ -586,6 +586,17 @@ func TestCoverageRunsOnlyNightlyAndByHand(t *testing.T) {
 			t.Fatalf("coverage runs on %s", event)
 		}
 	}
+	if field(on, "workflow_dispatch") == nil {
+		t.Fatal("coverage cannot be run by hand")
+	}
+	schedule := field(on, "schedule")
+	if schedule == nil || len(schedule.Content) != 1 {
+		t.Fatal("coverage needs exactly one nightly schedule")
+	}
+	cron := strings.Fields(field(schedule.Content[0], "cron").Value)
+	if len(cron) != 5 || cron[2] != "*" || cron[3] != "*" || cron[4] != "*" {
+		t.Fatalf("coverage schedule %v is not daily", cron)
+	}
 }
 
 func TestGoCoverageDoesNotDependOnReactTestResults(t *testing.T) {
