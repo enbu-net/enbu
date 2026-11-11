@@ -1,11 +1,12 @@
 package desktop
 
 import (
-	"github.com/enbu-net/enbu/app/apptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app/apptest"
 
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"

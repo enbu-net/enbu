@@ -17,8 +17,8 @@ func TestOAuthExpiryUsesAppClock(t *testing.T) {
 	s.ctx = t.Context()
 	s.openURL = func(string) error { return nil }
 	canceled := make(chan struct{})
-	s.authLogin = func(ctx context.Context, open auth.BrowserOpener) (*auth.StoredToken, error) {
-		if err := open("https://github.com/login/oauth/authorize"); err != nil {
+	s.authLogin = func(ctx context.Context, prompt auth.DevicePrompter) (*auth.StoredToken, error) {
+		if err := prompt(auth.DeviceAuthorization{UserCode: "ABCD-1234", VerificationURI: "https://github.com/login/device"}); err != nil {
 			return nil, err
 		}
 		<-ctx.Done()

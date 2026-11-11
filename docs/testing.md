@@ -4,14 +4,13 @@ The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React. It runs
 every night on main and by hand (Actions > Coverage > Run workflow, on any
 branch), not on pull requests: CI already runs the same suites there.
 It runs every Go package with unit tests, including `pkg/`, `desktop/`, the root
-command, and repository tools. Separate suites cover the Go scenarios,
-Atago CLI E2E, and Identity E2E (vTPM and OS keyring).
+command, and repository tools. Separate suites cover the Go scenarios and
+Identity E2E (vTPM and OS keyring).
 
 The Go report instruments all production packages and tools. Each test binary
 writes to its own directory, preventing package reports from overwriting each
 other. Each child CLI invocation also writes a unique JSON and TOON report.
-Atago scopes include scenario names and registered command paths; Identity
-scopes include the parent test name and command path. Secret arguments are not
+Identity scopes include the parent test name and command path. Secret arguments are not
 included in these names.
 
 ## Run locally
@@ -45,16 +44,15 @@ Individual tasks:
 |------|----------|
 | `cli/test/coverage` | All Go unit tests, with shuffle and race detection |
 | `cli/test/coverage/scenario` | Go scenarios against the local OCI registry |
-| `cli/test/coverage/e2e` | Atago CLI processes, including errors |
 | `identity/test/coverage` | Identity E2E parent tests and child CLI processes |
-| `coverage/report` | Merge the four Go suites and generate HTML and coverprofile |
+| `coverage/report` | Merge the three Go suites and generate HTML and coverprofile |
 | `gui/test/coverage` | All React tests, with HTML and LCOV |
 
 The collector disables the test cache and removes previous data for the suite
 being rerun. It invalidates the combined report whenever a suite is collected.
-Missing package reports or missing E2E child reports fail collection. Go unit
-collection runs the packages side by side, one `go test` per package so each
-writes its own report, and continues through other packages after a test
+Missing package reports or missing Identity child reports fail collection. Go
+unit collection runs the packages side by side, one `go test` per package so
+each writes its own report, and continues through other packages after a test
 failure, preserving available results.
 
 ## Reports
@@ -62,7 +60,7 @@ failure, preserving available results.
 Open `.tmp/coverage/coverage.html` for Go and
 `.tmp/coverage/frontend/index.html` for React. Go source data is in
 `.tmp/coverage/<suite>/`, with suite-level JSON in
-`.tmp/coverage/{unit,scenario,e2e,identity}.json` and the combined result in
+`.tmp/coverage/{unit,scenario,identity}.json` and the combined result in
 `.tmp/coverage/merged.json`. Raw per-test and per-process TOON files can be
 supplied to coding agents. `.tmp/coverage/coverage.out` is a standard Go
 coverprofile; `.tmp/coverage/frontend/lcov.info` supports frontend coverage
@@ -76,12 +74,12 @@ version, and run `task gui/test/coverage`.
 
 CI publishes `tobari-report`, `tobari-data`, and `frontend-coverage` artifacts.
 The Go HTML link appears in the job summary. Available raw reports are uploaded
-even after failures; a combined Go report requires data from all four suites.
+even after failures; a combined Go report requires data from all three suites.
 A failed test still fails the job, even when a report can be generated.
 
 ## Interpretation
 
-Unit and Atago builds use Tobari's normal static reachable-scope analysis.
+Unit builds use Tobari's normal static reachable-scope analysis.
 Scenario and Identity builds use `passed-blocks-only` because Tobari v0.13.0's
 static dependency analysis does not preserve build tags for test-only packages.
 This mode retains per-test execution mapping and the full instrumentation

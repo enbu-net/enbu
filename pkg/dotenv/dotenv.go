@@ -36,7 +36,10 @@ func Parse(data []byte) (map[string]string, error) {
 	if len(data) > MaxBytes {
 		return nil, ErrInvalid
 	}
-	data = fromUTF16(data)
+	data, err := Text(data)
+	if err != nil {
+		return nil, err
+	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
 		return nil, ErrInvalid
 	}
@@ -157,10 +160,11 @@ func Format(secrets map[string]string) ([]byte, error) {
 	return []byte(result.String()), nil
 }
 
-// fromUTF16 converts UTF-16 text that starts with a byte order mark to UTF-8,
-// and returns any other data as it is. An unpaired surrogate becomes U+FFFD,
-// so the result is valid UTF-8.
-func fromUTF16(data []byte) []byte {
+// Text returns a dotenv file's content as UTF-8: UTF-16 that starts with a
+// byte order mark is converted, anything else is returned as it is. Malformed
+// UTF-16 (an odd length or an unpaired surrogate) is ErrInvalid, so a secret
+// is never stored with a replacement character in place of what was there.
+func Text(data []byte) ([]byte, error) {
 	var order func([]byte) uint16
 	switch {
 	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
@@ -168,14 +172,27 @@ func fromUTF16(data []byte) []byte {
 	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
 		order = func(b []byte) uint16 { return uint16(b[1]) | uint16(b[0])<<8 }
 	default:
-		return data
-	}
-	units := make([]uint16, 0, len(data)/2)
-	for i := 2; i+1 < len(data); i += 2 {
-		units = append(units, order(data[i:]))
+		return data, nil
 	}
 	if len(data)%2 != 0 {
-		units = append(units, utf8.RuneError)
+		return nil, fmt.Errorf("%w: incomplete UTF-16", ErrInvalid)
 	}
-	return []byte(string(utf16.Decode(units)))
+	var out strings.Builder
+	for i := 2; i < len(data); i += 2 {
+		u := rune(order(data[i:]))
+		if utf16.IsSurrogate(u) {
+			if i+3 >= len(data) {
+				return nil, fmt.Errorf("%w: unpaired UTF-16 surrogate", ErrInvalid)
+			}
+			r := utf16.DecodeRune(u, rune(order(data[i+2:])))
+			if r == utf8.RuneError {
+				return nil, fmt.Errorf("%w: unpaired UTF-16 surrogate", ErrInvalid)
+			}
+			out.WriteRune(r)
+			i += 2
+			continue
+		}
+		out.WriteRune(u)
+	}
+	return []byte(out.String()), nil
 }

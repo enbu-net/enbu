@@ -92,42 +92,36 @@ def collect(suite: str) -> int:
     targets = packages(env) if suite == "unit" else [f"{MODULE}/test"]
     if suite == "identity":
         targets = [f"{MODULE}/test/identitye2e"]
-    failed = False
-    if suite == "e2e":
-        failed = (
-            subprocess.run(["task", "cli/test/e2e"], cwd=ROOT, env=env).returncode != 0
+
+    def run(package: str) -> bool:
+        package_env = env | {
+            "TOBARI_COVERDIR": str(
+                output / (package.removeprefix(MODULE).strip("/") or "main")
+            ),
+        }
+        # The parent test name is supplied by the Identity CLI harness.
+        # One block per package, so parallel packages never interleave.
+        result = subprocess.run(
+            ["go", "test", "-count=1", "-shuffle=on", "-race", package],
+            cwd=ROOT,
+            env=package_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
         )
-    else:
+        if result.stdout:
+            print(result.stdout, end="", flush=True)
+        report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
+        if not report.is_file():
+            print(f"Missing package report: {package}", flush=True)
+            return True
+        return result.returncode != 0
 
-        def run(package: str) -> bool:
-            package_env = env | {
-                "TOBARI_COVERDIR": str(
-                    output / (package.removeprefix(MODULE).strip("/") or "main")
-                ),
-            }
-            # The parent test name is supplied by the Identity CLI harness.
-            # One block per package, so parallel packages never interleave.
-            result = subprocess.run(
-                ["go", "test", "-count=1", "-shuffle=on", "-race", package],
-                cwd=ROOT,
-                env=package_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            if result.stdout:
-                print(result.stdout, end="", flush=True)
-            report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
-            if not report.is_file():
-                print(f"Missing package report: {package}", flush=True)
-                return True
-            return result.returncode != 0
-
-        # Each package needs its own TOBARI_COVERDIR, so each gets its own go
-        # test; running them side by side keeps the CPUs as busy as go test ./...
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
-            failed = any(list(pool.map(run, targets)))
-    if suite in ("e2e", "identity") and not report_paths(output / "processes"):
+    # Each package needs its own TOBARI_COVERDIR, so each gets its own go test;
+    # running them side by side keeps the CPUs as busy as go test ./... would.
+    with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+        failed = any(list(pool.map(run, targets)))
+    if suite == "identity" and not report_paths(output / "processes"):
         failed = True
         print(f"Missing child CLI reports: {suite}", flush=True)
     merge(output, OUTPUT / f"{suite}.json")
@@ -149,15 +143,11 @@ def summarize(report: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "suite", choices=("unit", "scenario", "identity", "e2e", "report")
-    )
+    parser.add_argument("suite", choices=("unit", "scenario", "identity", "report"))
     suite = parser.parse_args().suite
     if suite != "report":
         return collect(suite)
-    reports = [
-        OUTPUT / f"{suite}.json" for suite in ("unit", "scenario", "identity", "e2e")
-    ]
+    reports = [OUTPUT / f"{suite}.json" for suite in ("unit", "scenario", "identity")]
     missing = [str(p) for p in reports if not p.is_file()]
     if missing:
         raise RuntimeError(f"Missing suite reports: {missing}")

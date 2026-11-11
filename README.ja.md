@@ -1,6 +1,6 @@
 # 💃 enbu
 
-GitHubだけで完結する `.env` 管理ツール  
+IdentityとStorageを選べる、E2E暗号化の `.env` 管理ツール  
 
 ## なぜ
 
@@ -21,7 +21,7 @@ GitHubだけで完結する `.env` 管理ツール
 
 ## 特徴
 
-- **GitHubだけで完結** ほかのプラットフォームに依存することなく完結
+- **Storageを選べる** OCIレジストリ（GHCR含む）またはS3互換オブジェクトストレージ
 - **E2E暗号化** 復号できるのは各メンバーのローカル秘密鍵のみ  
 - **使いやすいCLI** セットアップを済ませれば `enbu add` と `enbu pull` だけすればいい  
 
@@ -73,7 +73,7 @@ GitHub でパッケージの設定を開き、リポジトリを接続して「I
 トークンは OS keyring に置き、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
 別の `XDG_DATA_HOME` では別のアカウントを選べます。`GITHUB_TOKEN` があればどのアカウントよりも優先します。
 
-ヘッドレス環境では `enbu auth login --device` を実行し、表示されたコードを GitHub で入力します。
+`enbu auth login` は GitHub Device Flow を使います。表示されたコードを github.com/login/device で入力するので、SSH 越しでも使えます。
 それ以外は `--storage` で指定します。`ghcr.io` は常に enbu の GitHub ログインを、
 その他の OCI レジストリは Docker の認証設定を使います:
 
@@ -238,10 +238,13 @@ enbu resolve --seen ID API_KEY=sk-new      # 値を指定（--pick KEY=N、--del
 
 デスクトップアプリのシークレット画面でも同じように選べます。
 
+revision は自動では消えません。古いものは管理者が消します（削除できる Storage の場合）:
+
 ```bash
-enbu history list           # シークレットを変えた revision（古い順）
-enbu history diff 3 5       # 2つの revision 間で追加・削除・変更されたキー
-enbu history restore 3      # revision 3 の内容を新しい revision として公開
+enbu history list               # シークレットを変えた revision（古い順）
+enbu history diff 3 5           # 2つの revision 間で追加・削除・変更されたキー
+enbu history restore 3          # revision 3 の内容を新しい revision として公開
+enbu history compact --keep 50  # 管理者: 最新50件より古い revision を削除
 ```
 
 ## Identityの保管
@@ -331,8 +334,7 @@ VS Code拡張などのプロセスからenbuを実行する場合は、任意の
 分類できないエラーは汎用メッセージだけを出します。`ENBU_DEBUG=1` を付けると原因を stderr に表示します。
 `enbu pull --json` は `.env` を書き込まず、復号したシークレットを `data.secrets` で返します。
 このレスポンスをログへ記録したり、永続化したりしないでください。
-Device Flowは認証完了前にコードを表示する必要があるため、`enbu auth login --device --json` には対応していません。
-ブラウザ認証には `enbu auth login --json` を使います。
+`enbu auth login --json` は Device Flow のコードを stderr に表示し、stdout には JSON の結果だけを出します。
 
 ## 仕組み
 
@@ -367,19 +369,16 @@ Storageは信頼しません。名前は場所を示すヒントにすぎず、�
 sequenceDiagram
     participant User as ユーザー
     participant CLI as enbu CLI
-    participant Auth as auth.enbu.net
     participant GitHub as GitHub OAuth
     participant GHCR as GHCR
 
     User->>CLI: enbu auth login
-    CLI->>CLI: 127.0.0.1 callback listenerを開始
-    CLI->>Auth: PKCE sessionを作成
-    Auth-->>CLI: GitHub認可URL
-    CLI-->>User: ブラウザを開く
-    User->>GitHub: ブラウザで認証・承認
-    GitHub-->>CLI: loopback callbackで認可コード
-    CLI->>Auth: PKCE verifierでコード交換
-    Auth-->>CLI: Access Token
+    CLI->>GitHub: device codeを要求
+    GitHub-->>CLI: ユーザーコード
+    CLI-->>User: コードを表示し github.com/login/device を開く
+    User->>GitHub: コードを入力して承認
+    CLI->>GitHub: tokenをポーリング
+    GitHub-->>CLI: Access Token
     CLI->>CLI: tokenをOSキーチェーンへ保存
     CLI-->>User: ✓ Authenticated
 
@@ -420,7 +419,7 @@ sequenceDiagram
 
     New->>CLI: enbu init (共有された enbu.toml)
     CLI->>GHCR: genesis digestからControlを検証
-    CLI->>GHCR: request-{device-id} を書き込み（権限なし）
+    CLI->>GHCR: 参加依頼 r-{digest} を公開（権限なし）
     CLI-->>New: 承認待ち、フィンガープリント a1b2-c3d4-...
 
     New-->>Admin: フィンガープリントを別経路で伝える
