@@ -526,7 +526,7 @@ tasks:
       SOURCE_DATE_EPOCH:
         sh: git log -1 --format=%ct
     cmds:
-      - docker build --quiet --tag {{.IMAGE}} tools/release-linux
+      - docker build --progress=plain --tag {{.IMAGE}} tools/release-linux
       - rm -rf {{.STAGE}} && mkdir -p {{.STAGE}} dist "{{.GOMODCACHE}}"
       - >-
         docker run --rm --user "$(id -u):$(id -g)"

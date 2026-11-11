@@ -10,7 +10,7 @@ Keyless `.env` management. Encrypts secrets with age for each member's device ke
 
 - After writing code, always write tests for the relevant areas.
 - Force-pushes are prohibited.
-- CI runs on pull requests only, plus one nightly run on main; merges do not run it again. `scripts/ci_changes.py` skips the build and test jobs for docs-only pull requests and runs the reproducible-build comparison only when a build input changes. Closing or merging a pull request cancels its runs through the concurrency groups: the `closed` event starts a run in the same group whose jobs all skip, so GitHub cancels the others without waiting for a runner.
+- CI runs on pull requests only, plus one nightly run on main; merges do not run it again. `scripts/ci_changes.py` skips the build and test jobs for docs-only pull requests. The reproducible-build comparison is not part of CI; it runs in the release workflow and its dry run. Closing or merging a pull request cancels its runs through the concurrency groups: the `closed` event starts a run in the same group whose jobs all skip, so GitHub cancels the others without waiting for a runner.
 - After changing code, always run `task all/build`, `task all/test`, and `task all/check`.
 - When a Linear task is provided, use a branch name like `feat/enbu-01`.
 - Manage local issues and architecture decisions with Kotowari in `.kotowari/`.
@@ -48,9 +48,9 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 
 ## Releasing
 
-Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
+Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed. Check "Dry run" to build and compare every asset without tagging, signing or publishing; it runs on any branch.
 
-Every release asset must stay bit-for-bit reproducible (docs/reproducible-builds.md; a `.dmg` by its contents): `task release/build` is the only build definition, the release refuses to publish unless a second, cache-free build of each platform matches (`task release/verify`), and CI runs the same comparison on every PR that changes a build input (`scripts/ci_changes.py`; add a new build input there) and nightly on main. Never let the clock, the checkout path, the build user or the runner's toolchain reach those bytes: take times from `SOURCE_DATE_EPOCH`, write archives with `tools/reproarchive`, build the Linux desktop app only in `tools/release-linux`, keep the Xcode pinned (`XCODE_VERSION`), and pin every tool version.
+Every release asset must stay bit-for-bit reproducible (docs/reproducible-builds.md; a `.dmg` by its contents): `task release/build` is the only build definition, the release refuses to publish unless a second, cache-free build of each platform matches (`task release/verify`), and a dry run of the release workflow runs the same comparison without tagging, signing or publishing: run one before a release, and on a branch that changes how assets are built. Never let the clock, the checkout path, the build user or the runner's toolchain reach those bytes: take times from `SOURCE_DATE_EPOCH`, write archives with `tools/reproarchive`, build the Linux desktop app only in `tools/release-linux`, keep the Xcode pinned (`XCODE_VERSION`), and pin every tool version.
 
 ## Architecture
 

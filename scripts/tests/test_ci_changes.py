@@ -13,7 +13,7 @@ import ci_changes
     ],
 )
 def test_docs_only_changes_skip_code_jobs(paths):
-    assert ci_changes.select(paths) == {"code": False, "release": False}
+    assert ci_changes.select(paths) == {"code": False}
 
 
 @pytest.mark.parametrize(
@@ -32,40 +32,6 @@ def test_any_other_path_runs_code_jobs(path):
     assert ci_changes.select(["README.md", path])["code"]
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        "go.mod",
-        "go.sum",
-        "aqua.yaml",
-        "Taskfile.yaml",
-        ".goreleaser.yaml",
-        "main.go",
-        "tools/reproarchive/main.go",
-        "tools/release-linux/Dockerfile",
-        "desktop/wails/packaging/info.plist",
-        "web/pnpm-lock.yaml",
-        "web/package.json",
-        "vscode/pnpm-lock.yaml",
-        "vscode/.vscodeignore",
-        ".github/actions/setup-go/action.yaml",
-        ".github/workflows/ci.yaml",
-        ".github/workflows/release-build.yaml",
-        "scripts/ci_changes.py",
-    ],
-)
-def test_build_inputs_run_the_reproducible_comparison(path):
-    assert ci_changes.select([path]) == {"code": True, "release": True}
-
-
-@pytest.mark.parametrize(
-    "path",
-    ["app/app.go", "pkg/storage/oci.go", "web/src/main.tsx", "cli/run.go"],
-)
-def test_source_changes_skip_the_reproducible_comparison(path):
-    assert ci_changes.select([path]) == {"code": True, "release": False}
-
-
 def test_pull_requests_select_from_their_diff(monkeypatch, tmp_path):
     output = tmp_path / "out"
     monkeypatch.setattr(
@@ -77,7 +43,7 @@ def test_pull_requests_select_from_their_diff(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     ci_changes.main()
-    assert output.read_text().split() == ["code=false", "release=false"]
+    assert output.read_text().split() == ["code=false"]
 
 
 @pytest.mark.parametrize("event", ["schedule", "workflow_dispatch"])
@@ -87,7 +53,7 @@ def test_main_runs_everything(monkeypatch, tmp_path, event):
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     ci_changes.main()
-    assert output.read_text().split() == ["code=true", "release=true"]
+    assert output.read_text().split() == ["code=true"]
 
 
 def test_unreadable_diff_runs_everything(monkeypatch, tmp_path):
@@ -100,4 +66,4 @@ def test_unreadable_diff_runs_everything(monkeypatch, tmp_path):
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     ci_changes.main()
-    assert output.read_text().split() == ["code=true", "release=true"]
+    assert output.read_text().split() == ["code=true"]
