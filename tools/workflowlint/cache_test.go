@@ -519,7 +519,19 @@ func TestCIJobsFollowTheChangesSelection(t *testing.T) {
 // event joins the PR's concurrency group with a run whose jobs all skip.
 func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
 	const notClosed = "github.event.action != 'closed'"
-	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "simulation.yaml"} {
+	const prOnly = "${{ github.event_name == 'pull_request' }}"
+	// The group is what does the cancelling: the closed run must land in the
+	// same group as the runs of its pull request (DST: its branch's push runs).
+	concurrency := map[string][2]string{
+		"ci.yaml":      {"ci-${{ github.event.pull_request.number || github.ref }}", prOnly},
+		"tobari.yaml":  {"coverage-${{ github.event.pull_request.number || github.ref }}", prOnly},
+		"preview.yaml": {"preview-${{ github.event.pull_request.number || github.ref }}", "true"},
+		"simulation.yaml": {
+			"simulation-${{ github.event_name == 'pull_request' && format('push-refs/heads/{0}', github.head_ref) || format('{0}-{1}', github.event_name, github.ref) }}",
+			"${{ github.event_name == 'push' || github.event_name == 'pull_request' }}",
+		},
+	}
+	for name, want := range concurrency {
 		t.Run(name, func(t *testing.T) {
 			root := readYAML(t, "../../.github/workflows/"+name)
 			closed := false
@@ -529,8 +541,12 @@ func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
 			if !closed {
 				t.Fatal("closing a pull request leaves its runs queued")
 			}
-			if cancel := field(field(root, "concurrency"), "cancel-in-progress"); cancel == nil || !strings.Contains(cancel.Value, "true") && !strings.Contains(cancel.Value, "pull_request") {
-				t.Fatal("the closed run cannot cancel the runs of its group")
+			group, cancel := field(field(root, "concurrency"), "group"), field(field(root, "concurrency"), "cancel-in-progress")
+			if group == nil || group.Value != want[0] {
+				t.Fatalf("the closed run does not join the group of the runs it must cancel: want %q", want[0])
+			}
+			if cancel == nil || cancel.Value != want[1] {
+				t.Fatalf("the closed run cannot cancel the runs of its group: want cancel-in-progress %q", want[1])
 			}
 			jobs := field(root, "jobs")
 			for i := 0; i < len(jobs.Content); i += 2 {
