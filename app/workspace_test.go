@@ -11,7 +11,6 @@ import (
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -34,7 +33,7 @@ func writeStaging(t *testing.T, s *session, secrets map[string]string, parents .
 
 // encryptForTest encrypts secrets for the recipients of the verified Control.
 func encryptForTest(s *session, secrets map[string]string) ([]byte, error) {
-	return age.EncryptForPublicKeys(bundle.Marshal(secrets), s.head.Recipients())
+	return age.EncryptForPublicKeys(encodeSecrets(secrets), s.head.Recipients())
 }
 
 func TestSessionStateRoundTrip(t *testing.T) {

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/age"
-	"github.com/enbu-net/enbu/pkg/wsp"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/wsp"
 )
 
 // Probe explores a failure at one exact external call of a public operation.

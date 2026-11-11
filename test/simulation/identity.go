@@ -4,12 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"io/fs"
+	"strings"
+
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/signing"
-	"io/fs"
-	"strings"
 )
 
 // Keys contains only synthetic identities generated for this simulation. Never

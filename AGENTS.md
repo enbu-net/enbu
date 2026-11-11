@@ -67,8 +67,7 @@ pkg/signing/             → signing keys (P-256 / Ed25519), canonical signature
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
 pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
 pkg/winbridge/          → inside WSL, hands key operations and the GitHub token to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, JSON over stdio, one protocol version, no paths cross); WSL never uses the Linux keystore
-pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
-pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
+pkg/dotenv/              → .env parsing and rendering
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)

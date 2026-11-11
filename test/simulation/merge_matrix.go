@@ -7,9 +7,10 @@ import (
 	"reflect"
 	"slices"
 
+	"encoding/json"
+
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -88,7 +89,11 @@ func (w *World) publishNodeAtControl(ctx context.Context, actor int, epoch diges
 	if err != nil {
 		return storage.Object{}, err
 	}
-	cipher, err := d.App.Runtime.Encrypt(bundle.Marshal(values), control.Recipients())
+	plaintext, err := json.Marshal(values)
+	if err != nil {
+		return storage.Object{}, err
+	}
+	cipher, err := d.App.Runtime.Encrypt(plaintext, control.Recipients())
 	if err != nil {
 		return storage.Object{}, err
 	}

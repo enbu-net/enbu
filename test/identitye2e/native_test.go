@@ -4,6 +4,7 @@ package identitye2e
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	agecrypto "filippo.io/age"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/identity"
 )
 
@@ -64,7 +64,8 @@ func TestNativeTPMCLI(t *testing.T) {
 	h.run("sync")
 	assertSecret(t, h.run("pull"), "second")
 	plaintext := decryptCurrent(t, h, x)
-	secrets, err := bundle.Unmarshal(plaintext)
+	var secrets map[string]string
+	err = json.Unmarshal(plaintext, &secrets)
 	if err != nil || secrets["DATABASE_URL"] != "second" {
 		t.Fatalf("software recipient recovered wrong bundle: %v %v", secrets, err)
 	}
