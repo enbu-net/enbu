@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
@@ -217,5 +218,28 @@ func TestPullWithoutMarkerKeepsVariablesWhenHistoryFails(t *testing.T) {
 	_, kept, removed, err := dotenvWithLocal(path, map[string]string{"KEY": "v1"}, false, failed)
 	if err != nil || len(kept) != 1 || kept[0] != "TOKEN" || len(removed) != 0 {
 		t.Fatalf("kept = %v, removed = %v, err = %v", kept, removed, err)
+	}
+}
+
+// A file an editor saved as UTF-16 keeps its local variables below the
+// marker, and the pull writes it back as UTF-8.
+func TestPullReadsAUTF16FileWithTheMarker(t *testing.T) {
+	alice := newAlice(t) // KEY=v1
+	units := utf16.Encode([]rune("\uFEFFKEY=\"old\"\r\n\r\n" + keptMarker + "\r\nLOCAL_ONLY=\"ローカル\"\r\n"))
+	text := make([]byte, 0, 2*len(units))
+	for _, u := range units {
+		text = append(text, byte(u), byte(u>>8))
+	}
+	path := filepath.Join(alice.RepositoryDir, ".env")
+	if err := os.WriteFile(path, text, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	written, err := alice.PullSecretsToFileWith(bg, "default", false)
+	if err != nil || len(written.Kept) != 1 || written.Kept[0] != "LOCAL_ONLY" {
+		t.Fatalf("written = %+v, %v", written, err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != "KEY=\"v1\"\n\n"+keptMarker+"\nLOCAL_ONLY=\"ローカル\"\n" {
+		t.Fatalf("file:\n%q", got)
 	}
 }
