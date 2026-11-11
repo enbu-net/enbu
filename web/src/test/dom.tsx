@@ -102,3 +102,44 @@ export function typeInto(input: HTMLInputElement | null, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+/** The open modal dialog, if any. */
+export function openDialog(): HTMLDialogElement | null {
+  return document.querySelector<HTMLDialogElement>("dialog[open]");
+}
+
+/** Plays Esc on a modal dialog: a cancelable cancel event, then close unless prevented. */
+export function pressEscape(dialog: HTMLDialogElement | null = openDialog()) {
+  if (!dialog) return;
+  const cancel = new Event("cancel", { cancelable: true });
+  dialog.dispatchEvent(cancel);
+  if (!cancel.defaultPrevented) dialog.close();
+}
+
+/**
+ * Presses and releases the pointer at a point, by default outside the open
+ * dialog (jsdom lays every element out at 0,0 with no size).
+ */
+export function clickBackdrop(
+  { x, y }: { x: number; y: number } = { x: 500, y: 500 },
+  dialog: HTMLDialogElement | null = openDialog(),
+) {
+  for (const type of ["pointerdown", "pointerup"]) {
+    dialog?.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+  }
+}
+
+/** The control a visible <label> with this text names. */
+export function labelledInput(text: string, scope: ParentNode = container) {
+  const label = Array.from(scope.querySelectorAll("label")).find(
+    (el) => el.textContent?.trim() === text,
+  );
+  return label?.htmlFor
+    ? (document.getElementById(label.htmlFor) as HTMLInputElement | null)
+    : null;
+}
+
+/** Submits a form the way Enter in one of its fields does. */
+export function submitForm(field: HTMLElement | null) {
+  field?.closest("form")?.requestSubmit();
+}

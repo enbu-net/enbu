@@ -96,6 +96,9 @@ importers:
       jsdom:
         specifier: 31.0.0
         version: 31.0.0
+      modern-web-guidance:
+        specifier: 0.0.206
+        version: 0.0.206
       playwright:
         specifier: 1.63.0
         version: 1.63.0
@@ -2527,6 +2530,11 @@ packages:
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
+
+  modern-web-guidance@0.0.206:
+    resolution: {integrity: sha512-YUKCYGvmlZhjDcAzT3GSsITKyGPpRyK5eaJ6pWpBdjXwqDg4vMVO52DEduvX7bGwZDNU73zEM0Dvln1mia0WMg==}
+    engines: {node: '>=22.0.0', vscode: ^1.90.0}
+    hasBin: true
 
   monaco-editor@0.57.0:
     resolution: {integrity: sha512-5BkI9KGoqrNvBGUe15/QlZq3OooZ8WLg1AxTpaqHRCP3HNpzPPZKE2EDz8M7c+VRmCeUw1Brp4cx/PWm3kI/5A==}
@@ -5715,6 +5723,8 @@ snapshots:
       brace-expansion: 5.0.12
 
   minimist@1.2.8: {}
+
+  modern-web-guidance@0.0.206: {}
 
   monaco-editor@0.57.0:
     dependencies:

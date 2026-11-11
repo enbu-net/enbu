@@ -28,7 +28,7 @@ describe("Panda CSS configuration", () => {
     expect(css).toMatch(/\.d_flex\s*\{\s*display:\s*flex/);
     // Older WebKit ignores @property, so transforms also need plain defaults.
     expect(css).toMatch(
-      /\*,\s*::before,\s*::after,\s*::backdrop\s*\{\s*--translate-x:\s*0;\s*--translate-y:\s*0;/,
+      /\*,\s*::before,\s*::after,\s*::backdrop\s*\{[^}]*--translate-x:\s*0;\s*--translate-y:\s*0;/,
     );
     expect(css).toMatch(
       /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)\s*\{\s*\.button[^{}]*:is\(:hover,\s*\[data-hover\]\)/,

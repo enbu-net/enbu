@@ -1,6 +1,6 @@
 import { createRootRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { Settings, X } from "lucide-react";
-import { Box, Flex, styled } from "styled-system/jsx";
+import { Flex, styled } from "styled-system/jsx";
 import { Text } from "../components/ui";
 import { UserErrorGate } from "../components/user-error-gate";
 import { Sidebar } from "../features/repository/sidebar";
@@ -30,6 +30,30 @@ function RootLayout() {
     useRouterState({ select: (state) => state.location.pathname }) === "/settings";
   return (
     <>
+      {/* Past the header and the sidebar to the screen itself. */}
+      <styled.a
+        href="#main"
+        position="absolute"
+        top="2"
+        left="2"
+        zIndex="20"
+        px="3"
+        py="2"
+        borderRadius="md"
+        bg="bg.surface"
+        color="fg.default"
+        fontWeight="semibold"
+        boxShadow="dropdown"
+        transform="translateY(-200%)"
+        _focusVisible={{ transform: "none" }}
+        onClick={(event) => {
+          // The router owns the URL, so focus the target without navigating.
+          event.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
+        {m.common_skipToContent()}
+      </styled.a>
       <styled.header
         display="flex"
         h="72px"
@@ -76,9 +100,9 @@ function RootLayout() {
             onCloseSettings={() => void navigate({ to: "/" })}
           />
         )}
-        <Box flex="1" minW="0">
+        <styled.main id="main" tabIndex={-1} flex="1" minW="0" outline="none">
           <Outlet />
-        </Box>
+        </styled.main>
       </Flex>
     </>
   );

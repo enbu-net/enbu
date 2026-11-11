@@ -309,7 +309,7 @@ tasks:
       - govulncheck -tags fixture ./...
 
   gui/check:
-    desc: Format and lint GUI code, and check the generated bindings are current
+    desc: Format and lint GUI code, scan it for legacy web patterns, and check the generated bindings are current
     deps:
       - gui/install
       - gui/build/frontend
@@ -318,6 +318,8 @@ tasks:
       - git diff --exit-code -- web/src/bindings
       - test -z "$(git status --porcelain -- web/src/bindings)"
       - cd web && vp check
+      # Modern Web Guidance's legacy-pattern scan (web/scripts/legacy-scan.mjs).
+      - cd web && node scripts/legacy-scan.mjs
       - task: gui/a11y
 
   gui/a11y:
