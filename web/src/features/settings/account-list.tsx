@@ -167,7 +167,7 @@ export function AccountList() {
                         fontWeight="semibold"
                         color="fg.default"
                         truncate
-                        _hover={{ textDecoration: "underline", color: "accent.default" }}
+                        _hover={{ textDecoration: "underline", color: "accent.text" }}
                       >
                         {account}
                       </styled.a>

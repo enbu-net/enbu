@@ -111,7 +111,7 @@ export function UpdateSection() {
       target="_blank"
       rel="noopener noreferrer"
       fontSize="sm"
-      color="accent.default"
+      color="accent.text"
     >
       {m.update_releaseNotes()}
     </styled.a>
