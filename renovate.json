@@ -9,10 +9,8 @@
   "dependencyDashboard": false,
   "configMigration": true,
   "minimumReleaseAge": "3 days",
+  "internalChecksFilter": "strict",
   "schedule": [
-    "* 4-6 * * *"
-  ],
-  "automergeSchedule": [
     "* 4-6 * * *"
   ],
   "lockFileMaintenance": {
@@ -24,7 +22,8 @@
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "automerge": true,
-  "platformAutomerge": false,
+  "platformAutomerge": true,
+  "rebaseWhen": "conflicted",
   "postUpdateOptions": [
     "gomodTidy",
     "gomodUpdateImportPaths"
