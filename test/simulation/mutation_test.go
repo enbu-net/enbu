@@ -117,7 +117,7 @@ var mutationCases = []struct{ name, file, old, new, scenario string }{
 	{"skip-state-signature-verification", "pkg/wsp/state.go", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil {", "if err := signing.Verify(author.Signing, signing.DomainState, signed.Body, signed.Signature); err != nil && false {", "TestScenarios/forged-state-signature"},
 	{"control-parent-admin-check", "pkg/wsp/control.go", "if !ok || !author.Admin {\n\t\t\treturn nil, invalid(\"control author", "if !ok {\n\t\t\treturn nil, invalid(\"control author", "TestAuthorityAttackSmoke/member-promotes-self"},
 	{"compaction-admin-check", "pkg/wsp/compaction.go", "if !ok || !author.Admin {", "if !ok {", "TestAuthorityAttackSmoke/member-excuses-rollback"},
-	{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c); err != nil {", "if err := checkResolution(parents, c); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
+	{"fork-resolution-authority", "pkg/wsp/control.go", "if err := checkResolution(parents, c, get); err != nil {", "if err := checkResolution(parents, c, get); err != nil && false {", "TestAuthorityAttackSmoke/fork-promotes-member"},
 	{"control-work-limit", "pkg/wsp/chain.go", "if len(revs) > maxControls {", "if len(revs) > maxControls && false {", "TestScenarios/metadata-control-count"},
 	{"skip-head-recheck", "app/secrets.go", "if !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "if false && !sameHeads(s.trustedHeads(latest, accepted), cur.heads) {", "TestScenarios/contention-edit-exhausted"},
 	{"premature-retry-exhaustion", "app/secrets.go", "const maxRetries = 3", "const maxRetries = 1", "TestScenarios/contention-edit-yield"},

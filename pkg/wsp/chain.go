@@ -19,7 +19,7 @@ var (
 )
 
 // ErrControlFork marks a Control DAG with more than one head. Nothing proceeds
-// until an admin publishes a resolution Control.
+// until an admin of every head publishes a resolution Control.
 var ErrControlFork = errors.New("workspace control forked")
 
 // ForkError carries the competing heads so an admin can resolve them.
@@ -163,7 +163,7 @@ func LoadControl(ctx context.Context, store storage.Store, workspace string, gen
 			}
 			delete(pending, rev)
 			progress = true
-			if v, err := VerifyChild(parents, p.blob); err == nil && v.Digest == rev {
+			if v, err := VerifyChild(parents, p.blob, view.Get); err == nil && v.Digest == rev {
 				view.verified[rev] = v
 			}
 		}
@@ -263,39 +263,29 @@ func UpdateControl(ctx context.Context, store storage.Store, view *ControlView, 
 	return publishChild(ctx, store, view, []*Verified{head}, next, signer)
 }
 
-// ResolveFork publishes a Control that joins every head of a forked view. It
-// starts from the principals the heads list (an admin of any head stays one);
-// mutate may only remove principals or admin rights, because VerifyChild
-// refuses a resolution that adds anything. signer must be an admin of every head.
-func ResolveFork(ctx context.Context, store storage.Store, view *ControlView, signer signing.Signer, mutate func(*Control) error) (*Verified, error) {
+// ResolveFork publishes the Control that joins every head of a forked view: the
+// 3-way merge of MergePrincipals. signer must be an admin of every head.
+func ResolveFork(ctx context.Context, store storage.Store, view *ControlView, signer signing.Signer) (*Verified, error) {
 	if !view.Forked() {
 		return nil, errors.New("the workspace control is not forked")
 	}
 	author := signer.Public().DeviceID()
 	next := Control{Workspace: view.Workspace, Author: author}
 	var maxHeight uint64
-	union := map[signing.DeviceID]Principal{}
 	for _, h := range view.Heads {
 		if a, ok := h.Principal(author); !ok || !a.Admin {
 			return nil, errors.New("only an admin of every competing control can resolve the fork")
 		}
 		next.Parents = append(next.Parents, h.Digest)
 		maxHeight = max(maxHeight, h.Height)
-		for _, p := range h.Principals {
-			if cur, ok := union[p.ID]; ok {
-				p.Admin = p.Admin || cur.Admin
-			}
-			union[p.ID] = p
-		}
 	}
 	sortDigests(next.Parents)
 	next.Height = maxHeight + 1
-	for _, p := range union {
-		next.Principals = append(next.Principals, p)
-	}
-	if err := mutate(&next); err != nil {
+	principals, err := MergePrincipals(view.Heads, view.Get)
+	if err != nil {
 		return nil, err
 	}
+	next.Principals = principals
 	return publishChild(ctx, store, view, view.Heads, next, signer)
 }
 
@@ -304,7 +294,7 @@ func publishChild(ctx context.Context, store storage.Store, view *ControlView, p
 	if err != nil {
 		return nil, err
 	}
-	v, err := VerifyChild(parents, blob)
+	v, err := VerifyChild(parents, blob, view.Get)
 	if err != nil {
 		return nil, err
 	}

@@ -263,14 +263,6 @@ export function ResolveConflicts(env: string, heads: string[], choices: app$0.Se
 }
 
 /**
- * ResolveMemberFork joins member changes two admins made at the same time,
- * keeping only the members and admin rights both agree on.
- */
-export function ResolveMemberFork(): $CancellablePromise<void> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ResolveMemberFork");
-}
-
-/**
  * RestartApp starts the installed update and quits.
  */
 export function RestartApp(): $CancellablePromise<void> {

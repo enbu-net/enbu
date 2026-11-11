@@ -19,7 +19,6 @@ export function MembersPanel({
   onApprove,
   onRemove,
   onSetAdmin,
-  onResolveFork,
   onErrorDismiss,
 }: {
   members: MemberInfo[];
@@ -30,8 +29,6 @@ export function MembersPanel({
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
   onSetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
-  /** Joins member changes two admins made at the same time. */
-  onResolveFork: () => Promise<void>;
   onErrorDismiss: () => void;
 }) {
   const [approving, setApproving] = useState<JoinRequestInfo | null>(null);
@@ -85,17 +82,6 @@ export function MembersPanel({
               onErrorDismiss();
             }}
           />
-          {/* A failed resolution replaces the fork error, but the fork remains. */}
-          {(error?.code === "control_forked" || shownError.code === "control_forked") && (
-            <Button
-              size="sm"
-              mt="2"
-              loading={busy}
-              onClick={() => void run(onResolveFork, () => {})}
-            >
-              {m.members_resolveFork()}
-            </Button>
-          )}
         </Box>
       )}
       {loading ? (

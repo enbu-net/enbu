@@ -83,10 +83,6 @@ export function MembersTab({
           await backend.SetAdmin(deviceID, admin);
           await refresh();
         }}
-        onResolveFork={async () => {
-          await backend.ResolveMemberFork();
-          await refresh();
-        }}
         onErrorDismiss={() => setError(null)}
       />
       <DevicePanel repoPath={repoPath} postQuantum={postQuantum} onUpgraded={refresh} />

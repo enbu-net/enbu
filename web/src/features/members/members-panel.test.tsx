@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { createAppError, displayError } from "../../lib/app-error";
+import { displayError } from "../../lib/app-error";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
 
@@ -82,7 +82,6 @@ describe("accessibility: live regions", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </>,
@@ -109,7 +108,6 @@ describe("MembersPanel actions", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={onErrorDismiss}
           />
         </>,
@@ -145,7 +143,6 @@ describe("MembersPanel approval", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -281,7 +278,6 @@ describe("MembersPanel removal", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </>,
@@ -318,7 +314,6 @@ describe("MembersPanel admin rights", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -360,21 +355,9 @@ describe("MembersPanel admin rights", () => {
     expect(queryButton(`Make admin: ${other.fingerprint}`)).toBeNull();
   });
 
-  it("offers to join member changes when the members forked", async () => {
-    const onResolveFork = vi.fn(async () => {});
-    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
-    await act(async () => queryButton("Join member changes")?.click());
-    expect(onResolveFork).toHaveBeenCalled();
-  });
-
-  it("keeps offering to join member changes after a failed attempt", async () => {
-    const onResolveFork = vi.fn(async () => {
-      throw createAppError("internal");
-    });
-    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
-    await act(async () => queryButton("Join member changes")?.click());
-    await act(async () => Promise.resolve());
-    expect(queryButton("Join member changes")).not.toBeNull();
+  it("tells a member that an admin opening enbu joins a member fork", () => {
+    renderPanel({ members: [], error: displayError("control_forked") });
+    expect(container.textContent).toContain("an admin of both changes opens enbu");
   });
 
   it("marks a key update among the requests", () => {

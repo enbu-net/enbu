@@ -89,23 +89,53 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 			return fmt.Errorf("compound control update: %w", result)
 		}
 	}
-	for _, i := range []int{0, 1, 2} {
-		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
-			return fmt.Errorf("control fork failed to block device %d: %v", i, err)
-		}
-		if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, []app.SecretChoice{{Key: "K", Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
-			return err
-		}
-	}
+	// a is an admin of both heads, and so is b unless a demoted it; any other
+	// device stays stopped until an admin of both joins the fork.
+	stopped := []int{2}
 	if c.Control == "demote-admin" {
-		if err := requireCode(b.ResolveControlFork(ctx), apperr.CodeAccessDenied); err != nil {
-			return err
+		stopped = append(stopped, 1)
+	}
+	// The re-encryption that follows b's approval is itself an operation of an
+	// admin of every head, so on some schedules it has already joined the fork
+	// when the batch returns; the stopped devices then see the merged Control.
+	forked := false
+	for n, i := range stopped {
+		_, err := w.Devices[i].App.ListSecrets(ctx, "default")
+		if n == 0 {
+			forked = ErrorCode(err) == string(apperr.CodeControlForked)
+		}
+		if forked {
+			if err := requireCode(err, apperr.CodeControlForked); err != nil {
+				return fmt.Errorf("control fork failed to block device %d: %w", i, err)
+			}
+			if err := requireCode(w.Devices[i].App.ResolveSecrets(ctx, "default", []string{"stale"}, []app.SecretChoice{{Key: "K", Value: "forbidden"}}), apperr.CodeControlForked); err != nil {
+				return err
+			}
+			continue
+		}
+		// Joined: the removed writer is out, and a remaining member sees only
+		// the unresolved data conflict.
+		want := apperr.CodeSecretConflict
+		if i == 2 && c.Control == "remove-writer" {
+			want = apperr.CodeNotMember
+		}
+		if err := requireCode(err, want); err != nil {
+			return fmt.Errorf("device %d after the fork was joined: %w", i, err)
 		}
 	}
-	// Control resolution commits first; data re-encryption must report the
-	// unresolved data conflict rather than treating it as a successful full repair.
-	if err := requireCode(a.ResolveControlFork(ctx), apperr.CodeReencryptIncomplete); err != nil {
+	if err := w.Tape.Observe("compound-forked", c.Control, forked); err != nil {
 		return err
+	}
+	// a's next operation joins the fork if it is still open. Control
+	// resolution commits first; data re-encryption must report the unresolved
+	// data conflict rather than treating it as a successful full repair. If
+	// the fork was already joined, the data conflict remains.
+	want := apperr.CodeReencryptIncomplete
+	if !forked {
+		want = apperr.CodeSecretConflict
+	}
+	if _, err := a.ListSecrets(ctx, "default"); requireCode(err, want) != nil {
+		return fmt.Errorf("a after the control update (forked=%t): %w", forked, err)
 	}
 	members, err := a.ListMembers(ctx)
 	if err != nil {
@@ -119,7 +149,9 @@ func (w *World) Compound(ctx context.Context, c CompoundCase) error {
 		if i == 2 && c.Control == "remove-writer" {
 			continue
 		}
-		expected[d.ID] = i == 0 || (i == 1 && c.Control != "demote-admin")
+		// b's promotion of device 3 survives the 3-way merge unless a demoted b,
+		// which discards b's concurrent branch.
+		expected[d.ID] = i == 0 || (i == 1 || i == 3) && c.Control != "demote-admin"
 	}
 	if !reflect.DeepEqual(actual, expected) {
 		return fmt.Errorf("compound membership got %v want %v", actual, expected)
