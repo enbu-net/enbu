@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"go/build"
@@ -33,30 +32,46 @@ func readYAML(t *testing.T, path string) *yaml.Node {
 func TestGoCacheSeparatesWorkloadsAndIncludesNestedModules(t *testing.T) {
 	root := readYAML(t, "../../.github/actions/setup-go/action.yaml")
 	steps := field(field(root, "runs"), "steps")
-	script := field(steps.Content[0], "run").Value
-	var hashes [2][32]byte
-	for i, scope := range []string{"core-native", "coverage-unit"} {
-		dir := t.TempDir()
-		cmd := exec.CommandContext(t.Context(), "bash", "-eu", "-c", script)
-		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "CACHE_SCOPE="+scope)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %s", err, out)
+	script := field(steps.Content[1], "run").Value
+	for _, scope := range []string{"$RUNNER_OS", "$RUNNER_ARCH", "$CACHE_SCOPE"} {
+		if !strings.Contains(script, scope) {
+			t.Fatalf("Go cache prefix omits %s", scope)
 		}
-		data, err := os.ReadFile(filepath.Join(dir, ".tmp/go-cache-scope"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		hashes[i] = sha256.Sum256(data)
 	}
-	if hashes[0] == hashes[1] {
-		t.Fatal("independent build populations would race for the same immutable cache")
+	if field(field(steps.Content[1], "env"), "CACHE_SCOPE").Value != "${{ inputs.cache-scope }}" {
+		t.Fatal("independent build populations would share one cache")
 	}
-	paths := field(field(steps.Content[1], "with"), "cache-dependency-path").Value
-	for _, required := range []string{"go.sum", "tools/wails3/go.sum", ".tmp/go-cache-scope"} {
-		if !strings.Contains(paths, required) {
-			t.Fatalf("Go cache omits %s", required)
+	for _, step := range steps.Content[2:] {
+		key := field(field(step, "with"), "key").Value
+		for _, required := range []string{"steps.go.outputs.prefix", "go.sum", "tools/wails3/go.sum", "github.run_id"} {
+			if !strings.Contains(key, required) {
+				t.Fatalf("Go cache key omits %s", required)
+			}
 		}
+	}
+}
+
+// A cache key fixed by go.sum is saved once and restored unchanged forever.
+// main saves a new entry on every run; every other run only restores.
+func TestOnlyMainSavesTheGoCaches(t *testing.T) {
+	steps := field(field(readYAML(t, "../../.github/actions/setup-go/action.yaml"), "runs"), "steps")
+	if field(field(steps.Content[0], "with"), "cache").Value != "false" {
+		t.Fatal("actions/setup-go saves its own immutable cache")
+	}
+	want := map[string]string{
+		"actions/cache@":         "inputs.cache == 'true' && github.ref == 'refs/heads/main'",
+		"actions/cache/restore@": "inputs.cache == 'true' && github.ref != 'refs/heads/main'",
+	}
+	for _, step := range steps.Content[2:] {
+		uses := field(step, "uses").Value
+		action := uses[:strings.Index(uses, "@")+1]
+		if field(step, "if").Value != want[action] {
+			t.Fatalf("%s runs where it must not: %s", uses, field(step, "if").Value)
+		}
+		delete(want, action)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing cache steps: %v", want)
 	}
 }
 
