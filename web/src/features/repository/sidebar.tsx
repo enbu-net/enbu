@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Plus, Settings, Trash2 } from "lucide-react";
-import { Box, Flex, VStack, styled } from "styled-system/jsx";
+import { Box, VStack, styled } from "styled-system/jsx";
 import { Button, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { ErrorAlert } from "../../components/error-alert";
@@ -64,21 +72,16 @@ export function Sidebar({
     void loadRepos();
   }, [loadRepos, activePath]);
 
+  // The menu is a popover, which closes itself on Esc and outside clicks; it
+  // sits at the pointer, so it closes when the page under it moves.
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    window.addEventListener("pointerdown", close);
     window.addEventListener("resize", close);
     window.addEventListener("scroll", close, true);
-    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("pointerdown", close);
       window.removeEventListener("resize", close);
       window.removeEventListener("scroll", close, true);
-      window.removeEventListener("keydown", onKeyDown);
     };
   }, [contextMenu]);
 
@@ -152,40 +155,46 @@ export function Sidebar({
           // The repository in use is also the way back from the settings.
           const isActive = item.path === activePath && !settingsOpen;
           return (
-            <Flex
+            <styled.button
               key={item.path}
+              type="button"
               data-repository-path={item.path}
-              role={isActive ? undefined : "button"}
-              tabIndex={isActive ? -1 : 0}
               aria-current={isActive ? "true" : undefined}
+              display="flex"
               alignItems="center"
+              w="full"
+              textAlign="start"
               px="2"
               py="9px"
               borderRadius="lg"
               borderWidth="1px"
               borderColor={isActive ? "accent.border" : "transparent"}
               bg={isActive ? "accent.subtle" : undefined}
+              color="fg.default"
               _hover={{ bg: isActive ? "accent.subtle" : "bg.muted" }}
+              _focusVisible={{
+                outline: "2px solid",
+                outlineColor: "accent.default",
+                outlineOffset: "2px",
+              }}
               cursor={isActive ? "default" : "pointer"}
               title={item.path}
               onContextMenu={(event) => {
                 event.preventDefault();
                 removeTriggerRef.current = event.currentTarget;
+                // The context menu key and Shift+F10 report no pointer position.
+                const rect = event.currentTarget.getBoundingClientRect();
+                const keyboard = event.clientX === 0 && event.clientY === 0;
+                const x = keyboard ? rect.left + 16 : event.clientX;
+                const y = keyboard ? rect.bottom : event.clientY;
                 setContextMenu({
                   repo: item,
-                  x: Math.max(8, Math.min(event.clientX, window.innerWidth - 180)),
-                  y: Math.max(8, Math.min(event.clientY, window.innerHeight - 56)),
+                  x: Math.max(8, Math.min(x, window.innerWidth - 180)),
+                  y: Math.max(8, Math.min(y, window.innerHeight - 56)),
                 });
               }}
               onClick={() => {
                 if (!isActive) void select(item.path ?? "");
-              }}
-              onKeyDown={(event) => {
-                if (isActive) return;
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  void select(item.path ?? "");
-                }
               }}
             >
               <Text
@@ -197,7 +206,7 @@ export function Sidebar({
               >
                 {item.owner ? `${item.owner}/${item.repo}` : item.path}
               </Text>
-            </Flex>
+            </styled.button>
           );
         })}
       </VStack>
@@ -206,6 +215,8 @@ export function Sidebar({
           x={contextMenu.x}
           y={contextMenu.y}
           removing={removingRepository}
+          returnFocusRef={removeTriggerRef}
+          onDismiss={() => setContextMenu(null)}
           onRemove={() => {
             setRepositoryPendingRemoval(contextMenu.repo);
             setContextMenu(null);
@@ -268,35 +279,70 @@ export function Sidebar({
   );
 }
 
+/**
+ * The right-click menu of a repository: a popover at the pointer, so the
+ * browser closes it on Esc and outside clicks. It opens from the context menu
+ * key and Shift+F10 too, with focus on its first item.
+ */
 export function RepositoryContextMenu({
   x,
   y,
   removing,
+  returnFocusRef,
+  onDismiss = () => {},
   onRemove,
 }: {
   x: number;
   y: number;
   removing: boolean;
+  /** Where focus goes when the menu closes without an action. */
+  returnFocusRef?: RefObject<HTMLElement | null>;
+  onDismiss?: () => void;
   onRemove: () => void | Promise<void>;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const handleDismiss = useEffectEvent(() => onDismiss());
+
+  useLayoutEffect(() => {
+    const menu = ref.current;
+    if (!menu) return;
+    const state = { shown: true };
+    menu.showPopover();
+    menu.querySelector("button")?.focus();
+    const onToggle = (event: Event) => {
+      if ((event as ToggleEvent).newState !== "closed") return;
+      state.shown = false;
+      if (menu.contains(document.activeElement) || document.activeElement === document.body) {
+        returnFocusRef?.current?.focus();
+      }
+      handleDismiss();
+    };
+    menu.addEventListener("toggle", onToggle);
+    return () => {
+      menu.removeEventListener("toggle", onToggle);
+      if (state.shown) menu.hidePopover();
+    };
+  }, [returnFocusRef]);
+
   return (
     <Box
-      role="menu"
+      ref={ref}
+      popover="auto"
       aria-label={m.sidebar_repositoryOptions()}
       position="fixed"
+      inset="auto"
+      m="0"
       style={{ left: x, top: y }}
-      zIndex="40"
       minW="168px"
       p="1"
+      color="fg.default"
       bg="bg.surface"
       borderWidth="1px"
       borderColor="border.default"
       borderRadius="lg"
       boxShadow="dropdown"
-      onPointerDown={(event) => event.stopPropagation()}
     >
       <Button
-        role="menuitem"
         type="button"
         variant="ghost"
         w="full"

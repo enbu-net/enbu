@@ -1,8 +1,8 @@
-import { type ReactNode, type RefObject, useEffect, useId, useRef } from "react";
-import { Box, HStack } from "styled-system/jsx";
+import { type ReactNode, type RefObject, useId } from "react";
+import { HStack } from "styled-system/jsx";
 import { Button, Heading, Text } from "./ui";
 import { Trash2 } from "lucide-react";
-import { useFocusTrap } from "../lib/use-focus-trap";
+import { ModalDialog } from "./modal-dialog";
 
 export function ConfirmDeleteDialog({
   open,
@@ -31,73 +31,40 @@ export function ConfirmDeleteDialog({
 }) {
   const titleId = useId();
   const descriptionId = useId();
-  const dialogRef = useRef<HTMLDivElement>(null);
-  useFocusTrap(open, dialogRef, triggerRef);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !loading) onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [loading, onClose, open]);
-
   if (!open) return null;
   return (
-    <Box
-      position="fixed"
-      inset="0"
-      zIndex="60"
-      display="grid"
-      placeItems="center"
-      p="4"
-      bg="bg.backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !loading) onClose();
-      }}
+    <ModalDialog
+      labelledBy={titleId}
+      describedBy={description ? descriptionId : undefined}
+      dismissible={!loading}
+      returnFocusRef={triggerRef}
+      onClose={onClose}
     >
-      <Box
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
-        w="full"
-        maxW="440px"
-        p="5"
-        bg="bg.surface"
-        borderWidth="1px"
-        borderColor="border.default"
-        borderRadius="2xl"
-        boxShadow="xl"
-      >
-        <Heading id={titleId} size="lg" fontWeight="extrabold">
-          {title}
-        </Heading>
-        {description && (
-          <Text id={descriptionId} mt="3" fontSize="sm" color="fg.muted">
-            {description}
-          </Text>
-        )}
-        {children}
-        <HStack justify="end" gap="2" mt="6">
-          <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
-            {cancelLabel}
-          </Button>
-          <Button
-            type="button"
-            bg="status.danger"
-            color="status.dangerFg"
-            loading={loading}
-            aria-label={`${confirmLabel}: ${title}`}
-            onClick={() => void onConfirm()}
-          >
-            <Trash2 size={15} aria-hidden="true" />
-            {confirmLabel}
-          </Button>
-        </HStack>
-      </Box>
-    </Box>
+      <Heading id={titleId} size="lg" fontWeight="extrabold">
+        {title}
+      </Heading>
+      {description && (
+        <Text id={descriptionId} mt="3" fontSize="sm" color="fg.muted">
+          {description}
+        </Text>
+      )}
+      {children}
+      <HStack justify="end" gap="2" mt="6">
+        <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>
+          {cancelLabel}
+        </Button>
+        <Button
+          type="button"
+          bg="status.danger"
+          color="status.dangerFg"
+          loading={loading}
+          aria-label={`${confirmLabel}: ${title}`}
+          onClick={() => void onConfirm()}
+        >
+          <Trash2 size={15} aria-hidden="true" />
+          {confirmLabel}
+        </Button>
+      </HStack>
+    </ModalDialog>
   );
 }

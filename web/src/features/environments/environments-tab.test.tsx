@@ -4,6 +4,7 @@ import { backend } from "../../lib/backend";
 import { createAppError } from "../../lib/app-error";
 import {
   container,
+  openDialog,
   queryButton,
   queryInput,
   renderAndSettle,
@@ -33,7 +34,7 @@ describe("EnvironmentsTab", () => {
 
     await act(async () => queryButton("Rename: staging")?.click());
     typeInto(queryInput("staging"), "preview");
-    const dialog = container.querySelector('[role="dialog"]')!;
+    const dialog = openDialog()!;
     await act(async () => queryButton("Rename", dialog)?.click());
     await settle();
 

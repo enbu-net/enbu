@@ -2,7 +2,15 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
 import type { RepoInfo } from "../../lib/types";
-import { container, queryButton, root, settle, setupDom, withSession } from "../../test/dom";
+import {
+  container,
+  openDialog,
+  queryButton,
+  root,
+  settle,
+  setupDom,
+  withSession,
+} from "../../test/dom";
 import { RepositoryContextMenu, Sidebar } from "./sidebar";
 
 vi.mock("../../lib/backend", async () => ({
@@ -33,10 +41,13 @@ describe("RepositoryContextMenu", () => {
         </>,
       );
     });
-    const menu = container.querySelector<HTMLElement>('[role="menu"]');
-    expect(menu).toBeTruthy();
+    const menu = container.querySelector<HTMLElement>("[popover]");
+    expect(menu?.dataset.popoverOpen).toBe("true");
+    expect(menu?.getAttribute("aria-label")).toBe("Repository options");
     expect(menu?.style.left).toBe("20px");
     expect(menu?.style.top).toBe("30px");
+    // Focus moves into the menu, so the keyboard can use it at once.
+    expect(document.activeElement?.textContent).toContain("Remove");
     act(() => {
       queryButton("Remove")?.click();
     });
@@ -66,14 +77,14 @@ describe("RepositoryContextMenu", () => {
         new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }),
       );
     });
-    const menu = container.querySelector<HTMLElement>('[role="menu"]');
-    expect(menu).toBeTruthy();
+    const menu = container.querySelector<HTMLElement>("[popover]");
+    expect(menu?.dataset.popoverOpen).toBe("true");
     expect(menu?.style.left).toBe("20px");
     expect(menu?.style.top).toBe("20px");
     act(() => {
       queryButton("Remove")?.click();
     });
-    const dialog = document.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     expect(dialog).toBeTruthy();
     expect(dialog?.textContent).toContain("Remove enbu-net/test from enbu?");
     await act(async () => {
@@ -87,31 +98,50 @@ describe("RepositoryContextMenu", () => {
 });
 
 describe("accessibility: sidebar keyboard", () => {
-  it("sidebar repo items have role=button and tabIndex", async () => {
-    vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+  it("lists repositories as buttons, the current one marked", async () => {
+    vi.mocked(backend).listRepositories.mockResolvedValue([
+      repoInfo("/a", "acme", "app"),
+      repoInfo("/b", "acme", "web"),
+    ]);
     act(() => {
       root.render(
         <>{withSession(<Sidebar />, { repo: { selected: true, repo: repoInfo("/b") } })}</>,
       );
     });
     await act(async () => {});
-    const items = container.querySelectorAll('[role="button"]');
-    expect(items.length).toBeGreaterThan(0);
-    const item = items[0] as HTMLElement;
-    expect(item.getAttribute("tabindex")).toBe("0");
+    const rows = container.querySelectorAll<HTMLButtonElement>("button[data-repository-path]");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].getAttribute("aria-current")).toBeNull();
+    expect(rows[1].getAttribute("aria-current")).toBe("true");
     const selectRepository = vi.mocked(backend).selectRepository;
     selectRepository.mockClear();
     await act(async () => {
-      item.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      rows[0].click();
       await Promise.resolve();
     });
     expect(selectRepository).toHaveBeenLastCalledWith("/a");
-    selectRepository.mockClear();
-    await act(async () => {
-      item.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
-      await Promise.resolve();
+  });
+
+  it("opens the menu from the keyboard below the focused repository", async () => {
+    vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    act(() => {
+      root.render(<>{withSession(<Sidebar />)}</>);
     });
-    expect(selectRepository).toHaveBeenLastCalledWith("/a");
+    await act(async () => {});
+    const row = container.querySelector<HTMLButtonElement>("button[data-repository-path]");
+    // The context menu key and Shift+F10 report no pointer position.
+    act(() => {
+      row?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 0, clientY: 0 }));
+    });
+    const menu = container.querySelector<HTMLElement>("[popover]");
+    expect(menu?.dataset.popoverOpen).toBe("true");
+    expect(menu?.style.left).toBe("16px");
+    expect(document.activeElement?.textContent).toContain("Remove");
+
+    // Esc (the browser hides the popover) closes it and returns focus to the row.
+    act(() => menu?.hidePopover());
+    expect(container.querySelector("[popover]")).toBeNull();
+    expect(document.activeElement).toBe(row);
   });
 });
 

@@ -113,7 +113,8 @@ export function TomlCodeEditor({
   return (
     <Box overflow="hidden" borderWidth="1px" borderColor="editor.border" borderRadius="lg" bg="editor.bg">
       <Flex
-        h="40px"
+        h="auto"
+        minH="40px"
         align="center"
         justify="space-between"
         px="3.5"

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Download, Plus } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
 import { Button, Input, Spinner, Text } from "../../components/ui";
@@ -266,6 +266,8 @@ function AddSecretForm({
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [loading, setLoading] = useState(false);
+  const keyId = useId();
+  const valueId = useId();
 
   async function submit() {
     const trimmedKey = key.trim();
@@ -295,6 +297,7 @@ function AddSecretForm({
         md: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
       }}
       gap="2"
+      alignItems="end"
       bg="bg.muted"
       borderRadius="lg"
       onSubmit={(event) => {
@@ -302,22 +305,32 @@ function AddSecretForm({
         void submit();
       }}
     >
-      <Input
-        aria-label={m.dashboard_key()}
-        placeholder={m.dashboard_key()}
-        autoComplete="off"
-        spellCheck={false}
-        value={key}
-        onChange={(event) => setKey(event.target.value)}
-      />
-      <Input
-        aria-label={m.dashboard_value()}
-        placeholder={m.dashboard_value()}
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-      />
+      <Box>
+        <styled.label htmlFor={keyId} display="block" mb="1" fontSize="xs" fontWeight="semibold">
+          {m.dashboard_key()}
+        </styled.label>
+        <Input
+          id={keyId}
+          name="key"
+          autoComplete="off"
+          spellCheck={false}
+          value={key}
+          onChange={(event) => setKey(event.target.value)}
+        />
+      </Box>
+      <Box>
+        <styled.label htmlFor={valueId} display="block" mb="1" fontSize="xs" fontWeight="semibold">
+          {m.dashboard_value()}
+        </styled.label>
+        <Input
+          id={valueId}
+          name="value"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+      </Box>
       <Button type="submit" colorPalette="accent" loading={loading} disabled={!key.trim()}>
         <Plus size={15} />
         {m.dashboard_add()}

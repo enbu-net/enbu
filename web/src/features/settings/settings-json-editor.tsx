@@ -110,7 +110,8 @@ export function SettingsJsonEditor({
       bg="editor.bg"
     >
       <Flex
-        h="40px"
+        h="auto"
+        minH="40px"
         align="center"
         px="3.5"
         color="editor.muted"

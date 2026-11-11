@@ -50,13 +50,14 @@ export function OAuthLoginPanel({
             bg="accent.default"
             color="accent.fg"
             fontWeight="semibold"
-            h="38px"
+            h="auto"
+            minH="38px"
             onClick={onRetry}
           >
             {m.auth_tryAgain()}
           </Button>
         ) : (
-          <Button variant="ghost" h="38px" color="fg.muted" onClick={onCancel}>
+          <Button variant="ghost" h="auto" minH="38px" color="fg.muted" onClick={onCancel}>
             {m.auth_cancel()}
           </Button>
         )}

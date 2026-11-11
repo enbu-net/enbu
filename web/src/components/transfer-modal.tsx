@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { User, Cloud, Lock, KeyRound, CheckCircle2, AlertCircle } from "lucide-react";
 import { Box, HStack, VStack } from "../../styled-system/jsx";
 import { Button, Text } from "./ui";
-import { useFocusTrap } from "../lib/use-focus-trap";
+import { ModalDialog } from "./modal-dialog";
 import { formatDisplayError, type DisplayError } from "../lib/app-error";
 import { onProgress } from "../lib/platform";
 import type { ProgressStep } from "../lib/types";
@@ -37,10 +37,8 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
   const [currentStep, setCurrentStep] = useState<ProgressStep | null>(null);
   const [isDone, setIsDone] = useState(false);
   const isDoneRef = useRef(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   isDoneRef.current = isDone;
-  useFocusTrap(open, dialogRef);
 
   // Shows the backend's progress events; without them, steps the operation
   // usually goes through.
@@ -92,15 +90,6 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
     };
   }, [open, operation]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose, open]);
-
   if (!open || !operation) return null;
 
   const stepType = currentStep?.step;
@@ -128,35 +117,8 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
     : m.common_loading();
 
   return (
-    <Box
-      position="fixed"
-      inset="0"
-      zIndex="1000"
-      bg="bg.backdrop"
-      backdropFilter="blur(4px)"
-      display="flex"
-      alignItems="center"
-      justifyContent="center"
-      p="4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-    >
-      <Box
-        ref={dialogRef}
-        bg="bg.surface"
-        borderWidth="1px"
-        borderColor="border.default"
-        borderRadius="2xl"
-        p="6"
-        maxW="480px"
-        w="100%"
-        boxShadow="2xl"
-        display="flex"
-        flexDirection="column"
-        alignItems="center"
-        gap="6"
-      >
+    <ModalDialog labelledBy={titleId} wide blur onClose={onClose}>
+      <Box display="flex" flexDirection="column" alignItems="center" gap="6">
         {/* Header */}
         <HStack justify="space-between" w="100%" px="2">
           <Text id={titleId} fontSize="sm" fontWeight="extrabold" textTransform="uppercase" letterSpacing="wider" color="fg.muted">
@@ -334,6 +296,6 @@ export function TransferModal({ open, operation, error, onClose }: TransferModal
           }
         `}</style>
       </Box>
-    </Box>
+    </ModalDialog>
   );
 }

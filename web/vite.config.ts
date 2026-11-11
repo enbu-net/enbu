@@ -72,6 +72,8 @@ export default defineConfig(({ mode }) => ({
       "enbu/no-direct-wails-binding": "error",
       "enbu/no-error-alert-message": "error",
       "enbu/no-raw-error-display": "error",
+      "enbu/no-px-font-size": "error",
+      "enbu/prefer-native-element": "error",
       "react/rules-of-hooks": "error",
       "react/only-export-components": "off",
       "typescript/no-floating-promises": "error",
@@ -126,7 +128,7 @@ export default defineConfig(({ mode }) => ({
   },
   test: {
     environment: "jsdom",
-    setupFiles: ["src/test/teardown.ts"],
+    setupFiles: ["src/test/dom-polyfills.ts", "src/test/teardown.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "../.tmp/coverage/frontend",

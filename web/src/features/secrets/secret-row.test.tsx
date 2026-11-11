@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { clipboardWrite, container, queryButton, queryInput, root, setupDom } from "../../test/dom";
+import {
+  clipboardWrite,
+  container,
+  openDialog,
+  queryButton,
+  queryInput,
+  root,
+  setupDom,
+} from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
 // Secret values go through the host's clipboard; here that is the page's.
@@ -66,7 +74,7 @@ describe("SecretRow", () => {
       queryButton("Delete")?.click();
     });
     expect(onDelete).not.toHaveBeenCalled();
-    const dialog = document.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     expect(dialog?.textContent).toContain("Delete API_KEY?");
     await act(async () => {
       dialog?.querySelector<HTMLButtonElement>('button[aria-label^="Delete:"]')?.click();
@@ -82,14 +90,16 @@ describe("SecretRow", () => {
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("API_KEY");
-    expect(queryButton("Key copied")).toBeTruthy();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Key copied");
 
     await act(async () => {
       queryButton("Copy value")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("super-secret");
-    expect(queryButton("Value copied")).toBeTruthy();
+    // The buttons keep their names; the status message says what was copied.
+    expect(queryButton("Copy value")).toBeTruthy();
+    expect(container.querySelector('[role="status"]')?.textContent).toBe("Value copied");
   });
 
   it("renders the secret key as a monospace label", () => {

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { displayError, type DisplayError } from "../lib/app-error";
 import type { ProgressStep } from "../lib/types";
 import { TransferModal } from "./transfer-modal";
+import { openDialog, pressEscape } from "../test/dom";
 
 const progress = vi.hoisted(() => {
   const listeners = new Set<(step: ProgressStep) => void>();
@@ -89,14 +90,14 @@ describe("TransferModal", () => {
 
   it("exposes dialog semantics and dismisses errors by button or Escape", () => {
     renderModal(displayError("internal"));
-    const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog?.getAttribute("aria-modal")).toBe("true");
+    const dialog = openDialog();
+    expect(dialog?.dataset.modal).toBe("true");
     expect(dialog?.getAttribute("aria-labelledby")).toBeTruthy();
     expect(container.textContent).toContain("An unexpected error occurred");
 
     act(() => container.querySelector<HTMLButtonElement>("button")?.click());
     expect(onClose).toHaveBeenCalledTimes(1);
-    void act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    act(() => pressEscape());
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

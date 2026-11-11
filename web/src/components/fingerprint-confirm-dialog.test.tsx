@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { createRoot } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { FingerprintConfirmDialog } from "./fingerprint-confirm-dialog";
+import { clickBackdrop, openDialog, pressEscape } from "../test/dom";
 
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -46,13 +47,13 @@ const confirmButton = () =>
 describe("FingerprintConfirmDialog", () => {
   it("renders nothing while closed", () => {
     renderDialog({ open: false });
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(openDialog()).toBeNull();
   });
 
   it("shows the fingerprint to compare and labels the dialog", () => {
     renderDialog();
-    const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog?.getAttribute("aria-modal")).toBe("true");
+    const dialog = openDialog();
+    expect(dialog?.dataset.modal).toBe("true");
     expect(container.querySelector('[data-testid="fingerprint"]')?.textContent).toBe(
       "1111-2222-3333-4444-5555",
     );
@@ -73,16 +74,14 @@ describe("FingerprintConfirmDialog", () => {
 
   it("closes on Escape unless an action is running", () => {
     const { onClose } = renderDialog();
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
+    act(() => pressEscape());
     expect(onClose).toHaveBeenCalledTimes(1);
 
+    renderDialog({ open: false });
     const busy = renderDialog({ loading: true });
-    act(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    });
+    act(() => pressEscape());
     expect(busy.onClose).not.toHaveBeenCalled();
+    expect(openDialog()).toBeTruthy();
   });
 
   it("forgets the acknowledgement when it is closed and reopened", () => {
@@ -97,7 +96,7 @@ describe("FingerprintConfirmDialog", () => {
 
   it("describes itself with the warning so screen readers read it", () => {
     renderDialog();
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     const describedBy = dialog?.getAttribute("aria-describedby");
     expect(describedBy).toBeTruthy();
     expect(container.querySelector(`[id="${describedBy ?? ""}"]`)?.textContent).toContain(
@@ -113,21 +112,15 @@ describe("FingerprintConfirmDialog", () => {
     act(() => cancel?.click());
     expect(first.onClose).toHaveBeenCalledTimes(1);
 
+    renderDialog({ open: false });
     const second = renderDialog();
-    const backdrop = container.querySelector('[role="dialog"]')?.parentElement;
-    act(() => {
-      backdrop?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    });
+    act(() => clickBackdrop());
     expect(second.onClose).toHaveBeenCalledTimes(1);
   });
 
   it("ignores a click inside the dialog", () => {
     const { onClose } = renderDialog();
-    act(() => {
-      container
-        .querySelector('[role="dialog"]')
-        ?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    });
+    act(() => clickBackdrop({ x: 0, y: 0 }));
     expect(onClose).not.toHaveBeenCalled();
   });
 
@@ -136,10 +129,7 @@ describe("FingerprintConfirmDialog", () => {
     const buttons = Array.from(container.querySelectorAll("button"));
     expect(buttons.every((b) => b.hasAttribute("disabled"))).toBe(true);
     expect(container.querySelector<HTMLInputElement>('input[type="checkbox"]')?.disabled).toBe(true);
-    const backdrop = container.querySelector('[role="dialog"]')?.parentElement;
-    act(() => {
-      backdrop?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    });
+    act(() => clickBackdrop());
     expect(onClose).not.toHaveBeenCalled();
     expect(onConfirm).not.toHaveBeenCalled();
   });

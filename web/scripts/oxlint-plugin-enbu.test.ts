@@ -99,4 +99,43 @@ describe("enbu Oxlint rules", () => {
 
     expect(report).toHaveBeenCalledOnce();
   });
+
+  it("prefers native elements to widget roles and aria-modal", () => {
+    const { report, visitors } = visitorsFor("prefer-native-element");
+    const attribute = (name: string, value?: unknown) => ({
+      type: "JSXAttribute",
+      name: { type: "JSXIdentifier", name },
+      value,
+    });
+    const literal = (value: string) => ({ type: "Literal", value });
+    visitors.JSXOpeningElement({ attributes: [attribute("role", literal("button"))] });
+    visitors.JSXOpeningElement({
+      attributes: [
+        attribute("role", { type: "JSXExpressionContainer", expression: literal("dialog") }),
+        attribute("aria-modal", literal("true")),
+      ],
+    });
+    visitors.JSXOpeningElement({ attributes: [attribute("role", literal("status"))] });
+    visitors.JSXOpeningElement({ attributes: [attribute("role", literal("tab"))] });
+
+    expect(report).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects px font sizes in JSX props and style objects", () => {
+    const { report, visitors } = visitorsFor("no-px-font-size");
+    const attribute = (value: string) => ({
+      type: "JSXAttribute",
+      name: { type: "JSXIdentifier", name: "fontSize" },
+      value: { type: "Literal", value },
+    });
+    visitors.JSXOpeningElement({ attributes: [attribute("14px")] });
+    visitors.JSXOpeningElement({ attributes: [attribute("sm")] });
+    visitors.Property({
+      key: { type: "Identifier", name: "fontSize" },
+      value: { value: "12.5px" },
+    });
+    visitors.Property({ key: { type: "Literal", value: "font-size" }, value: { value: "1rem" } });
+
+    expect(report).toHaveBeenCalledTimes(2);
+  });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { createAppError, displayError } from "../../lib/app-error";
-import { container, queryButton, root, setupDom } from "../../test/dom";
+import { container, openDialog, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
 
 setupDom();
@@ -169,7 +169,7 @@ describe("MembersPanel approval", () => {
     renderPanel({ onApprove });
     act(() => queryButton("Approve")?.click());
 
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     expect(dialog?.querySelector('[data-testid="fingerprint"]')?.textContent).toBe(
       request.fingerprint,
     );
@@ -190,7 +190,7 @@ describe("MembersPanel approval", () => {
       await Promise.resolve();
     });
     expect(onApprove).toHaveBeenCalledWith(request.device_id);
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(openDialog()).toBeNull();
   });
 
   it("can be cancelled without approving", () => {
@@ -198,7 +198,7 @@ describe("MembersPanel approval", () => {
     renderPanel({ onApprove });
     act(() => queryButton("Approve")?.click());
     act(() => queryButton("Cancel")?.click());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(openDialog()).toBeNull();
     expect(onApprove).not.toHaveBeenCalled();
   });
 
@@ -212,7 +212,7 @@ describe("MembersPanel approval", () => {
     expect(onRemove).not.toHaveBeenCalled();
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label^="Remove:"]')
+        .querySelector<HTMLButtonElement>('dialog[open] button[aria-label^="Remove:"]')
         ?.click();
       await Promise.resolve();
     });
@@ -226,7 +226,7 @@ describe("MembersPanel approval", () => {
       },
     });
     act(() => queryButton("Approve")?.click());
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     await act(async () => {
       dialog?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click();
     });
@@ -291,7 +291,7 @@ describe("MembersPanel removal", () => {
         )
         ?.click(),
     );
-    const dialog = container.querySelector('[role="dialog"]');
+    const dialog = openDialog();
     expect(dialog?.textContent).toContain("Rotate secrets it has already read.");
     const describedBy = dialog?.getAttribute("aria-describedby");
     expect(container.querySelector(`[id="${describedBy ?? ""}"]`)?.textContent).toContain("Rotate");
@@ -329,7 +329,7 @@ describe("MembersPanel admin rights", () => {
     renderPanel({ onSetAdmin });
     act(() => queryButton(`Make admin: ${other.fingerprint}`)?.click());
 
-    const dialog = container.querySelector('[role="dialog"]')!;
+    const dialog = openDialog()!;
     expect(dialog.querySelector('[data-testid="fingerprint"]')?.textContent).toBe(
       other.fingerprint,
     );

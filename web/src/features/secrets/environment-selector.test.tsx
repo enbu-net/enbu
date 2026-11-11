@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { container, queryButton, root, setupDom } from "../../test/dom";
+import { container, openDialog, queryButton, root, setupDom } from "../../test/dom";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
 
 setupDom();
@@ -72,7 +72,7 @@ describe("environment selector", () => {
         </>,
       );
     });
-    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+    expect(openDialog()).toBeTruthy();
     act(() => {
       queryButton("Create")?.click();
     });
@@ -81,7 +81,7 @@ describe("environment selector", () => {
 });
 
 describe("accessibility: EnvironmentNameModal focus", () => {
-  it("dialog has aria-modal and aria-labelledby", () => {
+  it("opens as a modal dialog named by its title", () => {
     act(() => {
       root.render(
         <>
@@ -96,8 +96,8 @@ describe("accessibility: EnvironmentNameModal focus", () => {
         </>,
       );
     });
-    const dialog = container.querySelector('[role="dialog"]');
-    expect(dialog?.getAttribute("aria-modal")).toBe("true");
+    const dialog = openDialog();
+    expect(dialog?.dataset.modal).toBe("true");
     expect(dialog?.getAttribute("aria-labelledby")).toBeTruthy();
     const titleId = dialog?.getAttribute("aria-labelledby");
     expect(container.querySelector(`[id="${titleId ?? ""}"]`)).toBeTruthy();
