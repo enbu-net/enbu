@@ -15,7 +15,7 @@ const selectClass = css({
   w: 'full',
   h: '8',
   borderWidth: '1px',
-  borderColor: 'border.default',
+  borderColor: 'border.strong',
   borderRadius: 'md',
   ps: '3',
   // Room for the chevron, which shows that this opens a list.
@@ -26,7 +26,7 @@ const selectClass = css({
   outline: 'none',
   cursor: 'pointer',
   _focus: { borderColor: 'colorPalette.8', outlineWidth: '1px', outlineColor: 'colorPalette.8' },
-  _hover: { borderColor: 'border.strong' },
+  _hover: { borderColor: 'fg.muted' },
 })
 
 const chevronClass = css({

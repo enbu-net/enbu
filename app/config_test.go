@@ -151,3 +151,32 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 		t.Fatalf("WriteConfig over an old version = %v", err)
 	}
 }
+
+func TestWriteConfigIgnoresACustomOutput(t *testing.T) {
+	dir := t.TempDir()
+	a := &App{RepositoryDir: dir}
+	if err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"config/dev.env\"\n"); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil || !strings.Contains(string(data), "config/dev.env") {
+		t.Fatalf(".gitignore = %q, %v", data, err)
+	}
+}
+
+func TestWriteConfigSavesBeforeReportingAGitignoreFailure(t *testing.T) {
+	dir := t.TempDir()
+	// A directory where .gitignore should be cannot be appended to.
+	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{RepositoryDir: dir}
+	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"dev.env\"\n"
+	if err := a.WriteConfig(content); err == nil {
+		t.Fatal("a .gitignore that could not be updated was not reported")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
+	if err != nil || string(data) != content {
+		t.Fatalf("enbu.toml = %q, %v", data, err)
+	}
+}

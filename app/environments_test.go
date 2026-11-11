@@ -104,7 +104,7 @@ output = ".env.dev"
 	}
 
 	a := &App{RepositoryDir: dir}
-	err := a.DeleteEnvironment("dev")
+	_, err := a.DeleteEnvironment(bg, "dev", false)
 	if !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("DeleteEnvironment error = %v, want %q", err, apperr.CodeInvalidArgument)
 	}
@@ -177,7 +177,7 @@ output = ".env.staging"
 	if current, _ := a.CurrentEnvironment(); current != "stage" {
 		t.Fatalf("current after rename = %q", current)
 	}
-	if err := a.DeleteEnvironment("stage"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := a.DeleteEnvironment(bg, "stage", false); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("deleting the current environment: %v", err)
 	}
 	// Another person sharing enbu.toml still works in the team default.

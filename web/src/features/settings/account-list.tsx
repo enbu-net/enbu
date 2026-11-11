@@ -184,7 +184,7 @@ export function AccountList() {
                       aria-label={`${m.settings_use()}: ${account}`}
                       disabled={busy !== ""}
                       loading={busy === account}
-                      onClick={() => void act(account, () => backend.switchAccount(account))}
+                      onClick={() => void act(account, () => backend.SwitchAccount(account))}
                     >
                       {m.settings_use()}
                     </Button>
@@ -195,7 +195,7 @@ export function AccountList() {
                       variant="outline"
                       aria-label={`${m.auth_logout()}: ${account}`}
                       disabled={busy !== ""}
-                      onClick={() => void act(account, () => backend.logout(account))}
+                      onClick={() => void act(account, () => backend.Logout(account))}
                     >
                       {m.auth_logout()}
                     </Button>

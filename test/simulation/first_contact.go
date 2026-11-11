@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -109,7 +110,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	if err := config.SaveProjectTo(adversary.App.RepositoryDir, &badConfig); err != nil {
 		return err
 	}
-	r, err := adversary.App.InitializeRepository(ctx)
+	r, err := adversary.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || r.Pending || r.ControlGenesis != string(root) {
 		return fmt.Errorf("attacker initialization: %v", err)
 	}
@@ -161,7 +162,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		}
 		newcomer = w.Devices[verified]
 		start := len(w.Tape.Recording.Entries)
-		result, err := newcomer.App.InitializeRepository(ctx)
+		result, err := newcomer.App.InitializeRepository(ctx, app.InitOptions{})
 		if e := requireCode(err, code); e != nil || result != nil {
 			return fmt.Errorf("verified invitation accepted substituted genesis: %v", err)
 		}
@@ -189,7 +190,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		}
 	}
 	newcomer.Store.Store = legitimate
-	r, err = newcomer.App.InitializeRepository(ctx)
+	r, err = newcomer.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || !r.Pending || r.Founded || r.KeyCreated || r.ControlGenesis != cfg.ControlGenesis || r.ReplacedGenesis != "" || r.DeviceID != firstID || r.PublicKey != firstRecipient {
 		return fmt.Errorf("verified newcomer recovery: %v", err)
 	}
@@ -204,7 +205,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	if err := config.SaveProjectTo(victim.App.RepositoryDir, &badConfig); err != nil {
 		return err
 	}
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || !r.Pending || r.ControlGenesis != string(root) {
 		return fmt.Errorf("malicious first-invitation contract: %v", err)
 	}
@@ -238,7 +239,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		return err
 	}
 	start := len(w.Tape.Recording.Entries)
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{})
 	if e := requireCode(err, apperr.CodeTrustRootChanged); e != nil || r != nil {
 		return fmt.Errorf("correcting an unverified invitation silently replaced its pin: %v", err)
 	}
@@ -260,8 +261,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	}
 	// Explicit root confirmation changes trust, never membership. Old authority
 	// at the attacker's root cannot approve access to the legitimate team.
-	victim.App.AcceptNewGenesis = true
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{AcceptNewGenesis: true})
 	if err != nil || r == nil || !r.Pending || r.ReplacedGenesis != string(root) || r.DeviceID != victim.ID {
 		return fmt.Errorf("explicit invitation repair: %v", err)
 	}

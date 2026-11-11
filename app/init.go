@@ -3,17 +3,19 @@ package app
 import (
 	"context"
 	"errors"
-	agecrypto "filippo.io/age"
 	"fmt"
+	"regexp"
+	"strings"
+	"uuid"
+
+	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
-	"regexp"
-	"strings"
-	"uuid"
 )
 
 type InitResult struct {
@@ -41,30 +43,55 @@ type InitResult struct {
 	Warnings        []string `json:"-"`
 }
 
-func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err error) {
+// InitOptions are what `enbu init` takes besides the repository.
+type InitOptions struct {
+	// Storage is where to found the workspace, with the options enbu.toml
+	// keeps for it. Nil keeps enbu.toml's storage, or DefaultStorageURL's.
+	Storage *config.StorageConfig
+	// AcceptNewGenesis replaces the genesis this device pinned for the
+	// workspace with the one enbu.toml names. Only a person who confirmed the
+	// workspace was re-founded sets it.
+	AcceptNewGenesis bool
+}
+
+// InitializeRepository sets this device up in the repository: it founds a
+// workspace, or joins the one enbu.toml names, and keeps the files a pull
+// writes out of Git.
+func (a *App) InitializeRepository(ctx context.Context, opts InitOptions) (result *InitResult, err error) {
 	defer apperr.NormalizeInto(&err)
+	result, cfg, err := a.initializeRepository(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.ensureGitignore(cfg); err != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to update .gitignore: %v", err))
+	}
+	return result, nil
+}
+
+func (a *App) initializeRepository(ctx context.Context, opts InitOptions) (*InitResult, *config.ProjectConfig, error) {
 	cfg, err := a.loadProject()
 	missing := apperr.Is(err, apperr.CodeConfigNotFound)
 	if err != nil && !missing {
-		return nil, err
+		return nil, nil, err
 	}
 	if missing {
 		cfg = a.newProject(DefaultEnvironment)
 	}
-	if a.InitStorage != nil {
-		cfg.Storage = *a.InitStorage
+	if opts.Storage != nil {
+		cfg.Storage = *opts.Storage
 	}
 	if a.StorageURL != "" {
 		cfg.Storage.URL = a.StorageURL
 	}
 	if cfg.Storage.URL == "" {
 		if cfg.Storage.URL, err = a.DefaultStorageURL(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	store, err := a.openStorage(ctx, cfg)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if missing {
 		// A fresh repository founds a new workspace. Joining an existing one needs
@@ -75,31 +102,31 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		}
 	}
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
-		return nil, fmt.Errorf("invalid workspace ID: %w", err)
+		return nil, nil, fmt.Errorf("invalid workspace ID: %w", err)
 	}
 	// Save the workspace binding before registration, so a failed registration
 	// retries the same local identity rather than generating another key.
 	if err := a.saveProject(cfg); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	id, info, warning, err := a.Identities.Create(cfg.WorkspaceID)
 	if err != nil {
-		return nil, identityError(err)
+		return nil, nil, identityError(err)
 	}
 	defer func() { _ = id.Close() }()
 	signer, _, signerWarning, err := a.Identities.CreateSigner(cfg.WorkspaceID)
 	if err != nil {
-		return nil, identityError(err)
+		return nil, nil, identityError(err)
 	}
 	defer func() { _ = signer.Close() }()
 	publicKey := id.Recipient().String()
 	device := signer.Public().DeviceID()
 
-	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID, ids: []agecrypto.Identity{id}, signer: signer, acceptNewGenesis: a.AcceptNewGenesis}
+	s := &session{app: a, store: store, cfg: cfg, workspace: cfg.WorkspaceID, ids: []agecrypto.Identity{id}, signer: signer, acceptNewGenesis: opts.AcceptNewGenesis}
 	if err := a.ensureControl(ctx, s, wsp.Principal{ID: device, Signing: signer.Public(), Recipient: publicKey, Admin: true}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	result = &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL,
+	result := &InitResult{PublicKey: publicKey, Username: publicKey, Environment: cfg.CurrentEnvironment(), WorkspaceID: cfg.WorkspaceID, Storage: cfg.Storage.URL,
 		KeyCreated: info.Created, Mode: "initialize", Founded: s.founded, DeviceID: string(device), Fingerprint: device.Fingerprint(),
 		ControlGenesis: cfg.ControlGenesis, ReplacedGenesis: string(s.replaced.Genesis)}
 	for _, w := range []string{warning, signerWarning} {
@@ -118,27 +145,27 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 		// Never choose a request by its untrusted listing order or timestamp.
 		requests, err := wsp.ListJoinRequests(ctx, store, cfg.WorkspaceID)
 		if err != nil {
-			return nil, wspError(err)
+			return nil, nil, wspError(err)
 		}
 		for _, request := range requests {
 			if request.DeviceID() == device && request.Replaces == "" && request.Recipient != publicKey {
 				if err := store.Delete(ctx, storage.KindRequest, "", request.Rev); err != nil && !errors.Is(err, storage.ErrUnsupported) && !errors.Is(err, storage.ErrNotFound) {
-					return nil, storageError(err)
+					return nil, nil, storageError(err)
 				}
 			}
 		}
 		blob, err := wsp.NewJoinRequest(cfg.WorkspaceID, publicKey, a.now(), signer)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if _, err := wsp.PublishJoinRequest(ctx, store, blob); err != nil {
-			return nil, storageError(err)
+			return nil, nil, storageError(err)
 		}
 		result.Mode, result.Pending = "join", true
 		if revs, err := store.Discover(ctx, storage.KindState, storage.StateScope(cfg.WorkspaceID, resource)); err == nil && len(revs) > 0 {
 			result.HasSecrets = true
 		}
-		return result, nil
+		return result, cfg, nil
 	}
 	_, err = s.readResource(ctx, s.resource(cfg.CurrentEnvironment()), nil, true)
 	switch {
@@ -149,12 +176,12 @@ func (a *App) InitializeRepository(ctx context.Context) (result *InitResult, err
 	default:
 		var noMatch *agecrypto.NoIdentityMatchError
 		if !errors.As(err, &noMatch) {
-			return nil, err
+			return nil, nil, err
 		}
 		result.Mode, result.HasSecrets = "join", true
 		result.CanDecrypt = new(false)
 	}
-	return result, nil
+	return result, cfg, nil
 }
 
 // DefaultStorageURL is the storage a new workspace gets when none is given:

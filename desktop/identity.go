@@ -4,8 +4,6 @@ import (
 	"log/slog"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/enbu-net/enbu/pkg/identity"
 )
 
@@ -60,11 +58,7 @@ func (s *Service) UpgradeIdentity() (app.KeyUpdateResult, error) {
 // `enbu import` does. The frontend reads the file the person chose.
 func (s *Service) ImportSecrets(env, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
-		secrets, err := dotenv.Parse([]byte(content))
-		if err != nil {
-			return app.ImportResult{}, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file", err, nil)
-		}
-		result, err := s.app.ImportSecrets(s.context(), env, secrets, overwrite)
+		result, err := s.app.ImportDotenv(s.context(), env, []byte(content), overwrite)
 		if err != nil {
 			return app.ImportResult{}, err
 		}

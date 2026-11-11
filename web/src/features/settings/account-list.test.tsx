@@ -79,13 +79,13 @@ describe("AccountList", () => {
     });
     await act(async () => queryButton("Use: hubot")?.click());
     await settle();
-    expect(backend.switchAccount).toHaveBeenCalledWith("hubot");
+    expect(backend.SwitchAccount).toHaveBeenCalledWith("hubot");
     expect(refresh).toHaveBeenCalledWith({ force: true, invalidate: true });
     expect(reloadRepo).toHaveBeenCalled();
   });
 
   it("signs out one account and shows why it failed", async () => {
-    vi.mocked(backend).logout.mockRejectedValueOnce({ code: "keyring_locked" });
+    vi.mocked(backend).Logout.mockRejectedValueOnce({ code: "keyring_locked" });
     await renderList({
       status: {
         authenticated: true,
@@ -96,7 +96,7 @@ describe("AccountList", () => {
     });
     await act(async () => queryButton("Log out: hubot")?.click());
     await settle();
-    expect(backend.logout).toHaveBeenCalledWith("hubot");
+    expect(backend.Logout).toHaveBeenCalledWith("hubot");
     expect(container.textContent).toContain("The OS keyring is locked.");
   });
 

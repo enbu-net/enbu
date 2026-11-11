@@ -1,5 +1,6 @@
 import { type RefObject, useEffect, useId, useRef, useState } from "react";
 import { Box, HStack } from "styled-system/jsx";
+import { hstack } from "styled-system/patterns";
 import { UserCheck } from "lucide-react";
 import { Button, Heading, Text } from "./ui";
 import { useFocusTrap } from "../lib/use-focus-trap";
@@ -101,16 +102,14 @@ export function FingerprintConfirmDialog({
         <Text id={warningId} mt="3" fontSize="sm" color="fg.muted">
           {warning}
         </Text>
-        <label>
-          <HStack mt="4" gap="2" alignItems="start">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              disabled={loading}
-              onChange={(event) => setAcknowledged(event.target.checked)}
-            />
-            <Text fontSize="sm">{acknowledgeLabel}</Text>
-          </HStack>
+        <label className={hstack({ mt: "4", gap: "2", alignItems: "start", fontSize: "sm" })}>
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            disabled={loading}
+            onChange={(event) => setAcknowledged(event.target.checked)}
+          />
+          {acknowledgeLabel}
         </label>
         <HStack justify="end" gap="2" mt="6">
           <Button type="button" variant="ghost" disabled={loading} onClick={onClose}>

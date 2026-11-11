@@ -3,7 +3,7 @@ import { Check, ChevronDown, Layers3, Plus, X } from "lucide-react";
 import { Box, Flex, HStack, VStack, styled } from "styled-system/jsx";
 import { Button, Heading, Input, Popover, Text } from "../../components/ui";
 import { useFocusTrap } from "../../lib/use-focus-trap";
-import type { Environment } from "../../lib/types";
+import type { EnvInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 export function EnvironmentSelector({
@@ -13,7 +13,7 @@ export function EnvironmentSelector({
   onSelect,
   onAdd,
 }: {
-  environments: Environment[];
+  environments: EnvInfo[];
   value: string;
   addTriggerRef?: RefObject<HTMLButtonElement | null>;
   onSelect: (environment: string) => void | Promise<void>;
@@ -35,7 +35,7 @@ export function EnvironmentSelector({
             borderRadius="lg"
             fontSize="lg"
             fontWeight="extrabold"
-            aria-label={m.dashboard_currentEnvironment()}
+            aria-label={`${m.dashboard_currentEnvironment()}: ${value}`}
           >
             <Layers3 size={16} />
             {value}
@@ -64,6 +64,9 @@ export function EnvironmentSelector({
                       justifyContent="space-between"
                       color="fg.default"
                       bg={selected ? "accent.subtle" : undefined}
+                      // Ark names every close trigger "close"; keep the visible name.
+                      aria-label={environment.name}
+                      aria-current={selected ? "true" : undefined}
                       onClick={() => void onSelect(environment.name)}
                     >
                       <HStack gap="2">
@@ -82,7 +85,8 @@ export function EnvironmentSelector({
                   variant="ghost"
                   w="full"
                   justifyContent="start"
-                  color="accent.default"
+                  color="accent.text"
+                  aria-label={m.dashboard_addEnvironment()}
                   onClick={onAdd}
                 >
                   <Plus size={15} />

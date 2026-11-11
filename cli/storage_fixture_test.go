@@ -119,7 +119,7 @@ func bootstrapCLIApp(t *testing.T, a *app.App, store storage.Store) *stateRecord
 	a.Storage = storagetest.Wrap(store, rec.hooks())
 	a.CheckpointDir = t.TempDir()
 	prepareCLIApp(t, a)
-	if _, err := a.InitializeRepository(context.Background()); err != nil {
+	if _, err := a.InitializeRepository(context.Background(), app.InitOptions{}); err != nil {
 		t.Fatalf("initialize workspace: %v", err)
 	}
 	rec.reset()

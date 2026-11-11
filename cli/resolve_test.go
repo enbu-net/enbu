@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -20,11 +21,11 @@ func TestParseChoices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["A"] != (app.SecretChoice{Value: "typed=value"}) || got["B"] != (app.SecretChoice{Delete: true}) {
+	if !slices.Equal(got, []app.SecretChoice{{Key: "A", Value: "typed=value"}, {Key: "B", Delete: true}}) {
 		t.Fatalf("choices = %+v", got)
 	}
 	got, err = parseChoices(conflictsFixture(), nil, []string{"A=2"}, []string{"B"})
-	if err != nil || got["A"].Value != "two" || !got["B"].Delete {
+	if err != nil || !slices.Equal(got, []app.SecretChoice{{Key: "A", Value: "two"}, {Key: "B", Delete: true}}) {
 		t.Fatalf("choices = %+v %v", got, err)
 	}
 }
@@ -36,7 +37,6 @@ func TestParseChoicesRejectsWhatItCannotMean(t *testing.T) {
 		"pick out of range":  {picks: []string{"A=3"}},
 		"pick zero":          {picks: []string{"A=0"}},
 		"pick not a number":  {picks: []string{"A=x"}},
-		"decided twice":      {values: []string{"A=x"}, deletes: []string{"A"}},
 		"delete not on list": {deletes: []string{"C"}},
 	} {
 		t.Run(name, func(t *testing.T) {

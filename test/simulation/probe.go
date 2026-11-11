@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -49,7 +50,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		if e := a.RemoveMember(ctx, w.Devices[1].ID); e != nil {
 			return nil, e
 		}
-		if _, e := w.Devices[1].App.InitializeRepository(ctx); e != nil {
+		if _, e := w.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); e != nil {
 			return nil, e
 		}
 	}
@@ -102,7 +103,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 			_, e := a.CompactHistory(ctx, "default", 1)
 			return e
 		case "purge":
-			_, e := a.DeleteEnvironmentPurging(ctx, "temporary")
+			_, e := a.DeleteEnvironment(ctx, "temporary", true)
 			return e
 		case "approve":
 			return a.ApproveMember(ctx, w.Devices[1].ID)
@@ -239,7 +240,7 @@ func (w *World) Probe(ctx context.Context, p Probe) (map[string]int, error) {
 		return nil, e
 	}
 	if p.Operation == "remove" {
-		if _, e := w.Devices[1].App.InitializeRepository(ctx); e != nil {
+		if _, e := w.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); e != nil {
 			return nil, e
 		}
 		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {

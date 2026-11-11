@@ -76,7 +76,7 @@ func newTestApp(t *testing.T, owner, repo, env string, kp *age.KeyPair, secrets 
 	prepareApp(t, a, env)
 	// Bootstrap the workspace the way a real first device does: this creates the
 	// signing key and the genesis Control, with kp as the founder's recipient.
-	if _, err := a.InitializeRepository(context.Background()); err != nil {
+	if _, err := a.InitializeRepository(context.Background(), InitOptions{}); err != nil {
 		t.Fatalf("initialize workspace: %v", err)
 	}
 
