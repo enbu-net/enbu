@@ -454,20 +454,40 @@ func TestScenarioTargetsCoverEveryScenarioTaggedPackage(t *testing.T) {
 	}
 }
 
-func TestOnlySupersededPullRequestsShareCancelableGroups(t *testing.T) {
-	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml"} {
+// Pull requests are the checks; a merge must not queue the same jobs again,
+// and a newer push must replace the run of the push before it.
+func TestPullRequestChecksDoNotRunAgainOnMainAndCancelSupersededRuns(t *testing.T) {
+	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "actionlint.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			root := readYAML(t, "../../.github/workflows/"+name)
+			if field(field(root, "on"), "push") != nil {
+				t.Fatal("main pushes repeat the pull request checks")
+			}
 			concurrency := field(root, "concurrency")
-			cancel := field(concurrency, "cancel-in-progress")
-			if cancel == nil || cancel.Value != "${{ github.event_name == 'pull_request' }}" {
-				t.Fatal("main pushes may cancel an earlier commit's verification")
+			if cancel := field(concurrency, "cancel-in-progress"); cancel == nil || cancel.Value != "true" {
+				t.Fatal("a newer push leaves the superseded run in the queue")
 			}
 			group := field(concurrency, "group")
-			if group == nil || !strings.Contains(group.Value, "github.event.pull_request.number || github.sha") || strings.Contains(group.Value, "github.ref") {
-				t.Fatal("main commits can replace each other in the pending concurrency slot")
+			if group == nil || !strings.Contains(group.Value, "github.event.pull_request.number || github.ref") {
+				t.Fatal("runs of one pull request do not share a concurrency group")
 			}
 		})
+	}
+}
+
+// A job that starts without needs must wait for the changes job, or a
+// docs-only pull request runs it anyway.
+func TestCIJobsFollowTheChangesSelection(t *testing.T) {
+	jobs := field(readYAML(t, "../../.github/workflows/ci.yaml"), "jobs")
+	for i := 0; i < len(jobs.Content); i += 2 {
+		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		if name == "changes" || name == "status-check" || name == "renovate-config" || field(job, "needs") != nil && field(job, "needs").Content[0].Value != "changes" {
+			continue
+		}
+		needs, condition := field(job, "needs"), field(job, "if")
+		if needs == nil || len(needs.Content) != 1 || condition == nil || !strings.HasPrefix(condition.Value, "needs.changes.outputs.") {
+			t.Fatalf("%s runs regardless of the changed paths", name)
+		}
 	}
 }
 

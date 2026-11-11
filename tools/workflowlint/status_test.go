@@ -83,12 +83,25 @@ func TestCIStatusRejectsEveryNonSuccessDependency(t *testing.T) {
 	}
 	job := statusJob(t, "ci.yaml", "status-check")
 	script := field(field(job, "steps").Content[0], "run").Value
-	for _, result := range []string{"success", "failure", "cancelled", "skipped", ""} {
-		t.Run(result, func(t *testing.T) {
+	for _, tc := range []struct {
+		changes, other string
+		ok             bool
+	}{
+		{"success", "success", true},
+		// Left out by the changes job, or after a dependency that is itself listed.
+		{"success", "skipped", true},
+		{"success", "failure", false},
+		{"success", "cancelled", false},
+		{"success", "", false},
+		{"failure", "skipped", false},
+		{"cancelled", "skipped", false},
+		{"skipped", "skipped", false},
+	} {
+		t.Run(tc.changes+"-"+tc.other, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), bash, "-eu", "-o", "pipefail", "-c", script)
-			cmd.Env = append(os.Environ(), `RESULTS={"passed":{"result":"success"},"other":{"result":"`+result+`"}}`)
+			cmd.Env = append(os.Environ(), `RESULTS={"changes":{"result":"`+tc.changes+`"},"passed":{"result":"success"},"other":{"result":"`+tc.other+`"}}`)
 			out, err := cmd.CombinedOutput()
-			if (err == nil) != (result == "success") {
+			if (err == nil) != tc.ok {
 				t.Fatalf("actual status script: %v, output %s", err, out)
 			}
 		})

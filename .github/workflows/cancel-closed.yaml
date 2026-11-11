@@ -1,0 +1,41 @@
+name: Cancel closed pull request runs
+
+# A merged or closed pull request needs none of its queued or running checks,
+# and its branch's pushes (DST) need none either. Concurrency groups only
+# cancel a run when a newer one starts, so closing would leave them in the
+# queue ahead of open pull requests.
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cancel:
+    name: Cancel runs of the closed branch
+    # A fork's pull request gets a read-only token, and its branch name could
+    # match one of this repository's.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel queued and running workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SELF: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          for status in queued in_progress waiting pending requested; do
+            gh api --paginate -X GET "repos/$GH_REPO/actions/runs" \
+              -f branch="$BRANCH" -f status="$status" -f per_page=100 \
+              --jq '.workflow_runs[].id'
+          done | sort -u | while read -r id; do
+            if [ "$id" = "$SELF" ]; then continue; fi
+            echo "Cancelling run $id"
+            # A run that finished in the meantime cannot be cancelled.
+            gh api -X POST "repos/$GH_REPO/actions/runs/$id/cancel" || true
+          done
