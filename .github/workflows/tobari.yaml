@@ -2,6 +2,13 @@ name: Coverage
 
 on:
   pull_request:
+    # Documentation never changes coverage (same list as scripts/ci_changes.py).
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - LICENSE
+      - .coderabbit.yaml
+      - .github/pull_request_template.md
   # main gets one nightly report instead of a run per merge, which also keeps
   # the coverage jobs' caches on main warm for pull requests.
   schedule:
@@ -14,9 +21,8 @@ permissions: {}
 # so running suites side by side on one runner (parallel steps) was not faster.
 # The report job merges the per-suite Tobari JSON files.
 concurrency:
-  group: coverage-${{ github.event.pull_request.number || github.sha }}
-  # Only superseded PR runs cancel; main commits keep distinct queue slots.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   unit:
