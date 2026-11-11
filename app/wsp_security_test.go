@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
@@ -435,27 +432,49 @@ func genesisInConfig(t *testing.T, a *App) string {
 	return cfg.ControlGenesis
 }
 
-// If enbu.toml cannot be written after the control is public, the founder is
-// locked out of their own workspace. So the digest is recorded first.
-func TestFounderRecordsTheGenesisBeforePublishingIt(t *testing.T) {
-	var recordedWhenPublished string
-	var a *App
-	a = foundingApp(t, func(_ context.Context, data []byte) error {
-		recordedWhenPublished = genesisInConfig(t, a)
-		if recordedWhenPublished != string(digest.FromBytes(data)) {
-			t.Errorf("control_genesis was %q when the control was published, want its digest", recordedWhenPublished)
-		}
-		return nil
+// A publish whose reply was lost has stored the genesis although init failed.
+// The retry recognises the genesis by this device's signature and adopts it
+// instead of refusing the storage or founding a second workspace.
+func TestLostPublishReplyAdoptsTheOwnGenesisOnRetry(t *testing.T) {
+	lose := true
+	a := &App{Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
+			if err := next.Publish(ctx, o); err != nil {
+				return err
+			}
+			if o.Kind == storage.KindControl && lose {
+				return errors.New("connection reset after the upload")
+			}
+			return nil
+		},
 	})
-	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
-		t.Fatal(err)
+	prepareApp(t, a, "default")
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
+		t.Fatal("init succeeded although the publish reply was lost")
 	}
-	if recordedWhenPublished == "" || genesisInConfig(t, a) != recordedWhenPublished {
-		t.Fatalf("recorded %q, final %q", recordedWhenPublished, genesisInConfig(t, a))
+	revs, err := a.Storage.Discover(bg, storage.KindControl, "")
+	if err != nil || len(revs) != 1 {
+		t.Fatalf("published controls: %v %v", revs, err)
+	}
+	if g := genesisInConfig(t, a); g != "" {
+		t.Fatalf("enbu.toml names %s before the publish was confirmed", g)
+	}
+	lose = false
+	result, err := a.InitializeRepository(bg, InitOptions{})
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if !result.Founded || result.ControlGenesis != string(revs[0]) || genesisInConfig(t, a) != string(revs[0]) {
+		t.Fatalf("retry did not adopt the published genesis %s: %+v", revs[0], result)
+	}
+	if after, err := a.Storage.Discover(bg, storage.KindControl, ""); err != nil || len(after) != 1 {
+		t.Fatalf("retry published another genesis: %v %v", after, err)
 	}
 }
 
-func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
+// A publish that failed stored nothing, so the retry simply founds again.
+func TestFailedPublishFoundsAgainOnRetry(t *testing.T) {
 	fail := true
 	a := foundingApp(t, func(context.Context, []byte) error {
 		if fail {
@@ -466,19 +485,97 @@ func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("init succeeded although the control could not be published")
 	}
-	g := genesisInConfig(t, a)
-	if g == "" {
-		t.Fatal("failed publication lost the trusted genesis")
-	}
-	if _, err := os.Stat(pendingGenesisForTest(t, a, g)); err != nil {
-		t.Fatalf("pending genesis: %v", err)
+	if g := genesisInConfig(t, a); g != "" {
+		t.Fatalf("enbu.toml names %s although nothing was published", g)
 	}
 	fail = false
-	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
+	result, err := a.InitializeRepository(bg, InitOptions{})
+	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if genesisInConfig(t, a) == "" {
-		t.Fatal("the retry did not record a genesis")
+	if !result.Founded || genesisInConfig(t, a) != result.ControlGenesis {
+		t.Fatalf("the retry did not found the workspace: %+v", result)
+	}
+}
+
+// Another device's genesis of the same workspace ID in storage is not this
+// device's lost founding, so founding refuses the storage.
+func TestFoundingRefusesAnotherDevicesGenesis(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	setGenesis(t, bob, "")
+	before, err := bob.Storage.Discover(bg, storage.KindControl, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		t.Fatalf("founded over another device's genesis: %v", err)
+	}
+	if after, err := bob.Storage.Discover(bg, storage.KindControl, ""); err != nil || len(after) != len(before) {
+		t.Fatalf("a genesis was published: %v %v", after, err)
+	}
+	if g := genesisOf(t, bob); g != "" {
+		t.Fatalf("enbu.toml records %s", g)
+	}
+}
+
+// A device with no pin for the genesis enbu.toml names, signed by someone
+// else, has not founded it: its repository pin must not move to it.
+func TestAnotherDevicesConfiguredGenesisIsNotAdopted(t *testing.T) {
+	alice := newAlice(t)
+	shared := alice.Storage
+	bob := newDevice(t, alice)
+	cfg, err := bob.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	own := *cfg
+	own.WorkspaceID = "44444444-4444-4444-8444-444444444444"
+	own.ControlGenesis = ""
+	if err := config.SaveProjectTo(bob.RepositoryDir, &own); err != nil {
+		t.Fatal(err)
+	}
+	bob.Storage = newMemRegistry()
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); err != nil {
+		t.Fatalf("bob founding his own workspace: %v", err)
+	}
+	before, err := bob.trust().Repository(bob.repositoryKey())
+	if err != nil || before.Workspace != own.WorkspaceID {
+		t.Fatalf("repository pin: %+v %v", before, err)
+	}
+
+	bob.Storage = shared
+	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+		t.Fatalf("alice's genesis treated as bob's founding: %v", err)
+	}
+	if after, err := bob.trust().Repository(bob.repositoryKey()); err != nil || after != before {
+		t.Fatalf("the repository pin moved: %+v %v", after, err)
+	}
+}
+
+// A storage failure while looking for this device's own genesis is returned,
+// even when the next read would succeed, and pins nothing.
+func TestConfiguredGenesisLookupFailureIsReturned(t *testing.T) {
+	alice := newAlice(t)
+	bob := newDevice(t, alice)
+	failed := false
+	bob.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			if !failed {
+				failed = true
+				return nil, storage.ErrCorrupt
+			}
+			return next.FetchHead(ctx, kind, scope, rev)
+		},
+	})
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("lookup failure: %v", err)
+	}
+	if pinned, err := bob.trust().Pinned(mustWorkspace(t, bob)); err != nil || pinned != (wsp.Root{}) {
+		t.Fatalf("pinned after a failed lookup: %+v %v", pinned, err)
 	}
 }
 
@@ -561,63 +658,6 @@ func TestWriteRestartsWhenTheMembersChangeMidway(t *testing.T) {
 	}
 }
 
-func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
-	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
-		t.Skip("requires Unix directory permission enforcement")
-	}
-	var a *App
-	var pending string
-	a = foundingApp(t, func(_ context.Context, blob []byte) error {
-		pending = pendingGenesisForTest(t, a, string(digest.FromBytes(blob)))
-		return os.Chmod(filepath.Dir(pending), 0500)
-	})
-	t.Cleanup(func() {
-		if pending != "" {
-			_ = os.Chmod(filepath.Dir(pending), 0700)
-		}
-	})
-	first, err := a.InitializeRepository(bg, InitOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !first.Founded {
-		t.Fatal("initial founding not reported")
-	}
-	if _, err := os.Stat(pending); err != nil {
-		t.Fatalf("expected cleanup to fail: %v", err)
-	}
-	again, err := a.InitializeRepository(bg, InitOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again.Founded {
-		t.Fatal("leftover recovery bytes reported a new founding")
-	}
-	if again.ControlGenesis != first.ControlGenesis {
-		t.Fatal("retry changed genesis")
-	}
-}
-func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
-	calls := 0
-	a := foundingApp(t, func(context.Context, []byte) error { calls++; return errors.New("offline") })
-	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
-		t.Fatal("initial publication did not fail")
-	}
-	genesis := genesisInConfig(t, a)
-	if err := os.WriteFile(pendingGenesisForTest(t, a, genesis), []byte("different genesis bytes"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("tampered recovery: %v", err)
-	}
-	if calls != 1 {
-		t.Fatal("tampered recovery bytes reached storage")
-	}
-	if genesisInConfig(t, a) != genesis {
-		t.Fatal("tampered recovery changed trust root")
-	}
-}
-
 func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 	a := newAlice(t)
 	cfg := config.NewProjectWithEnvironment("default")
@@ -646,8 +686,8 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 		t.Fatal("verification unexpectedly succeeded")
 	}
 	genesis := genesisInConfig(t, a)
-	if _, err := os.Stat(pendingGenesisForTest(t, a, genesis)); err != nil {
-		t.Fatalf("recovery removed before trust committed: %v", err)
+	if genesis == "" {
+		t.Fatal("the published genesis was not recorded")
 	}
 	offline = false
 	result, err := a.InitializeRepository(bg, InitOptions{})
@@ -656,58 +696,6 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 	}
 	if result.ControlGenesis != genesis || result.WorkspaceID != cfg.WorkspaceID {
 		t.Fatal("retry changed workspace or root")
-	}
-}
-
-func pendingGenesisForTest(t *testing.T, a *App, genesis string) string {
-	t.Helper()
-	ws, err := a.WorkspaceID()
-	if err != nil {
-		t.Fatal(err)
-	}
-	path, err := a.pendingGenesisPath(ws, genesis)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
-	target := newAlice(t)
-	previous, err := target.repositoryTrustRoot().Pinned()
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := 0
-	offline := true
-	source := &App{RepositoryDir: t.TempDir(), CheckpointDir: target.CheckpointDir, Identities: target.Identities, TokenProvider: target.TokenProvider, RepoDetector: target.RepoDetector}
-	source.Storage = storagetest.Wrap(storagetest.NewMemory(), storagetest.Hooks{Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
-		calls++
-		if offline {
-			return errors.New("offline")
-		}
-		return next.Publish(ctx, o)
-	}})
-	if _, err := source.InitializeRepository(bg, InitOptions{}); err == nil {
-		t.Fatal("expected interrupted founding")
-	}
-	cfg, err := config.LoadProjectFrom(source.RepositoryDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := config.SaveProjectTo(target.RepositoryDir, cfg); err != nil {
-		t.Fatal(err)
-	}
-	target.Storage = source.Storage
-	offline = false
-	if _, err := target.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeTrustRootChanged) {
-		t.Fatalf("foreign pending founding accepted: %v", err)
-	}
-	pinned, err := target.repositoryTrustRoot().Pinned()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pinned != previous || calls != 1 {
-		t.Fatalf("foreign recovery changed trust or published: %+v calls %d", pinned, calls)
 	}
 }
 

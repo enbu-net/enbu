@@ -81,13 +81,12 @@ func TestJoinRequestCleanupToleratesUnsupportedAndAlreadyDeleted(t *testing.T) {
 	}
 }
 
-func TestFoundingRecoversAfterOnlyWorkspacePinCommits(t *testing.T) {
+// The pins are written after the genesis is public. When that write fails,
+// the retry recognises the genesis as this device's own founding, moves the
+// repository pin and publishes nothing again.
+func TestFoundingRecoversWhenThePinWriteFails(t *testing.T) {
 	a := newAlice(t)
-	matches, err := filepath.Glob(filepath.Join(a.checkpointDir(), "repo-*.json"))
-	if err != nil || len(matches) != 1 {
-		t.Fatalf("repository pin: %v %v", matches, err)
-	}
-	pin := matches[0]
+	pin := filepath.Join(a.checkpointDir(), "trust.json")
 	cfg := config.NewProjectWithEnvironment("default")
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
@@ -106,20 +105,16 @@ func TestFoundingRecoversAfterOnlyWorkspacePinCommits(t *testing.T) {
 			if err := os.Mkdir(pin, 0700); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(pin, "block"), []byte("blocked"), 0600); err != nil {
-				return err
-			}
 			blocked = true
 		}
 		return nil
 	}})
 	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
-		t.Fatal("repository pin write did not fail")
+		t.Fatal("pin write did not fail")
 	}
 	genesis := genesisInConfig(t, a)
-	pinned, err := a.trustRoot(cfg.WorkspaceID).Pinned()
-	if err != nil || string(pinned.Genesis) != genesis {
-		t.Fatalf("workspace pin did not commit: %+v %v", pinned, err)
+	if genesis == "" {
+		t.Fatal("the published genesis was not recorded")
 	}
 	if err := os.RemoveAll(pin); err != nil {
 		t.Fatal(err)
@@ -129,37 +124,27 @@ func TestFoundingRecoversAfterOnlyWorkspacePinCommits(t *testing.T) {
 	}
 	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil || !result.Founded || result.ControlGenesis != genesis {
-		t.Fatalf("partial-pin recovery: %+v %v", result, err)
+		t.Fatalf("recovery after a failed pin write: %+v %v", result, err)
 	}
 	if publishes != 1 {
 		t.Fatalf("republished committed genesis %d times", publishes)
 	}
+	repo, err := a.trust().Repository(a.repositoryKey())
+	if err != nil || repo != (wsp.Root{Workspace: cfg.WorkspaceID, Genesis: digest.Digest(genesis)}) {
+		t.Fatalf("repository pin: %+v %v", repo, err)
+	}
 }
 
-func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T) {
-	var saved []byte
-	var path string
-	a := foundingApp(t, func(context.Context, []byte) error { return nil })
-	real := storagetest.NewMemory()
-	a.Storage = storagetest.Wrap(real, storagetest.Hooks{Publish: func(ctx context.Context, next storage.Store, obj storage.Object) error {
-		if obj.Kind == storage.KindControl {
-			var err error
-			path = pendingGenesisForTest(t, a, string(obj.Rev))
-			saved, err = os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-		}
-		return next.Publish(ctx, obj)
-	}})
+// Once founding pinned the workspace, signing its genesis is no longer a
+// reason to move the repository pin: returning to it is a change of root.
+func TestCompletedFoundingNeedsNoWriteAndCannotReroot(t *testing.T) {
+	a := foundingApp(t, nil)
+	real := a.Storage
 	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	original, err := config.LoadProjectFrom(a.RepositoryDir)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, saved, 0600); err != nil {
 		t.Fatal(err)
 	}
 	writes := 0
@@ -171,7 +156,7 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 	if err != nil || result.Founded || writes != 0 {
 		t.Fatalf("completed init needs write: %+v %v writes=%d", result, err, writes)
 	}
-	// The same record must not authorize replacing a later repository pin.
+	// Found another workspace in the same checkout, which moves its pin.
 	a.Storage = storagetest.NewMemory()
 	nextConfig := config.NewProjectWithEnvironment("default")
 	nextConfig.Storage = original.Storage
@@ -181,21 +166,18 @@ func TestCompletedFoundingRetainedRecordNeedsNoWriteAndCannotReroot(t *testing.T
 	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	newer, err := a.repositoryTrustRoot().Pinned()
-	if err != nil {
-		t.Fatal(err)
+	newer, err := a.trust().Repository(a.repositoryKey())
+	if err != nil || newer.Workspace != nextConfig.WorkspaceID {
+		t.Fatalf("founding did not move the repository pin: %+v %v", newer, err)
 	}
 	if err := config.SaveProjectTo(a.RepositoryDir, original); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, saved, 0600); err != nil {
-		t.Fatal(err)
-	}
 	a.Storage = real
 	if _, err := a.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeTrustRootChanged) {
-		t.Fatalf("stale authorization rerooted: %v", err)
+		t.Fatalf("an earlier own founding rerooted the checkout: %v", err)
 	}
-	after, err := a.repositoryTrustRoot().Pinned()
+	after, err := a.trust().Repository(a.repositoryKey())
 	if err != nil || after != newer {
 		t.Fatalf("repository pin changed: %+v %v", after, err)
 	}

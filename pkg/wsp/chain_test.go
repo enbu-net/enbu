@@ -297,3 +297,19 @@ func TestGenesisCanBePreparedBeforeItIsPublished(t *testing.T) {
 }
 
 var _ = signing.DeviceID("")
+
+func TestFindGenesisRecognisesOnlyTheAuthorsGenesis(t *testing.T) {
+	ctx := context.Background()
+	store, alice, genesis := workspace(t)
+	bob := newActor(t, true)
+	addMember(t, store, genesis, alice, bob)
+	if v, err := FindGenesis(ctx, store, testWorkspace, alice.p.ID); err != nil || v == nil || v.Digest != genesis {
+		t.Fatalf("own genesis not found: %v %v", v, err)
+	}
+	if v, err := FindGenesis(ctx, store, testWorkspace, bob.p.ID); err != nil || v != nil {
+		t.Fatalf("another author's genesis was found: %v %v", v, err)
+	}
+	if v, err := FindGenesis(ctx, store, "other-workspace", alice.p.ID); err != nil || v != nil {
+		t.Fatalf("a genesis of another workspace was found: %v %v", v, err)
+	}
+}

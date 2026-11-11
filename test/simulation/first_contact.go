@@ -29,11 +29,12 @@ func firstContactPins(d *Device, workspace string, want wsp.Root) error {
 	if err != nil {
 		return err
 	}
-	for _, pin := range []*wsp.TrustRoot{
-		wsp.OpenTrustRoot(d.App.CheckpointDir, workspace, d.App.Runtime.Clock),
-		wsp.OpenRepositoryTrustRoot(d.App.CheckpointDir, path, d.App.Runtime.Clock),
+	trust := wsp.OpenTrust(d.App.CheckpointDir, d.App.Runtime.Clock)
+	for _, pinned := range []func() (wsp.Root, error){
+		func() (wsp.Root, error) { return trust.Pinned(workspace) },
+		func() (wsp.Root, error) { return trust.Repository(path) },
 	} {
-		got, err := pin.Pinned()
+		got, err := pinned()
 		if err != nil {
 			return err
 		}

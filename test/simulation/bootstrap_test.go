@@ -8,11 +8,15 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/storage"
 )
 
+// enbu.toml names a genesis only once its publish was confirmed. A retry after
+// a lost reply finds the genesis this device signed and adopts it.
 func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 	for _, mode := range []string{"before", "after", "crash-before", "crash-after"} {
 		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
 			tape := NewTape(123, "")
 			w, e := NewWorld(t.TempDir(), tape, 2)
 			if e != nil {
@@ -20,31 +24,38 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 			}
 			d := w.Devices[0]
 			d.Store.Arm(Fault{"publish", 1, mode})
-			if e := catchCrash(func() error {
-				_, err := d.App.InitializeRepository(context.Background(), app.InitOptions{})
-				return err
-			}); e == nil {
+			if e := catchCrash(func() error { _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); return err }); e == nil {
 				t.Fatal("fault not returned")
+			}
+			d.Store.Arm(Fault{})
+			published, e := d.Store.Discover(ctx, storage.KindControl, "")
+			if e != nil {
+				t.Fatal(e)
+			}
+			committed := mode == "after" || mode == "crash-after"
+			if committed != (len(published) == 1) || len(published) > 1 {
+				t.Fatalf("published controls %v", published)
 			}
 			cfg, e := config.LoadProjectFrom(d.App.RepositoryDir)
 			if e != nil {
 				t.Fatal(e)
 			}
-			genesis := cfg.ControlGenesis
-			if genesis == "" {
-				t.Fatal("lost trusted genesis")
+			if cfg.ControlGenesis != "" {
+				t.Fatal("enbu.toml names a genesis whose publish was not confirmed")
 			}
 			w.Restart(0)
 			d = w.Devices[0]
-			d.Store.Arm(Fault{})
-			r, e := d.App.InitializeRepository(context.Background(), app.InitOptions{})
+			r, e := d.App.InitializeRepository(ctx, app.InitOptions{})
 			if e != nil {
 				t.Fatal(e)
 			}
-			if r.ControlGenesis != genesis {
-				t.Fatal("retry changed root")
+			if !r.Founded || committed && r.ControlGenesis != string(published[0]) {
+				t.Fatalf("retry did not adopt the published genesis: %+v", r)
 			}
-			if e := d.App.AddSecret(context.Background(), "default", "AFTER", "ok"); e != nil {
+			if after, e := d.Store.Discover(ctx, storage.KindControl, ""); e != nil || len(after) != 1 {
+				t.Fatalf("retry published another genesis: %v %v", after, e)
+			}
+			if e := d.App.AddSecret(ctx, "default", "AFTER", "ok"); e != nil {
 				t.Fatal(e)
 			}
 		})

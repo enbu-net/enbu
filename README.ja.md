@@ -96,7 +96,7 @@ S3 互換サービスでは `--endpoint https://s3.example.com --path-style` も
 
 - ハードウェアIdentityの作成・再利用（利用不可ならOS keyring）
 - 暗号化鍵とは別の署名鍵の作成（利用可能ならハードウェアP-256、なければOS keyringのEd25519）
-- 最初の端末はWorkspace Controlを作成して管理者になり、信頼の起点となるdigestを `enbu.toml` の `control_genesis` に保存
+- 最初の端末はWorkspace Controlを作成して管理者になり、信頼の起点となるdigestを `enbu.toml` の `control_genesis` に保存（genesisの公開後に止まったら、もう一度実行すると自分の署名鍵が署名したgenesisを見つけて続けます）
 - workspace UUID と storage の設定を `enbu.toml` に保存し、`.gitignore` を更新
 
 `enbu.toml` を commit して共有します。他のメンバーは共有された `enbu.toml` があるフォルダで `enbu init` を実行します。
@@ -349,7 +349,7 @@ Storageは信頼しません。名前は場所を示すヒントにすぎず、�
 - **署名付きControl** 信頼する端末、署名鍵、age recipientの一覧です。新しいControlは親の管理者が署名し、`enbu.toml` のgenesis digestから検証します。2人の管理者が同時にメンバーを変更するとControlが分岐し、両方の変更の管理者がenbuを使うまで全部が止まります。そのとき3-way mergeで合流します。両方の承認と昇格は残り、削除と降格は優先され、相手側で削除・降格された管理者の同時の変更は捨てられます。
 - **署名付きState** 暗号文のdigestと親revisionを、書き込んだ端末に結び付けます。読む側は作者と署名を確認してから復号し、メンバーでない者が置いたものは脇に置きます。
 - **ローカルcheckpoint** この端末が受け入れたControlとStateのheadを覚え、Storageが黙って隠せないようにします。一覧の反映遅れは再試行で、データの損失とは扱いません。
-- **信頼の根の固定** 各端末はワークスペースで最初に検証した `control_genesis` と、チェックアウトごとの `enbu.toml` が最初に指したワークスペースとgenesisを覚えます。あとから `enbu.toml` が別のものを指すと、すべてのコマンドが `trust_root_changed` で止まります。管理者がワークスペースを作り直したことを別経路で確認してから `enbu init --accept-new-genesis` を実行してください。新しいフォルダへの新規cloneは、最初の `enbu.toml` を信頼します。
+- **信頼の根の固定** 各端末はワークスペースで最初に検証した `control_genesis` と、チェックアウトごとの `enbu.toml` が最初に指したワークスペースを、ローカルの `trust.json` 1つに覚えます。あとから `enbu.toml` が別のものを指すと、すべてのコマンドが `trust_root_changed` で止まります。管理者がワークスペースを作り直したことを別経路で確認してから `enbu init --accept-new-genesis` を実行してください。新しいフォルダへの新規cloneは、最初の `enbu.toml` を信頼します。
 - recipientは検証済みControlだけから作られます。署名鍵は暗号化鍵とは別で、Storageへは保存されません。
 
 対象外: Storageによるサービス拒否、checkpointのない新規端末に最新revisionを隠すこと、悪意ある管理者、盗まれた管理者の署名鍵。Storageに書き込める削除済みメンバーは、知っていたControlを名乗ってrevisionを置けます。読み取りと履歴はそれを除外しますが、まだ削除を見ていない端末は受け入れます。

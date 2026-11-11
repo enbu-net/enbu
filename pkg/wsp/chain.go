@@ -222,6 +222,38 @@ func PublishGenesis(ctx context.Context, store storage.Store, blob []byte) error
 	return publishControl(ctx, store, blob)
 }
 
+// FindGenesis returns the genesis Control of workspace that author signed, or
+// nil when storage shows none. Only the author's key can sign one, so a
+// founder whose publish reply was lost recognises its own genesis by it. When
+// there are several, the smallest digest wins.
+func FindGenesis(ctx context.Context, store storage.Store, workspace string, author signing.DeviceID) (*Verified, error) {
+	revs, err := store.Discover(ctx, storage.KindControl, "")
+	if err != nil {
+		return nil, err
+	}
+	if len(revs) > maxControls {
+		return nil, invalid("control DAG is too large")
+	}
+	revs = append([]digest.Digest(nil), revs...)
+	sortDigests(revs)
+	for _, rev := range revs {
+		blob, err := store.FetchHead(ctx, storage.KindControl, "", rev)
+		switch {
+		case errors.Is(err, storage.ErrNotFound), errors.Is(err, storage.ErrCorrupt):
+			continue
+		case err != nil:
+			return nil, err
+		}
+		if len(blob) > maxControlBytes {
+			continue
+		}
+		if v, err := VerifyGenesis(workspace, blob, rev); err == nil && v.Author == author {
+			return v, nil
+		}
+	}
+	return nil, nil
+}
+
 // CreateControl signs and publishes the genesis Control.
 func CreateControl(ctx context.Context, store storage.Store, workspace string, founder Principal, signer signing.Signer) (*Verified, error) {
 	blob, d, err := NewGenesis(workspace, founder, signer)
