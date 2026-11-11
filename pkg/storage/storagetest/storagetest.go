@@ -187,6 +187,9 @@ func (w hooked) Discover(ctx context.Context, kind storage.Kind, scope string) (
 	return w.Store.Discover(ctx, kind, scope)
 }
 
+// CanDelete reports what the wrapped store reports.
+func (w hooked) CanDelete() bool { return storage.CanDelete(w.Store) }
+
 func (w hooked) Delete(ctx context.Context, kind storage.Kind, scope string, rev digest.Digest) error {
 	if w.h.Delete != nil {
 		return w.h.Delete(ctx, w.Store, kind, scope, rev)

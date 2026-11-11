@@ -260,6 +260,10 @@ func (s *Store) Scopes(ctx context.Context) (out []string, err error) {
 	})
 	return
 }
+
+// CanDelete reports what the wrapped store reports.
+func (s *Store) CanDelete() bool { return storage.CanDelete(s.Store) }
+
 func (s *Store) Delete(ctx context.Context, k storage.Kind, scope string, r digest.Digest) error {
 	return s.effect("delete", []any{k, scope, r}, func(mode string) (any, error) {
 		if e := before(ctx, mode); e != nil {

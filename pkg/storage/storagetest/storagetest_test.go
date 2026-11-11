@@ -43,3 +43,16 @@ func TestHooksInterceptAndPassThrough(t *testing.T) {
 		t.Fatalf("fetch passes through: %v", err)
 	}
 }
+
+type cannotDelete struct{ storage.Store }
+
+func (cannotDelete) CanDelete() bool { return false }
+
+func TestWrapForwardsCanDelete(t *testing.T) {
+	if !storage.CanDelete(Wrap(NewMemory(), Hooks{})) {
+		t.Fatal("a wrapped memory store must report that it can delete")
+	}
+	if storage.CanDelete(Wrap(cannotDelete{NewMemory()}, Hooks{})) {
+		t.Fatal("a wrapper must pass on that its store cannot delete")
+	}
+}
