@@ -105,6 +105,10 @@ func TestCIStatusRejectsEveryNonSuccessDependency(t *testing.T) {
 			if (err == nil) != tc.ok {
 				t.Fatalf("actual status script: %v, output %s", err, out)
 			}
+			// The check's page cannot link to the failed job, so it must name it.
+			if !tc.ok && !strings.Contains(string(out), "::error title=CI job ") {
+				t.Fatalf("status script does not name the failed job: %s", out)
+			}
 		})
 	}
 }
