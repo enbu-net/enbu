@@ -6,6 +6,10 @@ name: CI
 # which every pull request restores from, warm.
 on:
   pull_request:
+    # closed starts a run in the PR's concurrency group whose jobs all skip:
+    # GitHub then cancels the PR's queued and running checks itself, without
+    # waiting for a runner the way a cancelling job would.
+    types: [opened, synchronize, reopened, closed]
   schedule:
     - cron: '0 16 * * *' # 01:00 Asia/Tokyo, before the nightly DST starts
   workflow_dispatch:
@@ -25,6 +29,7 @@ concurrency:
 jobs:
   changes:
     name: Select jobs
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -518,7 +523,7 @@ jobs:
   # cancelled dependency, which is itself listed here and fails the check.
   status-check:
     name: Check
-    if: always()
+    if: always() && github.event.action != 'closed'
     needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, e2e, reproducible, reproducible-compare, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -531,6 +536,7 @@ jobs:
           echo "$RESULTS" | jq -e '.changes.result == "success" and all(.[]; .result == "success" or .result == "skipped")'
 
   renovate-config:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

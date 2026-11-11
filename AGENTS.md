@@ -10,7 +10,7 @@ Keyless `.env` management. Encrypts secrets with age for each member's device ke
 
 - After writing code, always write tests for the relevant areas.
 - Force-pushes are prohibited.
-- CI runs on pull requests only, plus one nightly run on main; merges do not run it again. `scripts/ci_changes.py` skips the build and test jobs for docs-only pull requests and runs the reproducible-build comparison only when a build input changes. Closing or merging a pull request cancels its branch's runs (`cancel-closed.yaml`).
+- CI runs on pull requests only, plus one nightly run on main; merges do not run it again. `scripts/ci_changes.py` skips the build and test jobs for docs-only pull requests and runs the reproducible-build comparison only when a build input changes. Closing or merging a pull request cancels its runs through the concurrency groups: the `closed` event starts a run in the same group whose jobs all skip, so GitHub cancels the others without waiting for a runner.
 - After changing code, always run `task all/build`, `task all/test`, and `task all/check`.
 - When a Linear task is provided, use a branch name like `feat/enbu-01`.
 - Manage local issues and architecture decisions with Kotowari in `.kotowari/`.

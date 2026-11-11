@@ -2,7 +2,8 @@ name: Preview
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # closed only cancels the PR's runs through the concurrency group (see ci.yaml).
+    types: [opened, synchronize, reopened, closed]
     # Only what goes into the web preview page.
     paths:
       - 'web/**'
@@ -21,6 +22,7 @@ concurrency:
 jobs:
   build-web:
     name: Build Web Preview
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:

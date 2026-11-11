@@ -13,6 +13,10 @@ on:
       - LICENSE
       - .coderabbit.yaml
       - .github/pull_request_template.md
+  # Closing a pull request joins its branch's push group (below) with a run
+  # whose jobs all skip, so GitHub cancels the branch's DST without a runner.
+  pull_request:
+    types: [closed]
   schedule:
     - cron: '0 17 * * *' # 02:00 Asia/Tokyo
   workflow_dispatch:
@@ -22,12 +26,13 @@ permissions:
 
 # Scheduled full exploration must not be cancelled by an incremental push.
 concurrency:
-  group: simulation-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  group: simulation-${{ github.event_name == 'pull_request' && format('push-refs/heads/{0}', github.head_ref) || format('{0}-{1}', github.event_name, github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 
 jobs:
   plan:
     name: Select affected DST
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
@@ -163,7 +168,7 @@ jobs:
     # always(): a cancelled run must fail this check, not skip it, because a
     # skipped required check counts as passing. The job takes seconds, so a
     # superseded push holds the concurrency group only briefly.
-    if: always()
+    if: always() && github.event.action != 'closed'
     needs: [plan, simulation]
     runs-on: ubuntu-26.04
     timeout-minutes: 5

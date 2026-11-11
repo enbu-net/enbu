@@ -2,6 +2,8 @@ name: Coverage
 
 on:
   pull_request:
+    # closed only cancels the PR's runs through the concurrency group (see ci.yaml).
+    types: [opened, synchronize, reopened, closed]
     # Documentation never changes coverage (same list as scripts/ci_changes.py).
     paths-ignore:
       - '*.md'
@@ -102,6 +104,7 @@ jobs:
 
   e2e:
     name: CLI E2E coverage
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -136,6 +139,7 @@ jobs:
 
   identity:
     name: Identity E2E coverage
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -171,6 +175,7 @@ jobs:
   # Keep the build dependency free of tests so React failures cannot skip Go suites.
   embed:
     name: Build shared coverage frontend
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -281,7 +286,7 @@ jobs:
   # Required status check for coverage: fails unless every coverage job passed.
   status-check:
     name: Coverage result
-    if: always()
+    if: always() && github.event.action != 'closed'
     needs: [unit, scenario, e2e, identity, frontend, coverage]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
