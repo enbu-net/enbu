@@ -24,6 +24,7 @@ import type {
   PullResult,
   RepoInfo,
   SecretsResponse,
+  UpdateStatus,
 } from "./types";
 
 /**
@@ -96,6 +97,12 @@ export interface Backend {
   readConfig(): Promise<string>;
   writeConfig(content: string): Promise<void>;
   appVersion(): Promise<string>;
+  /** Compares the app with the newest release; says who updates this installation. */
+  checkForUpdate(): Promise<UpdateStatus>;
+  /** Downloads, verifies and installs the newest release over the app. */
+  installUpdate(): Promise<UpdateStatus>;
+  /** Starts the installed update and quits. */
+  restartApp(): Promise<void>;
 }
 
 /**
@@ -200,6 +207,9 @@ export function createServiceBackend(svc: ServiceClient): Backend {
     readConfig: () => call(svc.ReadConfig()),
     writeConfig: (content) => call(svc.WriteConfig(content)),
     appVersion: () => call(svc.GetAppVersion()),
+    checkForUpdate: () => call(svc.CheckForUpdate()),
+    installUpdate: () => call(svc.InstallUpdate()),
+    restartApp: () => call(svc.RestartApp()),
   };
 }
 

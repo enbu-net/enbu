@@ -374,6 +374,217 @@ tasks:
       - test "${ENBU_FRONTEND_PREBUILT:-}" = "1"
       - test -f dist-vscode/index.html
 
+  # Release assets that anyone can rebuild bit for bit from the tag
+  # (docs/reproducible-builds.md). On Linux this builds the CLI archives and
+  # packages, the Windows desktop app and the VS Code extensions, plus the
+  # Linux desktop app for this machine's architecture; on macOS, the macOS
+  # desktop app for this machine's architecture. The release workflow builds
+  # every asset with this task and builds it again on another runner to compare.
+  release/build:
+    desc: Build the reproducible release assets of tag VERSION (a tag on HEAD) for this platform into dist/ and list them in dist/reproducible.sha256
+    requires:
+      vars: [VERSION]
+    cmds:
+      - task: release/cli
+      - task: release/desktop/windows
+        vars: { GOARCH: amd64 }
+      - task: release/desktop/windows
+        vars: { GOARCH: arm64 }
+      - task: release/vscode
+      - task: release/desktop/linux
+      - task: release/desktop/darwin
+      - |
+        set -eu
+        cd dist
+        set --
+        for f in enbu_*.tar.gz enbu_*.zip enbu_*.deb enbu_*.rpm enbu_*.apk enbu_*.pkg.tar.zst enbu-desktop_* enbu-vscode_*.vsix; do
+          if [ -f "$f" ]; then set -- "$@" "$f"; fi
+        done
+        # No pipes: set -e must see a failing helper, never hash its short output.
+        for f in "$@"; do
+          case "$f" in
+            *.dmg)
+              ../tools/release-darwin/dmg-contents.sh "$f" > "$f.contents"
+              test -s "$f.contents"
+              sum=$(shasum -a 256 < "$f.contents")
+              rm "$f.contents"
+              printf '%s  %s\n' "${sum%% *}" "$f:contents" ;;
+            *) shasum -a 256 "$f" ;;
+          esac
+        done > reproducible.unsorted
+        LC_ALL=C sort -k2 reproducible.unsorted > reproducible.sha256
+        rm reproducible.unsorted
+
+  # Checks the assets in PUBLISHED against dist/reproducible.sha256 of a
+  # release/build run: every asset built here must be in PUBLISHED with the
+  # same SHA-256 (a .dmg: the same contents).
+  release/verify:
+    desc: Compare the assets in PUBLISHED with the ones release/build just built
+    requires:
+      vars: [PUBLISHED]
+    cmds:
+      - |
+        set -eu
+        failed=0
+        while read -r want name; do
+          file="{{.PUBLISHED}}/${name%:contents}"
+          if [ ! -f "$file" ]; then
+            echo "missing: ${name%:contents}"; failed=1; continue
+          fi
+          case "$name" in
+            *:contents)
+              mkdir -p .tmp
+              tools/release-darwin/dmg-contents.sh "$file" > .tmp/published.contents
+              test -s .tmp/published.contents
+              have=$(shasum -a 256 < .tmp/published.contents) ;;
+            *) have=$(shasum -a 256 < "$file") ;;
+          esac
+          have=${have%% *}
+          if [ "$have" = "$want" ]; then
+            echo "OK: $name"
+          else
+            echo "DIFFERENT: $name"; failed=1
+            case "$name" in
+              *:contents)
+                tools/release-darwin/dmg-contents.sh "dist/${name%:contents}" > .tmp/rebuilt.contents
+                diff .tmp/rebuilt.contents .tmp/published.contents || true ;;
+            esac
+          fi
+        done < dist/reproducible.sha256
+        exit "$failed"
+
+  release/cli:
+    internal: true
+    platforms: [linux]
+    env:
+      GORELEASER_CURRENT_TAG: '{{.VERSION}}'
+    cmds:
+      - goreleaser release --clean --skip=publish
+
+  # The Windows app uses no cgo, so it is cross-built here like the CLI and
+  # does not depend on a Windows runner's toolchain.
+  release/desktop/windows:
+    internal: true
+    platforms: [linux]
+    deps:
+      - gui/build/frontend
+      - tools/wails3
+    dir: desktop/wails
+    vars:
+      WAILS3: ../../.tmp/bin/wails3{{exeExt}}
+      STAGE: ../../.tmp/release/windows_{{.GOARCH}}
+    env:
+      # The commit time stands in for the build time in release archives
+      # (https://reproducible-builds.org/specs/source-date-epoch/). Without
+      # Git history the task fails rather than date the archive wrong.
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - rm -rf {{.STAGE}} && mkdir -p build {{.STAGE}}
+      - '{{.WAILS3}} generate icons -input ../../assets/icon.png -windowsfilename build/icon.ico -macfilename build/icons.icns'
+      - '{{.WAILS3}} generate syso -arch {{.GOARCH}} -icon build/icon.ico -manifest packaging/windows/enbu-desktop.exe.manifest -out rsrc_windows_{{.GOARCH}}.syso'
+      - CGO_ENABLED=0 GOOS=windows GOARCH={{.GOARCH}} go build -tags production -trimpath -ldflags "-s -w -X main.Version={{.VERSION}} -H windowsgui" -o {{.STAGE}}/enbu-desktop.exe .
+      - go run ../../tools/reproarchive zip ../../dist/enbu-desktop_{{.VERSION}}_windows_{{.GOARCH}}.zip {{.STAGE}}
+
+  # The Linux app links GTK 4 and WebKitGTK 6.0 through cgo, so it is built in
+  # the pinned toolchain image of tools/release-linux, never with the runner's
+  # compiler and headers. The repository is mounted at /src, so the checkout
+  # path does not reach the binary either.
+  release/desktop/linux:
+    internal: true
+    platforms: [linux]
+    deps:
+      - gui/build/frontend
+    vars:
+      IMAGE: enbu-release-linux
+      STAGE: .tmp/release/linux_{{ARCH}}
+      GOMODCACHE:
+        sh: go env GOMODCACHE
+    env:
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - docker build --quiet --tag {{.IMAGE}} tools/release-linux
+      - rm -rf {{.STAGE}} && mkdir -p {{.STAGE}} dist "{{.GOMODCACHE}}"
+      - >-
+        docker run --rm --user "$(id -u):$(id -g)"
+        --volume "$PWD:/src" --volume "{{.GOMODCACHE}}:/go-mod"
+        --env GOMODCACHE=/go-mod --env GOFLAGS=-mod=readonly
+        --workdir /src/desktop/wails {{.IMAGE}}
+        go build -buildvcs=false -tags production -trimpath
+        -ldflags "-s -w -X main.Version={{.VERSION}}"
+        -o /src/{{.STAGE}}/enbu-desktop .
+      - go run ./tools/reproarchive tar dist/enbu-desktop_{{.VERSION}}_linux_{{ARCH}}.tar.gz {{.STAGE}}
+      # nfpm takes its file times from SOURCE_DATE_EPOCH.
+      - mkdir -p desktop/wails/build/bin && cp {{.STAGE}}/enbu-desktop desktop/wails/build/bin/enbu-desktop
+      - for: [deb, rpm]
+        cmd: cd desktop/wails && VERSION="{{trimPrefix "v" .VERSION}}" ARCH={{ARCH}} nfpm package --config packaging/linux/nfpm.yaml --packager {{.ITEM}} --target ../../dist/enbu-desktop_{{.VERSION}}_linux_{{ARCH}}.{{.ITEM}}
+
+  # The macOS app needs cgo and Apple's SDK, so it is built on a Mac with the
+  # Xcode that DEVELOPER_DIR selects (the release workflow pins it). It is
+  # signed ad hoc, which has no time stamp. A disk image always records when
+  # its file system was made and a random volume ID, so the .dmg is compared by
+  # what it holds (tools/release-darwin/dmg-contents.sh), not by its bytes.
+  release/desktop/darwin:
+    internal: true
+    platforms: [darwin]
+    deps:
+      - gui/build/frontend
+      - tools/wails3
+    dir: desktop/wails
+    vars:
+      WAILS3: ../../.tmp/bin/wails3{{exeExt}}
+      STAGE: ../../.tmp/release/darwin_{{ARCH}}
+      APP: ../../.tmp/release/darwin_{{ARCH}}/enbu-desktop.app
+      # macOS bundle versions must be numeric.
+      BUNDLE_VERSION:
+        sh: echo "{{.VERSION}}" | sed -E 's/^v//; s/[^0-9.].*$//'
+    env:
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - xcodebuild -version && xcrun --show-sdk-version
+      - rm -rf {{.STAGE}} && mkdir -p {{.APP}}/Contents/MacOS {{.APP}}/Contents/Resources build ../../dist
+      - '{{.WAILS3}} generate icons -input ../../assets/icon.png -windowsfilename build/icon.ico -macfilename build/icons.icns'
+      - CGO_ENABLED=1 go build -buildvcs=false -tags production -trimpath -ldflags "-s -w -X main.Version={{.VERSION}}" -o {{.APP}}/Contents/MacOS/enbu-desktop .
+      - cp build/icons.icns {{.APP}}/Contents/Resources/icons.icns
+      - cp packaging/darwin/Info.plist {{.APP}}/Contents/Info.plist
+      - plutil -replace CFBundleVersion -string "{{.BUNDLE_VERSION}}" {{.APP}}/Contents/Info.plist
+      - plutil -replace CFBundleShortVersionString -string "{{.BUNDLE_VERSION}}" {{.APP}}/Contents/Info.plist
+      - codesign --force --deep --sign - {{.APP}}
+      - python3 -m venv ../../.tmp/release/dmgbuild
+      - ../../.tmp/release/dmgbuild/bin/pip install --quiet --disable-pip-version-check --require-hashes --no-deps -r ../../tools/release-darwin/requirements.txt
+      - >-
+        ../../.tmp/release/dmgbuild/bin/dmgbuild
+        -s ../../tools/release-darwin/dmg-settings.py -D app={{.APP}}
+        enbu ../../dist/enbu-desktop_{{.VERSION}}_darwin_{{ARCH}}.dmg
+
+  # One VSIX per VS Code target, each carrying the CLI binary of release/cli
+  # for that platform; reproarchive rezip drops the file times vsce writes.
+  release/vscode:
+    internal: true
+    platforms: [linux]
+    deps:
+      - vscode/build
+    env:
+      SOURCE_DATE_EPOCH:
+        sh: git log -1 --format=%ct
+    cmds:
+      - for: [linux_amd64:linux-x64, linux_arm64:linux-arm64, darwin_amd64:darwin-x64, darwin_arm64:darwin-arm64, windows_amd64:win32-x64, windows_arm64:win32-arm64]
+        cmd: |
+          set -eu
+          suffix="{{splitList ":" .ITEM | first}}"
+          target="{{splitList ":" .ITEM | last}}"
+          bin_dir=".tmp/release/enbu-$suffix"
+          rm -rf "$bin_dir" && mkdir -p "$bin_dir"
+          case "$suffix" in
+            windows_*) unzip -q -o -j "dist/enbu_{{.VERSION}}_$suffix.zip" enbu.exe -d "$bin_dir"; binary="$bin_dir/enbu.exe" ;;
+            *) tar -xzf "dist/enbu_{{.VERSION}}_$suffix.tar.gz" -C "$bin_dir" enbu; binary="$bin_dir/enbu" ;;
+          esac
+          out="dist/enbu-vscode_{{.VERSION}}_$suffix.vsix"
+          node vscode/scripts/package.mjs --enbu "$binary" --target "$target" --version "{{.VERSION}}" --out "$out"
+          go run ./tools/reproarchive rezip "$out"
+
   scripts/check:
     desc: Check Python formatting and lint
     dir: scripts

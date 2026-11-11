@@ -44,6 +44,16 @@ sudo pacman -U ./enbu_vX.Y.Z_linux_amd64.pkg.tar.zst    # Arch
 sudo apt install ./enbu-desktop_vX.Y.Z_linux_amd64.deb  # Desktop app (GTK 4, WebKitGTK 6.0)
 ```
 
+Check a download before installing it: every release asset is signed and attested by the
+release workflow, and every asset can be rebuilt bit for bit from the tag (a `.dmg` by
+its contents). See
+[docs/reproducible-builds.md](docs/reproducible-builds.md).
+
+```bash
+gh attestation verify enbu_vX.Y.Z_linux_amd64.tar.gz --repo enbu-net/enbu \
+  --signer-workflow enbu-net/enbu/.github/workflows/release-build.yaml
+```
+
 ## Quick Start
 
 ### 1. Choose storage

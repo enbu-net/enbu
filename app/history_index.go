@@ -4,10 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
@@ -76,14 +76,5 @@ func (x historyIndex) save(flags map[digest.Digest]historyFlags, states map[dige
 	if err := os.MkdirAll(filepath.Dir(x.path), 0o700); err != nil {
 		return
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(x.path), ".history-*")
-	if err != nil {
-		return
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	_, err = tmp.Write(b)
-	if errors.Join(err, tmp.Close()) != nil {
-		return
-	}
-	_ = os.Rename(tmp.Name(), x.path)
+	_ = fsutil.WriteFileAtomicWith(x.path, b, 0o600, fsutil.AtomicOptions{NoSync: true})
 }

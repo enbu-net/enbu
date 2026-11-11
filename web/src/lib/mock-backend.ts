@@ -1,4 +1,6 @@
 import type {
+  UpdateMethod,
+  UpdateStatus,
   AuthStatus,
   ConflictChoice,
   ConflictSet,
@@ -142,12 +144,16 @@ function secretsForEnv(env: string): { key: string; value: string }[] {
   return (mockSecretsByEnv[name] ??= []);
 }
 
+// Two signed-in accounts, so the preview shows switching and signing out.
+let mockAccounts = ["octocat", previewUsername];
+let mockCurrentAccount = previewUsername;
+
 export const mockBackend: Backend = {
   async authStatus(): Promise<AuthStatus> {
     return {
-      authenticated: true,
-      username: previewUsername,
-      accounts: [previewUsername],
+      authenticated: mockCurrentAccount !== "",
+      username: mockCurrentAccount,
+      accounts: [...mockAccounts],
       workspace_configured: true,
     };
   },
@@ -164,12 +170,15 @@ export const mockBackend: Backend = {
     // no-op
   },
 
-  async logout(): Promise<void> {
-    // no-op
+  async logout(login = ""): Promise<void> {
+    const gone = login || mockCurrentAccount;
+    mockAccounts = mockAccounts.filter((account) => account !== gone);
+    if (gone === mockCurrentAccount) mockCurrentAccount = mockAccounts.at(-1) ?? "";
   },
 
-  async switchAccount(_login: string): Promise<void> {
-    // no-op
+  async switchAccount(login: string): Promise<void> {
+    if (!mockAccounts.includes(login)) throw createAppError("invalid_argument");
+    mockCurrentAccount = login;
   },
 
   async repoStatus(): Promise<GUIRepoStatus> {
@@ -423,5 +432,15 @@ export const mockBackend: Backend = {
   },
   async appVersion(): Promise<string> {
     return "";
+  },
+  // The preview is not a release; it has nothing to update.
+  async checkForUpdate(): Promise<UpdateStatus> {
+    return { method: "development" as UpdateMethod, current: "", available: false };
+  },
+  async installUpdate(): Promise<UpdateStatus> {
+    throw createAppError("invalid_argument");
+  },
+  async restartApp(): Promise<void> {
+    throw createAppError("invalid_argument");
   },
 };

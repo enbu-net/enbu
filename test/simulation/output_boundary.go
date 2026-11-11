@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
@@ -135,7 +136,7 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".enbu-output-") {
+			if strings.HasPrefix(entry.Name(), fsutil.TempPrefix) {
 				return fmt.Errorf("completed pull retained a plaintext temporary file")
 			}
 		}
