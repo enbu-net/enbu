@@ -437,7 +437,7 @@ func genesisInConfig(t *testing.T, a *App) string {
 // instead of refusing the storage or founding a second workspace.
 func TestLostPublishReplyAdoptsTheOwnGenesisOnRetry(t *testing.T) {
 	lose := true
-	a := &App{Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
+	a := &App{Identities: &apptest.Identities{}, CheckpointDir: t.TempDir()}
 	a.Storage = storagetest.Wrap(newMemRegistry(), storagetest.Hooks{
 		Publish: func(ctx context.Context, next storage.Store, o storage.Object) error {
 			if err := next.Publish(ctx, o); err != nil {
