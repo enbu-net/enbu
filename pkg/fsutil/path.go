@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 
@@ -23,7 +24,16 @@ func Canonical(path string) string {
 	}
 	path = filepath.Clean(path)
 	if runtime.GOOS == "darwin" {
-		path = norm.NFC.String(path)
+		// A volume that does not fold normalization (SMB, NFS, exFAT) keeps
+		// the spelling that opens the folder.
+		if nfc := norm.NFC.String(path); nfc != path && (!exists(path) || exists(nfc)) {
+			path = nfc
+		}
 	}
 	return path
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }

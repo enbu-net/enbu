@@ -456,7 +456,8 @@ func newGitRepo(t *testing.T) string {
 	dir := t.TempDir()
 	runGit(t, dir, "init")
 	runGit(t, dir, "remote", "add", "origin", "https://github.com/octo/hello.git")
-	return runGit(t, dir, "rev-parse", "--show-toplevel")
+	// git prints forward slashes on Windows; the service gives the canonical path.
+	return fsutil.Canonical(runGit(t, dir, "rev-parse", "--show-toplevel"))
 }
 
 func runGit(t *testing.T, dir string, args ...string) string {
