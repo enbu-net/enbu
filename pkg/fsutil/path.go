@@ -25,15 +25,22 @@ func Canonical(path string) string {
 	path = filepath.Clean(path)
 	if runtime.GOOS == "darwin" {
 		// A volume that does not fold normalization (SMB, NFS, exFAT) keeps
-		// the spelling that opens the folder.
-		if nfc := norm.NFC.String(path); nfc != path && (!exists(path) || exists(nfc)) {
+		// the spelling that opens the folder, also when another folder has
+		// the NFC name.
+		if nfc := norm.NFC.String(path); nfc != path && sameOrMissing(path, nfc) {
 			path = nfc
 		}
 	}
 	return path
 }
 
-func exists(path string) bool {
-	_, err := os.Lstat(path)
-	return err == nil
+// sameOrMissing reports whether path does not exist or names the same file
+// as other.
+func sameOrMissing(path, other string) bool {
+	a, err := os.Lstat(path)
+	if err != nil {
+		return true
+	}
+	b, err := os.Lstat(other)
+	return err == nil && os.SameFile(a, b)
 }

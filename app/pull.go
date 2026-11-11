@@ -208,12 +208,17 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	pulled, local, marked := splitAtMarker(existing)
 	unreadable := func(err error) error {
 		name := filepath.Base(path)
 		return apperr.Wrap(apperr.CodeOutputUnreadable,
 			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", name), err, apperr.Params{"file": name})
 	}
+	// A file an editor saved as UTF-16 is decoded first, so its marker is found.
+	existing, err = dotenv.Text(existing)
+	if err != nil {
+		return nil, nil, nil, unreadable(err)
+	}
+	pulled, local, marked := splitAtMarker(existing)
 	previous, err := dotenv.Parse(pulled)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)

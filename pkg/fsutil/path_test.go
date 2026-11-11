@@ -81,3 +81,34 @@ func TestCanonicalOfAMissingPath(t *testing.T) {
 		t.Fatalf("Canonical = %q", got)
 	}
 }
+
+func TestSameOrMissing(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a")
+	b := filepath.Join(dir, "b")
+	for _, p := range []string{a, b} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Link(a, link); err != nil {
+		t.Skipf("hard links unsupported: %v", err)
+	}
+	missing := filepath.Join(dir, "missing")
+	for _, c := range []struct {
+		path, other string
+		want        bool
+	}{
+		{missing, a, true},
+		{a, a, true},
+		{a, link, true},
+		// Two files whose names differ only by normalization are kept apart.
+		{a, b, false},
+		{a, missing, false},
+	} {
+		if got := sameOrMissing(c.path, c.other); got != c.want {
+			t.Errorf("sameOrMissing(%q, %q) = %v, want %v", c.path, c.other, got, c.want)
+		}
+	}
+}
