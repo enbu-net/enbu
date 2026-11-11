@@ -2,10 +2,26 @@ import { useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
-import { toDisplayError, type DisplayError } from "../../lib/app-error";
+import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import type { ImportResult } from "../../lib/types";
 import { m } from "../../paraglide/messages";
+
+/**
+ * Reads a dotenv file as text: UTF-8, or UTF-16 with a byte order mark, which
+ * Windows PowerShell 5.1 writes. Anything else, such as Shift_JIS, fails with
+ * a TypeError instead of turning into replacement characters in a secret.
+ */
+export async function readDotenvFile(file: Blob): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const encoding =
+    bytes[0] === 0xff && bytes[1] === 0xfe
+      ? "utf-16le"
+      : bytes[0] === 0xfe && bytes[1] === 0xff
+        ? "utf-16be"
+        : "utf-8";
+  return new TextDecoder(encoding, { fatal: true }).decode(bytes);
+}
 
 /**
  * Imports a .env file the person chooses, as `enbu import FILE` does. Secrets
@@ -70,9 +86,12 @@ export function ImportButton({
           event.target.value = "";
           if (file) {
             const target = env;
-            file.text().then(
+            readDotenvFile(file).then(
               (dotenv) => run(dotenv, false, target),
-              (err: unknown) => onError(toDisplayError(err)),
+              (err: unknown) =>
+                onError(
+                  err instanceof TypeError ? displayError("invalid_argument") : toDisplayError(err),
+                ),
             );
           }
         }}
