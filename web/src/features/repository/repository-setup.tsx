@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
-import { Box, HStack, VStack, styled } from "styled-system/jsx";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { Box, VStack, styled } from "styled-system/jsx";
 import { hstack } from "styled-system/patterns";
 import { Button, Heading, Input, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
+import { openURL } from "../../lib/platform";
 import { useSession } from "../../lib/session";
 import type { InitResult, RepoInfo, StorageConfig } from "../../lib/types";
 import { m } from "../../paraglide/messages";
+import { getLocale } from "../../paraglide/runtime";
 
 /**
  * The step a selected folder still needs before enbu can manage it, if any:
@@ -88,76 +90,6 @@ const primaryButton = {
   _disabled: { opacity: 0.5, cursor: "not-allowed" },
 } as const;
 
-/** Chooses the local repository enbu should manage. */
-export function RepositorySelect() {
-  const { setRepo } = useSession();
-  const [path, setPath] = useState("");
-  const pathId = useId();
-  const action = useAction();
-
-  return (
-    <SetupScreen
-      title={m.repo_selectTitle()}
-      description={m.repo_selectDescription()}
-      error={action.error}
-      onDismissError={() => action.setError(null)}
-    >
-      {/* A form, so Enter submits natively, which an IME's confirming Enter does not. */}
-      <styled.form
-        display="flex"
-        flexDirection="column"
-        gap="5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!path.trim()) return;
-          void action.run(async () => setRepo(await backend.SelectRepository(path.trim())));
-        }}
-      >
-        <Box>
-          <styled.label htmlFor={pathId} display="block" mb="2" fontSize="sm" fontWeight="semibold">
-            {m.repo_pathLabel()}
-          </styled.label>
-          <HStack>
-            <Input
-              id={pathId}
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder={m.repo_pathPlaceholder()}
-              autoComplete="off"
-              spellCheck={false}
-              h="auto"
-              minH="38px"
-              borderColor="border.default"
-              borderRadius="md"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              h="auto"
-              minH="38px"
-              borderColor="border.default"
-              color="fg.default"
-              fontWeight="semibold"
-              flexShrink={0}
-              onClick={() =>
-                action.run(async () => {
-                  const next = await backend.BrowseRepository();
-                  if (next.path) setRepo(next);
-                })
-              }
-            >
-              {m.repo_browse()}
-            </Button>
-          </HStack>
-        </Box>
-        <Button type="submit" {...primaryButton} loading={action.loading} disabled={!path.trim()}>
-          {m.repo_continue()}
-        </Button>
-      </styled.form>
-    </SetupScreen>
-  );
-}
-
 /**
  * Sets up enbu in a selected folder, as `enbu init` does. A folder without Git
  * gets the command to run, as enbu leaves Git and GitHub to their own tools.
@@ -176,7 +108,7 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
         error={action.error}
         onDismissError={dismiss}
       >
-        <Command>git init</Command>
+        <PublishGuide hasGit={false} />
         <Button {...primaryButton} loading={action.loading} onClick={() => action.run(reloadRepo)}>
           {m.init_checkAgain()}
         </Button>
@@ -324,7 +256,7 @@ function FoundWorkspace({
       {suggested === "" && !hasRemote && (
         <VStack alignItems="stretch" gap="2">
           <Text fontSize="sm">{m.init_noSuggestion()}</Text>
-          <Command>git remote add origin https://github.com/OWNER/REPO.git</Command>
+          <PublishGuide hasGit />
           <Button
             variant="outline"
             loading={action.loading}
@@ -400,6 +332,70 @@ function InitDone({ result, onContinue }: { result: InitResult; onContinue: () =
         {m.init_continue()}
       </Button>
     </SetupScreen>
+  );
+}
+
+/** The guide on enbu's website to putting a folder on GitHub, in the app's language. */
+export function publishGuideURL() {
+  const prefix = getLocale() === "ja" ? "/ja" : "";
+  return `https://enbu.net${prefix}/docs/put-your-project-on-github/`;
+}
+
+/**
+ * How to put the folder on GitHub with the tools a beginner already has,
+ * GitHub Desktop or VS Code, with the commands kept for terminal users. enbu
+ * leaves Git and GitHub to those tools.
+ */
+function PublishGuide({ hasGit }: { hasGit: boolean }) {
+  const ways = [
+    { name: "GitHub Desktop", how: hasGit ? m.publish_desktopRemote() : m.publish_desktopInit() },
+    { name: "VS Code", how: hasGit ? m.publish_vscodeRemote() : m.publish_vscodeInit() },
+  ];
+  return (
+    <VStack alignItems="stretch" gap="3">
+      <styled.ul display="flex" flexDirection="column" gap="2">
+        {ways.map((way) => (
+          <styled.li
+            key={way.name}
+            p="3"
+            borderWidth="1px"
+            borderColor="border.default"
+            borderRadius="md"
+            bg="bg.surface"
+          >
+            <Text fontWeight="semibold">{way.name}</Text>
+            <Text fontSize="sm" color="fg.subtle">
+              {way.how}
+            </Text>
+          </styled.li>
+        ))}
+      </styled.ul>
+      <Text fontSize="sm" color="status.danger">
+        {m.publish_secretsWarning()}
+      </Text>
+      <styled.details fontSize="sm">
+        <styled.summary cursor="pointer" color="fg.subtle">
+          {m.publish_terminal()}
+        </styled.summary>
+        <Box mt="2">
+          <Text color="fg.subtle" mb="2">
+            {m.publish_terminalNote()}
+          </Text>
+          <Command>
+            {hasGit
+              ? "git remote add origin https://github.com/OWNER/REPO.git"
+              : "git init\ngit remote add origin https://github.com/OWNER/REPO.git"}
+          </Command>
+        </Box>
+      </styled.details>
+      <Button
+        variant="outline"
+        borderColor="border.strong"
+        onClick={() => openURL(publishGuideURL())}
+      >
+        {m.publish_openGuide()}
+      </Button>
+    </VStack>
   );
 }
 

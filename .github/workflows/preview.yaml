@@ -2,18 +2,27 @@ name: Preview
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # closed only cancels the PR's runs through the concurrency group (see ci.yaml).
+    types: [opened, synchronize, reopened, closed]
+    # Only what goes into the web preview page.
+    paths:
+      - 'web/**'
+      - 'test/preview/**'
+      - aqua.yaml
+      - '.github/actions/setup-tools/**'
+      - '.github/actions/setup-frontend/**'
+      - .github/workflows/preview.yaml
 
 permissions: {}
 
 concurrency:
-  group: preview-${{ github.event.pull_request.number || github.sha }}
-  # Only superseded PR runs cancel; main commits keep distinct queue slots.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-web:
     name: Build Web Preview
+    if: github.event.action != 'closed'
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:

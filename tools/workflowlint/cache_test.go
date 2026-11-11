@@ -454,18 +454,94 @@ func TestScenarioTargetsCoverEveryScenarioTaggedPackage(t *testing.T) {
 	}
 }
 
-func TestOnlySupersededPullRequestsShareCancelableGroups(t *testing.T) {
-	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml"} {
+// Pull requests are the checks; a merge must not queue the same jobs again,
+// and a newer push must replace the run of the push before it.
+func TestPullRequestChecksDoNotRunAgainOnMainAndCancelSupersededRuns(t *testing.T) {
+	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "actionlint.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			root := readYAML(t, "../../.github/workflows/"+name)
+			if field(field(root, "on"), "push") != nil {
+				t.Fatal("main pushes repeat the pull request checks")
+			}
 			concurrency := field(root, "concurrency")
-			cancel := field(concurrency, "cancel-in-progress")
-			if cancel == nil || cancel.Value != "${{ github.event_name == 'pull_request' }}" {
-				t.Fatal("main pushes may cancel an earlier commit's verification")
+			// Workflows that also run on main cancel only pull request runs, so a
+			// manual run and the nightly one do not cancel each other.
+			want := "true"
+			if field(field(root, "on"), "schedule") != nil {
+				want = "${{ github.event_name == 'pull_request' }}"
+			}
+			if cancel := field(concurrency, "cancel-in-progress"); cancel == nil || cancel.Value != want {
+				t.Fatalf("cancel-in-progress must be %s", want)
 			}
 			group := field(concurrency, "group")
-			if group == nil || !strings.Contains(group.Value, "github.event.pull_request.number || github.sha") || strings.Contains(group.Value, "github.ref") {
-				t.Fatal("main commits can replace each other in the pending concurrency slot")
+			if group == nil || !strings.Contains(group.Value, "github.event.pull_request.number || github.ref") {
+				t.Fatal("runs of one pull request do not share a concurrency group")
+			}
+		})
+	}
+}
+
+// jobNeeds lists a job's needs, written as one name or as a list.
+func jobNeeds(job *yaml.Node) []string {
+	needs := field(job, "needs")
+	switch {
+	case needs == nil:
+		return nil
+	case needs.Kind == yaml.ScalarNode:
+		return []string{needs.Value}
+	}
+	out := make([]string, 0, len(needs.Content))
+	for _, n := range needs.Content {
+		out = append(out, n.Value)
+	}
+	return out
+}
+
+// A job that starts without needs must wait for the changes job, or a
+// docs-only pull request runs it anyway.
+func TestCIJobsFollowTheChangesSelection(t *testing.T) {
+	jobs := field(readYAML(t, "../../.github/workflows/ci.yaml"), "jobs")
+	for i := 0; i < len(jobs.Content); i += 2 {
+		name, job := jobs.Content[i].Value, jobs.Content[i+1]
+		needs := jobNeeds(job)
+		if name == "changes" || name == "status-check" || name == "renovate-config" || len(needs) > 0 && needs[0] != "changes" {
+			continue
+		}
+		condition := field(job, "if")
+		if len(needs) != 1 || condition == nil || !strings.HasPrefix(condition.Value, "needs.changes.outputs.") {
+			t.Fatalf("%s runs regardless of the changed paths", name)
+		}
+	}
+}
+
+// Closing a pull request must cancel its checks without a runner: a cancelling
+// job would wait in the same jammed queue as the runs it cancels. A closed
+// event joins the PR's concurrency group with a run whose jobs all skip.
+func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
+	const notClosed = "github.event.action != 'closed'"
+	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "simulation.yaml"} {
+		t.Run(name, func(t *testing.T) {
+			root := readYAML(t, "../../.github/workflows/"+name)
+			closed := false
+			for _, n := range field(field(field(root, "on"), "pull_request"), "types").Content {
+				closed = closed || n.Value == "closed"
+			}
+			if !closed {
+				t.Fatal("closing a pull request leaves its runs queued")
+			}
+			if cancel := field(field(root, "concurrency"), "cancel-in-progress"); cancel == nil || !strings.Contains(cancel.Value, "true") && !strings.Contains(cancel.Value, "pull_request") {
+				t.Fatal("the closed run cannot cancel the runs of its group")
+			}
+			jobs := field(root, "jobs")
+			for i := 0; i < len(jobs.Content); i += 2 {
+				job := jobs.Content[i+1]
+				condition := field(job, "if")
+				if len(jobNeeds(job)) > 0 && (condition == nil || !strings.HasPrefix(condition.Value, "always()")) {
+					continue // skipped with the jobs it needs
+				}
+				if condition == nil || !strings.Contains(condition.Value, notClosed) {
+					t.Fatalf("%s takes a runner when the pull request closes", jobs.Content[i].Value)
+				}
 			}
 		})
 	}

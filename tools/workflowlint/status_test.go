@@ -30,12 +30,13 @@ func statusJob(t *testing.T, file, name string) *yaml.Node {
 }
 
 // A skipped required check counts as passing, so a status job skipped by
-// !cancelled() would let a cancelled run merge. always() makes it fail instead.
+// !cancelled() would let a cancelled run merge. always() makes it fail instead;
+// it skips only in the run a closed pull request starts to cancel the others.
 func TestStatusJobsFailCancelledWorkflows(t *testing.T) {
 	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status", "tobari.yaml": "status-check"} {
 		t.Run(file, func(t *testing.T) {
 			condition := field(statusJob(t, file, name), "if")
-			if condition == nil || strings.TrimSpace(condition.Value) != "always()" {
+			if condition == nil || strings.TrimSpace(condition.Value) != "always() && github.event.action != 'closed'" {
 				t.Fatal("status job must run, and fail, when its workflow is cancelled")
 			}
 		})
@@ -83,12 +84,25 @@ func TestCIStatusRejectsEveryNonSuccessDependency(t *testing.T) {
 	}
 	job := statusJob(t, "ci.yaml", "status-check")
 	script := field(field(job, "steps").Content[0], "run").Value
-	for _, result := range []string{"success", "failure", "cancelled", "skipped", ""} {
-		t.Run(result, func(t *testing.T) {
+	for _, tc := range []struct {
+		changes, other string
+		ok             bool
+	}{
+		{"success", "success", true},
+		// Left out by the changes job, or after a dependency that is itself listed.
+		{"success", "skipped", true},
+		{"success", "failure", false},
+		{"success", "cancelled", false},
+		{"success", "", false},
+		{"failure", "skipped", false},
+		{"cancelled", "skipped", false},
+		{"skipped", "skipped", false},
+	} {
+		t.Run(tc.changes+"-"+tc.other, func(t *testing.T) {
 			cmd := exec.CommandContext(t.Context(), bash, "-eu", "-o", "pipefail", "-c", script)
-			cmd.Env = append(os.Environ(), `RESULTS={"passed":{"result":"success"},"other":{"result":"`+result+`"}}`)
+			cmd.Env = append(os.Environ(), `RESULTS={"changes":{"result":"`+tc.changes+`"},"passed":{"result":"success"},"other":{"result":"`+tc.other+`"}}`)
 			out, err := cmd.CombinedOutput()
-			if (err == nil) != (result == "success") {
+			if (err == nil) != tc.ok {
 				t.Fatalf("actual status script: %v, output %s", err, out)
 			}
 		})

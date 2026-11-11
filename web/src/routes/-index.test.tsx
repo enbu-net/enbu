@@ -42,21 +42,29 @@ describe("HomePage", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading");
   });
 
-  it("asks to sign in when no workspace is configured", async () => {
-    await renderHome({ status: { authenticated: false, workspace_configured: false } });
+  it("welcomes without asking to sign in first", async () => {
+    await renderHome({
+      status: { authenticated: false, workspace_configured: false },
+      repo: noRepo,
+    });
+    expect(container.querySelector("h1")?.textContent).toBe("enbu");
+    expect(container.textContent).toContain("Open folder…");
+  });
+
+  it("asks to sign in once a repository on GHCR is chosen", async () => {
+    await renderHome({
+      status: { authenticated: false, workspace_configured: false },
+      repo: repoInfo(),
+    });
+    expect(container.querySelector("h1")?.textContent).toBe("Sign in to GitHub");
     expect(queryButton("Connect with GitHub")).toBeTruthy();
   });
 
-  it("asks for a repository once signed in", async () => {
-    await renderHome({ repo: noRepo });
-    expect(container.querySelector("h1")?.textContent).toContain("Select repository");
-  });
-
-  it("tells a folder without Git to run git init", async () => {
+  it("guides a folder without Git to GitHub", async () => {
     await renderHome({
       repo: repoInfo({ initialized: false, has_git: false, storage_configured: false }),
     });
-    expect(container.textContent).toContain("Not a Git repository");
+    expect(container.textContent).toContain("This folder is not on GitHub yet");
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {
@@ -66,6 +74,6 @@ describe("HomePage", () => {
     });
     expect(backend.ListSecrets).toHaveBeenCalled();
     expect(container.textContent).not.toContain("Connect with GitHub");
-    expect(container.textContent).not.toContain("Not a Git repository");
+    expect(container.textContent).not.toContain("This folder is not on GitHub yet");
   });
 });
