@@ -1,15 +1,21 @@
+// Package git finds the Git repository a folder belongs to and its origin
+// remote by reading the repository's files. It never runs the git command:
+// the person may have Git only inside GitHub Desktop or an editor, and an
+// app started from the desktop may not see the git their terminal runs.
 package git
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/fsutil"
-	"github.com/enbu-net/enbu/pkg/process"
 )
 
 type Repository struct {
@@ -23,61 +29,177 @@ type Client interface {
 	Inspect(ctx context.Context, path string) (Repository, error)
 }
 
-type Runner interface {
-	Run(ctx context.Context, dir string, args ...string) (string, error)
+// FileClient reads a repository's .git directory, or the .git file of a
+// worktree or submodule, and its config.
+type FileClient struct{}
+
+func NewClient() FileClient {
+	return FileClient{}
 }
 
-type CLIClient struct {
-	runner Runner
-}
-
-func NewCLIClient() *CLIClient {
-	return &CLIClient{runner: ExecRunner{}}
-}
-
-func (c *CLIClient) Inspect(ctx context.Context, path string) (Repository, error) {
+// Inspect finds the nearest folder at or above path that holds .git, as git
+// does. A folder outside any repository is not an error: HasGit is false.
+func (FileClient) Inspect(ctx context.Context, path string) (Repository, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return Repository{}, fmt.Errorf("resolving repository path: %w", err)
 	}
 	repository := Repository{Root: fsutil.Canonical(abs)}
-
-	root, err := c.runner.Run(ctx, abs, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return repository, nil
+	for dir := abs; ; dir = filepath.Dir(dir) {
+		if err := ctx.Err(); err != nil {
+			return Repository{}, err
+		}
+		gitDir, found, err := findGitDir(dir)
+		if err != nil {
+			return Repository{}, err
+		}
+		if found {
+			repository.Root = fsutil.Canonical(dir)
+			repository.HasGit = true
+			url, err := originURL(gitDir)
+			if err != nil {
+				return Repository{}, err
+			}
+			repository.OriginURL = url
+			repository.HasRemote = url != ""
+			return repository, nil
+		}
+		if filepath.Dir(dir) == dir {
+			return repository, nil
+		}
 	}
-	// git prints forward slashes on Windows; the root becomes the same
-	// spelling as a path the CLI or a folder picker resolved.
-	repository.Root = fsutil.Canonical(root)
-	repository.HasGit = true
-
-	remote, err := c.runner.Run(ctx, repository.Root, "remote", "get-url", "origin")
-	if err == nil {
-		repository.OriginURL = remote
-		repository.HasRemote = true
-	}
-	return repository, nil
 }
 
-type ExecRunner struct{}
-
-func (ExecRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	process.HideWindow(cmd)
-	cmd.Dir = dir
-	// stdout only: a warning git prints on stderr is not part of a path.
-	out, err := cmd.Output()
+// findGitDir reports the Git directory of dir: dir/.git itself, or the one a
+// .git file names with "gitdir: ".
+func findGitDir(dir string) (string, bool, error) {
+	dotGit := filepath.Join(dir, ".git")
+	info, err := os.Stat(dotGit)
 	if err != nil {
-		var exit *exec.ExitError
-		output := ""
-		if errors.As(err, &exit) {
-			output = strings.TrimSpace(string(exit.Stderr))
-		}
-		if output == "" {
-			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
-		}
-		return "", fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), output, err)
+		// Missing, or a folder this user may not read: no repository here.
+		return "", false, nil
 	}
-	// Only the line break goes: a folder name may end in a space.
-	return strings.TrimRight(string(out), "\r\n"), nil
+	if info.IsDir() {
+		return dotGit, isGitDir(dotGit), nil
+	}
+	data, err := os.ReadFile(dotGit)
+	if err != nil {
+		return "", false, nil
+	}
+	line, _, _ := strings.Cut(string(data), "\n")
+	target, ok := strings.CutPrefix(strings.TrimRight(line, "\r"), "gitdir: ")
+	if !ok || target == "" {
+		return "", false, nil
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(dir, target)
+	}
+	return target, isGitDir(target), nil
+}
+
+// isGitDir tells a Git directory from a folder that is only named .git: git
+// writes HEAD into every one, a freshly initialized repository included.
+func isGitDir(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "HEAD"))
+	return err == nil && !info.IsDir()
+}
+
+// originURL reads remote.origin.url from the repository's config, which a
+// worktree shares with its main repository through commondir.
+func originURL(gitDir string) (string, error) {
+	common := gitDir
+	if data, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+		target := strings.TrimRight(string(data), "\r\n")
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(gitDir, target)
+		}
+		common = target
+	}
+	data, err := os.ReadFile(filepath.Join(common, "config"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading git config: %w", err)
+	}
+	return configValue(data, "remote", "origin", "url"), nil
+}
+
+// configValue returns the last value of section.subsection.key in a git
+// config file, as git does for a key given more than once. Section and key
+// names ignore case; subsection names do not.
+func configValue(data []byte, section, subsection, key string) string {
+	var value string
+	inSection := false
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "[") {
+			name, sub, rest := parseHeader(line)
+			inSection = strings.EqualFold(name, section) && sub == subsection
+			line = strings.TrimSpace(rest)
+			if line == "" {
+				continue
+			}
+		}
+		if !inSection || line == "" || line[0] == '#' || line[0] == ';' {
+			continue
+		}
+		name, raw, ok := strings.Cut(line, "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(name), key) {
+			continue
+		}
+		value = unquote(raw)
+	}
+	return value
+}
+
+// parseHeader splits `[remote "origin"]` into its section and subsection,
+// and returns what follows the header on the same line.
+func parseHeader(line string) (section, subsection, rest string) {
+	end := strings.LastIndex(line, "]")
+	if end < 0 {
+		return "", "", ""
+	}
+	header, rest := line[1:end], line[end+1:]
+	name, quoted, ok := strings.Cut(header, " ")
+	if !ok {
+		// The old [section.subsection] spelling.
+		name, sub, _ := strings.Cut(header, ".")
+		return name, sub, rest
+	}
+	quoted = strings.TrimSpace(quoted)
+	quoted = strings.TrimSuffix(strings.TrimPrefix(quoted, `"`), `"`)
+	quoted = strings.NewReplacer(`\"`, `"`, `\\`, `\`).Replace(quoted)
+	return name, quoted, rest
+}
+
+// unquote reads a config value: it drops a trailing comment and the quotes
+// around parts of it, and keeps the escaped characters git allows.
+func unquote(raw string) string {
+	var b strings.Builder
+	quoted := false
+	raw = strings.TrimSpace(raw)
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		switch {
+		case c == '"':
+			quoted = !quoted
+		case c == '\\' && i+1 < len(raw):
+			i++
+			switch raw[i] {
+			case 'n':
+				b.WriteByte('\n')
+			case 't':
+				b.WriteByte('\t')
+			default:
+				b.WriteByte(raw[i])
+			}
+		case !quoted && (c == '#' || c == ';'):
+			return strings.TrimSpace(b.String())
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

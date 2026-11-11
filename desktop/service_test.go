@@ -29,7 +29,7 @@ import (
 func TestValidateRepoPath(t *testing.T) {
 	repoDir := newGitRepo(t)
 
-	repo, err := validateRepoPath(context.Background(), gitprovider.NewCLIClient(), repoDir)
+	repo, err := validateRepoPath(context.Background(), gitprovider.NewClient(), repoDir)
 	if err != nil {
 		t.Fatalf("ValidateRepoPath: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestProgressEmitsEvents(t *testing.T) {
 }
 
 func TestValidateRepoPathRejectsMissingPath(t *testing.T) {
-	if _, err := validateRepoPath(context.Background(), gitprovider.NewCLIClient(), filepath.Join(t.TempDir(), "missing")); err == nil {
+	if _, err := validateRepoPath(context.Background(), gitprovider.NewClient(), filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("ValidateRepoPath succeeded for missing path")
 	}
 }
