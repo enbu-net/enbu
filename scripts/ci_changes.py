@@ -1,10 +1,9 @@
 """Select which CI jobs a commit needs from the paths it changes.
 
 `code` is false only when every changed path is documentation, so a docs-only
-change skips the builds and tests. `release` is true when a path that decides
-how release assets are built changed, so the reproducible-build comparison
-(many runners, an hour each) runs only for those changes. Scheduled and
-manual runs on main run everything.
+change skips the builds and tests. Scheduled and manual runs on main run
+everything. The reproducible-build comparison is not part of CI: the release
+workflow runs it, and its dry run checks it before a release.
 """
 
 import os
@@ -21,22 +20,10 @@ DOCS = re.compile(
     r"[^/]+\.md|docs/.*|LICENSE|\.coderabbit\.yaml|\.github/pull_request_template\.md"
 )
 
-# Inputs of `task release/build` other than the application source: the build
-# definition, pinned tools and lockfiles, packaging, and the workflows that run it.
-RELEASE = re.compile(
-    r"go\.(mod|sum)"
-    r"|aqua\.yaml|Taskfile\.yaml|\.goreleaser\.yaml|main\.go"
-    r"|tools/.*|desktop/wails/.*|assets/.*"
-    r"|(web|vscode)/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|vite\.config\.ts|scripts/.*|\.vscodeignore)"
-    r"|\.github/actions/.*|\.github/workflows/(ci|release|release-build)\.yaml"
-    r"|scripts/ci_changes\.py"
-)
-
 
 def select(paths: list[str]) -> dict[str, bool]:
     return {
         "code": any(not DOCS.fullmatch(path) for path in paths),
-        "release": any(RELEASE.fullmatch(path) for path in paths),
     }
 
 
@@ -59,7 +46,7 @@ def main() -> None:
         plan = select(paths)
     else:
         paths = []
-        plan = {"code": True, "release": True}
+        plan = {"code": True}
     lines = [f"{key}={'true' if value else 'false'}" for key, value in plan.items()]
     output = os.environ.get("GITHUB_OUTPUT")
     if output:

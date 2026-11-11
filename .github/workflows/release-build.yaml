@@ -10,6 +10,11 @@ on:
         description: "Release tag to build (e.g. v1.2.3)"
         required: true
         type: string
+      dry-run:
+        description: "Build and compare only: check out the triggering commit, tag it locally, and skip signing"
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -50,9 +55,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: refs/tags/${{ inputs.version }}
+          ref: ${{ inputs.dry-run && github.sha || format('refs/tags/{0}', inputs.version) }}
           fetch-depth: 0
           persist-credentials: false
+
+      # A dry run has no pushed tag; a local one on HEAD stands in for it.
+      - name: Tag the dry run locally
+        if: inputs.dry-run
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git tag "$VERSION"
 
       - parallel:
           - uses: $/.github/actions/setup-go
@@ -151,9 +163,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: refs/tags/${{ inputs.version }}
+          ref: ${{ inputs.dry-run && github.sha || format('refs/tags/{0}', inputs.version) }}
           fetch-depth: 0
           persist-credentials: false
+
+      # A dry run has no pushed tag; a local one on HEAD stands in for it.
+      - name: Tag the dry run locally
+        if: inputs.dry-run
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git tag "$VERSION"
 
       - parallel:
           - uses: $/.github/actions/setup-go
@@ -220,6 +239,7 @@ jobs:
 
   assets:
     name: Sign and attest assets
+    if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     needs:
