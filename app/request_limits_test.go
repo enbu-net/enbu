@@ -47,7 +47,7 @@ func TestRequestFloodPreservesMembershipAndAllowsRecovery(t *testing.T) {
 	for _, run := range []func() error{
 		func() error { _, err := alice.ListJoinRequests(bg); return err },
 		func() error { return alice.ApproveMember(bg, pending.DeviceID) },
-		func() error { _, err := bob.InitializeRepository(bg); return err },
+		func() error { _, err := bob.InitializeRepository(bg, InitOptions{}); return err },
 	} {
 		err := run()
 		if !apperr.Is(err, apperr.CodeUntrusted) || !errors.Is(err, wsp.ErrInvalid) {

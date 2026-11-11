@@ -57,7 +57,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 			return err
 		}
 		if c.Role == "pending" {
-			if _, err := w.Devices[actor].App.InitializeRepository(ctx); err != nil {
+			if _, err := w.Devices[actor].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 		}
@@ -73,7 +73,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		if err := founder.RemoveMember(ctx, w.Devices[2].ID); err != nil {
 			return err
 		}
-		if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 	}
@@ -127,11 +127,11 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	var err error
 	switch c.Operation {
 	case "initialize":
-		out, err = a.InitializeRepository(ctx)
+		out, err = a.InitializeRepository(ctx, app.InitOptions{})
 	case "resolve-stale":
-		err = a.ResolveSecrets(ctx, env, []string{"stale"}, map[string]app.SecretChoice{"BASE": {Value: "must-not-commit"}})
+		err = a.ResolveSecrets(ctx, env, []string{"stale"}, []app.SecretChoice{{Key: "BASE", Value: "must-not-commit"}})
 	case "resolve-empty":
-		err = a.ResolveSecrets(ctx, env, nil, map[string]app.SecretChoice{"BASE": {Value: "must-not-commit"}})
+		err = a.ResolveSecrets(ctx, env, nil, []app.SecretChoice{{Key: "BASE", Value: "must-not-commit"}})
 	case "file-pull":
 		err = a.PullSecretsToFile(ctx, env)
 	case "add":
@@ -257,7 +257,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 		}
 	}
 	if _, present := membership[w.Devices[2].ID]; !present {
-		if _, err := w.Devices[2].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[2].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := founder.ApproveMember(ctx, w.Devices[2].ID); err != nil {
@@ -267,7 +267,7 @@ func (w *World) StateCase(ctx context.Context, c StateCase) error {
 	w.Model["default"] = want
 	// Restore membership only after asserting denial; then every device must agree.
 	if c.Role == "pending" || c.Role == "removed" {
-		if _, err := a.InitializeRepository(ctx); err != nil {
+		if _, err := a.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := founder.ApproveMember(ctx, w.Devices[actor].ID); err != nil {

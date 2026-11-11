@@ -9,6 +9,7 @@ setupDom();
 const sampleMember = {
   device_id: "d".repeat(64),
   fingerprint: "abcd-efgh-ijkl-mnop-qrst",
+  recipient: "age1pq1test",
   algorithm: "p256",
   admin: false,
   self: false,
@@ -123,6 +124,7 @@ describe("MembersPanel approval", () => {
   const request = {
     device_id: "e".repeat(64),
     fingerprint: "1111-2222-3333-4444-5555",
+    recipient: "age1pq1test",
     algorithm: "ed25519",
     requested_at: "2026-10-06T09:30:00Z",
     key_update: false,
@@ -247,6 +249,7 @@ describe("PendingRow", () => {
             request={{
               device_id: "f".repeat(64),
               fingerprint: "aaaa-bbbb",
+              recipient: "age1pq1test",
               algorithm: "p256",
               requested_at: "not a date",
               key_update: false,
@@ -365,6 +368,7 @@ describe("MembersPanel admin rights", () => {
           fingerprint: other.fingerprint,
           algorithm: "p256",
           requested_at: "2026-10-06T09:30:00Z",
+          recipient: "",
           key_update: true,
         },
       ],

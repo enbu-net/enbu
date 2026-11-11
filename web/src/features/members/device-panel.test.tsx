@@ -14,7 +14,7 @@ const mocked = vi.mocked(backend);
 
 describe("DevicePanel", () => {
   it("shows this device's keys", async () => {
-    mocked.identity.mockResolvedValueOnce({
+    mocked.GetIdentity.mockResolvedValueOnce({
       backend: "tpm",
       algorithm: "P-256",
       recipient: "age1tag1example",
@@ -29,7 +29,7 @@ describe("DevicePanel", () => {
   });
 
   it("upgrades a classical key and says when an admin must approve it", async () => {
-    mocked.upgradeIdentity.mockResolvedValueOnce({
+    mocked.UpgradeIdentity.mockResolvedValueOnce({
       backend: "keyring",
       algorithm: "ML-KEM-768+X25519",
       recipient: "age1pq",
@@ -45,14 +45,14 @@ describe("DevicePanel", () => {
     await act(async () => queryButton("Switch to a post-quantum key")?.click());
     await settle();
 
-    expect(mocked.upgradeIdentity).toHaveBeenCalled();
+    expect(mocked.UpgradeIdentity).toHaveBeenCalled();
     expect(onUpgraded).toHaveBeenCalled();
     expect(container.textContent).toContain("Ask an admin to approve the key update");
     expect(container.textContent).toContain("ffff-0000");
   });
 
   it("checks the hardware on request", async () => {
-    mocked.diagnoseIdentity.mockResolvedValueOnce({
+    mocked.DiagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
       denied: false,
@@ -69,7 +69,7 @@ describe("DevicePanel", () => {
   });
 
   it("says when the TPM is denied and the keyring is locked", async () => {
-    mocked.diagnoseIdentity.mockResolvedValueOnce({
+    mocked.DiagnoseIdentity.mockResolvedValueOnce({
       backend: "tpm",
       available: false,
       denied: true,

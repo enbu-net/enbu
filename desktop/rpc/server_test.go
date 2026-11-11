@@ -5,10 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/enbu-net/enbu/pkg/clock"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"path/filepath"
 	"reflect"
@@ -20,6 +16,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 // client drives a Server over in-memory pipes.
@@ -28,7 +25,7 @@ type client struct {
 	in   *io.PipeWriter
 	out  *bufio.Scanner
 	done chan error
-	core *desktop.Service
+	app  *app.App
 }
 
 func startServer(t *testing.T) *client {
@@ -42,7 +39,8 @@ func startServerWith(t *testing.T, patch func(*Server)) *client {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
 
-	core := desktop.NewService(app.New(clock.New()))
+	a := app.New(clock.New())
+	core := desktop.NewService(a)
 	core.AppVersion = "1.2.3"
 	reqR, reqW := io.Pipe()
 	respR, respW := io.Pipe()
@@ -55,7 +53,7 @@ func startServerWith(t *testing.T, patch func(*Server)) *client {
 		done <- server.Serve(context.Background(), reqR, respW)
 		_ = respW.Close()
 	}()
-	c := &client{t: t, in: reqW, out: bufio.NewScanner(respR), done: done, core: core}
+	c := &client{t: t, in: reqW, out: bufio.NewScanner(respR), done: done, app: a}
 	t.Cleanup(func() {
 		_ = reqW.Close()
 		go func() {
@@ -106,34 +104,21 @@ func (c *client) receive() message {
 	return msg
 }
 
-func TestMethodsMatchDesktopBindings(t *testing.T) {
-	// desktop/wails is a main package that needs the native toolkit to build,
-	// so read the bound methods from its source.
-	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join("..", "wails", "binding.go"), nil, 0)
-	if err != nil {
-		t.Fatalf("parse binding.go: %v", err)
+// Every method the desktop app binds, every exported method of
+// desktop.Service, is served. Too many params prove a method is found without
+// running it.
+func TestEveryServiceMethodIsReachable(t *testing.T) {
+	c := startServer(t)
+	service := reflect.TypeFor[*desktop.Service]()
+	if service.NumMethod() != len(Methods) {
+		t.Fatalf("Methods = %v, want the %d methods of desktop.Service", Methods, service.NumMethod())
 	}
-	var bound []string
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || !fn.Name.IsExported() {
-			continue
+	for i := range service.NumMethod() {
+		method := service.Method(i)
+		c.request(i+1, method.Name, make([]any, method.Type.NumIn())...)
+		if resp := c.receive(); resp.Error == nil || resp.Error.Code != codeInvalidParams {
+			t.Errorf("%s: response = %+v, want invalid params", method.Name, resp.Error)
 		}
-		var ident *ast.Ident
-		switch receiver := fn.Recv.List[0].Type.(type) {
-		case *ast.StarExpr:
-			ident, _ = receiver.X.(*ast.Ident)
-		case *ast.Ident:
-			ident = receiver
-		}
-		if ident != nil && ident.Name == "DesktopService" {
-			bound = append(bound, fn.Name.Name)
-		}
-	}
-	got := slices.Sorted(slices.Values(Methods))
-	slices.Sort(bound)
-	if !slices.Equal(got, bound) {
-		t.Errorf("Methods = %v\nwant the methods bound in desktop/wails: %v", got, bound)
 	}
 }
 
@@ -226,7 +211,7 @@ func TestEventsBecomeNotifications(t *testing.T) {
 	c.receive()
 
 	// The pipe blocks the writer until the test reads.
-	go c.core.OnProgress("fetching")
+	go c.app.Events.OnProgress("fetching")
 	msg := c.receive()
 	if msg.Method != methodEvent || msg.ID != nil {
 		t.Fatalf("message = %+v, want an event notification", msg)
@@ -365,13 +350,14 @@ func (w *failAfterServe) Write(p []byte) (int, error) {
 
 func TestServiceStopsWritingAfterServeReturns(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	core := desktop.NewService(app.New(clock.New()))
+	a := app.New(clock.New())
+	core := desktop.NewService(a)
 	out := &failAfterServe{t: t}
 	if err := NewServer(core).Serve(context.Background(), strings.NewReader(""), out); err != nil {
 		t.Fatalf("Serve() error = %v", err)
 	}
 	out.closed = true
-	core.OnProgress("late")
+	a.Events.OnProgress("late")
 	if _, err := core.BrowseRepository(); err == nil {
 		t.Error("BrowseRepository after Serve returned succeeded, want no picker")
 	}

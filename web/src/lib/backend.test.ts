@@ -1,25 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { AppError, toDisplayError } from "./app-error";
 
-// The generated bindings call into the Wails runtime; the adapter is tested
-// against stand-ins with the same names.
-const desktop = vi.hoisted(() => ({}) as Record<string, ReturnType<typeof vi.fn>>);
-vi.mock("../bindings/github.com/enbu-net/enbu/desktop/wails", () => ({
-  DesktopService: new Proxy(desktop, {
-    get: (target, name: string) => (target[name] ??= vi.fn(async () => undefined)),
-  }),
-}));
-
-const { desktopBackend: backend, toAppError } = await import("./backend");
+// Importing the real Wails runtime starts timers that outlive jsdom (see
+// platform.test.ts).
+vi.useFakeTimers();
+const { serviceBackend, toAppError } = await import("./backend");
+vi.clearAllTimers();
+vi.useRealTimers();
 
 /** A rejection shaped like the runtime's: the AppError payload is the cause. */
 function rejection(code: string, params: Record<string, string> = {}) {
   return Object.assign(new Error(code), { cause: { code, message: code, params } });
 }
-
-beforeEach(() => {
-  for (const name of Object.keys(desktop)) delete desktop[name];
-});
 
 describe("toAppError", () => {
   it("keeps the payload the desktop service marshalled", () => {
@@ -42,56 +34,29 @@ describe("toAppError", () => {
   });
 });
 
-describe("desktop backend", () => {
-  it("passes arguments in the desktop service's order", async () => {
-    await backend.addSecret("TOKEN", "secret", "default");
-    await backend.editSecret("TOKEN", "new", "default");
-    await backend.deleteSecret("TOKEN", "default");
-    await backend.pullSecrets("default", true);
-    await backend.syncSecrets();
-    await backend.renameEnvironment("staging", "prod");
-    await backend.resolveConflicts("prod", ["h1"], [{ key: "KEY", value: "", delete: true }]);
-    await backend.importSecrets("A=1\n", true, "default");
+describe("serviceBackend", () => {
+  // Stand-ins for the generated bindings, which call into the Wails runtime.
+  function service(methods: Record<string, (...args: never[]) => Promise<unknown>>) {
+    return serviceBackend(methods as unknown as Parameters<typeof serviceBackend>[0]);
+  }
 
-    expect(desktop.AddSecret).toHaveBeenCalledWith("default", "TOKEN", "secret");
-    expect(desktop.EditSecret).toHaveBeenCalledWith("default", "TOKEN", "new");
-    expect(desktop.DeleteSecret).toHaveBeenCalledWith("default", "TOKEN");
-    expect(desktop.PullSecrets).toHaveBeenCalledWith("default", true);
-    expect(desktop.SyncSecrets).toHaveBeenCalledWith("");
-    expect(desktop.RenameEnvironment).toHaveBeenCalledWith("staging", "prod");
-    expect(desktop.ResolveConflicts).toHaveBeenCalledWith(
-      "prod",
-      ["h1"],
-      [{ key: "KEY", value: "", delete: true }],
-    );
-    expect(desktop.ImportSecrets).toHaveBeenCalledWith("default", "A=1\n", true);
-  });
-
-  it("reports a repository as selected only when it has a path", async () => {
-    desktop.GetRepoStatus = vi.fn(async () => ({ path: "", initialized: false }));
-    await expect(backend.repoStatus()).resolves.toEqual({ selected: false });
-
-    const repo = { path: "/repo", initialized: true, has_git: true };
-    desktop.SelectRepository = vi.fn(async () => repo);
-    await expect(backend.selectRepository("/repo")).resolves.toEqual({ selected: true, repo });
+  it("calls every method of the service with its arguments and result", async () => {
+    const AddSecret = vi.fn(async () => {});
+    const GetAppVersion = vi.fn(async () => "1.2.3");
+    const backend = service({ AddSecret, GetAppVersion });
+    await backend.AddSecret("default", "TOKEN", "secret");
+    expect(AddSecret).toHaveBeenCalledWith("default", "TOKEN", "secret");
+    await expect(backend.GetAppVersion()).resolves.toBe("1.2.3");
   });
 
   it("rejects with the AppError the desktop service returned", async () => {
-    desktop.ApproveMember = vi.fn(async () => {
-      throw rejection("access_denied");
+    const backend = service({
+      ApproveMember: async () => {
+        throw rejection("access_denied");
+      },
     });
-    const err = await backend.approveMember("d2").catch((e: unknown) => e);
+    const err = await backend.ApproveMember("d2").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppError);
     expect(toDisplayError(err).code).toBe("access_denied");
-  });
-
-  it("turns a failed sign-in's payload into a display error", async () => {
-    desktop.GetOAuthLoginStatus = vi.fn(async () => ({
-      state: "denied",
-      error: { code: "access_denied", message: "raw", params: {} },
-    }));
-    const status = await backend.oauthStatus("s1");
-    expect(status.state).toBe("denied");
-    expect(status.error?.code).toBe("access_denied");
   });
 });

@@ -2,33 +2,33 @@ import type {
   UpdateMethod,
   UpdateStatus,
   AuthStatus,
-  ConflictChoice,
   ConflictSet,
   Diff,
-  Environment,
+  EnvInfo,
   EnvironmentDeletion,
-  GUIRepoStatus,
-  Diagnosis,
   HistoryEntry,
+  IdentityDiagnosis,
   ImportResult,
   InitResult,
-  StorageSettings,
   KeyUpdateResult,
-  PublicInfo,
-  JoinRequest,
-  Member,
+  JoinRequestInfo,
+  MemberInfo,
   OAuthStart,
   OAuthStatus,
-  PullResult,
+  PublicInfo,
   RepoInfo,
+  SecretChoice,
   SecretsResponse,
+  StorageConfig,
+  WrittenFile,
 } from "./types";
+import { noRepo } from "./types";
 import { createAppError } from "./app-error";
 import type { Backend } from "./backend";
 
 const previewUsername = "yashikota";
 
-let mockEnvs: Environment[] = [
+let mockEnvs: EnvInfo[] = [
   { name: "development", current: true },
   { name: "production", current: false },
   { name: "staging", current: false },
@@ -55,6 +55,7 @@ let mockSecretsByEnv: Record<string, { key: string; value: string }[]> = {
 let mockConflictsByEnv: Record<string, ConflictSet> = {
   staging: {
     environment: "staging",
+    id: "mock-conflict",
     heads: ["mock-head-a", "mock-head-b"],
     conflicts: [
       {
@@ -95,10 +96,11 @@ function diffSecrets(from: Record<string, string>, to: Record<string, string>): 
   };
 }
 
-let mockMembers: Member[] = [
+let mockMembers: MemberInfo[] = [
   {
     device_id: "aabbccdd".repeat(8),
     fingerprint: "aabb-ccdd-aabb-ccdd-aabb",
+    recipient: "age1pq1demo-self",
     algorithm: "p256",
     admin: true,
     self: true,
@@ -107,6 +109,7 @@ let mockMembers: Member[] = [
   {
     device_id: "11223344".repeat(8),
     fingerprint: "1122-3344-1122-3344-1122",
+    recipient: "age1pq1demo-peer",
     algorithm: "ed25519",
     admin: false,
     self: false,
@@ -114,10 +117,11 @@ let mockMembers: Member[] = [
   },
 ];
 
-let mockJoinRequests: JoinRequest[] = [
+let mockJoinRequests: JoinRequestInfo[] = [
   {
     device_id: "55667788".repeat(8),
     fingerprint: "5566-7788-5566-7788-5566",
+    recipient: "age1pq1demo-request",
     algorithm: "p256",
     requested_at: "2026-10-06T09:30:00Z",
     key_update: false,
@@ -153,7 +157,7 @@ let mockAccounts = ["octocat", previewUsername];
 let mockCurrentAccount = previewUsername;
 
 export const mockBackend: Backend = {
-  async authStatus(): Promise<AuthStatus> {
+  async GetAuthStatus(): Promise<AuthStatus> {
     return {
       authenticated: mockCurrentAccount !== "",
       username: mockCurrentAccount,
@@ -162,49 +166,54 @@ export const mockBackend: Backend = {
     };
   },
 
-  async startOAuthLogin(): Promise<OAuthStart> {
+  async StartOAuthLogin(): Promise<OAuthStart> {
     throw new Error("Mock mode: auth is pre-configured");
   },
 
-  async oauthStatus(_sessionID: string): Promise<OAuthStatus> {
+  async GetOAuthLoginStatus(_sessionID: string): Promise<OAuthStatus> {
     throw new Error("Mock mode: auth is pre-configured");
   },
 
-  async cancelOAuthLogin(_sessionID: string): Promise<void> {
+  async CancelOAuthLogin(_sessionID: string): Promise<void> {
     // no-op
   },
 
-  async logout(login = ""): Promise<void> {
+  async Logout(login: string): Promise<void> {
     const gone = login || mockCurrentAccount;
     mockAccounts = mockAccounts.filter((account) => account !== gone);
     if (gone === mockCurrentAccount) mockCurrentAccount = mockAccounts.at(-1) ?? "";
   },
 
-  async switchAccount(login: string): Promise<void> {
+  async SwitchAccount(login: string): Promise<void> {
     if (!mockAccounts.includes(login)) throw createAppError("invalid_argument");
     mockCurrentAccount = login;
   },
 
-  async repoStatus(): Promise<GUIRepoStatus> {
+  async GetRepoStatus(): Promise<RepoInfo> {
     const selected = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
-    if (!selected) return { selected: false };
-    return { selected: true, repo: Object.assign({}, selected) };
+    return selected ? Object.assign({}, selected) : Object.assign({}, noRepo);
   },
 
-  async browseRepository(): Promise<GUIRepoStatus> {
-    return mockBackend.repoStatus();
+  async BrowseRepository(): Promise<RepoInfo> {
+    return mockBackend.GetRepoStatus();
   },
 
-  async selectRepository(path: string): Promise<GUIRepoStatus> {
+  async SelectRepository(path: string): Promise<RepoInfo> {
     mockSelectedRepoPath = path;
-    return mockBackend.repoStatus();
+    return mockBackend.GetRepoStatus();
   },
 
-  async initialize(storage: StorageSettings): Promise<InitResult> {
+  async Initialize(storage: StorageConfig): Promise<InitResult> {
     return {
       public_key: "age1demo...",
       username: previewUsername,
       environment: "development",
+      workspace_id: "3f2b8c1e-9a4d-4e6b-8c2f-1a5d7e9b0c3d",
+      control_genesis: "",
+      key_created: true,
+      mode: "initialize",
+      has_secrets: false,
+      can_decrypt: null,
       device_id: mockMembers[0].device_id,
       fingerprint: mockMembers[0].fingerprint,
       pending: false,
@@ -213,26 +222,26 @@ export const mockBackend: Backend = {
     };
   },
 
-  async suggestStorage(): Promise<string> {
+  async SuggestStorage(): Promise<string> {
     return "oci://ghcr.io/enbu-net/enbu-enbu";
   },
 
-  async listEnvironments(): Promise<Environment[]> {
+  async ListEnvironments(): Promise<EnvInfo[]> {
     return [...mockEnvs];
   },
 
-  async createEnvironment(name: string): Promise<void> {
+  async CreateEnvironment(name: string): Promise<void> {
     if (!mockEnvs.find((e) => e.name === name)) {
       mockEnvs.push({ name, current: false });
       mockSecretsByEnv[name] = [];
     }
   },
 
-  async switchEnvironment(name: string): Promise<void> {
+  async SwitchEnvironment(name: string): Promise<void> {
     mockEnvs = mockEnvs.map((e) => ({ name: e.name, current: e.name === name }));
   },
 
-  async renameEnvironment(name: string, newName: string): Promise<void> {
+  async RenameEnvironment(name: string, newName: string): Promise<void> {
     mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
@@ -240,7 +249,7 @@ export const mockBackend: Backend = {
     }
   },
 
-  async deleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion> {
+  async DeleteEnvironment(name: string, purge: boolean): Promise<EnvironmentDeletion> {
     if (currentEnvName() === name) throw createAppError("invalid_argument", { name });
     mockEnvs = mockEnvs.filter((e) => e.name !== name);
     delete mockSecretsByEnv[name];
@@ -249,11 +258,11 @@ export const mockBackend: Backend = {
       : { purged: 0, incarnation: "0b6f2c1e-6a4d-4c47-9d1e-3f2a7c5b8e90" };
   },
 
-  async purgeIncarnation(_incarnation: string): Promise<number> {
+  async PurgeIncarnation(_incarnation: string): Promise<number> {
     return 1;
   },
 
-  async listSecrets(env = ""): Promise<SecretsResponse> {
+  async ListSecrets(env: string): Promise<SecretsResponse> {
     const name = env || currentEnvName();
     const conflicted = mockConflictsByEnv[name]?.conflicts.map((c) => c.key) ?? [];
     if (conflicted.length > 0)
@@ -261,7 +270,7 @@ export const mockBackend: Backend = {
     return { environment: name, secrets: [...secretsForEnv(name)] };
   },
 
-  async addSecret(key: string, value: string, env = ""): Promise<void> {
+  async AddSecret(env: string, key: string, value: string): Promise<void> {
     const secrets = secretsForEnv(env);
     const idx = secrets.findIndex((s) => s.key === key);
     if (idx >= 0) {
@@ -272,29 +281,29 @@ export const mockBackend: Backend = {
     }
   },
 
-  async editSecret(key: string, value: string, env = ""): Promise<void> {
+  async EditSecret(env: string, key: string, value: string): Promise<void> {
     const secrets = secretsForEnv(env);
     const s = secrets.find((s) => s.key === key);
     if (s) s.value = value;
   },
 
-  async deleteSecret(key: string, env = ""): Promise<void> {
+  async DeleteSecret(env: string, key: string): Promise<void> {
     const name = env || currentEnvName();
     mockSecretsByEnv[name] = secretsForEnv(env).filter((s) => s.key !== key);
   },
 
-  async pullSecrets(env = "", _replace = false): Promise<PullResult> {
+  async PullSecrets(env: string, _replace: boolean): Promise<WrittenFile> {
     return { output: ".env", count: secretsForEnv(env).length, kept: [], removed: [] };
   },
 
-  async syncSecrets(_env = ""): Promise<void> {
+  async SyncSecrets(_env: string): Promise<void> {
     // no-op in mock
   },
-  async listConflicts(env = ""): Promise<ConflictSet> {
+  async ListConflicts(env: string): Promise<ConflictSet> {
     const name = env || currentEnvName();
-    return mockConflictsByEnv[name] ?? { environment: name, heads: [], conflicts: [] };
+    return mockConflictsByEnv[name] ?? { environment: name, id: "", heads: [], conflicts: [] };
   },
-  async resolveConflicts(env: string, heads: string[], choices: ConflictChoice[]): Promise<void> {
+  async ResolveConflicts(env: string, heads: string[], choices: SecretChoice[]): Promise<void> {
     const name = env || currentEnvName();
     const set = mockConflictsByEnv[name];
     if (!set || set.heads.join() !== heads.join()) throw createAppError("conflict");
@@ -309,14 +318,14 @@ export const mockBackend: Backend = {
     const { [name]: _resolved, ...rest } = mockConflictsByEnv;
     mockConflictsByEnv = rest;
   },
-  async listHistory(env: string): Promise<HistoryEntry[]> {
+  async ListHistory(env: string): Promise<HistoryEntry[]> {
     return (mockHistoryByEnv[env || currentEnvName()] ?? []).map((entry, i) => ({
       index: i + 1,
       timestamp: entry.timestamp,
       tag: `mock-revision-${i + 1}`,
     }));
   },
-  async diffHistory(env: string, from: number, to: number): Promise<Diff> {
+  async DiffHistory(env: string, from: number, to: number): Promise<Diff> {
     const history = mockHistoryByEnv[env || currentEnvName()] ?? [];
     const at = (index: number) => {
       const entry = history[index - 1];
@@ -325,7 +334,7 @@ export const mockBackend: Backend = {
     };
     return diffSecrets(at(from), at(to));
   },
-  async restoreHistory(env: string, index: number): Promise<void> {
+  async RestoreHistory(env: string, index: number): Promise<void> {
     const name = env || currentEnvName();
     const history = (mockHistoryByEnv[name] ??= []);
     const entry = history[index - 1];
@@ -335,7 +344,7 @@ export const mockBackend: Backend = {
       .map(([key, value]) => ({ key, value }))
       .sort((a, b) => a.key.localeCompare(b.key));
   },
-  async importSecrets(dotenv: string, overwrite: boolean, env = ""): Promise<ImportResult> {
+  async ImportSecrets(env: string, dotenv: string, overwrite: boolean): Promise<ImportResult> {
     const name = env || currentEnvName();
     const secrets = secretsForEnv(name);
     const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
@@ -361,25 +370,25 @@ export const mockBackend: Backend = {
       if (!existing) result.added.push(item.key);
       else if (existing.value === item.value) result.unchanged.push(item.key);
       else result.updated.push(item.key);
-      await mockBackend.addSecret(item.key, item.value, name);
+      await mockBackend.AddSecret(name, item.key, item.value);
     }
     return result;
   },
-  async listRepositories(): Promise<RepoInfo[]> {
+  async ListRepositories(): Promise<RepoInfo[]> {
     return [...mockRepoHistory];
   },
-  async removeRepository(path: string): Promise<void> {
+  async RemoveRepository(path: string): Promise<void> {
     const idx = mockRepoHistory.findIndex((r) => r.path === path);
     if (idx >= 0) mockRepoHistory.splice(idx, 1);
     if (mockSelectedRepoPath === path) mockSelectedRepoPath = "";
   },
-  async listMembers(): Promise<Member[]> {
+  async ListMembers(): Promise<MemberInfo[]> {
     return [...mockMembers];
   },
-  async listJoinRequests(): Promise<JoinRequest[]> {
+  async ListJoinRequests(): Promise<JoinRequestInfo[]> {
     return [...mockJoinRequests];
   },
-  async approveMember(deviceID: string): Promise<void> {
+  async ApproveMember(deviceID: string): Promise<void> {
     const request = mockJoinRequests.find((r) => r.device_id === deviceID);
     if (!request) throw createAppError("invalid_argument");
     mockJoinRequests = mockJoinRequests.filter((r) => r.device_id !== deviceID);
@@ -388,6 +397,7 @@ export const mockBackend: Backend = {
       {
         device_id: request.device_id,
         fingerprint: request.fingerprint,
+        recipient: request.recipient,
         algorithm: request.algorithm,
         admin: false,
         self: false,
@@ -395,19 +405,19 @@ export const mockBackend: Backend = {
       },
     ];
   },
-  async removeMember(deviceID: string): Promise<void> {
+  async RemoveMember(deviceID: string): Promise<void> {
     if (!mockMembers.some((m) => m.device_id === deviceID))
       throw createAppError("invalid_argument");
     mockMembers = mockMembers.filter((m) => m.device_id !== deviceID);
   },
-  async setAdmin(deviceID: string, admin: boolean): Promise<void> {
+  async SetAdmin(deviceID: string, admin: boolean): Promise<void> {
     if (!mockMembers.some((m) => m.device_id === deviceID))
       throw createAppError("invalid_argument");
     mockMembers = mockMembers.map((m) =>
       m.device_id === deviceID ? Object.assign({}, m, { admin }) : m,
     );
   },
-  async identity(): Promise<PublicInfo> {
+  async GetIdentity(): Promise<PublicInfo> {
     const self = mockMembers[0];
     return {
       backend: "keyring",
@@ -417,7 +427,7 @@ export const mockBackend: Backend = {
       fingerprint: self.fingerprint,
     };
   },
-  async diagnoseIdentity(): Promise<Diagnosis> {
+  async DiagnoseIdentity(): Promise<IdentityDiagnosis> {
     return {
       backend: "tpm",
       available: false,
@@ -426,7 +436,7 @@ export const mockBackend: Backend = {
       keyring_locked: false,
     };
   },
-  async upgradeIdentity(): Promise<KeyUpdateResult> {
+  async UpgradeIdentity(): Promise<KeyUpdateResult> {
     mockMembers = mockMembers.map((m) =>
       m.self ? Object.assign({}, m, { post_quantum: true }) : m,
     );
@@ -440,23 +450,23 @@ export const mockBackend: Backend = {
       pending: false,
     };
   },
-  async readConfig(): Promise<string> {
+  async ReadConfig(): Promise<string> {
     return mockConfig;
   },
-  async writeConfig(content: string): Promise<void> {
+  async WriteConfig(content: string): Promise<void> {
     mockConfig = content;
   },
-  async appVersion(): Promise<string> {
+  async GetAppVersion(): Promise<string> {
     return "";
   },
   // The preview is not a release; it has nothing to update.
-  async checkForUpdate(): Promise<UpdateStatus> {
+  async CheckForUpdate(): Promise<UpdateStatus> {
     return { method: "development" as UpdateMethod, current: "", available: false };
   },
-  async installUpdate(): Promise<UpdateStatus> {
+  async InstallUpdate(): Promise<UpdateStatus> {
     throw createAppError("invalid_argument");
   },
-  async restartApp(): Promise<void> {
+  async RestartApp(): Promise<void> {
     throw createAppError("invalid_argument");
   },
 };

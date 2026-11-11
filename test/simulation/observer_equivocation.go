@@ -257,7 +257,7 @@ func (w *World) ObserverStateEquivocation(ctx context.Context, conflict, cold bo
 		}
 	}
 	if conflict {
-		if err := w.Devices[0].App.ResolveSecrets(ctx, "default", heads, map[string]app.SecretChoice{"BASE": {Value: "resolved"}}); err != nil {
+		if err := w.Devices[0].App.ResolveSecrets(ctx, "default", heads, []app.SecretChoice{{Key: "BASE", Value: "resolved"}}); err != nil {
 			return err
 		}
 		union["BASE"] = "resolved"

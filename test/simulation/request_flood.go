@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -25,7 +26,7 @@ func (w *World) RequestFlood(ctx context.Context) error {
 	if err := admin.RemoveMember(ctx, w.Devices[target].ID); err != nil {
 		return err
 	}
-	result, err := w.Devices[target].App.InitializeRepository(ctx)
+	result, err := w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return err
 	}
@@ -71,7 +72,7 @@ func (w *World) RequestFlood(ctx context.Context) error {
 	}{
 		{"list", func() error { _, err := admin.ListJoinRequests(ctx); return err }},
 		{"approve", func() error { return admin.ApproveMember(ctx, w.Devices[target].ID) }},
-		{"rejoin", func() error { _, err := w.Devices[target].App.InitializeRepository(ctx); return err }},
+		{"rejoin", func() error { _, err := w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{}); return err }},
 	} {
 		err := op.run()
 		if requireCode(err, apperr.CodeUntrusted) != nil || !errors.Is(err, wsp.ErrInvalid) {

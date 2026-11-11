@@ -168,7 +168,7 @@ func (w *World) HistorySnapshot(ctx context.Context, operation, change string, c
 		if got, err := reader.App.DiffHistory(ctx, "default", 1, 2); !apperr.Is(err, apperr.CodeNotMember) || got != nil {
 			return fmt.Errorf("revoked member started a new diff: %v", err)
 		}
-		if _, err := reader.App.InitializeRepository(ctx); err != nil {
+		if _, err := reader.App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		previous, err := w.Devices[0].Store.Discover(ctx, storage.KindState, scope)

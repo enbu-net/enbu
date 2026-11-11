@@ -7,11 +7,11 @@ import { SectionHeader } from "../../components/layout";
 import { TomlCodeEditor } from "../../components/toml-code-editor";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Environment } from "../../lib/types";
+import type { EnvInfo } from "../../lib/types";
 import { parseConfigDraft, serializeConfigDraft, type EnbuConfigDraft } from "./config-draft";
 import { m } from "../../paraglide/messages";
 
-export function ConfigPanel({ environments }: { environments: Environment[] }) {
+export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
   const defaultEnvId = useId();
   const [content, setContent] = useState("");
   const [draft, setDraft] = useState("");
@@ -24,7 +24,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
 
   const load = useCallback(async () => {
     try {
-      const text = await backend.readConfig();
+      const text = await backend.ReadConfig();
       setContent(text ?? "");
       setDraft(text ?? "");
       setGui(parseConfigDraft(text ?? "", environments));
@@ -50,7 +50,7 @@ export function ConfigPanel({ environments }: { environments: Environment[] }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await backend.writeConfig(draft);
+      await backend.WriteConfig(draft);
       setContent(draft);
     } catch (err) {
       setSaveError(toDisplayError(err));

@@ -38,7 +38,7 @@ matches and nothing is changed, so a value you have not seen is never replaced.`
 				return err
 			}
 			if len(args)+len(picks)+len(deletes) == 0 {
-				return printConflicts(cmd, a, envName, set)
+				return printConflicts(cmd, set)
 			}
 			if seen != set.ID {
 				return apperr.New(apperr.CodeConflict, "the conflicts are not the ones you looked at (or --seen is missing); run 'enbu resolve' to see them again", nil)
@@ -52,11 +52,11 @@ matches and nothing is changed, so a value you have not seen is never replaced.`
 				return err
 			}
 			if jsonEnabled(cmd) {
-				keys := make([]string, 0, len(choices))
-				for k := range choices {
-					keys = append(keys, k)
+				keys := make([]string, len(choices))
+				for i, c := range choices {
+					keys[i] = c.Key
 				}
-				return writeJSON(cmd, map[string]any{"action": "resolve", "environment": resolvedEnvironmentName(a, envName), "keys": keys})
+				return writeJSON(cmd, map[string]any{"action": "resolve", "environment": set.Environment, "keys": keys})
 			}
 			cmd.Printf("✓ Resolved %d secret(s)\n", len(choices))
 			return nil
@@ -69,10 +69,10 @@ matches and nothing is changed, so a value you have not seen is never replaced.`
 	return cmd
 }
 
-func printConflicts(cmd *cobra.Command, a *app.App, envName string, set *app.ConflictSet) error {
+func printConflicts(cmd *cobra.Command, set *app.ConflictSet) error {
 	conflicts := set.Conflicts
 	if jsonEnabled(cmd) {
-		return writeJSON(cmd, map[string]any{"environment": resolvedEnvironmentName(a, envName), "id": set.ID, "conflicts": conflicts})
+		return writeJSON(cmd, map[string]any{"environment": set.Environment, "id": set.ID, "conflicts": conflicts})
 	}
 	if len(conflicts) == 0 {
 		cmd.Println("No conflicts")
@@ -92,20 +92,18 @@ func printConflicts(cmd *cobra.Command, a *app.App, envName string, set *app.Con
 	return nil
 }
 
-func parseChoices(conflicts []app.SecretConflict, values, picks, deletes []string) (map[string]app.SecretChoice, error) {
+func parseChoices(conflicts []app.SecretConflict, values, picks, deletes []string) ([]app.SecretChoice, error) {
 	byKey := map[string]app.SecretConflict{}
 	for _, c := range conflicts {
 		byKey[c.Key] = c
 	}
-	choices := map[string]app.SecretChoice{}
+	var choices []app.SecretChoice
 	set := func(key string, choice app.SecretChoice) error {
 		if _, ok := byKey[key]; !ok {
 			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s has no conflict to resolve", key), apperr.Params{"key": key})
 		}
-		if _, dup := choices[key]; dup {
-			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s was decided twice", key), apperr.Params{"key": key})
-		}
-		choices[key] = choice
+		choice.Key = key
+		choices = append(choices, choice)
 		return nil
 	}
 	for _, kv := range values {
