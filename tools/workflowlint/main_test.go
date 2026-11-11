@@ -77,8 +77,20 @@ func TestDSTHasFivePlatformsAndFourDisjointLanesPerRunner(t *testing.T) {
 	jobs := field(doc.Content[0], "jobs")
 	job := field(jobs, "simulation")
 	matrix := field(field(job, "strategy"), "matrix")
-	if len(matrix.Content) != 4 || len(field(matrix, "platform").Content) != 5 {
-		t.Fatal("DST matrix must contain five platforms and explicit runner groups")
+	if len(matrix.Content) != 6 || len(field(matrix, "platform").Content) != 5 {
+		t.Fatal("DST matrix must contain five platforms, explicit runner groups, and the incremental exclusions")
+	}
+	// The full exploration keeps every platform; incremental runs keep linux-amd64.
+	exclude := field(matrix, "exclude").Value
+	if !strings.Contains(exclude, "needs.plan.outputs.mode == 'full' && '[]'") || strings.Contains(exclude, "linux-amd64") {
+		t.Fatal("DST must run every platform in full mode and linux-amd64 in incremental mode")
+	}
+	for _, platform := range field(matrix, "platform").Content {
+		target := field(platform, "target").Value
+		pair := `{"target":"` + target + `","runner":"` + field(platform, "runner").Value + `"}`
+		if target != "linux-amd64" && !strings.Contains(exclude, pair) {
+			t.Fatalf("incremental DST must exclude %s by its whole platform entry", target)
+		}
 	}
 	var lanes []*yaml.Node
 	for _, step := range field(job, "steps").Content {

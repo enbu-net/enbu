@@ -306,7 +306,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 				return err
 			}
 			if attempt == attempts-1 {
-				return fmt.Errorf("workspace members kept changing: %w", errControlMoved)
+				return apperr.Wrap(apperr.CodeConflict, "workspace members kept changing while saving; try again", errControlMoved, nil)
 			}
 			continue
 		}

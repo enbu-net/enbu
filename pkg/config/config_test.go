@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -446,6 +447,13 @@ func TestLocalState_RoundTrip(t *testing.T) {
 	}
 	if got.Previous != want.Previous {
 		t.Errorf("Previous = %q, want %q", got.Previous, want.Previous)
+	}
+	info, err := os.Stat(filepath.Join(DataDir(), "state", uuidOrHash("myorg/myrepo")+".toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("state file mode = %v, want 0600", info.Mode().Perm())
 	}
 }
 
