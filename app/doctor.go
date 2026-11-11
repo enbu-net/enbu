@@ -135,7 +135,7 @@ func (a *App) diagnose(ctx context.Context, validateToken func(context.Context, 
 		return r
 	}
 	if s.head == nil {
-		r.add("control", "", "fail", "Control has competing heads; run enbu member resolve-fork.", wspError(&wsp.ForkError{Heads: s.view.Heads}))
+		r.add("control", "", "fail", "Control has competing heads; an admin of every head joins them on their next enbu operation.", wspError(&wsp.ForkError{Heads: s.view.Heads}))
 		return r
 	}
 	r.add("control", "", "ok", "Control signatures, trust pins and checkpoint are valid.", nil)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -104,7 +105,7 @@ func wspError(err error) error {
 			err, apperr.Params{"pinned": string(changed.Pinned.Genesis), "configured": configured,
 				"pinned_workspace": changed.Pinned.Workspace, "configured_workspace": changed.Configured.Workspace})
 	case errors.As(err, &fork):
-		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; an admin must run 'enbu member resolve-fork'", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
+		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; it is resolved when an admin of both changes opens enbu", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
 		return apperr.Wrap(apperr.CodeRollback, "storage shows less than this device already accepted", err, nil)
 	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrCorrupt):
@@ -114,20 +115,80 @@ func wspError(err error) error {
 	}
 }
 
-// openControl verifies the Control DAG without loading any key. It fails with
-// CodeControlForked while two heads compete.
+// openControl verifies the Control DAG. When two admins changed the members at
+// the same time and this device is an admin of every head, it joins the heads
+// with a 3-way merge first; any other device fails with CodeControlForked until
+// an admin does.
 func (a *App) openControl(ctx context.Context) (*session, error) {
-	s, err := a.openControlView(ctx)
-	if err != nil {
-		return nil, err
+	for attempt := 0; ; attempt++ {
+		s, err := a.openControlView(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if s.head != nil {
+			return s, nil
+		}
+		resolved := false
+		if attempt < forkRetries {
+			if resolved, err = a.resolveFork(ctx, s); err != nil {
+				return nil, err
+			}
+		}
+		if !resolved {
+			return nil, wspError(&wsp.ForkError{Heads: s.view.Heads})
+		}
 	}
-	if s.head == nil {
-		return nil, wspError(&wsp.ForkError{Heads: s.view.Heads})
-	}
-	return s, nil
 }
 
-// openControlView is openControl that also returns a forked DAG, so an admin can resolve it.
+// forkRetries bounds how often openControl joins a fork again, which happens
+// when two admins join the same fork at once.
+const forkRetries = 3
+
+// resolveFork publishes the 3-way merge of the competing heads (see
+// wsp.MergePrincipals). It reports false, publishing nothing, when this device
+// is not an admin of every head.
+func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
+	if a.Identities == nil {
+		return false, nil
+	}
+	d, err := a.Identities.Load(s.workspace)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil // a device without keys cannot join the heads; it reports the fork
+	}
+	if err != nil {
+		return false, identityError(fmt.Errorf("loading identity: %w", err))
+	}
+	defer func() { _ = d.Close() }()
+	signer := d.Signer
+	author := signer.Public().DeviceID()
+	for _, h := range s.view.Heads {
+		if p, ok := h.Principal(author); !ok || !p.Admin {
+			return false, nil
+		}
+	}
+	v, err := wsp.ResolveFork(ctx, s.store, s.view, signer)
+	var fork *wsp.ForkError
+	if errors.As(err, &fork) {
+		return true, nil // another admin joined it at the same time; join again
+	}
+	if err != nil {
+		return false, wspError(err)
+	}
+	if err := a.acceptControlHead(ctx, v); err != nil {
+		return false, err
+	}
+	// The resolution may have dropped members the existing ciphertext is still
+	// encrypted for, so it re-encrypts exactly as a removal does. A failure
+	// fails the operation that joined, even a read: the join is published and
+	// is not retried, so this is the only moment that tells the admin to sync.
+	if err := a.reencryptAll(ctx); err != nil {
+		return false, apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
+	}
+	return true, nil
+}
+
+// openControlView verifies the Control DAG without loading any key and also
+// returns a forked DAG.
 func (a *App) openControlView(ctx context.Context) (*session, error) {
 	cfg, err := a.loadProject()
 	if err != nil {

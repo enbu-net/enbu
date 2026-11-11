@@ -238,7 +238,7 @@ func (w *World) WireAttacks(ctx context.Context, cold bool) error {
 		signer signing.Signer
 		verify func([]byte) error
 	}{
-		{storage.KindControl, control, signing.DomainControl, signer, func(b []byte) error { _, err := wsp.VerifyChild([]*wsp.Verified{head}, b); return err }},
+		{storage.KindControl, control, signing.DomainControl, signer, func(b []byte) error { _, err := wsp.VerifyChild([]*wsp.Verified{head}, b, nil); return err }},
 		{storage.KindState, floor.Head, signing.DomainState, signer, func(b []byte) error {
 			_, err := wsp.VerifyRevision(view, cfg.WorkspaceID, cfg.Resource("default"), digest.FromBytes(b), b)
 			return err

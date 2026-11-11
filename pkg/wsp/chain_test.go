@@ -154,19 +154,10 @@ func TestConcurrentUpdateForksAndIsResolvedByAnAdmin(t *testing.T) {
 	if _, err := UpdateControl(ctx, store, view, alice.signer, func(*Control) error { return nil }); !errors.Is(err, ErrControlFork) {
 		t.Fatalf("update on a forked DAG: %v", err)
 	}
-	if _, err := ResolveFork(ctx, store, view, carol.signer, func(*Control) error { return nil }); err == nil {
+	if _, err := ResolveFork(ctx, store, view, carol.signer); err == nil {
 		t.Fatal("a member resolved the fork")
 	}
-	resolved, err := ResolveFork(ctx, store, view, alice.signer, func(c *Control) error {
-		kept := c.Principals[:0:0]
-		for _, p := range c.Principals {
-			if p.ID != dave.p.ID {
-				kept = append(kept, p)
-			}
-		}
-		c.Principals = kept
-		return nil
-	})
+	resolved, err := ResolveFork(ctx, store, view, alice.signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,13 +165,13 @@ func TestConcurrentUpdateForksAndIsResolvedByAnAdmin(t *testing.T) {
 	if err != nil || head.Digest != resolved.Digest {
 		t.Fatalf("head after resolution: %v %v", head, err)
 	}
-	if _, ok := head.Principal(dave.p.ID); ok {
-		t.Fatal("dave survived the resolution")
+	// Both concurrent approvals survive the 3-way merge.
+	for _, p := range []actor{carol, dave} {
+		if _, ok := head.Principal(p.p.ID); !ok {
+			t.Fatalf("%s was dropped", p.p.ID.Fingerprint())
+		}
 	}
-	if _, ok := head.Principal(carol.p.ID); !ok {
-		t.Fatal("carol was dropped")
-	}
-	if _, err := ResolveFork(ctx, store, head2view(t, store, genesis), alice.signer, func(*Control) error { return nil }); err == nil {
+	if _, err := ResolveFork(ctx, store, head2view(t, store, genesis), alice.signer); err == nil {
 		t.Fatal("resolved a DAG that is not forked")
 	}
 }

@@ -14,7 +14,7 @@ import (
 func newMemberCommand(a *app.App) *cobra.Command {
 	cmd := &cobra.Command{Use: "member", Short: "Manage who is trusted in this workspace", Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, _ []string) error { return renderHelp(cmd) }}
-	cmd.AddCommand(newMemberListCommand(a), newMemberRequestsCommand(a), newMemberApproveCommand(a), newMemberRemoveCommand(a), newMemberAdminCommand(a), newMemberResolveForkCommand(a))
+	cmd.AddCommand(newMemberListCommand(a), newMemberRequestsCommand(a), newMemberApproveCommand(a), newMemberRemoveCommand(a), newMemberAdminCommand(a))
 	return cmd
 }
 
@@ -265,21 +265,4 @@ func newMemberAdminCommand(a *app.App) *cobra.Command {
 	cmd.Flags().BoolVar(&revoke, "revoke", false, "Revoke instead of grant")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip the confirmation")
 	return cmd
-}
-
-func newMemberResolveForkCommand(a *app.App) *cobra.Command {
-	return &cobra.Command{Use: "resolve-fork", Short: "Join member changes that two admins made at the same time", Args: appArgs(cobra.NoArgs),
-		Long: `When two admins change the members at the same time, nothing proceeds until an
-admin settles it. The result keeps only the members and admin rights that both
-changes agree on; anyone left out can be approved again afterwards.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if err := a.ResolveControlFork(cmd.Context()); err != nil {
-				return err
-			}
-			if jsonEnabled(cmd) {
-				return writeJSON(cmd, map[string]any{"action": "resolve-fork"})
-			}
-			cmd.Println("✓ Member changes joined")
-			return nil
-		}}
 }

@@ -25,227 +25,223 @@ import * as identity$0 from "../../pkg/identity/models.js";
 import * as selfupdate$0 from "../../pkg/selfupdate/models.js";
 
 export function AddSecret(env: string, key: string, value: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.AddSecret", env, key, value);
+    return $Call.ByID(245465048, env, key, value);
 }
 
 export function ApproveMember(deviceID: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.ApproveMember", deviceID);
+    return $Call.ByID(2717336660, deviceID);
 }
 
 export function BrowseRepository(): $CancellablePromise<desktop$0.RepoInfo> {
-    return $Call.ByName("main.DesktopService.BrowseRepository").then(($result: any) => {
+    return $Call.ByID(1185110443).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function CancelOAuthLogin(sessionID: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.CancelOAuthLogin", sessionID);
+    return $Call.ByID(2385204543, sessionID);
 }
 
 export function CheckForUpdate(): $CancellablePromise<desktop$0.UpdateStatus> {
-    return $Call.ByName("main.DesktopService.CheckForUpdate").then(($result: any) => {
+    return $Call.ByID(1073638667).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function CreateEnvironment(name: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.CreateEnvironment", name);
+    return $Call.ByID(651415906, name);
 }
 
 export function DeleteEnvironment(name: string, purge: boolean): $CancellablePromise<desktop$0.EnvironmentDeletion> {
-    return $Call.ByName("main.DesktopService.DeleteEnvironment", name, purge).then(($result: any) => {
+    return $Call.ByID(1113266615, name, purge).then(($result: any) => {
         return $$createType2($result);
     });
 }
 
 export function DeleteSecret(env: string, key: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.DeleteSecret", env, key);
+    return $Call.ByID(955503130, env, key);
 }
 
 export function DiagnoseIdentity(): $CancellablePromise<desktop$0.IdentityDiagnosis> {
-    return $Call.ByName("main.DesktopService.DiagnoseIdentity").then(($result: any) => {
+    return $Call.ByID(1960345299).then(($result: any) => {
         return $$createType3($result);
     });
 }
 
 export function DiffHistory(env: string, $from: number, to: number): $CancellablePromise<app$0.Diff | null> {
-    return $Call.ByName("main.DesktopService.DiffHistory", env, $from, to).then(($result: any) => {
+    return $Call.ByID(3086033546, env, $from, to).then(($result: any) => {
         return $$createType5($result);
     });
 }
 
 export function EditSecret(env: string, key: string, value: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.EditSecret", env, key, value);
+    return $Call.ByID(4070301685, env, key, value);
 }
 
 export function GetAppVersion(): $CancellablePromise<string> {
-    return $Call.ByName("main.DesktopService.GetAppVersion");
+    return $Call.ByID(3801962238);
 }
 
 export function GetAuthStatus(): $CancellablePromise<desktop$0.AuthStatus> {
-    return $Call.ByName("main.DesktopService.GetAuthStatus").then(($result: any) => {
+    return $Call.ByID(672732099).then(($result: any) => {
         return $$createType6($result);
     });
 }
 
 export function GetIdentity(): $CancellablePromise<identity$0.PublicInfo> {
-    return $Call.ByName("main.DesktopService.GetIdentity").then(($result: any) => {
+    return $Call.ByID(2492026345).then(($result: any) => {
         return $$createType7($result);
     });
 }
 
 export function GetOAuthLoginStatus(sessionID: string): $CancellablePromise<desktop$0.OAuthStatus> {
-    return $Call.ByName("main.DesktopService.GetOAuthLoginStatus", sessionID).then(($result: any) => {
+    return $Call.ByID(2633098805, sessionID).then(($result: any) => {
         return $$createType8($result);
     });
 }
 
 export function GetRepoStatus(): $CancellablePromise<desktop$0.RepoInfo> {
-    return $Call.ByName("main.DesktopService.GetRepoStatus").then(($result: any) => {
+    return $Call.ByID(2444141209).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
-    return $Call.ByName("main.DesktopService.ImportSecrets", env, dotenv, overwrite).then(($result: any) => {
+    return $Call.ByID(4056678225, env, dotenv, overwrite).then(($result: any) => {
         return $$createType9($result);
     });
 }
 
 export function Initialize(storage: desktop$0.StorageSettings, acceptNewGenesis: boolean): $CancellablePromise<desktop$0.InitResult> {
-    return $Call.ByName("main.DesktopService.Initialize", storage, acceptNewGenesis).then(($result: any) => {
+    return $Call.ByID(1776693451, storage, acceptNewGenesis).then(($result: any) => {
         return $$createType10($result);
     });
 }
 
 export function InstallUpdate(): $CancellablePromise<desktop$0.UpdateStatus> {
-    return $Call.ByName("main.DesktopService.InstallUpdate").then(($result: any) => {
+    return $Call.ByID(894177249).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
 export function ListConflicts(env: string): $CancellablePromise<desktop$0.ConflictSet> {
-    return $Call.ByName("main.DesktopService.ListConflicts", env).then(($result: any) => {
+    return $Call.ByID(2160149312, env).then(($result: any) => {
         return $$createType11($result);
     });
 }
 
 export function ListEnvironments(): $CancellablePromise<desktop$0.Environment[]> {
-    return $Call.ByName("main.DesktopService.ListEnvironments").then(($result: any) => {
+    return $Call.ByID(2373267311).then(($result: any) => {
         return $$createType13($result);
     });
 }
 
 export function ListHistory(env: string): $CancellablePromise<desktop$0.HistoryEntry[]> {
-    return $Call.ByName("main.DesktopService.ListHistory", env).then(($result: any) => {
+    return $Call.ByID(821295555, env).then(($result: any) => {
         return $$createType15($result);
     });
 }
 
 export function ListJoinRequests(): $CancellablePromise<desktop$0.JoinRequest[]> {
-    return $Call.ByName("main.DesktopService.ListJoinRequests").then(($result: any) => {
+    return $Call.ByID(3447380307).then(($result: any) => {
         return $$createType17($result);
     });
 }
 
 export function ListMembers(): $CancellablePromise<desktop$0.Member[]> {
-    return $Call.ByName("main.DesktopService.ListMembers").then(($result: any) => {
+    return $Call.ByID(3168298308).then(($result: any) => {
         return $$createType19($result);
     });
 }
 
 export function ListRepositories(): $CancellablePromise<desktop$0.RepoInfo[]> {
-    return $Call.ByName("main.DesktopService.ListRepositories").then(($result: any) => {
+    return $Call.ByID(2121193341).then(($result: any) => {
         return $$createType20($result);
     });
 }
 
 export function ListSecrets(env: string): $CancellablePromise<desktop$0.SecretsResponse> {
-    return $Call.ByName("main.DesktopService.ListSecrets", env).then(($result: any) => {
+    return $Call.ByID(3474277570, env).then(($result: any) => {
         return $$createType21($result);
     });
 }
 
 export function Logout(login: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.Logout", login);
+    return $Call.ByID(962515307, login);
 }
 
 export function PullSecrets(env: string, replace: boolean): $CancellablePromise<desktop$0.PullResult> {
-    return $Call.ByName("main.DesktopService.PullSecrets", env, replace).then(($result: any) => {
+    return $Call.ByID(1175776543, env, replace).then(($result: any) => {
         return $$createType22($result);
     });
 }
 
 export function PurgeIncarnation(incarnation: string): $CancellablePromise<number> {
-    return $Call.ByName("main.DesktopService.PurgeIncarnation", incarnation);
+    return $Call.ByID(3540733108, incarnation);
 }
 
 export function ReadConfig(): $CancellablePromise<string> {
-    return $Call.ByName("main.DesktopService.ReadConfig");
+    return $Call.ByID(3504427367);
 }
 
 export function RemoveMember(deviceID: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RemoveMember", deviceID);
+    return $Call.ByID(3019936507, deviceID);
 }
 
 export function RemoveRepository(path: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RemoveRepository", path);
+    return $Call.ByID(3864395693, path);
 }
 
 export function RenameEnvironment(name: string, newName: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RenameEnvironment", name, newName);
+    return $Call.ByID(1852304940, name, newName);
 }
 
 export function ResolveConflicts(env: string, heads: string[], choices: desktop$0.ConflictChoice[]): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.ResolveConflicts", env, heads, choices);
-}
-
-export function ResolveMemberFork(): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.ResolveMemberFork");
+    return $Call.ByID(839622030, env, heads, choices);
 }
 
 export function RestartApp(): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RestartApp");
+    return $Call.ByID(2858372495);
 }
 
 export function RestoreHistory(env: string, index: number): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.RestoreHistory", env, index);
+    return $Call.ByID(3198255603, env, index);
 }
 
 export function SelectRepository(path: string): $CancellablePromise<desktop$0.RepoInfo> {
-    return $Call.ByName("main.DesktopService.SelectRepository", path).then(($result: any) => {
+    return $Call.ByID(102942813, path).then(($result: any) => {
         return $$createType0($result);
     });
 }
 
 export function SetAdmin(deviceID: string, admin: boolean): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.SetAdmin", deviceID, admin);
+    return $Call.ByID(687094002, deviceID, admin);
 }
 
 export function StartOAuthLogin(): $CancellablePromise<desktop$0.OAuthStart> {
-    return $Call.ByName("main.DesktopService.StartOAuthLogin").then(($result: any) => {
+    return $Call.ByID(1467619051).then(($result: any) => {
         return $$createType23($result);
     });
 }
 
 export function SuggestStorage(): $CancellablePromise<string> {
-    return $Call.ByName("main.DesktopService.SuggestStorage");
+    return $Call.ByID(1228668934);
 }
 
 export function SwitchAccount(login: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.SwitchAccount", login);
+    return $Call.ByID(1906469936, login);
 }
 
 export function SwitchEnvironment(name: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.SwitchEnvironment", name);
+    return $Call.ByID(3355641334, name);
 }
 
 export function SyncSecrets(env: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.SyncSecrets", env);
+    return $Call.ByID(766171131, env);
 }
 
 export function WriteConfig(content: string): $CancellablePromise<void> {
-    return $Call.ByName("main.DesktopService.WriteConfig", content);
+    return $Call.ByID(404015626, content);
 }
 
 // Private type creation functions

@@ -81,10 +81,6 @@ export function MembersTab({
           await backend.setAdmin(deviceID, admin);
           await refresh();
         }}
-        onResolveFork={async () => {
-          await backend.resolveMemberFork();
-          await refresh();
-        }}
         onErrorDismiss={() => setError(null)}
       />
       <DevicePanel repoPath={repoPath} />
