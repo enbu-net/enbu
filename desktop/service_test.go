@@ -125,6 +125,36 @@ func TestStartOAuthLogin(t *testing.T) {
 	}
 }
 
+// Opening the GitHub page is a convenience: a host without an opener, or one
+// that fails, still gets the code to show.
+func TestStartOAuthLoginShowsTheCodeWhenTheBrowserCannotOpen(t *testing.T) {
+	for name, open := range map[string]BrowserOpener{
+		"no opener":      nil,
+		"failing opener": func(string) error { return errors.New("no browser") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := NewService(app.New(clock.New()))
+			s.ctx = context.Background()
+			s.openURL = open
+			s.authLogin = func(ctx context.Context, prompt auth.DevicePrompter) (*auth.StoredToken, error) {
+				if err := prompt(auth.DeviceAuthorization{UserCode: "WXYZ-9876", VerificationURI: "https://github.com/login/device"}); err != nil {
+					return nil, err
+				}
+				<-ctx.Done()
+				return nil, context.Canceled
+			}
+			start, err := s.StartOAuthLogin()
+			if err != nil {
+				t.Fatalf("StartOAuthLogin: %v", err)
+			}
+			defer s.CancelOAuthLogin(start.SessionID)
+			if start.UserCode != "WXYZ-9876" || start.VerificationURI != "https://github.com/login/device" {
+				t.Fatalf("start = %+v", start)
+			}
+		})
+	}
+}
+
 func TestGetOAuthLoginStatus(t *testing.T) {
 	tests := []struct {
 		name      string
