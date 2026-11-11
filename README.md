@@ -266,10 +266,10 @@ enbu history compact --keep 50  # admin: delete revisions older than the latest 
 ## Identity storage
 
 New workspace identities prefer TPM 2.0 on Linux and Windows, and Secure Enclave on macOS.
-Hardware P-256 private keys stay on the device. Each device keeps one key set per
-workspace: an encryption identity and a separate signing key.
+Hardware P-256 private keys stay on the device. Encryption uses age Tagged Recipients;
+X25519 recipients can be included in the same encrypted file.
 
-Every identity is a post-quantum hybrid, so ciphertext stored today stays safe against a
+New identities are post-quantum hybrids, so ciphertext stored today stays safe against a
 future quantum computer: ML-KEM-768 + X25519 (`age1pq1…`) in the OS keyring, and
 ML-KEM-768 + P-256 (`age1tagpq1…`) on hardware. TPMs cannot run ML-KEM yet, so the
 P-256 half stays in the TPM and the ML-KEM seed is sealed by the TPM (on macOS it is

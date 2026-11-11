@@ -251,7 +251,7 @@ enbu history compact --keep 50  # 管理者: 最新50件より古い revision �
 
 新規IdentityはLinux／WindowsでTPM 2.0、macOSでSecure Enclaveを優先します。
 ハードウェアのP-256秘密鍵は端末から取り出しません。
-端末はワークスペースごとに、暗号化用のIdentityと別の署名鍵を1組持ちます。
+age Tagged Recipientを使い、X25519 recipientと同じファイルへ暗号化できます。
 
 新規Identityは耐量子ハイブリッド鍵です。今保存した暗号文を将来の量子計算機でも解読できないようにするためです。
 OS keyringではML-KEM-768 + X25519（`age1pq1…`）、ハードウェアではML-KEM-768 + P-256（`age1tagpq1…`）を使います。
