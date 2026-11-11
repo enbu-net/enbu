@@ -94,10 +94,10 @@ returning member cannot decrypt a pre-join merge base, readable heads must agree
 or retain their exact differing values as conflicts. An existing member with the
 old key syncs them before all devices are checked for convergence.
 
-`TestTeamMembershipWriteMatrix` overlaps six membership changes (approve a
+`TestTeamMembershipWriteMatrix` overlaps five membership changes (approve a
 joiner, remove another member, remove the writer, promote another member, demote
-the writer, approve the writer's key update) with add/edit/delete/import/sync/restore,
-under four schedules: 144 cases. It verifies the member/admin set, preserved
+the writer) with add/edit/delete/import/sync/restore,
+under four schedules: 120 cases. It verifies the member/admin set, preserved
 unrelated data, removal denial, no resurrection on readmission, and fresh writes
 after readmission. Revocation may set aside a concurrently published old-Control
 branch that no remaining member accepted; readmission must not revive it.
@@ -122,8 +122,7 @@ A three-actor team group every 32 actions additionally overlaps removal, a conti
 
 Generated sequences mix secret operations with environment create/switch/rename/
 delete, compaction, membership remove/rejoin, role changes and restarts. After
-every action, all live environments are compared on every device. Rejoining after
-a hybrid key update has a dedicated regression case.
+every action, all live environments are compared on every device.
 
 `TestThreeWayMergeDAGMatrix` builds real encrypted, signed revisions and checks
 659 DAG cases: 64 ordinary three-way merges, 64 unequal branch lengths,
@@ -138,10 +137,10 @@ published merge revision. Partial and stale resolutions must be refused.
 `pkg/merge` additionally enumerates all 64 single-key three-way states with head
 reordering/duplication and both choice types; it runs in the DST CI job too.
 
-`TestMultiUserClockProfiles` repeats history, key update, membership,
+`TestMultiUserClockProfiles` repeats history, membership,
 concurrent disjoint writes, conflicting edits, and Control fork with frozen,
 backward-moving, and independently skewed device clocks under four schedules:
-72 record/replay cases. This checks that timestamps do not override causal
+60 record/replay cases. This checks that timestamps do not override causal
 history or membership authority. These profiles use `Runtime.Clock` with a shared manual timer clock and
 per-device wall-clock views. Reading `Now` never advances time; recorded storage
 boundaries advance the timer clock by one millisecond. Clock-contract tests verify
