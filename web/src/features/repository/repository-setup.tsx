@@ -378,6 +378,9 @@ function PublishGuide({ hasGit }: { hasGit: boolean }) {
           {m.publish_terminal()}
         </styled.summary>
         <Box mt="2">
+          <Text color="fg.subtle" mb="2">
+            {m.publish_terminalNote()}
+          </Text>
           <Command>
             {hasGit
               ? "git remote add origin https://github.com/OWNER/REPO.git"

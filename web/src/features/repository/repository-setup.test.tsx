@@ -61,6 +61,10 @@ describe("RepositorySetup", () => {
     expect(container.textContent).toContain("create a repository");
     expect(container.textContent).toContain("Publish to GitHub");
     expect(container.textContent).toContain(".gitignore");
+    // A secret committed before is on GitHub once published, whatever .gitignore says.
+    expect(container.textContent).toContain("if a secret was committed before");
+    // The commands only prepare Git and the remote; they do not publish.
+    expect(container.querySelector("details")?.textContent).toContain("commit and push later");
     // The commands stay for terminal users, folded away.
     expect(container.querySelector("details:not([open]) pre")?.textContent).toBe(
       "git init\ngit remote add origin https://github.com/OWNER/REPO.git",
