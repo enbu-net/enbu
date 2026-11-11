@@ -95,6 +95,30 @@ describe("RepositoryContextMenu", () => {
   });
 });
 
+describe("sidebar paths", () => {
+  it("lists Japanese paths, and keeps repositories that differ only in letter case", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([
+      repoInfo("/home/山田 太郎/マイ リポジトリ"),
+      repoInfo("/srv/App"),
+      repoInfo("/srv/app"),
+    ]);
+    act(() => {
+      root.render(
+        <>{withSession(<Sidebar />, { repo: repoInfo("/home/山田 太郎/マイ リポジトリ") })}</>,
+      );
+    });
+    await act(async () => {});
+    const rows = container.querySelectorAll<HTMLButtonElement>("button[data-repository-path]");
+    expect([...rows].map((row) => row.dataset.repositoryPath)).toEqual([
+      "/home/山田 太郎/マイ リポジトリ",
+      "/srv/App",
+      "/srv/app",
+    ]);
+    expect(rows[0].getAttribute("aria-current")).toBe("true");
+    expect(rows[0].textContent).toContain("/home/山田 太郎/マイ リポジトリ");
+  });
+});
+
 describe("accessibility: sidebar keyboard", () => {
   it("lists repositories as buttons, the current one marked", async () => {
     vi.mocked(backend).ListRepositories.mockResolvedValue([

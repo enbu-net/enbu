@@ -115,11 +115,11 @@ tasks:
       - core/test/unit
 
   core/test/unit:
-    desc: Run platform-neutral core unit tests
+    desc: Run platform-neutral core unit tests (app and desktop included, so Windows and macOS run them)
     env:
       CGO_ENABLED: '0'
     cmds:
-      - go test -v -shuffle=on ./pkg/config/... ./pkg/dotenv/... ./pkg/storage/... ./pkg/wsp/...
+      - go test -v -shuffle=on -tags=fixture ./app/... ./desktop ./desktop/rpc ./pkg/config/... ./pkg/dotenv/... ./pkg/fsutil/... ./pkg/provider/... ./pkg/storage/... ./pkg/wsp/...
 
   cli/test/e2e:
     desc: Run CLI end-to-end tests with atago

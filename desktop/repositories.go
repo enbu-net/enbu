@@ -2,12 +2,12 @@ package desktop
 
 import (
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 type RepoInfo struct {
@@ -140,8 +140,10 @@ func appendUnique(slice []string, val string) []string {
 	return append(result, val)
 }
 
+// repoPathKey compares two spellings of a repository path. Windows matches
+// names in any letter case, also for a folder that no longer exists.
 func repoPathKey(path string) string {
-	key := filepath.Clean(path)
+	key := fsutil.Canonical(path)
 	if runtime.GOOS == "windows" {
 		key = strings.ToLower(key)
 	}

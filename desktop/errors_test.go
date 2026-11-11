@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/app/apptest"
 	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app/apptest"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"

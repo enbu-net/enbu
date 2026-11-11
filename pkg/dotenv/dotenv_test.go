@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestParse(t *testing.T) {
@@ -135,4 +136,38 @@ func FuzzRoundTrip(f *testing.F) {
 			t.Fatal("round trip changed values")
 		}
 	})
+}
+
+// Windows PowerShell 5.1 writes UTF-16 with a byte order mark for > and
+// Out-File; such a file imports like its UTF-8 twin, Japanese included.
+func TestParseUTF16WithByteOrderMark(t *testing.T) {
+	t.Parallel()
+	text := "# コメント\r\nGREETING=\"こんにちは 世界\"\r\nKEY='🔑'\r\n"
+	want := map[string]string{"GREETING": "こんにちは 世界", "KEY": "🔑"}
+	encode := func(bigEndian bool) []byte {
+		units := utf16.Encode([]rune("\ufeff" + text))
+		out := make([]byte, 0, 2*len(units))
+		for _, u := range units {
+			if bigEndian {
+				out = append(out, byte(u>>8), byte(u))
+			} else {
+				out = append(out, byte(u), byte(u>>8))
+			}
+		}
+		return out
+	}
+	for _, bigEndian := range []bool{false, true} {
+		got, err := Parse(encode(bigEndian))
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("big endian %v: Parse = %#v, %v", bigEndian, got, err)
+		}
+	}
+	// Without a byte order mark, UTF-16 is not guessed at.
+	if _, err := Parse(encode(false)[2:]); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("UTF-16 without a mark: %v", err)
+	}
+	// Shift_JIS (こんにちは) is not UTF-8 and is refused, not stored garbled.
+	if _, err := Parse([]byte("A=\x82\xb1\x82\xf1\x82\xc9\x82\xbf\x82\xcd\n")); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("Shift_JIS: %v", err)
+	}
 }

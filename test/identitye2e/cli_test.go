@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -92,9 +93,18 @@ func (h *cliHarness) fails(args ...string) {
 
 func newHarness(t *testing.T, binary, backend string) *cliHarness {
 	t.Helper()
-	dir := t.TempDir()
+	return newHarnessIn(t, binary, backend, t.TempDir(), nil)
+}
+
+// newHarnessIn sets up the repository in dir, letting edit change the
+// enbu.toml first.
+func newHarnessIn(t *testing.T, binary, backend, dir string, edit func(*config.ProjectConfig)) *cliHarness {
+	t.Helper()
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.Storage = config.StorageConfig{URL: "oci://" + binaryHosts[binary] + "/e2e/" + cfg.WorkspaceID, PlainHTTP: true}
+	if edit != nil {
+		edit(cfg)
+	}
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -265,6 +275,64 @@ func TestIdentityCLI(t *testing.T) {
 		}
 		h.fails("pull")
 		h.fails("identity", "create")
+	})
+	// The binary, the repository, the data directory and the files a command
+	// names all have Japanese and spaces in their paths, as under a home folder
+	// such as C:\Users\山田 太郎. This runs on Windows, macOS and Linux with the
+	// real OS keyring.
+	t.Run("NonASCIIPaths", func(t *testing.T) {
+		base := filepath.Join(t.TempDir(), "日本語 フォルダ (テスト)")
+		installed := filepath.Join(base, "インストール 先", filepath.Base(binary))
+		if err := os.MkdirAll(filepath.Dir(installed), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		exe, err := os.ReadFile(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(installed, exe, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		binaryHosts[installed] = binaryHosts[binary]
+		repo := filepath.Join(base, "マイ リポジトリ")
+		if err := os.MkdirAll(filepath.Join(repo, "サブ フォルダ"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		const output = "本番 環境 (日本語).env"
+		h := newHarnessIn(t, installed, "keyring", repo, func(cfg *config.ProjectConfig) {
+			env := cfg.Environments["default"]
+			env.Output = output
+			cfg.Environments["default"] = env
+		})
+		h.env["XDG_DATA_HOME"] = filepath.Join(base, "データ 置き場")
+		created := h.run("identity", "create")
+		if created["backend"] != "keyring" {
+			t.Fatalf("identity: %+v", created)
+		}
+		h.run("init")
+		// A file named in Japanese, in UTF-16 as Windows PowerShell 5.1 writes it.
+		units := utf16.Encode([]rune("\uFEFFDATABASE_URL=postgres://ユーザー:パス@ホスト/データベース\r\n"))
+		file := make([]byte, 0, 2*len(units))
+		for _, u := range units {
+			file = append(file, byte(u), byte(u>>8))
+		}
+		imported := filepath.Join(base, "秘密 ファイル.env")
+		if err := os.WriteFile(imported, file, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		h.run("import", imported)
+		h.run("add", "GREETING", "こんにちは 世界")
+		// A subfolder finds the enbu.toml above it.
+		h.dir = filepath.Join(repo, "サブ フォルダ")
+		assertSecret(t, h.run("pull"), "postgres://ユーザー:パス@ホスト/データベース")
+		h.dir = repo
+		if out, stderr, err := h.process("pull"); err != nil {
+			t.Fatalf("pull: %v\n%s\n%s", err, out, stderr)
+		}
+		got, err := os.ReadFile(filepath.Join(repo, output))
+		if err != nil || !strings.Contains(string(got), `GREETING="こんにちは 世界"`) {
+			t.Fatalf("%s = %q, %v", output, got, err)
+		}
 	})
 	t.Run("ProductionBuildExcludesSoftwareTransport", func(t *testing.T) {
 		production := buildCLI(t, host, false)

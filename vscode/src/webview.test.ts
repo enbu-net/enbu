@@ -28,6 +28,16 @@ describe("renderHtml", () => {
     expect(html).toContain('href="./assets/index-abc.css"');
   });
 
+  it("loads the assets of an extension under a Japanese home folder", () => {
+    // What asWebviewUri gives for /Users/山田 太郎/.vscode/extensions/…: percent-encoded.
+    const baseUri = `https://file+.vscode-resource.vscode-cdn.net${encodeURI("/Users/山田 太郎/.vscode/extensions/enbu/media/web")}`;
+    const rendered = renderHtml(index, { ...options, baseUri });
+    expect(rendered).toContain(`<base href="${baseUri}/">`);
+    expect(new URL("./assets/index-abc.js", `${baseUri}/`).pathname).toBe(
+      encodeURI("/Users/山田 太郎/.vscode/extensions/enbu/media/web/assets/index-abc.js"),
+    );
+  });
+
   it("puts the policy first in head, before anything loads", () => {
     const head = html.slice(html.indexOf("<head>") + "<head>".length).trimStart();
     expect(head.startsWith('<meta http-equiv="Content-Security-Policy"')).toBe(true);

@@ -9,6 +9,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -67,17 +68,16 @@ func (a *App) trust() *wsp.Trust {
 	return wsp.OpenTrust(a.checkpointDir(), a.clock())
 }
 
-// repositoryKey is the absolute path of the repository's enbu.toml, which
-// keys its pin, or "" when the path is unknown.
+// repositoryKey is the canonical path of the repository's enbu.toml, which
+// keys its pin, or "" when the path is unknown. The CLI, the desktop app and
+// the VS Code extension reach one repository by different spellings (letter
+// case, slashes, Unicode normalization); all of them must find one pin.
 func (a *App) repositoryKey() string {
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
 	if err != nil {
 		return ""
 	}
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
-	return path
+	return fsutil.Canonical(path)
 }
 
 // wspError classifies verification failures so callers can tell an attack or
