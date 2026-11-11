@@ -76,15 +76,11 @@ func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
 		want string
 	}{
 		{nil, "auth login"},
-		{[]string{"--device"}, "auth login --device"},
 		{[]string{"--json"}, "auth login --json"},
 	} {
 		var got []string
 		deps := authLoginDeps{
-			browserLogin: func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
-				return nil, errors.New("logged in inside WSL")
-			},
-			deviceLogin: func(context.Context, string, auth.DevicePrompter) (*auth.StoredToken, error) {
+			login: func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
 				return nil, errors.New("logged in inside WSL")
 			},
 			windows: func(_ context.Context, _ *cobra.Command, args ...string) error {

@@ -508,3 +508,16 @@ def test_full_signature_seed_is_retained_in_every_selected_native_exploration(pa
     assert plan["run"]
     assert selected(plan, "TestFullSignatureAttackSeedRegressionSmoke")
     assert selected(plan, "TestStateSignatureAttackSmoke")
+
+
+@pytest.mark.parametrize(
+    ("split", "original"),
+    [
+        ("app/conflicts.go", "app/secrets.go"),
+        ("app/write.go", "app/secrets.go"),
+        ("app/join_requests.go", "app/members.go"),
+        ("app/reencrypt.go", "app/members.go"),
+    ],
+)
+def test_split_app_files_select_like_their_origin(split, original):
+    assert dst_plan.select([split]) == dst_plan.select([original])

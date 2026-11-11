@@ -10,8 +10,8 @@ import { useGitHubLogin } from "./use-github-login";
 import { m } from "../../paraglide/messages";
 
 /**
- * Signs in with GitHub for a workspace on GHCR: the browser completes the
- * authorization while the app polls for the result.
+ * Signs in with the GitHub Device Flow: the user enters the shown code on
+ * GitHub while the app polls for the result.
  */
 export function SignIn() {
   const { refresh, reloadRepo } = useSession();
@@ -25,7 +25,14 @@ export function SignIn() {
   if (start) {
     return (
       <PageCenter>
-        <OAuthLoginPanel status={status} expiresIn={expiresIn} onCancel={cancel} onRetry={reset} />
+        <OAuthLoginPanel
+          userCode={start.user_code}
+          verificationURI={start.verification_uri}
+          status={status}
+          expiresIn={expiresIn}
+          onCancel={cancel}
+          onRetry={reset}
+        />
       </PageCenter>
     );
   }

@@ -95,6 +95,8 @@ export function AccountList() {
       <Section title={m.settings_accounts()}>
         <Flex justify="center" py="4">
           <OAuthLoginPanel
+            userCode={login.start.user_code}
+            verificationURI={login.start.verification_uri}
             status={login.status}
             expiresIn={login.expiresIn}
             onCancel={login.cancel}

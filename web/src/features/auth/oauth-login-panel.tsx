@@ -11,11 +11,16 @@ export type LoginStatus = {
 };
 
 export function OAuthLoginPanel({
+  userCode,
+  verificationURI,
   status,
   expiresIn,
   onCancel,
   onRetry,
 }: {
+  /** The Device Flow code to enter at verificationURI. */
+  userCode: string;
+  verificationURI: string;
   status: LoginStatus | null;
   expiresIn: number;
   onCancel: () => Promise<void>;
@@ -31,7 +36,16 @@ export function OAuthLoginPanel({
 
       <VStack gap={2} alignItems="center">
         <Text fontSize="sm" color="fg.muted">
-          {m.auth_browserInstruction()}
+          {m.auth_deviceInstruction({ url: verificationURI })}
+        </Text>
+        <Text
+          fontSize="3xl"
+          fontWeight="bold"
+          fontFamily="mono"
+          letterSpacing="widest"
+          userSelect="all"
+        >
+          {userCode}
         </Text>
       </VStack>
 

@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/enbu-net/enbu/app/apptest"
 	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/enbu-net/enbu/app/apptest"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -78,7 +79,7 @@ func TestEveryServiceMethodFailsWithPublicError(t *testing.T) {
 	a := app.New(clock.New())
 	a.Identities = &apptest.Identities{}
 	s := NewService(a)
-	s.authLogin = func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error) {
+	s.authLogin = func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
 		return nil, errors.New("login cause")
 	}
 	failures := 0

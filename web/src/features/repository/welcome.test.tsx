@@ -173,14 +173,17 @@ describe("Welcome", () => {
     expect(steps()[3].textContent).toContain("over another channel");
   });
 
-  it("shows the browser step of the sign-in in place of the welcome", async () => {
+  it("shows the device code of the sign-in in place of the welcome", async () => {
     mocked.StartOAuthLogin.mockResolvedValueOnce({
       session_id: "session",
       expires_at: new Date(Date.now() + 60_000).toISOString(),
+      user_code: "ABCD-1234",
+      verification_uri: "https://github.com/login/device",
     });
     await renderWelcome();
     await act(async () => queryButton("Connect with GitHub")?.click());
     await settle();
     expect(container.querySelector("h1")?.textContent).toBe("GitHub Login");
+    expect(container.textContent).toContain("ABCD-1234");
   });
 });
