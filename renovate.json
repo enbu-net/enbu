@@ -9,6 +9,18 @@
   "dependencyDashboard": false,
   "configMigration": true,
   "minimumReleaseAge": "3 days",
+  "schedule": [
+    "* 4-6 * * *"
+  ],
+  "automergeSchedule": [
+    "* 4-6 * * *"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "* 4-6 * * 1"
+    ]
+  },
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "automerge": true,
@@ -84,8 +96,8 @@
       "matchPackageNames": [
         "aquaproj/aqua-registry"
       ],
-      "extends": [
-        "schedule:earlyMondays"
+      "schedule": [
+        "* 4-6 * * 1"
       ]
     },
     {
