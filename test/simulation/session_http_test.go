@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -489,7 +490,7 @@ func nativeSessionTeam(t *testing.T, devices int, profile, mode string, committe
 	if err := requireCode(writer.App.AddSecret(ctx, "default", "MUST_NOT_WRITE", "removed-canary"), apperr.CodeNotMember); err != nil {
 		t.Fatal(err)
 	}
-	init, err := writer.App.InitializeRepository(ctx)
+	init, err := writer.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || init == nil || !init.Pending || init.DeviceID != writer.ID {
 		t.Fatalf("readmission after reauthentication: %v", err)
 	}

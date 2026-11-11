@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { createAppError, displayError } from "../../lib/app-error";
+import { displayError } from "../../lib/app-error";
 import { container, queryButton, root, setupDom } from "../../test/dom";
 import { MemberAvatar, MemberRow, MembersPanel, PendingRow } from "./members-panel";
 
@@ -9,6 +9,7 @@ setupDom();
 const sampleMember = {
   device_id: "d".repeat(64),
   fingerprint: "abcd-efgh-ijkl-mnop-qrst",
+  recipient: "age1pq1test",
   algorithm: "p256",
   admin: false,
   self: false,
@@ -81,7 +82,6 @@ describe("accessibility: live regions", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </>,
@@ -108,7 +108,6 @@ describe("MembersPanel actions", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={onErrorDismiss}
           />
         </>,
@@ -125,6 +124,7 @@ describe("MembersPanel approval", () => {
   const request = {
     device_id: "e".repeat(64),
     fingerprint: "1111-2222-3333-4444-5555",
+    recipient: "age1pq1test",
     algorithm: "ed25519",
     requested_at: "2026-10-06T09:30:00Z",
     key_update: false,
@@ -143,7 +143,6 @@ describe("MembersPanel approval", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -250,6 +249,7 @@ describe("PendingRow", () => {
             request={{
               device_id: "f".repeat(64),
               fingerprint: "aaaa-bbbb",
+              recipient: "age1pq1test",
               algorithm: "p256",
               requested_at: "not a date",
               key_update: false,
@@ -278,7 +278,6 @@ describe("MembersPanel removal", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
           />
         </>,
@@ -315,7 +314,6 @@ describe("MembersPanel admin rights", () => {
             onApprove={async () => {}}
             onRemove={async () => {}}
             onSetAdmin={async () => {}}
-            onResolveFork={async () => {}}
             onErrorDismiss={() => {}}
             {...props}
           />
@@ -357,21 +355,9 @@ describe("MembersPanel admin rights", () => {
     expect(queryButton(`Make admin: ${other.fingerprint}`)).toBeNull();
   });
 
-  it("offers to join member changes when the members forked", async () => {
-    const onResolveFork = vi.fn(async () => {});
-    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
-    await act(async () => queryButton("Join member changes")?.click());
-    expect(onResolveFork).toHaveBeenCalled();
-  });
-
-  it("keeps offering to join member changes after a failed attempt", async () => {
-    const onResolveFork = vi.fn(async () => {
-      throw createAppError("internal");
-    });
-    renderPanel({ members: [], error: displayError("control_forked"), onResolveFork });
-    await act(async () => queryButton("Join member changes")?.click());
-    await act(async () => Promise.resolve());
-    expect(queryButton("Join member changes")).not.toBeNull();
+  it("tells a member that an admin opening enbu joins a member fork", () => {
+    renderPanel({ members: [], error: displayError("control_forked") });
+    expect(container.textContent).toContain("an admin of both changes opens enbu");
   });
 
   it("marks a key update among the requests", () => {
@@ -382,6 +368,7 @@ describe("MembersPanel admin rights", () => {
           fingerprint: other.fingerprint,
           algorithm: "p256",
           requested_at: "2026-10-06T09:30:00Z",
+          recipient: "",
           key_update: true,
         },
       ],

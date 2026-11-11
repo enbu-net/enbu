@@ -16,9 +16,8 @@ import (
 
 	agecrypto "filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 	"github.com/enbu-net/enbu/pkg/merge"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
@@ -104,6 +103,7 @@ type ConflictCandidate struct {
 // Heads, so a value that appeared since is shown to the person rather than
 // swept away by a choice made without seeing it.
 type ConflictSet struct {
+	Environment string `json:"environment"`
 	// ID is a short name for Heads, for a person to repeat back when deciding.
 	ID        string           `json:"id"`
 	Heads     []string         `json:"heads"`
@@ -124,13 +124,13 @@ func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, 
 	defer s.Close()
 	read, err := s.readResource(ctx, s.resource(resolved.Name), nil, true)
 	if IsNotFoundError(err) {
-		return &ConflictSet{}, nil
+		return &ConflictSet{Environment: resolved.Name, Heads: []string{}, Conflicts: []SecretConflict{}}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	heads := headNames(read.parents())
-	return &ConflictSet{ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
+	return &ConflictSet{Environment: resolved.Name, ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
 }
 
 func conflictID(heads []string) string {
@@ -149,8 +149,9 @@ func headNames(heads []digest.Digest) []string {
 
 // SecretChoice settles one conflicted key with a value, or by deleting it.
 type SecretChoice struct {
-	Value  string
-	Delete bool
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Delete bool   `json:"delete"`
 }
 
 // ResolveSecrets settles every conflicted key of env and publishes the result
@@ -158,16 +159,19 @@ type SecretChoice struct {
 // a merge revision holds one value per key. seen is ConflictSet.Heads from the
 // listing the choices were made from; if the heads are different now, nothing
 // is published and the person looks again.
-func (a *App) ResolveSecrets(ctx context.Context, env string, seen []string, choices map[string]SecretChoice) (err error) {
+func (a *App) ResolveSecrets(ctx context.Context, env string, seen []string, choices []SecretChoice) (err error) {
 	defer apperr.NormalizeInto(&err)
+	picked := make(map[string]merge.Choice, len(choices))
+	for _, c := range choices {
+		if _, dup := picked[c.Key]; dup {
+			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s was decided twice", c.Key), apperr.Params{"key": c.Key})
+		}
+		picked[c.Key] = merge.Choice{Value: c.Value, Delete: c.Delete}
+	}
 	if len(seen) == 0 {
 		return apperr.New(apperr.CodeInvalidArgument, "resolving needs the heads of the conflicts that were listed", nil)
 	}
 	slices.Sort(seen)
-	picked := make(map[string]merge.Choice, len(choices))
-	for k, c := range choices {
-		picked[k] = merge.Choice{Value: c.Value, Delete: c.Delete}
-	}
 	return a.changeSecretWith(ctx, env, "resolve", picked, seen, func(map[string]string) error { return nil })
 }
 
@@ -301,7 +305,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 				return err
 			}
 			if attempt == attempts-1 {
-				return fmt.Errorf("workspace members kept changing: %w", errControlMoved)
+				return apperr.Wrap(apperr.CodeConflict, "workspace members kept changing while saving; try again", errControlMoved, nil)
 			}
 			continue
 		}
@@ -371,11 +375,11 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 	if err != nil {
 		return nil, "", 0, err
 	}
-	dotenv, err := bundle.ToDotEnv(result.Secrets)
+	data, err = dotenv.Format(result.Secrets)
 	if err != nil {
 		return nil, "", 0, err
 	}
-	return dotenv, result.Output, len(result.Secrets), nil
+	return data, result.Output, len(result.Secrets), nil
 }
 
 func (a *App) pullSecretsData(ctx context.Context, env string, emitDone bool) (*PulledSecrets, error) {
@@ -418,12 +422,12 @@ func (a *App) PullSecretsToFile(ctx context.Context, env string) (err error) {
 
 // WrittenFile describes what a pull wrote.
 type WrittenFile struct {
-	Output string   // the file, as configured for the environment
-	Count  int      // secrets written
-	Kept   []string // variables of the previous file that enbu does not store
+	Output string   `json:"output"` // the file, as configured for the environment
+	Count  int      `json:"count"`  // secrets written
+	Kept   []string `json:"kept"`   // variables of the previous file that enbu does not store
 	// Removed are variables an earlier pull wrote that the environment no
 	// longer has; they are not kept, so a deleted secret leaves the file.
-	Removed []string
+	Removed []string `json:"removed"`
 }
 
 // Messages tells the user what the pull kept and removed besides the secrets.
@@ -460,7 +464,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	}
 	a.emitStepProgress("pull", "write", "start")
 	stored := func() (map[string]bool, error) { return a.storedKeys(ctx, result.Environment) }
-	dotenv, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace, stored)
+	data, kept, removed, err := dotenvWithLocal(outputPath, result.Secrets, replace, stored)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +473,7 @@ func (a *App) PullSecretsToFileWith(ctx context.Context, env string, replace boo
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := writePrivateOutput(ctx, outputPath, dotenv); err != nil {
+	if err := writePrivateOutput(ctx, outputPath, data); err != nil {
 		return nil, fmt.Errorf("writing %s: %w", result.Output, err)
 	}
 
@@ -534,7 +538,7 @@ const keptMarker = "# Local variables below are kept by enbu pull; enbu does not
 // hold now, and if it fails those variables are kept.
 // With replace the file's content is ignored.
 func dotenvWithLocal(path string, secrets map[string]string, replace bool, everStored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
-	data, err = bundle.ToDotEnv(secrets)
+	data, err = dotenv.Format(secrets)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -557,11 +561,11 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 		return apperr.Wrap(apperr.CodeOutputUnreadable,
 			fmt.Sprintf("%s exists but is not a dotenv file enbu can read; pass --replace to overwrite it", name), err, apperr.Params{"file": name})
 	}
-	previous, err := secretmap.ImportDotenv(pulled)
+	previous, err := dotenv.Parse(pulled)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)
 	}
-	vars, err := secretmap.ImportDotenv(local)
+	vars, err := dotenv.Parse(local)
 	if err != nil {
 		return nil, nil, nil, unreadable(err)
 	}
@@ -611,7 +615,7 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 		return data, nil, removed, nil
 	}
 	sort.Strings(kept)
-	extra, err := bundle.ToDotEnv(keep)
+	extra, err := dotenv.Format(keep)
 	if err != nil {
 		return nil, nil, nil, err
 	}

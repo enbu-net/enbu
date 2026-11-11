@@ -22,11 +22,11 @@ import (
 const currentVersion = "v1alpha2"
 
 type StorageConfig struct {
-	URL       string `toml:"url"`
-	Region    string `toml:"region,omitempty"`
-	Endpoint  string `toml:"endpoint,omitempty"`
-	PathStyle bool   `toml:"path_style,omitempty"`
-	PlainHTTP bool   `toml:"plain_http,omitempty"`
+	URL       string `toml:"url" json:"url"`
+	Region    string `toml:"region,omitempty" json:"region"`
+	Endpoint  string `toml:"endpoint,omitempty" json:"endpoint"`
+	PathStyle bool   `toml:"path_style,omitempty" json:"path_style"`
+	PlainHTTP bool   `toml:"plain_http,omitempty" json:"plain_http"`
 }
 
 type ProjectConfig struct {
@@ -169,23 +169,9 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return statErr
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".enbu.toml-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err = preserveProjectOwner(tmp, previous); err == nil {
-		err = tmp.Chmod(mode)
-	}
-	if err == nil {
-		if _, err = tmp.Write(content); err == nil {
-			err = tmp.Sync()
-		}
-	}
-	if err = errors.Join(err, tmp.Close()); err != nil {
-		return err
-	}
-	return fsutil.Rename(tmp.Name(), path)
+	return fsutil.WriteFileAtomicWith(path, content, mode, fsutil.AtomicOptions{
+		Prepare: func(tmp *os.File) error { return preserveProjectOwner(tmp, previous) },
+	})
 }
 
 // MarshalProject emits the compact, canonical enbu.toml layout. Encoding the
@@ -257,16 +243,14 @@ func SaveLocalStateTo(dir, workspaceID string, cfg *LocalConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating state directory: %w", err)
 	}
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("creating state file: %w", err)
-	}
-	encoder := toml.NewEncoder(f)
-	if err := encoder.Encode(cfg); err != nil {
-		_ = f.Close()
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(cfg); err != nil {
 		return err
 	}
-	return f.Close()
+	if err := fsutil.WriteFileAtomic(path, buf.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("writing state file: %w", err)
+	}
+	return nil
 }
 
 func NewProjectWithEnvironment(name string) *ProjectConfig {

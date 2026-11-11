@@ -12,18 +12,18 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	storagetest "github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/fxamacker/cbor/v2"
 	digest "github.com/opencontainers/go-digest"
 )
 
 func TestJoinApproveAndShareSecrets(t *testing.T) {
 	alice := newAlice(t)
 	bob := newDevice(t, alice)
-	res, err := bob.InitializeRepository(bg)
+	res, err := bob.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestFakeSecretRejected(t *testing.T) {
 	attacker := newDevice(t, alice)
 	requestJoin(t, attacker)
 	members, _ := alice.ListMembers(bg)
-	forged, err := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "evil"}), []string{members[0].Recipient})
+	forged, err := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "evil"}), []string{members[0].Recipient})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,6 +151,33 @@ func TestFakeSecretRejected(t *testing.T) {
 		}
 		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
 			t.Fatalf("unsigned state changed the secrets: %v %v", got, err)
+		}
+	})
+	// Naming a Control the verified DAG does not hold used to be reported as a
+	// rollback before the signature was checked, blocking the environment.
+	t.Run("unsigned state naming an unknown control", func(t *testing.T) {
+		st := wsp.State{Workspace: ws, Resource: resource, Parents: []digest.Digest{revisionsOf(t, alice, "default")[0]},
+			Control: digest.FromString("no such control"), Ciphertext: digest.FromBytes(forged), Author: s.self()}
+		enc, err := cbor.CoreDetEncOptions().EncMode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := enc.Marshal(st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		blob, err := wsp.Signed{Body: body, Signature: []byte("forged")}.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.Storage.Publish(bg, storage.Object{Kind: storage.KindState, Scope: st.Scope(), Rev: digest.FromBytes(blob), Head: blob, Blobs: [][]byte{forged}}); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := alice.ListSecrets(bg, "default"); err != nil || got["KEY"] != "v1" {
+			t.Fatalf("state naming an unknown control blocked reads: %v %v", got, err)
+		}
+		if err := alice.AddSecret(bg, "default", "BESIDE_UNKNOWN_CONTROL", "ok"); err != nil {
+			t.Fatalf("state naming an unknown control blocked writes: %v", err)
 		}
 	})
 	t.Run("state signed by a non-principal", func(t *testing.T) {
@@ -186,7 +213,7 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	}
 	// And a revision he signs by hand, claiming the control he knew, is set
 	// aside: it is not accepted as current and does not change what is read.
-	ciphertext, _ := age.EncryptForPublicKeys(bundle.Marshal(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
+	ciphertext, _ := age.EncryptForPublicKeys(encodeSecrets(map[string]string{"KEY": "bob"}), []string{mustRecipient(t, alice)})
 	cur, _ := alice.openSession(bg)
 	defer cur.Close()
 	sv, err := cur.loadResource(bg, cur.resource("default"))
@@ -204,7 +231,7 @@ func TestRemovedMemberCannotWrite(t *testing.T) {
 	}
 	// Re-admitting the same signing key must not revive the old-control
 	// forgery that all remaining members already set aside.
-	if _, err := bob.InitializeRepository(bg); err != nil {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := alice.ApproveMember(bg, string(bobsID)); err != nil {
@@ -319,7 +346,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 	}
 	// WorkspaceID alone is not enough to join, and a workspace that is already
 	// there is never adopted on faith.
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined without a genesis: %v", err)
 	}
 	// A genesis storage does not hold is not trusted.
@@ -327,7 +354,7 @@ func TestBootstrapRequiresTrustedGenesis(t *testing.T) {
 	if err := config.SaveProjectTo(bob.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("joined with a wrong genesis: %v", err)
 	}
 }
@@ -337,14 +364,14 @@ func TestIncompatibleStorageRejected(t *testing.T) {
 		alice := newAlice(t)
 		other := &App{Storage: alice.Storage, Identities: newMemKeyStore(), CheckpointDir: t.TempDir()}
 		prepareApp(t, other, "default")
-		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("a workspace without a trusted genesis was adopted: %v", err)
 		}
 	})
 	t.Run("genesis expected but storage empty", func(t *testing.T) {
 		alice := newAlice(t)
 		other := &App{Storage: newMemRegistry(), Identities: newMemKeyStore(), CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}
-		if _, err := other.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+		if _, err := other.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 			t.Fatalf("trust root silently replaced: %v", err)
 		}
 	})
@@ -411,7 +438,7 @@ func TestFounderRecordsTheGenesisBeforePublishingIt(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := a.InitializeRepository(bg); err != nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if recordedWhenPublished == "" || genesisInConfig(t, a) != recordedWhenPublished {
@@ -427,7 +454,7 @@ func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 		}
 		return nil
 	})
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("init succeeded although the control could not be published")
 	}
 	g := genesisInConfig(t, a)
@@ -438,7 +465,7 @@ func TestFailedPublishRetainsExactGenesisForRetry(t *testing.T) {
 		t.Fatalf("pending genesis: %v", err)
 	}
 	fail = false
-	if _, err := a.InitializeRepository(bg); err != nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	if genesisInConfig(t, a) == "" {
@@ -540,7 +567,7 @@ func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
 			_ = os.Chmod(filepath.Dir(pending), 0700)
 		}
 	})
-	first, err := a.InitializeRepository(bg)
+	first, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +577,7 @@ func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
 	if _, err := os.Stat(pending); err != nil {
 		t.Fatalf("expected cleanup to fail: %v", err)
 	}
-	again, err := a.InitializeRepository(bg)
+	again, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,14 +591,14 @@ func TestPublishedGenesisSucceedsWhenRecoveryCleanupFails(t *testing.T) {
 func TestPendingGenesisDigestMismatchNeverPublishes(t *testing.T) {
 	calls := 0
 	a := foundingApp(t, func(context.Context, []byte) error { calls++; return errors.New("offline") })
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("initial publication did not fail")
 	}
 	genesis := genesisInConfig(t, a)
 	if err := os.WriteFile(pendingGenesisForTest(t, a, genesis), []byte("different genesis bytes"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.InitializeRepository(bg); !apperr.Is(err, apperr.CodeUntrusted) {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeUntrusted) {
 		t.Fatalf("tampered recovery: %v", err)
 	}
 	if calls != 1 {
@@ -606,7 +633,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 			return next.Discover(ctx, k, scope)
 		},
 	})
-	if _, err := a.InitializeRepository(bg); err == nil {
+	if _, err := a.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("verification unexpectedly succeeded")
 	}
 	genesis := genesisInConfig(t, a)
@@ -614,7 +641,7 @@ func TestFoundingNewWorkspaceRetriesAfterVerificationDisconnect(t *testing.T) {
 		t.Fatalf("recovery removed before trust committed: %v", err)
 	}
 	offline = false
-	result, err := a.InitializeRepository(bg)
+	result, err := a.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatalf("retry new workspace in pinned checkout: %v", err)
 	}
@@ -651,7 +678,7 @@ func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
 		}
 		return next.Publish(ctx, o)
 	}})
-	if _, err := source.InitializeRepository(bg); err == nil {
+	if _, err := source.InitializeRepository(bg, InitOptions{}); err == nil {
 		t.Fatal("expected interrupted founding")
 	}
 	cfg, err := config.LoadProjectFrom(source.RepositoryDir)
@@ -663,7 +690,7 @@ func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
 	}
 	target.Storage = source.Storage
 	offline = false
-	if _, err := target.InitializeRepository(bg); !apperr.Is(err, apperr.CodeTrustRootChanged) {
+	if _, err := target.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeTrustRootChanged) {
 		t.Fatalf("foreign pending founding accepted: %v", err)
 	}
 	pinned, err := target.repositoryTrustRoot().Pinned()
@@ -672,5 +699,36 @@ func TestPendingFoundingCannotReplaceAnotherCheckoutPin(t *testing.T) {
 	}
 	if pinned != previous || calls != 1 {
 		t.Fatalf("foreign recovery changed trust or published: %+v calls %d", pinned, calls)
+	}
+}
+
+// Members that keep changing exhaust the write's retries. That used to leave
+// as an unclassified internal error; it is a conflict the caller can retry.
+func TestWriteGivesUpWithAConflictWhenTheMembersKeepChanging(t *testing.T) {
+	alice := newAlice(t)
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				s, err := (&App{Storage: base, Identities: alice.Identities, CheckpointDir: t.TempDir(), RepositoryDir: alice.RepositoryDir}).openSession(ctx)
+				if err != nil {
+					t.Error(err)
+				} else {
+					defer s.Close()
+					extra := extraPrincipal(t)
+					if _, err := wsp.UpdateControl(ctx, base, s.view, s.signer, func(c *wsp.Control) error {
+						c.Principals = append(c.Principals, extra)
+						return nil
+					}); err != nil {
+						t.Error(err)
+					}
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.AddSecret(bg, "default", "NEW", "value")
+	if !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("members kept changing: %v", err)
 	}
 }

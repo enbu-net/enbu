@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -44,6 +43,10 @@ type ConflictRetry struct {
 	MaxAttempts int `json:"max_attempts"`
 }
 
+// Service is everything the frontend can call: the desktop app binds its
+// exported methods, and desktop/rpc serves the same methods to editor
+// extensions. Every exported method is a frontend operation, and one that
+// fails returns an *Error.
 type Service struct {
 	clock      clock.Clock
 	app        *app.App
@@ -58,6 +61,8 @@ type Service struct {
 	authLogin  func(context.Context, auth.BrowserOpener) (*auth.StoredToken, error)
 	accounts   accountStore
 	emit       EventEmitter
+	updater    AppUpdater
+	updateMu   sync.Mutex
 	AppVersion string
 }
 
@@ -102,45 +107,52 @@ func NewService(a *app.App) *Service {
 	if s.git == nil {
 		s.git = gitprovider.NewCLIClient()
 	}
-	a.Events = s
+	a.Events = events{s}
 	s.loadSelectedRepo()
 	return s
 }
 
-func (s *Service) OnProgress(msg string) {
-	s.emitEvent(EventProgressMessage, msg)
+// Host is what the shell running a Service supplies: a native folder dialog,
+// the OS browser, and delivery of events to the frontend. A nil field is a
+// feature the shell lacks.
+type Host struct {
+	PickDirectory DirectoryPicker
+	OpenURL       BrowserOpener
+	Emit          EventEmitter
+	// Updater updates the desktop app; nil in an editor extension, which the
+	// editor updates.
+	Updater AppUpdater
 }
 
-func (s *Service) OnStepProgress(step app.ProgressStep) {
-	s.emitEvent(EventProgress, step)
-}
-
-func (s *Service) OnConflictRetry(attempt, maxAttempts int) {
-	s.emitEvent(EventConflictRetry, ConflictRetry{Attempt: attempt, MaxAttempts: maxAttempts})
-}
-
-func (s *Service) emitEvent(name string, data any) {
-	if s.emit != nil {
-		s.emit(name, data)
-	}
-}
-
-// Start gives the service the context of the running app; operations started
-// from the frontend are cancelled with it when the app quits.
-func (s *Service) Start(ctx context.Context) {
+// Attach gives s the context of the shell running it and what the shell
+// supplies. Operations started from the frontend are cancelled with ctx.
+func Attach(ctx context.Context, s *Service, host Host) {
 	s.ctx = ctx
+	s.pickDir = host.PickDirectory
+	s.openURL = host.OpenURL
+	s.emit = host.Emit
+	s.updater = host.Updater
 }
 
-func (s *Service) SetDirectoryPicker(picker DirectoryPicker) {
-	s.pickDir = picker
+// events delivers the app's progress to the frontend.
+type events struct{ s *Service }
+
+func (e events) OnProgress(msg string) {
+	e.emit(EventProgressMessage, msg)
 }
 
-func (s *Service) SetBrowserOpener(opener BrowserOpener) {
-	s.openURL = opener
+func (e events) OnStepProgress(step app.ProgressStep) {
+	e.emit(EventProgress, step)
 }
 
-func (s *Service) SetEventEmitter(emit EventEmitter) {
-	s.emit = emit
+func (e events) OnConflictRetry(attempt, maxAttempts int) {
+	e.emit(EventConflictRetry, ConflictRetry{Attempt: attempt, MaxAttempts: maxAttempts})
+}
+
+func (e events) emit(name string, data any) {
+	if emit := e.s.emit; emit != nil {
+		emit(name, data)
+	}
 }
 
 type AuthStatus struct {
@@ -174,23 +186,9 @@ type OAuthStatus struct {
 	Username string          `json:"username,omitempty"`
 }
 
-type Environment struct {
-	Name    string `json:"name"`
-	Current bool   `json:"current"`
-}
-
 type SecretsResponse struct {
 	Environment string       `json:"environment"`
 	Secrets     []SecretItem `json:"secrets"`
-}
-
-// PullResult says what a pull wrote, so the person sees the local variables it
-// kept and the deleted secrets it removed.
-type PullResult struct {
-	Output  string   `json:"output"`
-	Count   int      `json:"count"`
-	Kept    []string `json:"kept"`
-	Removed []string `json:"removed"`
 }
 
 type SecretItem struct {
@@ -198,85 +196,7 @@ type SecretItem struct {
 	Value string `json:"value"`
 }
 
-// ConflictSet is the keys of an environment that concurrent edits changed
-// differently, and the heads they were computed from. ResolveConflicts must be
-// given the same heads, so a value that appeared since is shown first.
-type ConflictSet struct {
-	Environment string           `json:"environment"`
-	Heads       []string         `json:"heads"`
-	Conflicts   []SecretConflict `json:"conflicts"`
-}
-
-type SecretConflict struct {
-	Key        string              `json:"key"`
-	Candidates []ConflictCandidate `json:"candidates"`
-}
-
-type ConflictCandidate struct {
-	Value   string `json:"value"`
-	Deleted bool   `json:"deleted"`
-}
-
-// ConflictChoice settles one conflicted key with a value, or by deleting it.
-type ConflictChoice struct {
-	Key    string `json:"key"`
-	Value  string `json:"value"`
-	Delete bool   `json:"delete"`
-}
-
-// EnvironmentDeletion is what deleting an environment did to its stored
-// revisions: how many it purged, or the incarnation that still names them.
-type EnvironmentDeletion struct {
-	Purged      int    `json:"purged"`
-	Incarnation string `json:"incarnation,omitempty"`
-}
-
-type HistoryEntry struct {
-	Index     int       `json:"index"`
-	Timestamp time.Time `json:"timestamp"`
-	Tag       string    `json:"tag"`
-}
-
-// Member is a device trusted by the workspace's signed Control.
-type Member struct {
-	DeviceID    string `json:"device_id"`
-	Fingerprint string `json:"fingerprint"`
-	Algorithm   string `json:"algorithm"`
-	Admin       bool   `json:"admin"`
-	Self        bool   `json:"self"`
-	// PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
-	PostQuantum bool `json:"post_quantum"`
-}
-
-// JoinRequest is a device waiting for an admin to approve it.
-type JoinRequest struct {
-	DeviceID    string    `json:"device_id"`
-	Fingerprint string    `json:"fingerprint"`
-	Algorithm   string    `json:"algorithm"`
-	RequestedAt time.Time `json:"requested_at"`
-	// KeyUpdate is set for a member replacing its key, as `enbu identity
-	// upgrade` asks, rather than a new device asking to join.
-	KeyUpdate bool `json:"key_update"`
-}
-
-// InitResult describes this device after initializing a workspace. Pending
-// is set while an admin still has to approve the device.
-type InitResult struct {
-	PublicKey   string `json:"public_key"`
-	Username    string `json:"username"`
-	Environment string `json:"environment"`
-	DeviceID    string `json:"device_id"`
-	Fingerprint string `json:"fingerprint"`
-	Pending     bool   `json:"pending"`
-	// Storage is where the workspace lives, and Founded is set when this init
-	// created it: a GHCR package then starts private to its creator.
-	Storage string `json:"storage"`
-	Founded bool   `json:"founded"`
-	// ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
-	ReplacedGenesis string `json:"replaced_genesis,omitempty"`
-}
-
-func (s *Service) GetAuthStatus() (AuthStatus, error) {
+func (s *Service) GetAuthStatus() AuthStatus {
 	var status AuthStatus
 	s.repoMu.Lock()
 	path := s.repoPath
@@ -292,7 +212,7 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 	token, err := auth.LoadToken()
 	if err != nil {
 		slog.Debug("GetAuthStatus: not authenticated", "err", err)
-		return status, nil
+		return status
 	}
 	status.Authenticated = true
 	status.Username = token.Username
@@ -300,10 +220,11 @@ func (s *Service) GetAuthStatus() (AuthStatus, error) {
 		status.Repo = &repo
 	}
 	slog.Info("GetAuthStatus", "authenticated", status.Authenticated, "username", status.Username, "repo", status.Repo)
-	return status, nil
+	return status
 }
 
-func (s *Service) StartOAuthLogin() (OAuthStart, error) {
+func (s *Service) StartOAuthLogin() (_ OAuthStart, err error) {
+	defer publicInto(&err)
 	slog.Info("StartOAuthLogin called")
 	sessionID, err := randomSessionID()
 	if err != nil {
@@ -359,7 +280,7 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	case <-opened:
 		return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt}, nil
 	case <-finished:
-		status, _ := s.GetOAuthLoginStatus(sessionID)
+		status := s.GetOAuthLoginStatus(sessionID)
 		if status.State == "success" {
 			return OAuthStart{SessionID: sessionID, ExpiresAt: expiresAt}, nil
 		}
@@ -373,32 +294,31 @@ func (s *Service) StartOAuthLogin() (OAuthStart, error) {
 	}
 }
 
-func (s *Service) GetOAuthLoginStatus(sessionID string) (OAuthStatus, error) {
+func (s *Service) GetOAuthLoginStatus(sessionID string) OAuthStatus {
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
 	session, ok := s.sessions[sessionID]
 	if !ok {
 		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
-		return OAuthStatus{State: "expired", Error: &payload}, nil
+		return OAuthStatus{State: "expired", Error: &payload}
 	}
 	if !s.clock.Now().Before(session.expiresAt) && session.status.State == "pending" {
 		session.cancel()
 		payload := apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
 		session.status = OAuthStatus{State: "expired", Error: &payload}
 	}
-	return session.status, nil
+	return session.status
 }
 
-func (s *Service) CancelOAuthLogin(sessionID string) error {
+func (s *Service) CancelOAuthLogin(sessionID string) {
 	s.authMu.Lock()
 	defer s.authMu.Unlock()
 	session, ok := s.sessions[sessionID]
 	if !ok {
-		return nil
+		return
 	}
 	session.cancel()
 	delete(s.sessions, sessionID)
-	return nil
 }
 
 func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
@@ -418,15 +338,16 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 // login is "". Signing out of the one in use moves to the most recent
 // remaining sign-in.
 func (s *Service) Logout(login string) error {
-	return s.accounts.Delete(login)
+	return publicError(s.accounts.Delete(login))
 }
 
 // SwitchAccount uses another signed-in GitHub account in this data directory.
 func (s *Service) SwitchAccount(login string) error {
-	return s.accounts.Switch(login)
+	return publicError(s.accounts.Switch(login))
 }
 
-func (s *Service) BrowseRepository() (RepoInfo, error) {
+func (s *Service) BrowseRepository() (_ RepoInfo, err error) {
+	defer publicInto(&err)
 	if s.pickDir == nil {
 		return RepoInfo{}, fmt.Errorf("directory picker is not available")
 	}
@@ -440,7 +361,8 @@ func (s *Service) BrowseRepository() (RepoInfo, error) {
 	return s.SelectRepository(path)
 }
 
-func (s *Service) SelectRepository(path string) (RepoInfo, error) {
+func (s *Service) SelectRepository(path string) (_ RepoInfo, err error) {
+	defer publicInto(&err)
 	repo, err := validateRepoPath(s.context(), s.git, path)
 	if err != nil {
 		return RepoInfo{}, apperr.Wrap(
@@ -473,7 +395,8 @@ func (s *Service) SelectRepository(path string) (RepoInfo, error) {
 	return s.repoInfo(repo)
 }
 
-func (s *Service) ListRepositories() ([]RepoInfo, error) {
+func (s *Service) ListRepositories() (_ []RepoInfo, err error) {
+	defer publicInto(&err)
 	cfg, err := config.LoadGUI()
 	if err != nil {
 		return nil, err
@@ -499,7 +422,8 @@ func (s *Service) ListRepositories() ([]RepoInfo, error) {
 	return repos, nil
 }
 
-func (s *Service) RemoveRepository(path string) error {
+func (s *Service) RemoveRepository(path string) (err error) {
+	defer publicInto(&err)
 	s.repoMu.Lock()
 	defer s.repoMu.Unlock()
 	if err := s.context().Err(); err != nil {
@@ -524,32 +448,12 @@ func (s *Service) RemoveRepository(path string) error {
 	return config.SaveGUI(cfg)
 }
 
-func (s *Service) ListMembers() ([]Member, error) {
-	return withRepoResult(s, func() ([]Member, error) {
-		infos, err := s.app.ListMembers(s.context())
-		if err != nil {
-			return nil, err
-		}
-		out := make([]Member, len(infos))
-		for i, m := range infos {
-			out[i] = Member{DeviceID: m.DeviceID, Fingerprint: m.Fingerprint, Algorithm: m.Algorithm, Admin: m.Admin, Self: m.Self, PostQuantum: m.PostQuantum}
-		}
-		return out, nil
-	})
+func (s *Service) ListMembers() ([]app.MemberInfo, error) {
+	return withRepoResult(s, func() ([]app.MemberInfo, error) { return s.app.ListMembers(s.context()) })
 }
 
-func (s *Service) ListJoinRequests() ([]JoinRequest, error) {
-	return withRepoResult(s, func() ([]JoinRequest, error) {
-		infos, err := s.app.ListJoinRequests(s.context())
-		if err != nil {
-			return nil, err
-		}
-		out := make([]JoinRequest, len(infos))
-		for i, r := range infos {
-			out[i] = JoinRequest{DeviceID: r.DeviceID, Fingerprint: r.Fingerprint, Algorithm: r.Algorithm, RequestedAt: r.RequestedAt, KeyUpdate: r.KeyUpdate}
-		}
-		return out, nil
-	})
+func (s *Service) ListJoinRequests() ([]app.JoinRequestInfo, error) {
+	return withRepoResult(s, func() ([]app.JoinRequestInfo, error) { return s.app.ListJoinRequests(s.context()) })
 }
 
 // ApproveMember is called after the admin has compared the device's
@@ -568,12 +472,6 @@ func (s *Service) SetAdmin(deviceID string, admin bool) error {
 	return s.withRepo(func() error { return s.app.SetAdmin(s.context(), deviceID, admin) })
 }
 
-// ResolveMemberFork joins member changes two admins made at the same time,
-// keeping only the members and admin rights both agree on.
-func (s *Service) ResolveMemberFork() error {
-	return s.withRepo(func() error { return s.app.ResolveControlFork(s.context()) })
-}
-
 func (s *Service) ReadConfig() (string, error) {
 	return withRepoResult(s, func() (string, error) {
 		return s.app.ReadConfig()
@@ -581,16 +479,7 @@ func (s *Service) ReadConfig() (string, error) {
 }
 
 func (s *Service) WriteConfig(content string) error {
-	return s.withRepo(func() error {
-		cfg, err := config.ParseProject(content)
-		if err != nil {
-			return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
-		}
-		if err := ensureGitignore(s.app.RepositoryDir, projectGitignoreEntries(cfg)...); err != nil {
-			return fmt.Errorf("updating .gitignore: %w", err)
-		}
-		return s.app.WriteConfig(content)
-	})
+	return s.withRepo(func() error { return s.app.WriteConfig(content) })
 }
 
 func appendUnique(slice []string, val string) []string {
@@ -619,7 +508,8 @@ func repoPathKey(path string) string {
 	return key
 }
 
-func (s *Service) GetRepoStatus() (RepoInfo, error) {
+func (s *Service) GetRepoStatus() (_ RepoInfo, err error) {
+	defer publicInto(&err)
 	s.repoMu.Lock()
 	path := s.repoPath
 	s.repoMu.Unlock()
@@ -639,70 +529,33 @@ func (s *Service) SuggestStorage() (string, error) {
 	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
 }
 
-// StorageSettings is where Initialize founds a workspace: the storage URL
-// and the options `enbu init` takes as flags.
-type StorageSettings struct {
-	URL       string `json:"url"`
-	Region    string `json:"region"`
-	Endpoint  string `json:"endpoint"`
-	PathStyle bool   `json:"path_style"`
-	PlainHTTP bool   `json:"plain_http"`
-}
-
 // Initialize sets this device up in the selected repository, as `enbu init`
 // does. It founds a workspace in storage, or in SuggestStorage's when
 // storage.URL is empty; with an enbu.toml that names a storage it joins that
 // workspace, and storage.URL must be empty. acceptNewGenesis is
 // `--accept-new-genesis`.
-func (s *Service) Initialize(storage StorageSettings, acceptNewGenesis bool) (InitResult, error) {
-	return withRepoResult(s, func() (InitResult, error) {
+func (s *Service) Initialize(storage config.StorageConfig, acceptNewGenesis bool) (app.InitResult, error) {
+	return withRepoResult(s, func() (app.InitResult, error) {
+		opts := app.InitOptions{AcceptNewGenesis: acceptNewGenesis}
 		if storage.URL != "" {
 			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
-				return InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
+				return app.InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
 			}
-			s.app.InitStorage = &config.StorageConfig{
-				URL:       storage.URL,
-				Region:    storage.Region,
-				Endpoint:  storage.Endpoint,
-				PathStyle: storage.PathStyle,
-				PlainHTTP: storage.PlainHTTP,
-			}
+			opts.Storage = &storage
 		}
-		s.app.AcceptNewGenesis = acceptNewGenesis
-		defer func() { s.app.InitStorage, s.app.AcceptNewGenesis = nil, false }()
-		result, err := s.app.InitializeRepository(s.context())
+		result, err := s.app.InitializeRepository(s.context(), opts)
 		if err != nil {
-			return InitResult{}, err
+			return app.InitResult{}, err
 		}
-		if err := ensureGitignore(s.app.RepositoryDir); err != nil {
-			slog.Warn("failed to update .gitignore", "err", err)
+		for _, warning := range result.Warnings {
+			slog.Warn("initialize", "warning", warning)
 		}
-		return InitResult{
-			PublicKey:       result.PublicKey,
-			Username:        result.Username,
-			Environment:     result.Environment,
-			DeviceID:        result.DeviceID,
-			Fingerprint:     result.Fingerprint,
-			Pending:         result.Pending,
-			Storage:         result.Storage,
-			Founded:         result.Founded,
-			ReplacedGenesis: result.ReplacedGenesis,
-		}, nil
+		return *result, nil
 	})
 }
 
-func (s *Service) ListEnvironments() ([]Environment, error) {
-	return withRepoResult(s, func() ([]Environment, error) {
-		envs, err := s.app.ListEnvironments()
-		if err != nil {
-			return nil, err
-		}
-		items := make([]Environment, len(envs))
-		for i, env := range envs {
-			items[i] = Environment{Name: env.Name, Current: env.IsCurrent}
-		}
-		return items, nil
-	})
+func (s *Service) ListEnvironments() ([]app.EnvInfo, error) {
+	return withRepoResult(s, s.app.ListEnvironments)
 }
 
 func (s *Service) CreateEnvironment(name string) error {
@@ -720,28 +573,9 @@ func (s *Service) RenameEnvironment(name, newName string) error {
 // DeleteEnvironment removes an environment from enbu.toml. With purge its
 // stored revisions are deleted too (admin only); without, they stay and the
 // result names the incarnation PurgeIncarnation deletes them by later.
-func (s *Service) DeleteEnvironment(name string, purge bool) (EnvironmentDeletion, error) {
-	return withRepoResult(s, func() (EnvironmentDeletion, error) {
-		if purge {
-			purged, err := s.app.DeleteEnvironmentPurging(s.context(), name)
-			return EnvironmentDeletion{Purged: purged}, err
-		}
-		// The incarnation is read before deleting: afterwards enbu.toml no
-		// longer names it, and the caller needs it to purge later.
-		envs, err := s.app.ListEnvironments()
-		if err != nil {
-			return EnvironmentDeletion{}, err
-		}
-		incarnation := ""
-		for _, env := range envs {
-			if env.Name == name {
-				incarnation = env.Incarnation
-			}
-		}
-		if err := s.app.DeleteEnvironment(name); err != nil {
-			return EnvironmentDeletion{}, err
-		}
-		return EnvironmentDeletion{Incarnation: incarnation}, nil
+func (s *Service) DeleteEnvironment(name string, purge bool) (app.EnvironmentDeletion, error) {
+	return withRepoResult(s, func() (app.EnvironmentDeletion, error) {
+		return s.app.DeleteEnvironment(s.context(), name, purge)
 	})
 }
 
@@ -791,79 +625,48 @@ func (s *Service) DeleteSecret(env, key string) error {
 // PullSecrets writes the environment's secrets to its output file. With replace
 // the file's current content is dropped, including a file enbu cannot read
 // (output_unreadable), which a pull otherwise refuses to overwrite.
-func (s *Service) PullSecrets(env string, replace bool) (PullResult, error) {
-	return withRepoResult(s, func() (PullResult, error) {
+func (s *Service) PullSecrets(env string, replace bool) (app.WrittenFile, error) {
+	return withRepoResult(s, func() (app.WrittenFile, error) {
 		written, err := s.app.PullSecretsToFileWith(s.context(), env, replace)
 		if err != nil {
-			return PullResult{}, err
+			return app.WrittenFile{}, err
 		}
-		return PullResult{Output: written.Output, Count: written.Count,
-			Kept: nonNil(written.Kept), Removed: nonNil(written.Removed)}, nil
+		return *written, nil
 	})
-}
-
-func nonNil(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
 }
 
 func (s *Service) SyncSecrets(env string) error {
 	return s.withRepo(func() error { return s.app.SyncSecrets(s.context(), env) })
 }
 
-func (s *Service) ListConflicts(env string) (ConflictSet, error) {
-	return withRepoResult(s, func() (ConflictSet, error) {
+func (s *Service) ListConflicts(env string) (app.ConflictSet, error) {
+	return withRepoResult(s, func() (app.ConflictSet, error) {
 		set, err := s.app.ListConflicts(s.context(), env)
 		if err != nil {
-			return ConflictSet{}, err
+			return app.ConflictSet{}, err
 		}
-		if env == "" {
-			env, _ = s.app.CurrentEnvironment()
-		}
-		out := ConflictSet{Environment: env, Heads: set.Heads, Conflicts: make([]SecretConflict, len(set.Conflicts))}
-		for i, c := range set.Conflicts {
-			out.Conflicts[i] = SecretConflict{Key: c.Key, Candidates: make([]ConflictCandidate, len(c.Candidates))}
-			for j, cand := range c.Candidates {
-				out.Conflicts[i].Candidates[j] = ConflictCandidate{Value: cand.Value, Deleted: cand.Deleted}
-			}
-		}
-		return out, nil
+		return *set, nil
 	})
 }
 
 // ResolveConflicts publishes a decision for every conflicted key. heads are the
 // ConflictSet.Heads the person decided from; if anyone wrote since, nothing is
 // published and the call fails with CodeConflict.
-func (s *Service) ResolveConflicts(env string, heads []string, choices []ConflictChoice) error {
-	picked := make(map[string]app.SecretChoice, len(choices))
-	for _, c := range choices {
-		if _, dup := picked[c.Key]; dup {
-			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("%s was decided twice", c.Key), apperr.Params{"key": c.Key})
-		}
-		picked[c.Key] = app.SecretChoice{Value: c.Value, Delete: c.Delete}
-	}
-	return s.withRepo(func() error { return s.app.ResolveSecrets(s.context(), env, heads, picked) })
+func (s *Service) ResolveConflicts(env string, heads []string, choices []app.SecretChoice) error {
+	return s.withRepo(func() error { return s.app.ResolveSecrets(s.context(), env, heads, choices) })
 }
 
-func (s *Service) ListHistory(env string) ([]HistoryEntry, error) {
-	return withRepoResult(s, func() ([]HistoryEntry, error) {
-		entries, err := s.app.ListHistory(s.context(), env)
+func (s *Service) ListHistory(env string) ([]app.HistoryEntry, error) {
+	return withRepoResult(s, func() ([]app.HistoryEntry, error) { return s.app.ListHistory(s.context(), env) })
+}
+
+func (s *Service) DiffHistory(env string, from, to int) (app.Diff, error) {
+	return withRepoResult(s, func() (app.Diff, error) {
+		diff, err := s.app.DiffHistory(s.context(), env, from, to)
 		if err != nil {
-			return nil, err
+			return app.Diff{}, err
 		}
-		out := make([]HistoryEntry, len(entries))
-		for i, entry := range entries {
-			out[i] = HistoryEntry{Index: entry.Index, Timestamp: entry.Timestamp, Tag: entry.Tag}
-		}
-		return out, nil
-	})
-}
-
-func (s *Service) DiffHistory(env string, from, to int) (*app.Diff, error) {
-	return withRepoResult(s, func() (*app.Diff, error) {
-		return s.app.DiffHistory(s.context(), env, from, to)
+		return *diff, nil
 	})
 }
 
@@ -923,9 +726,10 @@ func withRepoResult[T any](s *Service, fn func() (T, error)) (T, error) {
 	s.repoMu.Unlock()
 	var zero T
 	if path == "" {
-		return zero, fmt.Errorf("select a workspace folder first")
+		return zero, publicError(errors.New("select a workspace folder first"))
 	}
-	return withRepoPathResult(s, path, fn)
+	v, err := withRepoPathResult(s, path, fn)
+	return v, publicError(err)
 }
 
 func withRepoPathResult[T any](s *Service, path string, fn func() (T, error)) (T, error) {
@@ -945,69 +749,6 @@ func (s *Service) context() context.Context {
 		return s.ctx
 	}
 	return context.Background()
-}
-
-var desktopGitignoreEntries = []string{
-	".env",
-	".env.*",
-	"!.env.example",
-}
-
-func projectGitignoreEntries(cfg *config.ProjectConfig) []string {
-	var entries []string
-	for _, name := range cfg.EnvironmentNames() {
-		env, err := cfg.Environment(name)
-		if err != nil {
-			continue
-		}
-		output := strings.TrimSpace(env.Output)
-		if output == "" || filepath.IsAbs(output) {
-			continue
-		}
-		if strings.HasPrefix(output, "#") || strings.HasPrefix(output, "!") {
-			output = `\` + output
-		}
-		entries = append(entries, output)
-	}
-	return entries
-}
-
-func ensureGitignore(repoRoot string, extraEntries ...string) error {
-	path := filepath.Join(repoRoot, ".gitignore")
-	existing := ""
-	if data, err := os.ReadFile(path); err == nil {
-		existing = string(data)
-	}
-	lines := strings.Split(existing, "\n")
-	lineSet := make(map[string]bool)
-	for _, l := range lines {
-		lineSet[strings.TrimSpace(l)] = true
-	}
-	var toAdd []string
-	entries := append([]string{}, desktopGitignoreEntries...)
-	entries = append(entries, extraEntries...)
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry != "" && !lineSet[entry] {
-			toAdd = append(toAdd, entry)
-			lineSet[entry] = true
-		}
-	}
-	if len(toAdd) == 0 {
-		return nil
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = f.Close() }()
-	if existing != "" && !strings.HasSuffix(existing, "\n") {
-		if _, err := f.WriteString("\n"); err != nil {
-			return err
-		}
-	}
-	_, err = f.WriteString("\n# enbu - exclude .env files\n" + strings.Join(toAdd, "\n") + "\n")
-	return err
 }
 
 func randomSessionID() (string, error) {

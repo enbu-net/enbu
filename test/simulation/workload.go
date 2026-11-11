@@ -3,13 +3,14 @@ package simulation
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"reflect"
+	"sort"
+
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/wsp"
-	"math/rand/v2"
-	"reflect"
-	"sort"
 )
 
 type Action struct {
@@ -235,7 +236,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 			if want := current(d.App.Runtime.LocalStateDir); actual != want {
 				return &Violation{Kind: "environment/current", Detail: fmt.Errorf("step %d: device %d is on %q want %q", step, op.Device, actual, want)}
 			}
-			e = a.DeleteEnvironment(env)
+			_, e = a.DeleteEnvironment(ctx, env, false)
 			if actual == env {
 				expected = string(apperr.CodeInvalidArgument)
 			} else if !present {
@@ -263,7 +264,7 @@ func (w *World) Workload(ctx context.Context, actions []Action) error {
 				if err := requireCode(denied, apperr.CodeNotMember); err != nil {
 					return err
 				}
-				_, e = w.Devices[target].App.InitializeRepository(ctx)
+				_, e = w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{})
 			}
 			if e == nil {
 				e = w.Devices[0].App.ApproveMember(ctx, w.Devices[target].ID)

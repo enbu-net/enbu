@@ -1,5 +1,9 @@
 name: Setup frontend toolchain
 description: Restore the content-addressed dependency store using the web lockfile
+inputs:
+  cache:
+    description: Restore and save the dependency store; "false" downloads everything
+    default: "true"
 runs:
   using: composite
   steps:
@@ -9,4 +13,4 @@ runs:
         run-install: false
         package-manager: false
         node-manager: false
-        cache: true
+        cache: ${{ inputs.cache == 'true' }}

@@ -46,14 +46,12 @@ describe("RepositoryContextMenu", () => {
   it("removes the final repository after confirmation", async () => {
     let repositories = [repoInfo("C:\\repo", "enbu-net", "test")];
     const backendMock = vi.mocked(backend);
-    backendMock.listRepositories.mockImplementation(async () => repositories);
-    backendMock.removeRepository.mockImplementation(async () => {
+    backendMock.ListRepositories.mockImplementation(async () => repositories);
+    backendMock.RemoveRepository.mockImplementation(async () => {
       repositories = [];
     });
     await act(async () => {
-      root.render(
-        <>{withSession(<Sidebar />, { repo: { selected: true, repo: repoInfo("C:\\repo") } })}</>,
-      );
+      root.render(<>{withSession(<Sidebar />, { repo: repoInfo("C:\\repo") })}</>);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -88,18 +86,16 @@ describe("RepositoryContextMenu", () => {
 
 describe("accessibility: sidebar keyboard", () => {
   it("sidebar repo items have role=button and tabIndex", async () => {
-    vi.mocked(backend).listRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
     act(() => {
-      root.render(
-        <>{withSession(<Sidebar />, { repo: { selected: true, repo: repoInfo("/b") } })}</>,
-      );
+      root.render(<>{withSession(<Sidebar />, { repo: repoInfo("/b") })}</>);
     });
     await act(async () => {});
     const items = container.querySelectorAll('[role="button"]');
     expect(items.length).toBeGreaterThan(0);
     const item = items[0] as HTMLElement;
     expect(item.getAttribute("tabindex")).toBe("0");
-    const selectRepository = vi.mocked(backend).selectRepository;
+    const selectRepository = vi.mocked(backend).SelectRepository;
     selectRepository.mockClear();
     await act(async () => {
       item.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -116,8 +112,42 @@ describe("accessibility: sidebar keyboard", () => {
 });
 
 describe("Sidebar", () => {
+  it("closes the settings once an added repository is selected", async () => {
+    const setRepo = vi.fn();
+    const onCloseSettings = vi.fn();
+    const next = repoInfo("/c", "acme", "web");
+    vi.mocked(backend).ListRepositories.mockResolvedValue([]);
+    vi.mocked(backend).BrowseRepository.mockResolvedValueOnce(next);
+    await act(async () => {
+      root.render(
+        <>{withSession(<Sidebar settingsOpen onCloseSettings={onCloseSettings} />, { setRepo })}</>,
+      );
+    });
+    await settle();
+    await act(async () => {
+      queryButton("Add repository")?.click();
+    });
+    await settle();
+    expect(setRepo).toHaveBeenCalledWith(next);
+    expect(onCloseSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps adding a repository above the list and the settings below it", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    await act(async () => {
+      root.render(<>{withSession(<Sidebar onOpenSettings={() => {}} />)}</>);
+    });
+    await settle();
+    const nav = container.querySelector("nav");
+    const order = Array.from(nav?.querySelectorAll("button, [data-repository-path]") ?? []).map(
+      (node) => node.getAttribute("data-repository-path") ?? node.textContent,
+    );
+    expect(order).toEqual(["Add repository", "/a", "Settings"]);
+    expect(nav?.querySelector("button svg")).toBeTruthy();
+  });
+
   it("shows why the repository list could not load", async () => {
-    vi.mocked(backend).listRepositories.mockRejectedValueOnce(new Error("disk unavailable"));
+    vi.mocked(backend).ListRepositories.mockRejectedValueOnce(new Error("disk unavailable"));
     await act(async () => {
       root.render(<>{withSession(<Sidebar />)}</>);
     });
@@ -128,18 +158,14 @@ describe("Sidebar", () => {
 
   it("marks the active repository and switches to another one", async () => {
     const setRepo = vi.fn();
-    const next = { selected: true, repo: repoInfo("/a", "acme", "app") };
-    vi.mocked(backend).listRepositories.mockResolvedValue([
+    const next = repoInfo("/a", "acme", "app");
+    vi.mocked(backend).ListRepositories.mockResolvedValue([
       repoInfo("/a", "acme", "app"),
       repoInfo("/b", "acme", "api"),
     ]);
-    vi.mocked(backend).selectRepository.mockResolvedValueOnce(next);
+    vi.mocked(backend).SelectRepository.mockResolvedValueOnce(next);
     await act(async () => {
-      root.render(
-        <>
-          {withSession(<Sidebar />, { repo: { selected: true, repo: repoInfo("/b") }, setRepo })}
-        </>,
-      );
+      root.render(<>{withSession(<Sidebar />, { repo: repoInfo("/b"), setRepo })}</>);
     });
     await settle();
     const active = container.querySelector('[aria-current="true"]');
@@ -149,5 +175,38 @@ describe("Sidebar", () => {
     });
     await settle();
     expect(setRepo).toHaveBeenCalledWith(next);
+  });
+
+  it("opens the settings from the bottom button", async () => {
+    const onOpenSettings = vi.fn();
+    await act(async () => {
+      root.render(<>{withSession(<Sidebar onOpenSettings={onOpenSettings} />)}</>);
+    });
+    await settle();
+    await act(async () => queryButton("Settings")?.click());
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the settings through the repository in use without selecting it again", async () => {
+    const onCloseSettings = vi.fn();
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/b", "acme", "api")]);
+    vi.mocked(backend).SelectRepository.mockClear();
+    await act(async () => {
+      root.render(
+        <>
+          {withSession(<Sidebar settingsOpen onCloseSettings={onCloseSettings} />, {
+            repo: repoInfo("/b"),
+          })}
+        </>,
+      );
+    });
+    await settle();
+    expect(queryButton("Settings")?.getAttribute("aria-current")).toBe("page");
+    await act(async () => {
+      container.querySelector<HTMLElement>('[data-repository-path="/b"]')?.click();
+    });
+    await settle();
+    expect(backend.SelectRepository).not.toHaveBeenCalled();
+    expect(onCloseSettings).toHaveBeenCalledTimes(1);
   });
 });

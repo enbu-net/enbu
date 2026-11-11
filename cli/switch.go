@@ -59,31 +59,22 @@ func newSwitchCommand(a *app.App) *cobra.Command {
 				if len(args) == 0 {
 					return invalidArgument("environment name required for --delete", nil)
 				}
-				purged, incarnation := 0, ""
-				if purge {
-					n, err := a.DeleteEnvironmentPurging(cmd.Context(), args[0])
-					if err != nil {
-						return err
-					}
-					purged = n
-				} else {
-					incarnation = incarnationOf(a, args[0])
-					if err := a.DeleteEnvironment(args[0]); err != nil {
-						return err
-					}
+				deleted, err := a.DeleteEnvironment(cmd.Context(), args[0], purge)
+				if err != nil {
+					return err
 				}
 				if jsonEnabled(cmd) {
-					out := map[string]any{"action": "delete", "environment": args[0], "purged": purged}
-					if incarnation != "" {
-						out["incarnation"] = incarnation
+					out := map[string]any{"action": "delete", "environment": args[0], "purged": deleted.Purged}
+					if deleted.Incarnation != "" {
+						out["incarnation"] = deleted.Incarnation
 					}
 					return writeJSON(cmd, out)
 				}
 				cmd.Printf("Deleted environment '%s'\n", args[0])
 				if purge {
-					cmd.Printf("Deleted %d stored revision(s)\n", purged)
-				} else if incarnation != "" {
-					cmd.Printf("Its stored revisions remain. To delete them later (admin only): enbu switch --purge-incarnation %s\n", incarnation)
+					cmd.Printf("Deleted %d stored revision(s)\n", deleted.Purged)
+				} else if deleted.Incarnation != "" {
+					cmd.Printf("Its stored revisions remain. To delete them later (admin only): enbu switch --purge-incarnation %s\n", deleted.Incarnation)
 				}
 				return nil
 			}
@@ -181,19 +172,4 @@ func runSwitchList(cmd *cobra.Command, a *app.App) error {
 		}
 	}
 	return nil
-}
-
-// incarnationOf is what names an environment's stored revisions, so it can be
-// shown before the environment is forgotten.
-func incarnationOf(a *app.App, name string) string {
-	envs, err := a.ListEnvironments()
-	if err != nil {
-		return ""
-	}
-	for _, e := range envs {
-		if e.Name == name {
-			return e.Incarnation
-		}
-	}
-	return ""
 }

@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sync/atomic"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
@@ -108,7 +109,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	if err := config.SaveProjectTo(adversary.App.RepositoryDir, &badConfig); err != nil {
 		return err
 	}
-	r, err := adversary.App.InitializeRepository(ctx)
+	r, err := adversary.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || r.Pending || r.ControlGenesis != string(root) {
 		return fmt.Errorf("attacker initialization: %v", err)
 	}
@@ -160,7 +161,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		}
 		newcomer = w.Devices[verified]
 		start := len(w.Tape.Recording.Entries)
-		result, err := newcomer.App.InitializeRepository(ctx)
+		result, err := newcomer.App.InitializeRepository(ctx, app.InitOptions{})
 		if e := requireCode(err, code); e != nil || result != nil {
 			return fmt.Errorf("verified invitation accepted substituted genesis: %v", err)
 		}
@@ -188,7 +189,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		}
 	}
 	newcomer.Store.Store = legitimate
-	r, err = newcomer.App.InitializeRepository(ctx)
+	r, err = newcomer.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || !r.Pending || r.Founded || r.KeyCreated || r.ControlGenesis != cfg.ControlGenesis || r.ReplacedGenesis != "" || r.DeviceID != firstID || r.PublicKey != firstRecipient {
 		return fmt.Errorf("verified newcomer recovery: %v", err)
 	}
@@ -203,7 +204,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	if err := config.SaveProjectTo(victim.App.RepositoryDir, &badConfig); err != nil {
 		return err
 	}
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil || r == nil || !r.Pending || r.ControlGenesis != string(root) {
 		return fmt.Errorf("malicious first-invitation contract: %v", err)
 	}
@@ -237,7 +238,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 		return err
 	}
 	start := len(w.Tape.Recording.Entries)
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{})
 	if e := requireCode(err, apperr.CodeTrustRootChanged); e != nil || r != nil {
 		return fmt.Errorf("correcting an unverified invitation silently replaced its pin: %v", err)
 	}
@@ -259,8 +260,7 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	}
 	// Explicit root confirmation changes trust, never membership. Old authority
 	// at the attacker's root cannot approve access to the legitimate team.
-	victim.App.AcceptNewGenesis = true
-	r, err = victim.App.InitializeRepository(ctx)
+	r, err = victim.App.InitializeRepository(ctx, app.InitOptions{AcceptNewGenesis: true})
 	if err != nil || r == nil || !r.Pending || r.ReplacedGenesis != string(root) || r.DeviceID != victim.ID {
 		return fmt.Errorf("explicit invitation repair: %v", err)
 	}
@@ -370,39 +370,26 @@ func (w *World) FirstContact(ctx context.Context, cold bool) error {
 	}
 	openedForeign.Store(false)
 	honest.Devices = w.Devices[:len(w.Devices)-1]
-	// A State naming an unknown Control is explicitly ErrRollback in the
-	// protocol. Require fail-closed behavior, rather than weakening that check
-	// to silently discard a possibly newer legitimate membership epoch.
+	// The replayed States name Controls of the foreign root, which the honest
+	// Control DAG does not hold. They cannot be verified, so they are set
+	// aside: they change nothing, their ciphertext is never fetched, and they
+	// do not block the team from reading or writing.
 	for i := range honest.Devices {
 		if err := restart(i); err != nil {
 			return err
 		}
 		d := w.Devices[i]
-		checkpoint := wsp.OpenCheckpoints(d.App.CheckpointDir, cfg.WorkspaceID, goodRoot.Genesis, d.App.Runtime.Clock)
-		before, err := checkpoint.Accepted(cfg.Resource("default"))
-		if err != nil {
-			return err
-		}
-		start := len(w.Tape.Recording.Entries)
 		got, err := d.App.ListSecrets(ctx, "default")
-		if requireCode(err, apperr.CodeRollback) != nil || got != nil {
-			return fmt.Errorf("foreign root replay did not fail closed: %v", err)
+		if err != nil || !maps.Equal(got, w.Model["default"]) {
+			return fmt.Errorf("foreign root replay changed or blocked reads: %v", err)
 		}
-		if err := requireCode(d.App.AddSecret(ctx, "default", "MUST_NOT_WRITE", "foreign-control-canary"), apperr.CodeRollback); err != nil {
-			return err
+		key := fmt.Sprintf("BESIDE_FOREIGN_BRANCH_%d", i)
+		if err := d.App.AddSecret(ctx, "default", key, "acknowledged"); err != nil {
+			return fmt.Errorf("foreign root replay blocked writes: %w", err)
 		}
-		if err := requireCode(d.App.SyncSecrets(ctx, "default"), apperr.CodeRollback); err != nil {
-			return err
-		}
-		if err := requireMetadataOnlyStorage(w.Tape.Recording.Entries[start:]); err != nil {
-			return err
-		}
-		after, err := checkpoint.Accepted(cfg.Resource("default"))
-		if err != nil {
-			return err
-		}
-		if !reflect.DeepEqual(before, after) {
-			return fmt.Errorf("rejected foreign branch changed accepted State heads")
+		w.Model["default"][key] = "acknowledged"
+		if err := d.App.SyncSecrets(ctx, "default"); err != nil {
+			return fmt.Errorf("foreign root replay blocked sync: %w", err)
 		}
 		if err := firstContactPins(d, cfg.WorkspaceID, goodRoot); err != nil {
 			return err

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	agecrypto "filippo.io/age"
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -69,7 +70,7 @@ func (w *World) DeviceReplacement(ctx context.Context) error {
 	// A backup of the checkout/checkpoints is not a backup of either private key.
 	w.Devices[target].Keys = &Keys{Tape: w.Tape, Device: target}
 	w.Restart(target)
-	replacement, err := w.Devices[target].App.InitializeRepository(ctx)
+	replacement, err := w.Devices[target].App.InitializeRepository(ctx, app.InitOptions{})
 	if err != nil {
 		return err
 	}

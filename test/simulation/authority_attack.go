@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -125,6 +126,9 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 		if err := w.forkResolutionAttack(ctx, mode, cfg, head); err != nil {
 			return err
 		}
+		// The genuine fork promotes device 2 on one branch, which the 3-way
+		// merge keeps; the forged resolution's own change must not survive.
+		expected[w.Devices[2].ID] = true
 	} else {
 		next := head.Control
 		next.Principals = slices.Clone(head.Principals)
@@ -190,7 +194,7 @@ func (w *World) AuthorityAttack(ctx context.Context, mode string) error {
 		if _, err := w.Devices[1].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeNotMember) != nil {
 			return fmt.Errorf("removed attacker regained access: %v", err)
 		}
-		if _, err := w.Devices[1].App.InitializeRepository(ctx); err != nil {
+		if _, err := w.Devices[1].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 			return err
 		}
 		if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {
@@ -270,11 +274,17 @@ func (w *World) forkResolutionAttack(ctx context.Context, mode string, cfg *conf
 	if err := w.Devices[0].Store.Publish(ctx, storage.Object{Kind: storage.KindControl, Rev: digest.FromBytes(signed), Head: signed}); err != nil {
 		return err
 	}
+	// Device 0, the only admin of both heads, joins the fork with its next
+	// operation; every other device stays stopped until then.
 	for i := range w.Devices {
 		w.Restart(i)
+		if i == 0 {
+			continue
+		}
 		if _, err := w.Devices[i].App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
 			return fmt.Errorf("malicious resolution bypassed fork: %v", err)
 		}
 	}
-	return w.Devices[0].App.ResolveControlFork(ctx)
+	_, err = w.Devices[0].App.ListSecrets(ctx, "default")
+	return err
 }

@@ -8,6 +8,9 @@ import { Create as $Create } from "@wailsio/runtime";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as apperr$0 from "../pkg/apperr/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as selfupdate$0 from "../pkg/selfupdate/models.js";
 
 export class AuthStatus {
     "authenticated": boolean;
@@ -50,63 +53,6 @@ export class AuthStatus {
     }
 }
 
-export class ConflictCandidate {
-    "value": string;
-    "deleted": boolean;
-
-    /** Creates a new ConflictCandidate instance. */
-    constructor($$source: Partial<ConflictCandidate> = {}) {
-        if (!("value" in $$source)) {
-            this["value"] = "";
-        }
-        if (!("deleted" in $$source)) {
-            this["deleted"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConflictCandidate instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConflictCandidate {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ConflictCandidate($$parsedSource as Partial<ConflictCandidate>);
-    }
-}
-
-/**
- * ConflictChoice settles one conflicted key with a value, or by deleting it.
- */
-export class ConflictChoice {
-    "key": string;
-    "value": string;
-    "delete": boolean;
-
-    /** Creates a new ConflictChoice instance. */
-    constructor($$source: Partial<ConflictChoice> = {}) {
-        if (!("key" in $$source)) {
-            this["key"] = "";
-        }
-        if (!("value" in $$source)) {
-            this["value"] = "";
-        }
-        if (!("delete" in $$source)) {
-            this["delete"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConflictChoice instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConflictChoice {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ConflictChoice($$parsedSource as Partial<ConflictChoice>);
-    }
-}
-
 /**
  * ConflictRetry reports that a publish found new heads and starts over.
  */
@@ -132,128 +78,6 @@ export class ConflictRetry {
     static createFrom($$source: any = {}): ConflictRetry {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new ConflictRetry($$parsedSource as Partial<ConflictRetry>);
-    }
-}
-
-/**
- * ConflictSet is the keys of an environment that concurrent edits changed
- * differently, and the heads they were computed from. ResolveConflicts must be
- * given the same heads, so a value that appeared since is shown first.
- */
-export class ConflictSet {
-    "environment": string;
-    "heads": string[];
-    "conflicts": SecretConflict[];
-
-    /** Creates a new ConflictSet instance. */
-    constructor($$source: Partial<ConflictSet> = {}) {
-        if (!("environment" in $$source)) {
-            this["environment"] = "";
-        }
-        if (!("heads" in $$source)) {
-            this["heads"] = [];
-        }
-        if (!("conflicts" in $$source)) {
-            this["conflicts"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ConflictSet instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ConflictSet {
-        const $$createField1_0 = $$createType0;
-        const $$createField2_0 = $$createType4;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("heads" in $$parsedSource) {
-            $$parsedSource["heads"] = $$createField1_0($$parsedSource["heads"]);
-        }
-        if ("conflicts" in $$parsedSource) {
-            $$parsedSource["conflicts"] = $$createField2_0($$parsedSource["conflicts"]);
-        }
-        return new ConflictSet($$parsedSource as Partial<ConflictSet>);
-    }
-}
-
-export class Environment {
-    "name": string;
-    "current": boolean;
-
-    /** Creates a new Environment instance. */
-    constructor($$source: Partial<Environment> = {}) {
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("current" in $$source)) {
-            this["current"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Environment instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Environment {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Environment($$parsedSource as Partial<Environment>);
-    }
-}
-
-/**
- * EnvironmentDeletion is what deleting an environment did to its stored
- * revisions: how many it purged, or the incarnation that still names them.
- */
-export class EnvironmentDeletion {
-    "purged": number;
-    "incarnation"?: string;
-
-    /** Creates a new EnvironmentDeletion instance. */
-    constructor($$source: Partial<EnvironmentDeletion> = {}) {
-        if (!("purged" in $$source)) {
-            this["purged"] = 0;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new EnvironmentDeletion instance from a string or object.
-     */
-    static createFrom($$source: any = {}): EnvironmentDeletion {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new EnvironmentDeletion($$parsedSource as Partial<EnvironmentDeletion>);
-    }
-}
-
-export class HistoryEntry {
-    "index": number;
-    "timestamp": string;
-    "tag": string;
-
-    /** Creates a new HistoryEntry instance. */
-    constructor($$source: Partial<HistoryEntry> = {}) {
-        if (!("index" in $$source)) {
-            this["index"] = 0;
-        }
-        if (!("timestamp" in $$source)) {
-            this["timestamp"] = "0001-01-01T00:00:00.000Z";
-        }
-        if (!("tag" in $$source)) {
-            this["tag"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new HistoryEntry instance from a string or object.
-     */
-    static createFrom($$source: any = {}): HistoryEntry {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new HistoryEntry($$parsedSource as Partial<HistoryEntry>);
     }
 }
 
@@ -307,162 +131,6 @@ export class IdentityDiagnosis {
     }
 }
 
-/**
- * InitResult describes this device after initializing a workspace. Pending
- * is set while an admin still has to approve the device.
- */
-export class InitResult {
-    "public_key": string;
-    "username": string;
-    "environment": string;
-    "device_id": string;
-    "fingerprint": string;
-    "pending": boolean;
-
-    /**
-     * Storage is where the workspace lives, and Founded is set when this init
-     * created it: a GHCR package then starts private to its creator.
-     */
-    "storage": string;
-    "founded": boolean;
-
-    /**
-     * ReplacedGenesis is the trust root acceptNewGenesis replaced, or "".
-     */
-    "replaced_genesis"?: string;
-
-    /** Creates a new InitResult instance. */
-    constructor($$source: Partial<InitResult> = {}) {
-        if (!("public_key" in $$source)) {
-            this["public_key"] = "";
-        }
-        if (!("username" in $$source)) {
-            this["username"] = "";
-        }
-        if (!("environment" in $$source)) {
-            this["environment"] = "";
-        }
-        if (!("device_id" in $$source)) {
-            this["device_id"] = "";
-        }
-        if (!("fingerprint" in $$source)) {
-            this["fingerprint"] = "";
-        }
-        if (!("pending" in $$source)) {
-            this["pending"] = false;
-        }
-        if (!("storage" in $$source)) {
-            this["storage"] = "";
-        }
-        if (!("founded" in $$source)) {
-            this["founded"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new InitResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): InitResult {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new InitResult($$parsedSource as Partial<InitResult>);
-    }
-}
-
-/**
- * JoinRequest is a device waiting for an admin to approve it.
- */
-export class JoinRequest {
-    "device_id": string;
-    "fingerprint": string;
-    "algorithm": string;
-    "requested_at": string;
-
-    /**
-     * KeyUpdate is set for a member replacing its key, as `enbu identity
-     * upgrade` asks, rather than a new device asking to join.
-     */
-    "key_update": boolean;
-
-    /** Creates a new JoinRequest instance. */
-    constructor($$source: Partial<JoinRequest> = {}) {
-        if (!("device_id" in $$source)) {
-            this["device_id"] = "";
-        }
-        if (!("fingerprint" in $$source)) {
-            this["fingerprint"] = "";
-        }
-        if (!("algorithm" in $$source)) {
-            this["algorithm"] = "";
-        }
-        if (!("requested_at" in $$source)) {
-            this["requested_at"] = "0001-01-01T00:00:00.000Z";
-        }
-        if (!("key_update" in $$source)) {
-            this["key_update"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new JoinRequest instance from a string or object.
-     */
-    static createFrom($$source: any = {}): JoinRequest {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new JoinRequest($$parsedSource as Partial<JoinRequest>);
-    }
-}
-
-/**
- * Member is a device trusted by the workspace's signed Control.
- */
-export class Member {
-    "device_id": string;
-    "fingerprint": string;
-    "algorithm": string;
-    "admin": boolean;
-    "self": boolean;
-
-    /**
-     * PostQuantum is set when the member encrypts with a hybrid ML-KEM key.
-     */
-    "post_quantum": boolean;
-
-    /** Creates a new Member instance. */
-    constructor($$source: Partial<Member> = {}) {
-        if (!("device_id" in $$source)) {
-            this["device_id"] = "";
-        }
-        if (!("fingerprint" in $$source)) {
-            this["fingerprint"] = "";
-        }
-        if (!("algorithm" in $$source)) {
-            this["algorithm"] = "";
-        }
-        if (!("admin" in $$source)) {
-            this["admin"] = false;
-        }
-        if (!("self" in $$source)) {
-            this["self"] = false;
-        }
-        if (!("post_quantum" in $$source)) {
-            this["post_quantum"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Member instance from a string or object.
-     */
-    static createFrom($$source: any = {}): Member {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Member($$parsedSource as Partial<Member>);
-    }
-}
-
 export class OAuthStart {
     "session_id": string;
     "expires_at": string;
@@ -506,57 +174,12 @@ export class OAuthStatus {
      * Creates a new OAuthStatus instance from a string or object.
      */
     static createFrom($$source: any = {}): OAuthStatus {
-        const $$createField1_0 = $$createType6;
+        const $$createField1_0 = $$createType4;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("error" in $$parsedSource) {
             $$parsedSource["error"] = $$createField1_0($$parsedSource["error"]);
         }
         return new OAuthStatus($$parsedSource as Partial<OAuthStatus>);
-    }
-}
-
-/**
- * PullResult says what a pull wrote, so the person sees the local variables it
- * kept and the deleted secrets it removed.
- */
-export class PullResult {
-    "output": string;
-    "count": number;
-    "kept": string[];
-    "removed": string[];
-
-    /** Creates a new PullResult instance. */
-    constructor($$source: Partial<PullResult> = {}) {
-        if (!("output" in $$source)) {
-            this["output"] = "";
-        }
-        if (!("count" in $$source)) {
-            this["count"] = 0;
-        }
-        if (!("kept" in $$source)) {
-            this["kept"] = [];
-        }
-        if (!("removed" in $$source)) {
-            this["removed"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new PullResult instance from a string or object.
-     */
-    static createFrom($$source: any = {}): PullResult {
-        const $$createField2_0 = $$createType0;
-        const $$createField3_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("kept" in $$parsedSource) {
-            $$parsedSource["kept"] = $$createField2_0($$parsedSource["kept"]);
-        }
-        if ("removed" in $$parsedSource) {
-            $$parsedSource["removed"] = $$createField3_0($$parsedSource["removed"]);
-        }
-        return new PullResult($$parsedSource as Partial<PullResult>);
     }
 }
 
@@ -593,35 +216,6 @@ export class RepoInfo {
     static createFrom($$source: any = {}): RepoInfo {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new RepoInfo($$parsedSource as Partial<RepoInfo>);
-    }
-}
-
-export class SecretConflict {
-    "key": string;
-    "candidates": ConflictCandidate[];
-
-    /** Creates a new SecretConflict instance. */
-    constructor($$source: Partial<SecretConflict> = {}) {
-        if (!("key" in $$source)) {
-            this["key"] = "";
-        }
-        if (!("candidates" in $$source)) {
-            this["candidates"] = [];
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new SecretConflict instance from a string or object.
-     */
-    static createFrom($$source: any = {}): SecretConflict {
-        const $$createField1_0 = $$createType8;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("candidates" in $$parsedSource) {
-            $$parsedSource["candidates"] = $$createField1_0($$parsedSource["candidates"]);
-        }
-        return new SecretConflict($$parsedSource as Partial<SecretConflict>);
     }
 }
 
@@ -670,7 +264,7 @@ export class SecretsResponse {
      * Creates a new SecretsResponse instance from a string or object.
      */
     static createFrom($$source: any = {}): SecretsResponse {
-        const $$createField1_0 = $$createType10;
+        const $$createField1_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("secrets" in $$parsedSource) {
             $$parsedSource["secrets"] = $$createField1_0($$parsedSource["secrets"]);
@@ -680,55 +274,20 @@ export class SecretsResponse {
 }
 
 /**
- * StorageSettings is where Initialize founds a workspace: the storage URL
- * and the options `enbu init` takes as flags.
+ * UpdateStatus is what the settings screen shows about updates.
  */
-export class StorageSettings {
-    "url": string;
-    "region": string;
-    "endpoint": string;
-    "path_style": boolean;
-    "plain_http": boolean;
+export const UpdateStatus = selfupdate$0.Status;
 
-    /** Creates a new StorageSettings instance. */
-    constructor($$source: Partial<StorageSettings> = {}) {
-        if (!("url" in $$source)) {
-            this["url"] = "";
-        }
-        if (!("region" in $$source)) {
-            this["region"] = "";
-        }
-        if (!("endpoint" in $$source)) {
-            this["endpoint"] = "";
-        }
-        if (!("path_style" in $$source)) {
-            this["path_style"] = false;
-        }
-        if (!("plain_http" in $$source)) {
-            this["plain_http"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new StorageSettings instance from a string or object.
-     */
-    static createFrom($$source: any = {}): StorageSettings {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new StorageSettings($$parsedSource as Partial<StorageSettings>);
-    }
-}
+/**
+ * UpdateStatus is what the settings screen shows about updates.
+ */
+export type UpdateStatus = selfupdate$0.Status;
 
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = RepoInfo.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = SecretConflict.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = apperr$0.Payload.createFrom;
-const $$createType6 = $Create.Nullable($$createType5);
-const $$createType7 = ConflictCandidate.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = SecretItem.createFrom;
-const $$createType10 = $Create.Array($$createType9);
+const $$createType3 = apperr$0.Payload.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = SecretItem.createFrom;
+const $$createType6 = $Create.Array($$createType5);

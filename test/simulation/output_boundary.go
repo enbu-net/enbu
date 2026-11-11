@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/opencontainers/go-digest"
@@ -149,7 +151,7 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".enbu-output-") {
+			if strings.HasPrefix(entry.Name(), fsutil.TempPrefix) {
 				return fmt.Errorf("completed pull retained a plaintext temporary file")
 			}
 		}
@@ -167,7 +169,7 @@ func (w *World) OutputBoundary(ctx context.Context, kind string) error {
 					return fmt.Errorf("denied export changed the local snapshot: %v", err)
 				}
 			}
-			if _, err := a.InitializeRepository(ctx); err != nil {
+			if _, err := a.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			if err := w.Devices[0].App.ApproveMember(ctx, w.Devices[1].ID); err != nil {

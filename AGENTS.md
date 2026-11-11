@@ -13,7 +13,7 @@ Keyless `.env` management. Encrypts secrets with age for each member's device ke
 - After changing code, always run `task all/build`, `task all/test`, and `task all/check`.
 - When a Linear task is provided, use a branch name like `feat/enbu-01`.
 - Manage local issues and architecture decisions with Kotowari in `.kotowari/`.
-- Record design decisions as Kotowari ADRs, not Design Docs or Pages. Do not recreate `docs/design/`. ADR numbers cited below (ADR-12 to ADR-14) live in the local Kotowari workspace; the summary here is what a clone of the repository can rely on.
+- Record design decisions as Kotowari ADRs, not Design Docs or Pages. Do not recreate `docs/design/`. ADR numbers cited below (ADR-12 to ADR-25) live in the local Kotowari workspace; the summary here is what a clone of the repository can rely on.
 - Keep `.kotowari/` local and out of Git. Use `kotowari check` after editing workspace files directly.
 - The Local storage backend (`local://`) is a test fixture: `local://` is accepted only by builds with `-tags fixture` (`app/storage_local.go`). `task` targets and CI pass the tag; add it to direct `go test` runs of tests that resolve a `local://` URL. Never expose `local://` in user docs or release builds. Do not tag-gate code in dependency packages: tobari drops custom-tagged files of dependencies in the unit coverage run.
 
@@ -30,7 +30,7 @@ task cli/test/scenario  # Scenario tests
 task cli/check          # Format and lint CLI code
 task gui/build          # Build GUI desktop app (desktop/wails/build/bin)
 task gui/run            # Run the desktop app against the Vite dev server
-task gui/bindings       # Regenerate web/src/bindings after changing DesktopService or its types
+task gui/bindings       # Regenerate web/src/bindings after changing desktop.Service or its types
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code (jsx-a11y included), fail on stale bindings, then run gui/a11y
 task gui/a11y           # WCAG 2.2 AA check of the browser preview with axe-core in Chromium (light/dark, en/ja, narrow); runs `playwright install chromium` first unless ENBU_A11Y_CHROMIUM names an installed Chromium
@@ -38,6 +38,8 @@ task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
 task vscode/check       # Format and lint VS Code extension code
+task release/build VERSION=vX.Y.Z  # Build the reproducible release assets of a tag on HEAD for this platform into dist/
+task release/verify PUBLISHED=DIR  # Compare published assets with the ones release/build just built
 ```
 
 The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.0 (`libgtk-4-dev libwebkitgtk-6.0-dev`), which every Go build of `./...` needs. The `wails3` CLI is pinned in `tools/wails3/go.mod`, apart from the main module.
@@ -46,14 +48,16 @@ The desktop app uses Wails v3. On Linux it builds against GTK 4 and WebKitGTK 6.
 
 Cut releases from the GitHub web UI: Actions > Release > Run workflow on `main`, then pick `patch`, `minor` or `major`. The workflow tags HEAD of `main` with the next version (svu), builds, signs, attests and publishes the release, and dispatches the homebrew-tap update. If a run fails after tagging, run it again: it reuses the unreleased tag on HEAD instead of bumping. Edit the release notes on the release page afterwards if needed.
 
+Every release asset must stay bit-for-bit reproducible (docs/reproducible-builds.md; a `.dmg` by its contents): `task release/build` is the only build definition, the release refuses to publish unless a second, cache-free build of each platform matches (`task release/verify`), and CI runs the same comparison on every PR. Never let the clock, the checkout path, the build user or the runner's toolchain reach those bytes: take times from `SOURCE_DATE_EPOCH`, write archives with `tools/reproarchive`, build the Linux desktop app only in `tools/release-linux`, keep the Xcode pinned (`XCODE_VERSION`), and pin every tool version.
+
 ## Architecture
 
 ```
 main.go                  → version injection, signal handling, delegates to cli/
 cli/                     → cobra commands: auth, init, identity, doctor, member, switch, add, edit, delete, import, run, pull, sync, resolve, history, completion
-desktop/                 → desktop service layer, free of Wails; desktop/wails is the Wails v3 app (bound methods in binding.go, macOS/Windows metadata in packaging/); desktop/rpc serves the same methods as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions, and its Methods must list every bound method
+desktop/                 → desktop.Service, free of Wails: every exported method is a frontend operation, returning app result types directly, and the shell hands it the picker, browser, events and updater through desktop.Attach; desktop/wails is the Wails v3 app that binds it (macOS/Windows metadata in packaging/); desktop/rpc serves the same methods, found by reflection, as JSON-RPC over stdio (hidden `enbu rpc --stdio`) for editor extensions
 vscode/                  → VS Code extension: shows the web/ UI (built with `build:vscode`) in a webview and relays its calls to `enbu rpc --stdio`; local and WSL, trusted workspaces only
-web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend; UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`; colors only through the semantic tokens in web/panda.config.ts, each with a `_light` and a `_dark` value that meets WCAG 2.2 AA contrast for the pairs listed in lib/contrast.test.ts (add a pair when a token goes on a new background), which lib/theme.ts switches with the `.dark` class on `<html>` (light, dark, or system: the OS, or the editor's theme in VS Code)
+web/                     → React frontend of the desktop app (and the browser preview and the VS Code extension): routes/ picks the screen, features/ holds each screen, lib/backend.ts is the only door to the backend (the generated bindings, by their Go method names, or the preview mock); UI strings are Paraglide JS messages in web/messages/{en,ja}.json (`m.<key>()` from the generated, Git-ignored src/paraglide), with error messages as `error_<code>`; colors only through the semantic tokens in web/panda.config.ts, each with a `_light` and a `_dark` value that meets WCAG 2.2 AA contrast for the pairs listed in lib/contrast.test.ts (add a pair when a token goes on a new background), which lib/theme.ts switches with the `.dark` class on `<html>` (light, dark, or system: the OS, or the editor's theme in VS Code)
 app/                     → application layer (use-cases)
 pkg/config/              → enbu.toml (shared), per-user local state, XDG data dir
 pkg/storage/             → untrusted Storage: OCI (oras-go) and S3 backends, Local test fixture
@@ -64,13 +68,13 @@ pkg/signing/             → signing keys (P-256 / Ed25519), canonical signature
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
 pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
 pkg/winbridge/          → inside WSL, hands key operations and the GitHub token to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, JSON over stdio, one protocol version, no paths cross); WSL never uses the Linux keystore
-pkg/bundle/              → JSON marshal/unmarshal of secret map, .env serialization
-pkg/schema/, pkg/artifact/, pkg/content/, pkg/export/ → Artifact IR (planned formats beyond .env); only pkg/schema/secretmap is used by the app so far
+pkg/dotenv/              → .env parsing and rendering
 pkg/auth/                → GitHub OAuth broker flow, loopback callback, token persistence
 pkg/provider/git/        → git CLI (repository root, remotes)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hides the console window of git child processes on Windows
 pkg/apperr/              → application error type, codes, and normalization helpers
+pkg/selfupdate/          → desktop app updates: who updates an installation (Detect), the newest GitHub release, Sigstore verification of checksums.txt, replacing the binary or .app, relaunch
 test/                    → scenario tests (build tag: scenario)
 ```
 
@@ -78,7 +82,7 @@ test/                    → scenario tests (build tag: scenario)
 
 - Storage never overwrites: every update is an immutable revision (one OCI manifest holding the SignedState and the ciphertext) under a unique content-derived name `s-{scope}-{digest}` in the storage location `enbu.toml` names (Control `c-{digest}`, join request `r-{digest}`; see docs/storage.md). OCI has no atomic conditional update, so concurrent writers publish side by side instead of racing for one tag (ADR-12)
 - Storage is untrusted: a ref is a locator, signatures are the authority. Storage write access must never grant membership or the right to publish secret state
-- Members are the principals of the signed Control DAG, rooted at the `control_genesis` digest in `enbu.toml`. The age recipient set comes only from the verified Control. Two admins changing members at once fork the DAG; everything stops until an admin runs `enbu member resolve-fork` (ADR-14). Admin/Member only manages membership and is not a data-access permission
+- Members are the principals of the signed Control DAG, rooted at the `control_genesis` digest in `enbu.toml`. The age recipient set comes only from the verified Control. Two admins changing members at once fork the DAG; the next enbu operation of a device that is an admin of every head publishes the 3-way merge of the heads against their common ancestor (`wsp.MergePrincipals`: additions and promotions from every branch are kept, a removal or demotion wins, a branch signed by a base admin that another head removed or demoted is discarded, and if every branch is discarded only what every head keeps remains); verifiers require a resolution to list exactly that merge, and every other device stops with `control_forked` until then. Admin/Member only manages membership and is not a data-access permission
 - Each device pins the first `control_genesis` it verified per workspace ID (`trust-*.json`) and the first workspace + genesis per enbu.toml path (`repo-*.json`), beside the checkpoints (TOFU). A different root in `enbu.toml` stops every operation with `trust_root_changed` until `enbu init --accept-new-genesis`; a pinned device refuses to found a pinned workspace again, while founding a new workspace moves the repository pin
 - Each revision is a SignedState naming its `Parents` and the ciphertext; readers verify author and signature, set aside heads from non-members, and check the local checkpoint (the heads already accepted) before decrypting. Concurrent heads are merged 3-way (`pkg/merge`); a key changed differently stops reads and writes until `enbu resolve` (ADR-13). The signing key is separate from the encryption key and never stored in Storage
 - New devices publish a self-signed join request `r-{digest}` (no authority); an admin approves it from a list after comparing the fingerprint out of band (`enbu member approve`). Approving or removing a member re-encrypts every environment
@@ -90,6 +94,8 @@ test/                    → scenario tests (build tag: scenario)
 - Identities prefer hardware: P-256 in TPM 2.0 / Secure Enclave, encrypted to with age tagged recipients; without hardware, a software key in the OS keyring. Hardware that exists but this user may not open (a TPM outside the `tss` group) is an error, not a fallback. There is no file-based or plaintext Identity backend and no SSH key support. Inside WSL the keys live in Windows through `pkg/winbridge`, and a missing enbu.exe is an error, not a fallback
 - New identities are hybrid ML-KEM-768 + X25519 (keyring) or ML-KEM-768 + P-256 (hardware, ML-KEM seed sealed by the TPM). A recipient set with any classical key is encrypted classically; `enbu identity upgrade` moves a member to a hybrid key through a signed key-update request an admin approves
 - Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
+- The desktop app updates itself only when it was unpacked from a release archive into a place the user may write (`selfupdate.Detect`); Homebrew, .deb/.rpm and read-only installs get instructions, VS Code updates its extension, and development builds never update. An update installs only after `checksums.txt` verifies against the Sigstore signature of `release-build.yaml` in this repository (keyless, trusted root over TUF) and the archive matches its checksum
+- The GUI's own settings (theme, font size, clipboard clearing) are one JSON object in localStorage per host (`web/src/lib/settings.ts`); the settings screen edits it as a form or as JSON. The language stays with Paraglide
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling
@@ -101,4 +107,4 @@ test/                    → scenario tests (build tag: scenario)
 - Never inspect `err.Error()` to control behavior.
 - Desktop UI error state and error component props must use `DisplayError`; never render `err.message`, `String(err)`, an HTTP response body, or an `AppError` payload message directly.
 - Convert unknown frontend and backend failures with `toDisplayError`. Unknown or invalid codes must display the localized `internal` message; detailed causes belong only in logs.
-- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts`. Every exported `DesktopService` method that returns an error must return it through `result` or `publicError`, so the frontend receives the AppError payload and never an internal cause.
+- Access the generated Wails bindings (`web/src/bindings`, committed) only through `web/src/lib/backend.ts`, and the Wails runtime only through `web/src/lib/platform.ts` (in VS Code it routes the bindings' calls to the extension host). Every exported `desktop.Service` method that returns an error must return it through `withRepo`, `withRepoResult`, `publicError` or `publicInto` (apperrlint checks it), so it fails with a `desktop.Error`: the AppError payload, never an internal cause. The Wails app and desktop/rpc send `desktop.ErrorPayload`.

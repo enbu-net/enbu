@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { JoinRequest, Member } from "../../lib/types";
+import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import { DevicePanel } from "./device-panel";
 import { MembersPanel } from "./members-panel";
 
 /** The members and pending join requests of the selected repository. */
 export function useMembers(repoPath: string) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [requests, setRequests] = useState<JoinRequest[]>([]);
+  const [members, setMembers] = useState<MemberInfo[]>([]);
+  const [requests, setRequests] = useState<JoinRequestInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
@@ -21,8 +21,8 @@ export function useMembers(repoPath: string) {
     setError(null);
     try {
       const [memberList, requestList] = await Promise.all([
-        backend.listMembers(),
-        backend.listJoinRequests(),
+        backend.ListMembers(),
+        backend.ListJoinRequests(),
       ]);
       if (id !== request.current) return;
       setMembers(memberList);
@@ -64,7 +64,7 @@ export function MembersTab({
         onSync={async () => {
           try {
             await transfer("sync", async () => {
-              await backend.syncSecrets(environment);
+              await backend.SyncSecrets(environment);
               await refresh();
             });
           } catch (err) {
@@ -72,19 +72,15 @@ export function MembersTab({
           }
         }}
         onApprove={async (deviceID) => {
-          await backend.approveMember(deviceID);
+          await backend.ApproveMember(deviceID);
           await refresh();
         }}
         onRemove={async (deviceID) => {
-          await backend.removeMember(deviceID);
+          await backend.RemoveMember(deviceID);
           await refresh();
         }}
         onSetAdmin={async (deviceID, admin) => {
-          await backend.setAdmin(deviceID, admin);
-          await refresh();
-        }}
-        onResolveFork={async () => {
-          await backend.resolveMemberFork();
+          await backend.SetAdmin(deviceID, admin);
           await refresh();
         }}
         onErrorDismiss={() => setError(null)}

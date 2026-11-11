@@ -9,7 +9,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/bundle"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -95,7 +94,7 @@ func newHistoryTestApp(t *testing.T) (*App, []digest.Digest) {
 	defer s.Close()
 	ws := mustWorkspace(t, a)
 	publish := func(env string, at int64, secrets map[string]string, parents ...digest.Digest) digest.Digest {
-		ciphertext, err := age.EncryptForPublicKeys(bundle.Marshal(secrets), []string{kp.PublicKey})
+		ciphertext, err := age.EncryptForPublicKeys(encodeSecrets(secrets), []string{kp.PublicKey})
 		if err != nil {
 			t.Fatal(err)
 		}

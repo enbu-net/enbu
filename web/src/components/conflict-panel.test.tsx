@@ -6,6 +6,7 @@ import { ConflictPanel } from "./conflict-panel";
 
 const set: ConflictSet = {
   environment: "prod",
+  id: "c1",
   heads: ["h1", "h2"],
   conflicts: [
     {

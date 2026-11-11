@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -47,7 +48,7 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			if err := a.RemoveMember(ctx, w.Devices[i].ID); err != nil {
 				return err
 			}
-			if _, err := w.Devices[i].App.InitializeRepository(ctx); err != nil {
+			if _, err := w.Devices[i].App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			delete(expected, w.Devices[i].ID)
@@ -58,6 +59,8 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 	case "approve-two":
 		left = func(int) error { return a.ApproveMember(ctx, w.Devices[3].ID) }
 		right = func(int) error { return b.ApproveMember(ctx, w.Devices[4].ID) }
+		expected[w.Devices[3].ID] = false
+		expected[w.Devices[4].ID] = false
 	case "approve-same":
 		left = func(int) error { return a.ApproveMember(ctx, w.Devices[3].ID) }
 		right = func(int) error { return b.ApproveMember(ctx, w.Devices[3].ID) }
@@ -85,6 +88,8 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 	case "promote-two":
 		left = func(int) error { return a.SetAdmin(ctx, w.Devices[2].ID, true) }
 		right = func(int) error { return b.SetAdmin(ctx, w.Devices[3].ID, true) }
+		expected[w.Devices[2].ID] = true
+		expected[w.Devices[3].ID] = true
 	case "demote-admin":
 		left = func(int) error { return a.SetAdmin(ctx, w.Devices[1].ID, false) }
 		right = func(int) error { return b.SetAdmin(ctx, w.Devices[2].ID, true) }
@@ -106,20 +111,35 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 			return fmt.Errorf("admin race %s: %w", kind, result)
 		}
 	}
-	for _, d := range w.Devices {
-		if _, err := d.App.ListSecrets(ctx, "default"); requireCode(err, apperr.CodeControlForked) != nil {
-			return fmt.Errorf("fork did not stop reads: %v", err)
+	// Only a device that is an admin of every head joins the fork; a is one,
+	// and b is one unless its own rights changed on a's side.
+	bAdminOfAll := kind != "demote-admin" && kind != "remove-admin"
+	// The re-encryption an approval or removal runs after publishing is
+	// itself an operation of an admin of every head, so on some schedules it
+	// has already joined the fork when the batch returns.
+	forked := false
+	for i, d := range w.Devices {
+		if i == 0 || i == 1 && bAdminOfAll {
+			continue
 		}
-		if err := requireCode(d.App.AddSecret(ctx, "default", "FORBIDDEN", "x"), apperr.CodeControlForked); err != nil {
-			return err
+		_, err := d.App.ListSecrets(ctx, "default")
+		if ErrorCode(err) == string(apperr.CodeControlForked) {
+			forked = true
+		}
+		if forked {
+			if err := requireCode(err, apperr.CodeControlForked); err != nil {
+				return fmt.Errorf("fork did not stop reads: %w", err)
+			}
+			if err := requireCode(d.App.AddSecret(ctx, "default", "FORBIDDEN", "x"), apperr.CodeControlForked); err != nil {
+				return err
+			}
 		}
 	}
-	if kind == "demote-admin" || kind == "remove-admin" {
-		if err := requireCode(b.ResolveControlFork(ctx), apperr.CodeAccessDenied); err != nil {
-			return err
-		}
+	if err := w.Tape.Observe("admin-race-forked", kind, forked); err != nil {
+		return err
 	}
-	if err := a.ResolveControlFork(ctx); err != nil {
+	// An ordinary operation of an admin of every head joins the fork.
+	if _, err := a.ListSecrets(ctx, "default"); err != nil && requireCode(err, apperr.CodeReencryptIncomplete) != nil {
 		return err
 	}
 	members, err := a.ListMembers(ctx)
@@ -134,14 +154,14 @@ func (w *World) AdminRace(ctx context.Context, kind string) error {
 		return err
 	}
 	if !reflect.DeepEqual(actual, expected) {
-		return fmt.Errorf("fork resolution expanded membership or privilege: got %v want %v", actual, expected)
+		return fmt.Errorf("fork resolution did not produce the 3-way merge: got %v want %v", actual, expected)
 	}
 	for _, d := range w.Devices {
 		if _, ok := expected[d.ID]; !ok {
 			if err := requireCode(d.App.AddSecret(ctx, "default", "REMOVED", "x"), apperr.CodeNotMember); err != nil {
 				return err
 			}
-			if _, err := d.App.InitializeRepository(ctx); err != nil {
+			if _, err := d.App.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 				return err
 			}
 			if err := a.ApproveMember(ctx, d.ID); err != nil {

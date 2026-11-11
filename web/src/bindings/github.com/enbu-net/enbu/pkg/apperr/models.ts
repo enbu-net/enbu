@@ -59,7 +59,7 @@ export enum Code {
     CodeSecretConflict = "secret_conflict",
 
     /**
-     * two admins changed the members at once; an admin must resolve it
+     * two admins changed the members at once; an admin's next operation resolves it
      */
     CodeControlForked = "control_forked",
 
@@ -88,6 +88,11 @@ export enum Code {
      * the OS keyring exists but is locked; the person must unlock it
      */
     CodeKeyringLocked = "keyring_locked",
+
+    /**
+     * a downloaded update failed its signature or checksum and was not installed
+     */
+    CodeUpdateUnverified = "update_unverified",
 };
 
 export type Params = { [_ in string]?: string };

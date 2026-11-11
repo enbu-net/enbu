@@ -7,7 +7,7 @@ import { FingerprintConfirmDialog } from "../../components/fingerprint-confirm-d
 import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
-import type { JoinRequest, Member } from "../../lib/types";
+import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 export function MembersPanel({
@@ -19,24 +19,21 @@ export function MembersPanel({
   onApprove,
   onRemove,
   onSetAdmin,
-  onResolveFork,
   onErrorDismiss,
 }: {
-  members: Member[];
-  requests: JoinRequest[];
+  members: MemberInfo[];
+  requests: JoinRequestInfo[];
   loading: boolean;
   error: DisplayError | null;
   onSync: () => void | Promise<void>;
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
   onSetAdmin: (deviceID: string, admin: boolean) => Promise<void>;
-  /** Joins member changes two admins made at the same time. */
-  onResolveFork: () => Promise<void>;
   onErrorDismiss: () => void;
 }) {
-  const [approving, setApproving] = useState<JoinRequest | null>(null);
-  const [removing, setRemoving] = useState<Member | null>(null);
-  const [granting, setGranting] = useState<Member | null>(null);
+  const [approving, setApproving] = useState<JoinRequestInfo | null>(null);
+  const [removing, setRemoving] = useState<MemberInfo | null>(null);
+  const [granting, setGranting] = useState<MemberInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<DisplayError | null>(null);
   const approveTriggerRef = useRef<HTMLElement | null>(null);
@@ -85,17 +82,6 @@ export function MembersPanel({
               onErrorDismiss();
             }}
           />
-          {/* A failed resolution replaces the fork error, but the fork remains. */}
-          {(error?.code === "control_forked" || shownError.code === "control_forked") && (
-            <Button
-              size="sm"
-              mt="2"
-              loading={busy}
-              onClick={() => void run(onResolveFork, () => {})}
-            >
-              {m.members_resolveFork()}
-            </Button>
-          )}
         </Box>
       )}
       {loading ? (
@@ -276,7 +262,7 @@ export function PendingRow({
   last = false,
   onApprove,
 }: {
-  request: JoinRequest;
+  request: JoinRequestInfo;
   last?: boolean;
   onApprove: (trigger: HTMLElement) => void;
 }) {
@@ -308,7 +294,7 @@ export function MemberRow({
   onRemove,
   onToggleAdmin,
 }: {
-  member: Member;
+  member: MemberInfo;
   last?: boolean;
   onRemove?: (trigger: HTMLElement) => void;
   /** Grants or revokes admin; left out when this device cannot. */

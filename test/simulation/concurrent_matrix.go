@@ -155,7 +155,7 @@ func (w *World) ConcurrentCase(ctx context.Context, c ConcurrentCase) error {
 		if !reflect.DeepEqual(gotCandidates, wantCandidates) {
 			return fmt.Errorf("lost conflict candidate: got %v want %v", gotCandidates, wantCandidates)
 		}
-		if err := w.Devices[0].App.ResolveSecrets(ctx, "default", set.Heads, map[string]app.SecretChoice{"K0": {Value: "resolved"}}); err != nil {
+		if err := w.Devices[0].App.ResolveSecrets(ctx, "default", set.Heads, []app.SecretChoice{{Key: "K0", Value: "resolved"}}); err != nil {
 			return err
 		}
 		w.Model["default"]["K0"] = "resolved"

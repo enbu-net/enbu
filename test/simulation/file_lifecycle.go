@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
-	"github.com/enbu-net/enbu/pkg/schema/secretmap"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 )
 
 // fileLifecycle verifies the data written to disk, not merely a successful
@@ -90,7 +90,7 @@ func (w *World) fileLifecycle(ctx context.Context) error {
 	if err := a.DeleteSecret(ctx, "default", "HIDDEN"); err != nil {
 		return err
 	}
-	if _, err := b.InitializeRepository(ctx); err != nil {
+	if _, err := b.InitializeRepository(ctx, app.InitOptions{}); err != nil {
 		return err
 	}
 	if err := a.ApproveMember(ctx, w.Devices[1].ID); err != nil {
@@ -124,7 +124,7 @@ func (w *World) checkOutput(label, path string, want map[string]string) error {
 	if err != nil {
 		return err
 	}
-	got, err := secretmap.ImportDotenv(data)
+	got, err := dotenv.Parse(data)
 	if err != nil {
 		return err
 	}

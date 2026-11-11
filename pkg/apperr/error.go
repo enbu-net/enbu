@@ -33,7 +33,7 @@ const (
 	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
 	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
 	CodeSecretConflict      Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
-	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin must resolve it
+	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin's next operation resolves it
 	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
 	CodeTrustRootChanged    Code = "trust_root_changed"   // enbu.toml names a genesis other than the one this device pinned
 
@@ -41,6 +41,7 @@ const (
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
 	CodeOutputUnreadable    Code = "output_unreadable"    // the output file is not dotenv; pulling again with replace overwrites it
 	CodeKeyringLocked       Code = "keyring_locked"       // the OS keyring exists but is locked; the person must unlock it
+	CodeUpdateUnverified    Code = "update_unverified"    // a downloaded update failed its signature or checksum and was not installed
 )
 
 type Params map[string]string

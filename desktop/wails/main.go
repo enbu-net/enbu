@@ -4,18 +4,22 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"github.com/enbu-net/enbu/pkg/clock"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
 	"github.com/enbu-net/enbu/desktop"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/process"
+	"github.com/enbu-net/enbu/pkg/selfupdate"
 	"github.com/enbu-net/enbu/web"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -133,6 +137,16 @@ func wailsLogger(logger *slog.Logger) *slog.Logger {
 	return slog.New(minLevel{logger.Handler(), slog.LevelInfo})
 }
 
+// marshalError is the cause the frontend receives with a failed call: the
+// AppError payload, never an internal cause.
+func marshalError(err error) []byte {
+	data, err := json.Marshal(desktop.ErrorPayload(err))
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
 // window is the part of the main window that activation needs.
 type window interface {
 	Show() application.Window
@@ -157,6 +171,9 @@ func main() {
 			_ = logFile.Close()
 		}()
 	}
+	// After an update, the app that installed it may still hold the
+	// single-instance lock for a moment.
+	selfupdate.WaitForPrevious(clock.New(), 15*time.Second)
 	if err := registerProtocolHandler(); err != nil {
 		slog.Warn("registering enbu protocol handler", "err", err)
 	}
@@ -172,7 +189,6 @@ func run() error {
 
 	core := desktop.NewService(app.New(clock.New()))
 	core.AppVersion = Version
-	core.Start(ctx)
 
 	var mainWindow *application.WebviewWindow
 	wailsApp := application.New(application.Options{
@@ -181,7 +197,7 @@ func run() error {
 		Icon:        assets.Icon,
 		Logger:      wailsLogger(slog.Default()),
 		Services: []application.Service{
-			application.NewService(&DesktopService{core: core}),
+			application.NewService(core),
 		},
 		MarshalError: marshalError,
 		Assets: application.AssetOptions{
@@ -202,17 +218,20 @@ func run() error {
 		OnShutdown: cancel,
 	})
 
-	core.SetDirectoryPicker(func(context.Context) (string, error) {
-		return wailsApp.Dialog.OpenFile().
-			SetTitle("Select Git repository").
-			CanChooseFiles(false).
-			CanChooseDirectories(true).
-			CanCreateDirectories(true).
-			PromptForSingleSelection()
-	})
-	core.SetBrowserOpener(wailsApp.Browser.OpenURL)
-	core.SetEventEmitter(func(name string, data any) {
-		wailsApp.Event.Emit(name, data)
+	desktop.Attach(ctx, core, desktop.Host{
+		PickDirectory: func(context.Context) (string, error) {
+			return wailsApp.Dialog.OpenFile().
+				SetTitle("Select Git repository").
+				CanChooseFiles(false).
+				CanChooseDirectories(true).
+				CanCreateDirectories(true).
+				PromptForSingleSelection()
+		},
+		OpenURL: wailsApp.Browser.OpenURL,
+		Emit: func(name string, data any) {
+			wailsApp.Event.Emit(name, data)
+		},
+		Updater: newUpdater(Version, wailsApp.Quit),
 	})
 
 	mainWindow = wailsApp.Window.NewWithOptions(application.WebviewWindowOptions{
