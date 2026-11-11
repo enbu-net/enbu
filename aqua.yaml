@@ -21,4 +21,4 @@ packages:
 - name: caarlos0/svu@v3.4.4
 - name: nao1215/atago@v0.26.0
 - name: goreleaser/nfpm@v2.48.0
-- name: goreleaser/goreleaser@v2.19.0
+- name: goreleaser/goreleaser@v2.20.0
