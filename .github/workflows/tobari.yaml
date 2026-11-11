@@ -1,9 +1,12 @@
 name: Coverage
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # main gets one nightly report instead of a run per merge, which also keeps
+  # the coverage jobs' caches on main warm for pull requests.
+  schedule:
+    - cron: '0 18 * * *' # 03:00 Asia/Tokyo, after the nightly DST starts
+  workflow_dispatch:
 
 permissions: {}
 

@@ -20,6 +20,9 @@ import * as desktop$0 from "../models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as identity$0 from "../../pkg/identity/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as selfupdate$0 from "../../pkg/selfupdate/models.js";
 
 export function AddSecret(env: string, key: string, value: string): $CancellablePromise<void> {
     return $Call.ByID(245465048, env, key, value);
@@ -39,13 +42,19 @@ export function CancelOAuthLogin(sessionID: string): $CancellablePromise<void> {
     return $Call.ByID(2385204543, sessionID);
 }
 
+export function CheckForUpdate(): $CancellablePromise<desktop$0.UpdateStatus> {
+    return $Call.ByID(1073638667).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function CreateEnvironment(name: string): $CancellablePromise<void> {
     return $Call.ByID(651415906, name);
 }
 
 export function DeleteEnvironment(name: string, purge: boolean): $CancellablePromise<desktop$0.EnvironmentDeletion> {
     return $Call.ByID(1113266615, name, purge).then(($result: any) => {
-        return $$createType1($result);
+        return $$createType2($result);
     });
 }
 
@@ -55,13 +64,13 @@ export function DeleteSecret(env: string, key: string): $CancellablePromise<void
 
 export function DiagnoseIdentity(): $CancellablePromise<desktop$0.IdentityDiagnosis> {
     return $Call.ByID(1960345299).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType3($result);
     });
 }
 
 export function DiffHistory(env: string, $from: number, to: number): $CancellablePromise<app$0.Diff | null> {
     return $Call.ByID(3086033546, env, $from, to).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType5($result);
     });
 }
 
@@ -75,19 +84,19 @@ export function GetAppVersion(): $CancellablePromise<string> {
 
 export function GetAuthStatus(): $CancellablePromise<desktop$0.AuthStatus> {
     return $Call.ByID(672732099).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType6($result);
     });
 }
 
 export function GetIdentity(): $CancellablePromise<identity$0.PublicInfo> {
     return $Call.ByID(2492026345).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType7($result);
     });
 }
 
 export function GetOAuthLoginStatus(sessionID: string): $CancellablePromise<desktop$0.OAuthStatus> {
     return $Call.ByID(2633098805, sessionID).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType8($result);
     });
 }
 
@@ -99,55 +108,61 @@ export function GetRepoStatus(): $CancellablePromise<desktop$0.RepoInfo> {
 
 export function ImportSecrets(env: string, dotenv: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
     return $Call.ByID(4056678225, env, dotenv, overwrite).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType9($result);
     });
 }
 
 export function Initialize(storage: desktop$0.StorageSettings, acceptNewGenesis: boolean): $CancellablePromise<desktop$0.InitResult> {
     return $Call.ByID(1776693451, storage, acceptNewGenesis).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType10($result);
+    });
+}
+
+export function InstallUpdate(): $CancellablePromise<desktop$0.UpdateStatus> {
+    return $Call.ByID(894177249).then(($result: any) => {
+        return $$createType1($result);
     });
 }
 
 export function ListConflicts(env: string): $CancellablePromise<desktop$0.ConflictSet> {
     return $Call.ByID(2160149312, env).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
 export function ListEnvironments(): $CancellablePromise<desktop$0.Environment[]> {
     return $Call.ByID(2373267311).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function ListHistory(env: string): $CancellablePromise<desktop$0.HistoryEntry[]> {
     return $Call.ByID(821295555, env).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType15($result);
     });
 }
 
 export function ListJoinRequests(): $CancellablePromise<desktop$0.JoinRequest[]> {
     return $Call.ByID(3447380307).then(($result: any) => {
-        return $$createType16($result);
+        return $$createType17($result);
     });
 }
 
 export function ListMembers(): $CancellablePromise<desktop$0.Member[]> {
     return $Call.ByID(3168298308).then(($result: any) => {
-        return $$createType18($result);
+        return $$createType19($result);
     });
 }
 
 export function ListRepositories(): $CancellablePromise<desktop$0.RepoInfo[]> {
     return $Call.ByID(2121193341).then(($result: any) => {
-        return $$createType19($result);
+        return $$createType20($result);
     });
 }
 
 export function ListSecrets(env: string): $CancellablePromise<desktop$0.SecretsResponse> {
     return $Call.ByID(3474277570, env).then(($result: any) => {
-        return $$createType20($result);
+        return $$createType21($result);
     });
 }
 
@@ -157,7 +172,7 @@ export function Logout(login: string): $CancellablePromise<void> {
 
 export function PullSecrets(env: string, replace: boolean): $CancellablePromise<desktop$0.PullResult> {
     return $Call.ByID(1175776543, env, replace).then(($result: any) => {
-        return $$createType21($result);
+        return $$createType22($result);
     });
 }
 
@@ -185,6 +200,10 @@ export function ResolveConflicts(env: string, heads: string[], choices: desktop$
     return $Call.ByID(839622030, env, heads, choices);
 }
 
+export function RestartApp(): $CancellablePromise<void> {
+    return $Call.ByID(2858372495);
+}
+
 export function RestoreHistory(env: string, index: number): $CancellablePromise<void> {
     return $Call.ByID(3198255603, env, index);
 }
@@ -201,7 +220,7 @@ export function SetAdmin(deviceID: string, admin: boolean): $CancellablePromise<
 
 export function StartOAuthLogin(): $CancellablePromise<desktop$0.OAuthStart> {
     return $Call.ByID(1467619051).then(($result: any) => {
-        return $$createType22($result);
+        return $$createType23($result);
     });
 }
 
@@ -223,7 +242,7 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
 
 export function UpgradeIdentity(): $CancellablePromise<app$0.KeyUpdateResult> {
     return $Call.ByID(249321161).then(($result: any) => {
-        return $$createType23($result);
+        return $$createType24($result);
     });
 }
 
@@ -233,26 +252,27 @@ export function WriteConfig(content: string): $CancellablePromise<void> {
 
 // Private type creation functions
 const $$createType0 = desktop$0.RepoInfo.createFrom;
-const $$createType1 = desktop$0.EnvironmentDeletion.createFrom;
-const $$createType2 = desktop$0.IdentityDiagnosis.createFrom;
-const $$createType3 = app$0.Diff.createFrom;
-const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = desktop$0.AuthStatus.createFrom;
-const $$createType6 = identity$0.PublicInfo.createFrom;
-const $$createType7 = desktop$0.OAuthStatus.createFrom;
-const $$createType8 = app$0.ImportResult.createFrom;
-const $$createType9 = desktop$0.InitResult.createFrom;
-const $$createType10 = desktop$0.ConflictSet.createFrom;
-const $$createType11 = desktop$0.Environment.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = desktop$0.HistoryEntry.createFrom;
-const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = desktop$0.JoinRequest.createFrom;
-const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = desktop$0.Member.createFrom;
-const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = $Create.Array($$createType0);
-const $$createType20 = desktop$0.SecretsResponse.createFrom;
-const $$createType21 = desktop$0.PullResult.createFrom;
-const $$createType22 = desktop$0.OAuthStart.createFrom;
-const $$createType23 = app$0.KeyUpdateResult.createFrom;
+const $$createType1 = selfupdate$0.Status.createFrom;
+const $$createType2 = desktop$0.EnvironmentDeletion.createFrom;
+const $$createType3 = desktop$0.IdentityDiagnosis.createFrom;
+const $$createType4 = app$0.Diff.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = desktop$0.AuthStatus.createFrom;
+const $$createType7 = identity$0.PublicInfo.createFrom;
+const $$createType8 = desktop$0.OAuthStatus.createFrom;
+const $$createType9 = app$0.ImportResult.createFrom;
+const $$createType10 = desktop$0.InitResult.createFrom;
+const $$createType11 = desktop$0.ConflictSet.createFrom;
+const $$createType12 = desktop$0.Environment.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = desktop$0.HistoryEntry.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = desktop$0.JoinRequest.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = desktop$0.Member.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = $Create.Array($$createType0);
+const $$createType21 = desktop$0.SecretsResponse.createFrom;
+const $$createType22 = desktop$0.PullResult.createFrom;
+const $$createType23 = desktop$0.OAuthStart.createFrom;
+const $$createType24 = app$0.KeyUpdateResult.createFrom;

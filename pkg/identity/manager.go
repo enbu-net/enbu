@@ -644,21 +644,7 @@ func saveJSON(path string, v any) error {
 }
 
 // writeFileAtomic replaces path with b through a synced temporary file.
-func writeFileAtomic(path string, b []byte) error {
-	f, err := os.CreateTemp(filepath.Dir(path), ".identity-*")
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.Remove(f.Name()) }()
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	err = errors.Join(err, f.Close())
-	if err != nil {
-		return err
-	}
-	return renameFile(f.Name(), path)
-}
+func writeFileAtomic(path string, b []byte) error { return fsutil.WriteFileAtomic(path, b, 0o600) }
 
 // Info validates the saved identity before reporting public information.
 func (m *Manager) Info(workspaceID string) (PublicInfo, error) {

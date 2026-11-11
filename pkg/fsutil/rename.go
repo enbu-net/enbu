@@ -30,12 +30,17 @@ const (
 // sync is best effort: the rename has happened by then, and reporting it as
 // failed would make callers retry or roll back a change that is in place.
 func Rename(oldpath, newpath string) error {
-	c := clock.New()
-	if err := retry(func() error { return os.Rename(oldpath, newpath) }, transientRenameError, func(d time.Duration) { _ = clock.Wait(context.Background(), c, d) }); err != nil {
+	if err := renameRetrying(oldpath, newpath); err != nil {
 		return err
 	}
 	_ = syncRenamed(oldpath, newpath)
 	return nil
+}
+
+// renameRetrying is Rename without the directory sync.
+func renameRetrying(oldpath, newpath string) error {
+	c := clock.New()
+	return retry(func() error { return os.Rename(oldpath, newpath) }, transientRenameError, func(d time.Duration) { _ = clock.Wait(context.Background(), c, d) })
 }
 
 // syncRenamed syncs the directory of newpath, and that of oldpath when it is

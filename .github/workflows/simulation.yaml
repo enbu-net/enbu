@@ -1,7 +1,11 @@
 name: Deterministic simulation
 
 on:
+  # main gets the nightly full exploration instead; branch pushes already ran
+  # the affected DST before merging.
   push:
+    branches-ignore:
+      - main
   schedule:
     - cron: '0 17 * * *' # 02:00 Asia/Tokyo
   workflow_dispatch:
@@ -62,6 +66,10 @@ jobs:
             runner: windows-2025
           - target: windows-arm64
             runner: windows-11-arm
+        # Incremental runs on linux-amd64 only, so a push holds one DST runner
+        # instead of five (two Windows and one macOS among them). The nightly
+        # full exploration still covers every platform.
+        exclude: ${{ fromJSON(needs.plan.outputs.mode == 'full' && '[]' || '[{"platform":{"target":"linux-arm64","runner":"ubuntu-26.04-arm"}},{"platform":{"target":"darwin-arm64","runner":"macos-15"}},{"platform":{"target":"windows-amd64","runner":"windows-2025"}},{"platform":{"target":"windows-arm64","runner":"windows-11-arm"}}]') }}
     env:
       CGO_ENABLED: '0'
       ENBU_SIM_EXPLORE: '1'
