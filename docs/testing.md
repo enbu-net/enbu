@@ -1,6 +1,8 @@
 # Test coverage
 
-The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React.
+The Linux Coverage workflow uses Tobari v0.13.0 for Go and V8 for React. It runs
+every night on main and by hand (Actions > Coverage > Run workflow, on any
+branch), not on pull requests: CI already runs the same suites there.
 It runs every Go package with unit tests, including `pkg/`, `desktop/`, the root
 command, and repository tools. Separate suites cover the Go scenarios,
 Atago CLI E2E, and Identity E2E (vTPM and OS keyring).
@@ -51,8 +53,9 @@ Individual tasks:
 The collector disables the test cache and removes previous data for the suite
 being rerun. It invalidates the combined report whenever a suite is collected.
 Missing package reports or missing E2E child reports fail collection. Go unit
-collection continues through other packages after a test failure, preserving
-available results.
+collection runs the packages side by side, one `go test` per package so each
+writes its own report, and continues through other packages after a test
+failure, preserving available results.
 
 ## Reports
 

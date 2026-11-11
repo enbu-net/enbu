@@ -6,6 +6,7 @@ import (
 )
 
 func TestTeamMembershipWriteMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	for index, control := range TeamControls {
 		if !ownsIndex(t, index) {

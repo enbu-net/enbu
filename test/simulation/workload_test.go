@@ -3,6 +3,7 @@ package simulation
 import "testing"
 
 func TestRejoinAfterMembership(t *testing.T) {
+	t.Parallel()
 	exercise(t, 811, Plan{Devices: 3, Scenario: "membership", Actions: []Action{
 		{Kind: "rejoin", Device: 0},
 		{Kind: "rejoin", Device: 1},
@@ -13,6 +14,7 @@ func TestRejoinAfterMembership(t *testing.T) {
 }
 
 func TestMixedEnvironmentLifecycle(t *testing.T) {
+	t.Parallel()
 	exercise(t, 812, Plan{Devices: 3, Actions: []Action{
 		{Kind: "create-env", Device: 0, Environment: "env_0"},
 		{Kind: "add", Device: 1, Environment: "env_0", Key: "A", Value: "kept"},
@@ -30,6 +32,7 @@ func TestMixedEnvironmentLifecycle(t *testing.T) {
 // renaming device follows its rename, another device's stale choice falls back
 // to the default, and deleting the modelled current environment is refused.
 func TestWorkloadModelsEachDevicesEnvironment(t *testing.T) {
+	t.Parallel()
 	exercise(t, 813, Plan{Devices: 2, Actions: []Action{
 		{Kind: "create-env", Device: 0, Environment: "env_0"},
 		{Kind: "delete-env", Device: 0, Environment: "env_0"},
@@ -46,6 +49,7 @@ func TestWorkloadModelsEachDevicesEnvironment(t *testing.T) {
 // Once the model has written an environment, emptying it keeps its history:
 // editing a missing key is secret_missing, never artifact_not_found.
 func TestWorkloadRemembersWrittenEnvironments(t *testing.T) {
+	t.Parallel()
 	exercise(t, 814, Plan{Devices: 2, Actions: []Action{
 		{Kind: "create-env", Device: 0, Environment: "env_0"},
 		{Kind: "edit", Device: 1, Environment: "env_0", Key: "A", Value: "never"},

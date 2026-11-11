@@ -33,7 +33,7 @@ func statusJob(t *testing.T, file, name string) *yaml.Node {
 // !cancelled() would let a cancelled run merge. always() makes it fail instead;
 // it skips only in the run a closed pull request starts to cancel the others.
 func TestStatusJobsFailCancelledWorkflows(t *testing.T) {
-	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status", "tobari.yaml": "status-check"} {
+	for file, name := range map[string]string{"ci.yaml": "status-check", "simulation.yaml": "simulation-status"} {
 		t.Run(file, func(t *testing.T) {
 			condition := field(statusJob(t, file, name), "if")
 			if condition == nil || strings.TrimSpace(condition.Value) != "always() && github.event.action != 'closed'" {

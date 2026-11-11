@@ -44,6 +44,7 @@ func sampleCase(t *testing.T) {
 }
 
 func TestIncrementalSamplesRetainFullExploration(t *testing.T) {
+	t.Parallel()
 	counts := make([]int, 4)
 	for i := range 4096 {
 		name := fmt.Sprintf("TestMatrix/devices-%d/clock-%d/case-%d", i%7+2, i%4, i)
@@ -134,6 +135,7 @@ func parseLane(lanesRaw, laneRaw string) (lane, lanes int, err error) {
 }
 
 func TestLaneConfigurationIsNeverSilentlyShared(t *testing.T) {
+	t.Parallel()
 	for _, valid := range [][4]string{{"", "", "0", "1"}, {"1", "0", "0", "1"}, {"32", "31", "31", "32"}} {
 		lane, lanes, err := parseLane(valid[0], valid[1])
 		if err != nil || fmt.Sprint(lane) != valid[2] || fmt.Sprint(lanes) != valid[3] {
@@ -228,6 +230,7 @@ func indexedCase(t *testing.T, index int) {
 }
 
 func TestLargeTeamPartitionsAreCompleteAndBalanced(t *testing.T) {
+	t.Parallel()
 	for _, stride := range []int{1, 8} {
 		counts := make([][3]int, 4*stride)
 		for index := range 252 {
@@ -306,6 +309,7 @@ func TestIndexedCaseDoesNotResampleByName(t *testing.T) {
 }
 
 func TestNamedCasePartitionIsCompleteAndDisjoint(t *testing.T) {
+	t.Parallel()
 	for _, lanes := range []int{1, 4, 15, 32} {
 		counts := make([]int, lanes)
 		for i := 0; i < 1000; i++ {
@@ -339,6 +343,7 @@ func TestNamedCasePartitionIsCompleteAndDisjoint(t *testing.T) {
 }
 
 func TestSeedPartitionPreservesWorkload(t *testing.T) {
+	t.Parallel()
 	collect := func(shards, seeds int) map[uint64]bool {
 		out := map[uint64]bool{}
 		for shard := range shards {
@@ -359,6 +364,7 @@ func TestSeedPartitionPreservesWorkload(t *testing.T) {
 }
 
 func TestMutationPartitionCoversAllExperiments(t *testing.T) {
+	t.Parallel()
 	counts := make([]int, 4)
 	seen := make(map[string]bool)
 	for _, experiment := range mutationCases {

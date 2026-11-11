@@ -457,7 +457,7 @@ func TestScenarioTargetsCoverEveryScenarioTaggedPackage(t *testing.T) {
 // Pull requests are the checks; a merge must not queue the same jobs again,
 // and a newer push must replace the run of the push before it.
 func TestPullRequestChecksDoNotRunAgainOnMainAndCancelSupersededRuns(t *testing.T) {
-	for _, name := range []string{"ci.yaml", "tobari.yaml", "preview.yaml", "actionlint.yaml"} {
+	for _, name := range []string{"ci.yaml", "preview.yaml", "actionlint.yaml"} {
 		t.Run(name, func(t *testing.T) {
 			root := readYAML(t, "../../.github/workflows/"+name)
 			if field(field(root, "on"), "push") != nil {
@@ -524,7 +524,6 @@ func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
 	// same group as the runs of its pull request (DST: its branch's push runs).
 	concurrency := map[string][2]string{
 		"ci.yaml":      {"ci-${{ github.event.pull_request.number || github.ref }}", prOnly},
-		"tobari.yaml":  {"coverage-${{ github.event.pull_request.number || github.ref }}", prOnly},
 		"preview.yaml": {"preview-${{ github.event.pull_request.number || github.ref }}", "true"},
 		"simulation.yaml": {
 			"simulation-${{ github.event_name == 'pull_request' && format('push-refs/heads/{0}', github.head_ref) || format('{0}-{1}', github.event_name, github.ref) }}",
@@ -560,6 +559,17 @@ func TestClosingAPullRequestCancelsItsRunsWithoutARunner(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// CI already runs every coverage suite on each pull request, so coverage must
+// not run them a second time there: it is a nightly report, also run by hand.
+func TestCoverageRunsOnlyNightlyAndByHand(t *testing.T) {
+	on := field(readYAML(t, "../../.github/workflows/tobari.yaml"), "on")
+	for i := 0; i < len(on.Content); i += 2 {
+		if event := on.Content[i].Value; event != "schedule" && event != "workflow_dispatch" {
+			t.Fatalf("coverage runs on %s", event)
+		}
 	}
 }
 

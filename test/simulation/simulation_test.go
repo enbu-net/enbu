@@ -155,6 +155,7 @@ func baseline(t *testing.T, seed uint64, plan Plan) *Tape {
 	return tape
 }
 func TestSimulation(t *testing.T) {
+	t.Parallel()
 	seeds := integer(t, "ENBU_SIM_SEEDS", 2)
 	steps := integer(t, "ENBU_SIM_STEPS", 16)
 	shard, shards := simulationLane(t)
@@ -183,11 +184,17 @@ func simulationSeed(index, shards, shard int, revision string) uint64 {
 	return seed
 }
 func TestScenarios(t *testing.T) {
+	t.Parallel()
 	for i, name := range Scenarios {
-		t.Run(name, func(t *testing.T) { shardCase(t); exercise(t, uint64(10000+i), Plan{Devices: 3, Scenario: name}) })
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			shardCase(t)
+			exercise(t, uint64(10000+i), Plan{Devices: 3, Scenario: name})
+		})
 	}
 }
 func TestReplay(t *testing.T) {
+	t.Parallel()
 	path := os.Getenv("ENBU_SIM_REPLAY")
 	if path == "" {
 		t.Skip("set ENBU_SIM_REPLAY to an exact recording")
@@ -201,6 +208,7 @@ func TestReplay(t *testing.T) {
 	}
 }
 func TestReplayAcrossProcesses(t *testing.T) {
+	t.Parallel()
 	tape, e := Prepare(7, "", Plan{Devices: 3, Scenario: "concurrent-keys", Actions: Generate(7, 8, 3)})
 	if e != nil {
 		t.Fatal(e)
@@ -297,6 +305,7 @@ func exploration(t *testing.T) {
 	}
 }
 func TestSimulationSmoke(t *testing.T) {
+	t.Parallel()
 	for i, plan := range []Plan{
 		{Devices: 3, Concurrent: &ConcurrentCase{Left: "edit", Right: "delete", SameKey: true}},
 		{Devices: 3, CompactionRace: &CompactionRaceCase{Publication: "valid", Fault: "crash-after"}},

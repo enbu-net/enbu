@@ -8,6 +8,7 @@ import (
 )
 
 func TestRestartReconstructsProcessDependenciesFromDurableFixtures(t *testing.T) {
+	t.Parallel()
 	tape, err := Prepare(99, revision(t), Plan{Devices: 3})
 	if err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -97,7 +98,8 @@ def collect(suite: str) -> int:
             subprocess.run(["task", "cli/test/e2e"], cwd=ROOT, env=env).returncode != 0
         )
     else:
-        for package in targets:
+
+        def run(package: str) -> bool:
             package_env = env | {
                 "TOBARI_COVERDIR": str(
                     output / (package.removeprefix(MODULE).strip("/") or "main")
@@ -109,11 +111,16 @@ def collect(suite: str) -> int:
                 cwd=ROOT,
                 env=package_env,
             )
-            failed = failed or result.returncode != 0
             report = Path(package_env["TOBARI_COVERDIR"]) / "tobari" / "tobari.json"
             if not report.is_file():
-                failed = True
                 print(f"Missing package report: {package}", flush=True)
+                return True
+            return result.returncode != 0
+
+        # Each package needs its own TOBARI_COVERDIR, so each gets its own go
+        # test; running them side by side keeps the CPUs as busy as go test ./...
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as pool:
+            failed = any(list(pool.map(run, targets)))
     if suite in ("e2e", "identity") and not report_paths(output / "processes"):
         failed = True
         print(f"Missing child CLI reports: {suite}", flush=True)

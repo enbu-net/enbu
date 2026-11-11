@@ -7,8 +7,10 @@ import (
 )
 
 func TestStateSignatureAttackSmoke(t *testing.T) {
+	t.Parallel()
 	for _, devices := range []int{2, 3, 8} {
 		t.Run(fmt.Sprintf("devices-%d", devices), func(t *testing.T) {
+			t.Parallel()
 			shardCase(t)
 			exercise(t, 17121275537281659170, Plan{Devices: devices, Clock: "frozen", Scenario: "forged-state-signature"})
 		})
@@ -16,6 +18,7 @@ func TestStateSignatureAttackSmoke(t *testing.T) {
 }
 
 func TestFullSignatureAttackSeedRegressionSmoke(t *testing.T) {
+	t.Parallel()
 	// Bounded two-device smoke above catches the original panic in unit and
 	// instrumented coverage. Keep the 256-operation replay in native DST, where
 	// it is mandatory in every selected incremental and full exploration.

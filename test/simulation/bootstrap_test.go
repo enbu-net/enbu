@@ -14,6 +14,7 @@ import (
 // enbu.toml names a genesis only once its publish was confirmed. A retry after
 // a lost reply finds the genesis this device signed and adopts it.
 func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"before", "after", "crash-before", "crash-after"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
@@ -63,6 +64,7 @@ func TestFoundingRetriesExactControlAfterLostReply(t *testing.T) {
 }
 
 func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	measured := baseline(t, 456, Plan{Devices: 2, FoundingFault: &Fault{}})
 	counts := countsBetween(t, measured, "founding-start", "founding-result")
@@ -79,6 +81,7 @@ func TestFoundingEveryStorageBoundaryRecovers(t *testing.T) {
 			}
 			for _, mode := range modes {
 				t.Run(fmt.Sprintf("%s-%d-%s", method, at, mode), func(t *testing.T) {
+					t.Parallel()
 					shardCase(t)
 					exercise(t, 456, Plan{Devices: 2, FoundingFault: &Fault{method, at, mode}})
 				})

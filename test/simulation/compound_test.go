@@ -6,6 +6,7 @@ import (
 )
 
 func TestCompoundMultiUserMatrix(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, control := range []string{"remove-writer", "demote-admin"} {

@@ -12,9 +12,11 @@ import (
 )
 
 func TestStoreContract(t *testing.T) {
+	t.Parallel()
 	storagetest.Contract(t, &Store{Store: storagetest.NewMemory(), Tape: NewTape(0, "")})
 }
 func TestTapeStrictness(t *testing.T) {
+	t.Parallel()
 	source := NewTape(1, "")
 	var out string
 	if e := source.Value("crypto", []string{"input"}, func() (any, error) { return "ciphertext", nil }, &out); e != nil {
@@ -47,6 +49,7 @@ func TestTapeStrictness(t *testing.T) {
 	}
 }
 func TestSchedulerReplaysExactInterleaving(t *testing.T) {
+	t.Parallel()
 	tape := NewTape(99, "")
 	run := func(tape *Tape) []string {
 		var trace []string
@@ -84,6 +87,7 @@ func TestSchedulerReplaysExactInterleaving(t *testing.T) {
 	}
 }
 func TestAmbiguousPublishIsDurable(t *testing.T) {
+	t.Parallel()
 	s := &Store{Store: storagetest.NewMemory(), Tape: NewTape(0, "")}
 	s.Arm(Fault{"publish", 1, "after"})
 	o := storagetest.Object(storage.KindControl, "", "control", "")
@@ -96,6 +100,7 @@ func TestAmbiguousPublishIsDurable(t *testing.T) {
 }
 
 func TestActualCancellationStopsLaterEffects(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"context-before", "context-after"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
@@ -122,6 +127,7 @@ func TestActualCancellationStopsLaterEffects(t *testing.T) {
 	}
 }
 func TestOracleDetectsLostWrite(t *testing.T) {
+	t.Parallel()
 	w, e := NewWorld(t.TempDir(), NewTape(0, ""), 2)
 	if e != nil {
 		t.Fatal(e)

@@ -6,6 +6,7 @@ import (
 )
 
 func TestCompactionLatePublicationAndCrashRecovery(t *testing.T) {
+	t.Parallel()
 	exploration(t)
 	index := 0
 	for _, publication := range []string{"valid", "junk", "missing", "corrupt", "offline", "cancelled"} {
