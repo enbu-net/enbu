@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 from datetime import date
@@ -537,3 +538,18 @@ def test_nightly_dst_explores_linux_and_rotates_the_slower_platforms():
         seen |= set(tonight)
     # Every platform gets the complete exploration within the rotation.
     assert seen == set(targets(dst_plan.PLATFORMS))
+
+
+def test_main_hands_the_matrix_a_json_platform_list(tmp_path, monkeypatch):
+    event = tmp_path / "event.json"
+    event.write_text("{}")
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "schedule")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    dst_plan.main()
+    lines = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    platforms = json.loads(lines["platforms"])
+    assert len(platforms) == 3
+    assert all(set(p) == {"target", "runner"} for p in platforms)
