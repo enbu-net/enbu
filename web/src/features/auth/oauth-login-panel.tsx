@@ -1,9 +1,14 @@
 import { HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
-import { displayError } from "../../lib/app-error";
-import type { OAuthStatus } from "../../lib/types";
+import { displayError, type DisplayError } from "../../lib/app-error";
 import { m } from "../../paraglide/messages";
+
+/** Where a sign-in stands, as the panel shows it. */
+export type LoginStatus = {
+  state: "pending" | "success" | "expired" | "denied" | "error";
+  error?: DisplayError;
+};
 
 export function OAuthLoginPanel({
   status,
@@ -11,7 +16,7 @@ export function OAuthLoginPanel({
   onCancel,
   onRetry,
 }: {
-  status: OAuthStatus | null;
+  status: LoginStatus | null;
   expiresIn: number;
   onCancel: () => Promise<void>;
   onRetry: () => void;

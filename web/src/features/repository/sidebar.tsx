@@ -37,7 +37,7 @@ export function Sidebar({
   onCloseSettings?: () => void;
 }) {
   const { repo, setRepo } = useSession();
-  const activePath = repo?.repo?.path ?? "";
+  const activePath = repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [error, setError] = useState<DisplayError | null>(null);
   const [addLoading, setAddLoading] = useState(false);
@@ -52,7 +52,7 @@ export function Sidebar({
 
   const loadRepos = useCallback(async () => {
     try {
-      const list = await backend.listRepositories();
+      const list = await backend.ListRepositories();
       const seen = new Set<string>();
       setRepos(
         list.filter((item) => {
@@ -88,7 +88,7 @@ export function Sidebar({
   async function select(path: string) {
     setError(null);
     try {
-      if (path !== activePath) setRepo(await backend.selectRepository(path));
+      if (path !== activePath) setRepo(await backend.SelectRepository(path));
       if (settingsOpen) onCloseSettings();
     } catch (err) {
       setError(toDisplayError(err));
@@ -123,9 +123,9 @@ export function Sidebar({
           setAddLoading(true);
           setError(null);
           try {
-            const next = await backend.browseRepository();
+            const next = await backend.BrowseRepository();
             // A cancelled picker selects nothing and changes nothing.
-            if (next.selected) {
+            if (next.path) {
               setRepo(next);
               if (settingsOpen) onCloseSettings();
             }
@@ -243,13 +243,13 @@ export function Sidebar({
           setRemovingRepository(true);
           setError(null);
           try {
-            await backend.removeRepository(removedPath);
+            await backend.RemoveRepository(removedPath);
             setRepos((current) =>
               current.filter((item) => pathKey(item.path) !== pathKey(removedPath)),
             );
             setRepositoryPendingRemoval(null);
             if (pathKey(removedPath) === pathKey(activePath)) {
-              setRepo(await backend.repoStatus());
+              setRepo(await backend.GetRepoStatus());
             }
             await loadRepos();
           } catch (err) {

@@ -27,7 +27,7 @@ function status(
 }
 
 async function renderAndCheck(result: UpdateStatus) {
-  vi.mocked(backend).checkForUpdate.mockResolvedValueOnce(result);
+  vi.mocked(backend).CheckForUpdate.mockResolvedValueOnce(result);
   await act(async () => root.render(<UpdateSection />));
   await act(async () => queryButton("Check for updates")?.click());
   await settle();
@@ -53,7 +53,7 @@ describe("UpdateSection", () => {
   });
 
   it("installs a newer release and restarts", async () => {
-    vi.mocked(backend).installUpdate.mockResolvedValueOnce(
+    vi.mocked(backend).InstallUpdate.mockResolvedValueOnce(
       status("self", false, { current: "v0.10.0", latest: "v0.10.0" }),
     );
     await renderAndCheck(status("self", true));
@@ -62,15 +62,15 @@ describe("UpdateSection", () => {
 
     await act(async () => queryButton("Update")?.click());
     await settle();
-    expect(backend.installUpdate).toHaveBeenCalledTimes(1);
+    expect(backend.InstallUpdate).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("v0.10.0 is installed.");
 
     await act(async () => queryButton("Restart")?.click());
-    expect(backend.restartApp).toHaveBeenCalledTimes(1);
+    expect(backend.RestartApp).toHaveBeenCalledTimes(1);
   });
 
   it("shows why a verification failed and lets the person try again", async () => {
-    vi.mocked(backend).installUpdate.mockRejectedValueOnce({ code: "update_unverified" });
+    vi.mocked(backend).InstallUpdate.mockRejectedValueOnce({ code: "update_unverified" });
     await renderAndCheck(status("self", true));
     await act(async () => queryButton("Update")?.click());
     await settle();
@@ -97,7 +97,7 @@ describe("UpdateSection", () => {
   });
 
   it("shows a failed check", async () => {
-    vi.mocked(backend).checkForUpdate.mockRejectedValueOnce({ code: "unavailable" });
+    vi.mocked(backend).CheckForUpdate.mockRejectedValueOnce({ code: "unavailable" });
     await act(async () => root.render(<UpdateSection />));
     await act(async () => queryButton("Check for updates")?.click());
     await settle();

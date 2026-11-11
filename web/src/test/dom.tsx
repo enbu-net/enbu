@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react-dom/test-utils";
 import { afterEach, beforeEach, vi } from "vite-plus/test";
 import { SessionContext, type Session } from "../lib/session";
+import { noRepo } from "../lib/types";
 
 /** The element each test renders into; setupDom replaces it before every test. */
 export let container: HTMLDivElement;
@@ -65,7 +66,7 @@ export function testSession(overrides: Partial<Session> = {}): Session {
   return {
     status: { authenticated: true, workspace_configured: false, username: "u" },
     loading: false,
-    repo: { selected: false },
+    repo: noRepo,
     refresh: async () => {},
     setRepo: () => {},
     reloadRepo: async () => {},

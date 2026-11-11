@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { Box, HStack, VStack, styled } from "styled-system/jsx";
+import { hstack } from "styled-system/patterns";
 import { Button, Heading, Input, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
-import type { InitResult, RepoInfo, StorageSettings } from "../../lib/types";
+import type { InitResult, RepoInfo, StorageConfig } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -72,7 +73,7 @@ function SetupScreen({
 }
 
 /** No storage: Initialize suggests one, or joins the one enbu.toml names. */
-const noStorage: StorageSettings = {
+const noStorage: StorageConfig = {
   url: "",
   region: "",
   endpoint: "",
@@ -109,7 +110,7 @@ export function RepositorySelect() {
         onSubmit={(event) => {
           event.preventDefault();
           if (!path.trim()) return;
-          void action.run(async () => setRepo(await backend.selectRepository(path.trim())));
+          void action.run(async () => setRepo(await backend.SelectRepository(path.trim())));
         }}
       >
         <Box>
@@ -140,8 +141,8 @@ export function RepositorySelect() {
               flexShrink={0}
               onClick={() =>
                 action.run(async () => {
-                  const next = await backend.browseRepository();
-                  if (next.selected) setRepo(next);
+                  const next = await backend.BrowseRepository();
+                  if (next.path) setRepo(next);
                 })
               }
             >
@@ -184,8 +185,8 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
   }
   if (done) return <InitDone result={done} onContinue={reloadRepo} />;
 
-  async function initialize(storage: StorageSettings, acceptNewGenesis: boolean) {
-    const result = await backend.initialize(storage, acceptNewGenesis);
+  async function initialize(storage: StorageConfig, acceptNewGenesis: boolean) {
+    const result = await backend.Initialize(storage, acceptNewGenesis);
     // Founding or waiting for approval leaves the person something to do first.
     if (result.founded || result.pending || result.replaced_genesis) setDone(result);
     else await reloadRepo();
@@ -235,19 +236,19 @@ function FoundWorkspace({
   onFound,
 }: {
   action: ReturnType<typeof useAction>;
-  onFound: (storage: StorageSettings) => Promise<void>;
+  onFound: (storage: StorageConfig) => Promise<void>;
 }) {
   const { repo, reloadRepo } = useSession();
-  const [storage, setStorage] = useState<StorageSettings>(noStorage);
+  const [storage, setStorage] = useState<StorageConfig>(noStorage);
   // null while asking, "" when there is none: no GitHub origin, or one whose
   // name GHCR does not accept.
   const [suggested, setSuggested] = useState<string | null>(null);
-  const hasRemote = repo?.repo?.has_remote ?? false;
-  const set = (change: Partial<StorageSettings>) =>
+  const hasRemote = repo?.has_remote ?? false;
+  const set = (change: Partial<StorageConfig>) =>
     setStorage((current) => ({ ...current, ...change }));
 
   const suggest = useCallback(async () => {
-    const value = await backend.suggestStorage().catch(() => "");
+    const value = await backend.SuggestStorage().catch(() => "");
     setSuggested(value);
     setStorage((current) => (current.url ? current : { ...current, url: value }));
   }, []);
@@ -360,11 +361,9 @@ function Option({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label>
-      <HStack gap="2">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-        <Text fontSize="sm">{label}</Text>
-      </HStack>
+    <label className={hstack({ gap: "2", fontSize: "sm" })}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
     </label>
   );
 }

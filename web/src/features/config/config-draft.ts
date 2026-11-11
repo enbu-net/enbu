@@ -1,5 +1,5 @@
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import type { Environment } from "../../lib/types";
+import type { EnvInfo } from "../../lib/types";
 
 export type EnbuConfigDraft = {
   version: string;
@@ -12,7 +12,7 @@ export type EnbuConfigDraft = {
   env: Record<string, { output: string; incarnation?: string }>;
 };
 
-export function parseConfigDraft(content: string, environments: Environment[]): EnbuConfigDraft {
+export function parseConfigDraft(content: string, environments: EnvInfo[]): EnbuConfigDraft {
   const parsed = parseToml(content) as Record<string, unknown>;
   const parsedEnv =
     parsed.env && typeof parsed.env === "object" ? (parsed.env as Record<string, unknown>) : {};

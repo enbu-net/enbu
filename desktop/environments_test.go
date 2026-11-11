@@ -3,6 +3,7 @@ package desktop
 import (
 	"testing"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
@@ -61,7 +62,7 @@ func TestDeleteEnvironmentCanPurgeRevisions(t *testing.T) {
 func TestDeleteEnvironmentRejectsUnknownName(t *testing.T) {
 	f := newMembersFixture(t)
 	deleted, err := f.alice.DeleteEnvironment("missing", false)
-	if err == nil || deleted != (EnvironmentDeletion{}) {
+	if err == nil || deleted != (app.EnvironmentDeletion{}) {
 		t.Fatalf("deleted an unknown environment: %+v %v", deleted, err)
 	}
 }

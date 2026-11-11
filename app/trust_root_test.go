@@ -59,7 +59,7 @@ func TestChangedGenesisStopsEveryOperation(t *testing.T) {
 		"add":     func() error { return alice.AddSecret(bg, "default", "NEW", "leaked") },
 		"members": func() error { _, err := alice.ListMembers(bg); return err },
 		"history": func() error { _, err := alice.ListHistory(bg, "default"); return err },
-		"init":    func() error { _, err := alice.InitializeRepository(bg); return err },
+		"init":    func() error { _, err := alice.InitializeRepository(bg, InitOptions{}); return err },
 	}
 	for name, op := range ops {
 		err := op()
@@ -84,9 +84,7 @@ func TestAcceptNewGenesisReplacesThePin(t *testing.T) {
 	rival := foundRival(t, alice)
 	setGenesis(t, alice, rival)
 
-	alice.AcceptNewGenesis = true
-	result, err := alice.InitializeRepository(bg)
-	alice.AcceptNewGenesis = false
+	result, err := alice.InitializeRepository(bg, InitOptions{AcceptNewGenesis: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +104,7 @@ func TestAcceptNewGenesisReplacesThePin(t *testing.T) {
 	}
 	// Accepting the same genesis again reports no replacement.
 	setGenesis(t, alice, rival)
-	alice.AcceptNewGenesis = true
-	result, err = alice.InitializeRepository(bg)
-	alice.AcceptNewGenesis = false
+	result, err = alice.InitializeRepository(bg, InitOptions{AcceptNewGenesis: true})
 	if err != nil || result.ReplacedGenesis != "" {
 		t.Fatalf("re-accepting the pinned genesis: %+v %v", result, err)
 	}
@@ -123,7 +119,7 @@ func TestPinnedDeviceDoesNotFoundTheWorkspaceAgain(t *testing.T) {
 	setGenesis(t, alice, "")
 	alice.Storage = newMemRegistry()
 
-	_, err := alice.InitializeRepository(bg)
+	_, err := alice.InitializeRepository(bg, InitOptions{})
 	var ae *apperr.Error
 	if !errors.As(err, &ae) || ae.Code() != apperr.CodeTrustRootChanged || ae.Params()["pinned"] != trusted {
 		t.Fatalf("founded the workspace again: %v", err)
@@ -136,9 +132,7 @@ func TestPinnedDeviceDoesNotFoundTheWorkspaceAgain(t *testing.T) {
 	}
 
 	// The flag accepts a genesis enbu.toml names; it does not allow founding.
-	alice.AcceptNewGenesis = true
-	_, err = alice.InitializeRepository(bg)
-	alice.AcceptNewGenesis = false
+	_, err = alice.InitializeRepository(bg, InitOptions{AcceptNewGenesis: true})
 	if !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("--accept-new-genesis founded the workspace again: %v", err)
 	}
@@ -157,14 +151,14 @@ func TestUnverifiedGenesisIsNotPinned(t *testing.T) {
 	bob := newDevice(t, alice)
 	trusted := genesisOf(t, bob)
 	setGenesis(t, bob, "sha256:0000000000000000000000000000000000000000000000000000000000000000")
-	if _, err := bob.InitializeRepository(bg); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("unknown genesis: %v", err)
 	}
 	if pinned, err := bob.trustRoot(mustWorkspace(t, bob)).Pinned(); err != nil || pinned != (wsp.Root{}) {
 		t.Fatalf("an unverified genesis was pinned: %q %v", pinned, err)
 	}
 	setGenesis(t, bob, trusted)
-	if _, err := bob.InitializeRepository(bg); err != nil {
+	if _, err := bob.InitializeRepository(bg, InitOptions{}); err != nil {
 		t.Fatalf("the real genesis was rejected after a failed first attempt: %v", err)
 	}
 }
@@ -197,7 +191,7 @@ func TestChangedWorkspaceAndGenesisStillStops(t *testing.T) {
 	}
 
 	for name, op := range map[string]func() error{
-		"init": func() error { _, err := alice.InitializeRepository(bg); return err },
+		"init": func() error { _, err := alice.InitializeRepository(bg, InitOptions{}); return err },
 		"list": func() error { _, err := alice.ListSecrets(bg, "default"); return err },
 	} {
 		err := op()
@@ -228,7 +222,7 @@ func TestFoundingAgainInTheSameCheckoutMovesThePin(t *testing.T) {
 		t.Fatal(err)
 	}
 	alice.Storage = newMemRegistry()
-	result, err := alice.InitializeRepository(bg)
+	result, err := alice.InitializeRepository(bg, InitOptions{})
 	if err != nil {
 		t.Fatalf("founding a new workspace: %v", err)
 	}

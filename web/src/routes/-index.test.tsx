@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../lib/backend";
 import type { Session } from "../lib/session";
-import type { RepoInfo } from "../lib/types";
+import { noRepo, type RepoInfo } from "../lib/types";
 import { container, queryButton, root, settle, setupDom, withSession } from "../test/dom";
 import { HomePage } from "./index";
 
@@ -48,16 +48,13 @@ describe("HomePage", () => {
   });
 
   it("asks for a repository once signed in", async () => {
-    await renderHome({ repo: { selected: false } });
+    await renderHome({ repo: noRepo });
     expect(container.querySelector("h1")?.textContent).toContain("Select repository");
   });
 
   it("tells a folder without Git to run git init", async () => {
     await renderHome({
-      repo: {
-        selected: true,
-        repo: repoInfo({ initialized: false, has_git: false, storage_configured: false }),
-      },
+      repo: repoInfo({ initialized: false, has_git: false, storage_configured: false }),
     });
     expect(container.textContent).toContain("Not a Git repository");
   });
@@ -65,9 +62,9 @@ describe("HomePage", () => {
   it("opens a configured workspace without GitHub login or Git setup", async () => {
     await renderHome({
       status: { authenticated: false, workspace_configured: true },
-      repo: { selected: true, repo: repoInfo({ has_git: false, has_remote: false }) },
+      repo: repoInfo({ has_git: false, has_remote: false }),
     });
-    expect(backend.listSecrets).toHaveBeenCalled();
+    expect(backend.ListSecrets).toHaveBeenCalled();
     expect(container.textContent).not.toContain("Connect with GitHub");
     expect(container.textContent).not.toContain("Not a Git repository");
   });

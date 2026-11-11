@@ -102,7 +102,7 @@ func (w *World) Bootstrap(ctx context.Context) error {
 				return e
 			}
 		}
-		r, e := d.App.InitializeRepository(ctx)
+		r, e := d.App.InitializeRepository(ctx, app.InitOptions{})
 		if e := w.Observe("init", i, r, e); e != nil {
 			return e
 		}

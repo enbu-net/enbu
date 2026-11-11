@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { OAuthStart, OAuthStatus } from "../../lib/types";
+import type { OAuthStart } from "../../lib/types";
+import type { LoginStatus } from "./oauth-login-panel";
 
 /** Seconds left until a sign-in started at start expires, ticking while it is pending. */
 function useSecondsLeft(start: OAuthStart | null, pending: boolean) {
@@ -23,7 +24,7 @@ function useSecondsLeft(start: OAuthStart | null, pending: boolean) {
  */
 export function useGitHubLogin(onSuccess: () => Promise<unknown>) {
   const [start, setStart] = useState<OAuthStart | null>(null);
-  const [status, setStatus] = useState<OAuthStatus | null>(null);
+  const [status, setStatus] = useState<LoginStatus | null>(null);
   const [error, setError] = useState<DisplayError | null>(null);
   const [starting, setStarting] = useState(false);
   const pending = status?.state === "pending";
@@ -33,9 +34,12 @@ export function useGitHubLogin(onSuccess: () => Promise<unknown>) {
     if (!start || !pending) return;
     const poll = window.setInterval(async () => {
       try {
-        const next = await backend.oauthStatus(start.session_id);
+        const next = await backend.GetOAuthLoginStatus(start.session_id);
         if (next.state !== "success") {
-          setStatus(next);
+          setStatus({
+            state: next.state as LoginStatus["state"],
+            error: next.error ? toDisplayError(next.error) : undefined,
+          });
           return;
         }
         window.clearInterval(poll);
@@ -59,7 +63,7 @@ export function useGitHubLogin(onSuccess: () => Promise<unknown>) {
     setStarting(true);
     setError(null);
     try {
-      setStart(await backend.startOAuthLogin());
+      setStart(await backend.StartOAuthLogin());
       setStatus({ state: "pending" });
     } catch (err) {
       setError(toDisplayError(err));
@@ -69,7 +73,7 @@ export function useGitHubLogin(onSuccess: () => Promise<unknown>) {
   }
 
   async function cancel() {
-    if (start) await backend.cancelOAuthLogin(start.session_id);
+    if (start) await backend.CancelOAuthLogin(start.session_id);
     reset();
   }
 

@@ -38,7 +38,7 @@ describe("EnvironmentsTab", () => {
     await act(async () => queryButton("Rename", dialog)?.click());
     await settle();
 
-    expect(mocked.renameEnvironment).toHaveBeenCalledWith("staging", "preview");
+    expect(mocked.RenameEnvironment).toHaveBeenCalledWith("staging", "preview");
     expect(workspace.refresh).toHaveBeenCalled();
   });
 
@@ -49,24 +49,24 @@ describe("EnvironmentsTab", () => {
   });
 
   it("deletes without purging and offers to purge the kept revisions", async () => {
-    mocked.deleteEnvironment.mockResolvedValueOnce({ purged: 0, incarnation: "inc-1" });
-    mocked.purgeIncarnation.mockResolvedValueOnce(3);
+    mocked.DeleteEnvironment.mockResolvedValueOnce({ purged: 0, incarnation: "inc-1" });
+    mocked.PurgeIncarnation.mockResolvedValueOnce(3);
     await renderAndSettle(<EnvironmentsTab workspace={testWorkspace(environments)} />);
 
     await act(async () => queryButton("Delete: staging")?.click());
     await act(async () => queryButton("Delete: Delete staging?")?.click());
     await settle();
-    expect(mocked.deleteEnvironment).toHaveBeenCalledWith("staging", false);
+    expect(mocked.DeleteEnvironment).toHaveBeenCalledWith("staging", false);
     expect(container.textContent).toContain("Its stored revisions remain");
 
     await act(async () => queryButton("Delete stored revisions")?.click());
     await settle();
-    expect(mocked.purgeIncarnation).toHaveBeenCalledWith("inc-1");
+    expect(mocked.PurgeIncarnation).toHaveBeenCalledWith("inc-1");
     expect(container.textContent).toContain("Deleted 3 stored revision(s).");
   });
 
   it("purges with the deletion when asked", async () => {
-    mocked.deleteEnvironment.mockResolvedValueOnce({ purged: 2 });
+    mocked.DeleteEnvironment.mockResolvedValueOnce({ purged: 2 });
     await renderAndSettle(<EnvironmentsTab workspace={testWorkspace(environments)} />);
 
     await act(async () => queryButton("Delete: staging")?.click());
@@ -74,19 +74,19 @@ describe("EnvironmentsTab", () => {
     await act(async () => queryButton("Delete: Delete staging?")?.click());
     await settle();
 
-    expect(mocked.deleteEnvironment).toHaveBeenCalledWith("staging", true);
+    expect(mocked.DeleteEnvironment).toHaveBeenCalledWith("staging", true);
     expect(container.textContent).toContain("Deleted 2 stored revision(s).");
   });
 
   it("purges an earlier incarnation and keeps the field when it fails", async () => {
-    mocked.purgeIncarnation.mockRejectedValueOnce(createAppError("access_denied"));
+    mocked.PurgeIncarnation.mockRejectedValueOnce(createAppError("access_denied"));
     await renderAndSettle(<EnvironmentsTab workspace={testWorkspace(environments)} />);
 
     typeInto(container.querySelector<HTMLInputElement>('input[aria-label="Incarnation"]'), "inc-2");
     await act(async () => queryButton("Delete revisions")?.click());
     await settle();
 
-    expect(mocked.purgeIncarnation).toHaveBeenCalledWith("inc-2");
+    expect(mocked.PurgeIncarnation).toHaveBeenCalledWith("inc-2");
     expect(queryInput("inc-2")).not.toBeNull();
     expect(container.textContent).toContain("Access was denied.");
   });

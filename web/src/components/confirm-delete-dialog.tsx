@@ -55,7 +55,7 @@ export function ConfirmDeleteDialog({
         </Button>
         <Button
           type="button"
-          bg="status.danger"
+          bg="status.dangerSolid"
           color="status.dangerFg"
           loading={loading}
           aria-label={`${confirmLabel}: ${title}`}

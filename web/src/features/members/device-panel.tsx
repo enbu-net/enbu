@@ -5,7 +5,7 @@ import { Button, Heading, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Diagnosis, PublicInfo } from "../../lib/types";
+import type { IdentityDiagnosis, PublicInfo } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -24,14 +24,14 @@ export function DevicePanel({
   onUpgraded: () => void | Promise<void>;
 }) {
   const [info, setInfo] = useState<PublicInfo | null>(null);
-  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [diagnosis, setDiagnosis] = useState<IdentityDiagnosis | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setInfo(await backend.identity());
+      setInfo(await backend.GetIdentity());
     } catch (err) {
       setError(toDisplayError(err));
     }
@@ -108,7 +108,7 @@ export function DevicePanel({
             title={m.device_upgradeHint()}
             onClick={() =>
               void run(async () => {
-                const result = await backend.upgradeIdentity();
+                const result = await backend.UpgradeIdentity();
                 setNotice(
                   result.pending
                     ? m.device_upgradePending({ fingerprint: result.fingerprint })
@@ -126,7 +126,7 @@ export function DevicePanel({
           size="sm"
           variant="ghost"
           disabled={busy}
-          onClick={() => void run(async () => setDiagnosis(await backend.diagnoseIdentity()))}
+          onClick={() => void run(async () => setDiagnosis(await backend.DiagnoseIdentity()))}
         >
           <Cpu size={14} aria-hidden="true" />
           {m.device_diagnose()}

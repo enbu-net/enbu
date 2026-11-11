@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
 import { createAppError } from "../../lib/app-error";
-import type { InitResult, RepoInfo, StorageSettings } from "../../lib/types";
+import { noRepo, type InitResult, type RepoInfo, type StorageConfig } from "../../lib/types";
 import {
   container,
   labelledInput,
@@ -64,8 +64,8 @@ describe("RepositorySelect", () => {
   });
 
   it("selects the typed path on Enter and continues only with a path", async () => {
-    const selected = { selected: true, repo: repoInfo() };
-    mocked.selectRepository.mockResolvedValueOnce(selected);
+    const selected = repoInfo();
+    mocked.SelectRepository.mockResolvedValueOnce(selected);
     const setRepo = renderSelect();
     expect(queryButton("Continue")?.disabled).toBe(true);
 
@@ -77,12 +77,12 @@ describe("RepositorySelect", () => {
     });
     await settle();
 
-    expect(mocked.selectRepository).toHaveBeenCalledWith("/home/octo/app");
+    expect(mocked.SelectRepository).toHaveBeenCalledWith("/home/octo/app");
     expect(setRepo).toHaveBeenCalledWith(selected);
   });
 
   it("keeps the screen when the folder picker is cancelled", async () => {
-    mocked.browseRepository.mockResolvedValueOnce({ selected: false });
+    mocked.BrowseRepository.mockResolvedValueOnce(noRepo);
     const setRepo = renderSelect();
     await act(async () => queryButton("Browse")?.click());
     await settle();
@@ -90,7 +90,7 @@ describe("RepositorySelect", () => {
   });
 
   it("shows a failed selection as a display error", async () => {
-    mocked.selectRepository.mockRejectedValueOnce(new Error("EACCES /secret/path"));
+    mocked.SelectRepository.mockRejectedValueOnce(new Error("EACCES /secret/path"));
     renderSelect();
     typeInto(container.querySelector<HTMLInputElement>("input"), "/x");
     await act(async () => queryButton("Continue")?.click());
@@ -112,8 +112,8 @@ describe("RepositorySetup", () => {
   });
 
   it("founds a workspace in the suggested storage and tells how to share it", async () => {
-    mocked.suggestStorage.mockResolvedValueOnce("oci://ghcr.io/octo/app-enbu");
-    mocked.initialize.mockResolvedValueOnce(
+    mocked.SuggestStorage.mockResolvedValueOnce("oci://ghcr.io/octo/app-enbu");
+    mocked.Initialize.mockResolvedValueOnce(
       initResult({ founded: true, storage: "oci://ghcr.io/octo/app-enbu" }),
     );
     const reloadRepo = vi.fn(async () => {});
@@ -125,7 +125,7 @@ describe("RepositorySetup", () => {
 
     await act(async () => queryButton("Found workspace")?.click());
     await settle();
-    expect(mocked.initialize).toHaveBeenCalledWith(storage("oci://ghcr.io/octo/app-enbu"), false);
+    expect(mocked.Initialize).toHaveBeenCalledWith(storage("oci://ghcr.io/octo/app-enbu"), false);
     expect(container.textContent).toContain("Inherit access from repository");
     expect(container.textContent).toContain("app-enbu");
     expect(reloadRepo).not.toHaveBeenCalled();
@@ -136,7 +136,7 @@ describe("RepositorySetup", () => {
   });
 
   it("asks for a storage or a GitHub remote when there is no suggestion", async () => {
-    mocked.initialize.mockResolvedValueOnce(initResult());
+    mocked.Initialize.mockResolvedValueOnce(initResult());
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
     await settle();
@@ -149,7 +149,7 @@ describe("RepositorySetup", () => {
     await act(async () => queryCheckbox("Use path-style S3 addressing").click());
     await act(async () => queryButton("Found workspace")?.click());
     await settle();
-    expect(mocked.initialize).toHaveBeenCalledWith(
+    expect(mocked.Initialize).toHaveBeenCalledWith(
       { ...storage("s3://bucket/team"), region: "eu-west-1", path_style: true },
       false,
     );
@@ -157,7 +157,7 @@ describe("RepositorySetup", () => {
   });
 
   it("passes plain HTTP for an OCI registry", async () => {
-    mocked.initialize.mockResolvedValueOnce(initResult());
+    mocked.Initialize.mockResolvedValueOnce(initResult());
     act(() => root.render(withSession(<RepositorySetup step="found" />)));
     await settle();
     const input = container.querySelector<HTMLInputElement>("#init-storage")!;
@@ -166,14 +166,14 @@ describe("RepositorySetup", () => {
     await act(async () => queryCheckbox("Use HTTP for a local OCI registry").click());
     await act(async () => queryButton("Found workspace")?.click());
     await settle();
-    expect(mocked.initialize).toHaveBeenCalledWith(
+    expect(mocked.Initialize).toHaveBeenCalledWith(
       { ...storage("oci://localhost:5000/team"), plain_http: true },
       false,
     );
   });
 
   it("does not ask for a GitHub remote the repository already has", async () => {
-    const repo = { selected: true, repo: repoInfo({ has_git: true, has_remote: true }) };
+    const repo = repoInfo({ has_git: true, has_remote: true });
     act(() => root.render(withSession(<RepositorySetup step="found" />, { repo })));
     await settle();
     expect(container.querySelector("pre")).toBeNull();
@@ -181,17 +181,17 @@ describe("RepositorySetup", () => {
   });
 
   it("joins the workspace in enbu.toml and reloads", async () => {
-    mocked.initialize.mockResolvedValueOnce(initResult());
+    mocked.Initialize.mockResolvedValueOnce(initResult());
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="join" />, { reloadRepo })));
     await act(async () => queryButton("Set up")?.click());
     await settle();
-    expect(mocked.initialize).toHaveBeenCalledWith(storage(""), false);
+    expect(mocked.Initialize).toHaveBeenCalledWith(storage(""), false);
     expect(reloadRepo).toHaveBeenCalledTimes(1);
   });
 
   it("shows the fingerprint to compare while waiting for approval", async () => {
-    mocked.initialize.mockResolvedValueOnce(initResult({ pending: true }));
+    mocked.Initialize.mockResolvedValueOnce(initResult({ pending: true }));
     act(() => root.render(withSession(<RepositorySetup step="join" />)));
     await act(async () => queryButton("Set up")?.click());
     await settle();
@@ -200,9 +200,9 @@ describe("RepositorySetup", () => {
   });
 
   it("offers to trust a changed root only after trust_root_changed", async () => {
-    mocked.initialize
-      .mockRejectedValueOnce(createAppError("trust_root_changed", { configured: "c-new" }))
-      .mockResolvedValueOnce(initResult({ replaced_genesis: "c-old" }));
+    mocked.Initialize.mockRejectedValueOnce(
+      createAppError("trust_root_changed", { configured: "c-new" }),
+    ).mockResolvedValueOnce(initResult({ replaced_genesis: "c-old" }));
     act(() => root.render(withSession(<RepositorySetup step="join" />)));
     expect(queryButton("Trust the new root")).toBeNull();
     await act(async () => queryButton("Set up")?.click());
@@ -211,14 +211,14 @@ describe("RepositorySetup", () => {
 
     await act(async () => queryButton("Trust the new root")?.click());
     await settle();
-    expect(mocked.initialize).toHaveBeenLastCalledWith(storage(""), true);
+    expect(mocked.Initialize).toHaveBeenLastCalledWith(storage(""), true);
     expect(container.textContent).toContain("c-old");
     // This device was already a member, so it did not found the workspace.
     expect(container.textContent).not.toContain("Workspace founded");
   });
 });
 
-function storage(url: string): StorageSettings {
+function storage(url: string): StorageConfig {
   return { url, region: "", endpoint: "", path_style: false, plain_http: false };
 }
 
@@ -240,6 +240,12 @@ function initResult(overrides: Partial<InitResult> = {}): InitResult {
     public_key: "age1test",
     username: "octo",
     environment: "default",
+    workspace_id: "w",
+    control_genesis: "",
+    key_created: false,
+    mode: "join",
+    has_secrets: false,
+    can_decrypt: null,
     device_id: "d".repeat(64),
     fingerprint: "aaaa-bbbb",
     pending: false,

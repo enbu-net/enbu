@@ -103,7 +103,7 @@ describe("settings document", () => {
 
 describe("SettingsPage", () => {
   it("shows the sections and the app version", async () => {
-    vi.mocked(backend).appVersion.mockResolvedValueOnce("v1.2.3");
+    vi.mocked(backend).GetAppVersion.mockResolvedValueOnce("v1.2.3");
     await renderPage();
     for (const title of ["Accounts", "Display", "Security", "About"]) {
       expect(container.querySelector(`section[aria-label="${title}"]`)).not.toBeNull();

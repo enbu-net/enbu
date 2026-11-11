@@ -245,7 +245,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     backend
-      .appVersion()
+      .GetAppVersion()
       .then(setVersion)
       .catch(() => {});
   }, []);

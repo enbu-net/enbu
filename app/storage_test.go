@@ -45,7 +45,7 @@ func TestHistoryOrdersRapidUpdates(t *testing.T) {
 	ctx := context.Background()
 	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
 	prepareApp(t, a, "default")
-	if _, err := a.InitializeRepository(ctx); err != nil {
+	if _, err := a.InitializeRepository(ctx, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.AddSecret(ctx, "default", "KEY", "0"); err != nil {
@@ -73,7 +73,7 @@ func TestInitializeRejectsCorruptControl(t *testing.T) {
 	ctx := context.Background()
 	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
 	prepareApp(t, a, "default")
-	if _, err := a.InitializeRepository(ctx); err != nil {
+	if _, err := a.InitializeRepository(ctx, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := a.loadProject()
@@ -90,7 +90,7 @@ func TestInitializeRejectsCorruptControl(t *testing.T) {
 			return next.FetchHead(ctx, kind, scope, rev)
 		},
 	})
-	if _, err := a.InitializeRepository(ctx); err == nil {
+	if _, err := a.InitializeRepository(ctx, InitOptions{}); err == nil {
 		t.Fatal("corrupt storage treated as successful initialization")
 	}
 }
@@ -101,12 +101,12 @@ func TestInitializeRefusesAStorageThatAlreadyHoldsAWorkspace(t *testing.T) {
 	ctx := context.Background()
 	a := &App{Storage: newMemRegistry(), Identities: newMemKeyStore()}
 	prepareApp(t, a, "default")
-	if _, err := a.InitializeRepository(ctx); err != nil {
+	if _, err := a.InitializeRepository(ctx, InitOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	other := &App{Storage: a.Storage, Identities: newMemKeyStore()}
 	prepareApp(t, other, "default") // same workspace id, but no control_genesis
-	if _, err := other.InitializeRepository(ctx); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
+	if _, err := other.InitializeRepository(ctx, InitOptions{}); !apperr.Is(err, apperr.CodeIncompatibleStorage) {
 		t.Fatalf("adopting an existing workspace without a genesis: %v", err)
 	}
 }
