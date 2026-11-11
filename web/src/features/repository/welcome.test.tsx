@@ -149,7 +149,7 @@ describe("Welcome", () => {
     await renderWelcome();
     expect(steps().map((step) => step.querySelector("summary")?.textContent)).toEqual([
       "Sign in to GitHub",
-      "Open your repository",
+      "Open your project folder",
       "Create or join the workspace",
       "Get approved",
     ]);
