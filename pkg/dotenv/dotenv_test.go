@@ -162,6 +162,20 @@ func TestParseUTF16WithByteOrderMark(t *testing.T) {
 			t.Fatalf("big endian %v: Parse = %#v, %v", bigEndian, got, err)
 		}
 	}
+	// Malformed UTF-16 is refused instead of storing U+FFFD in a secret.
+	for name, bad := range map[string][]byte{
+		"odd length LE":       {0xff, 0xfe, 'A', 0, '=', 0, 'x', 0, 'y'},
+		"odd length BE":       {0xfe, 0xff, 0, 'A', 0, '=', 0, 'x', 0},
+		"lone high LE":        {0xff, 0xfe, 'A', 0, '=', 0, 0x3d, 0xd8},
+		"lone high BE":        {0xfe, 0xff, 0, 'A', 0, '=', 0xd8, 0x3d},
+		"high then letter LE": {0xff, 0xfe, 'A', 0, '=', 0, 0x3d, 0xd8, 'x', 0},
+		"lone low LE":         {0xff, 0xfe, 'A', 0, '=', 0, 0x11, 0xdc, 'x', 0},
+		"lone low BE":         {0xfe, 0xff, 0, 'A', 0, '=', 0xdc, 0x11, 0, 'x'},
+	} {
+		if _, err := Parse(bad); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
 	// Without a byte order mark, UTF-16 is not guessed at.
 	if _, err := Parse(encode(false)[2:]); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("UTF-16 without a mark: %v", err)
