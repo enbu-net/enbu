@@ -1,4 +1,10 @@
 import {
+  defaultSettings,
+  sidebarWidthRange,
+  updateSettings,
+  useSettings,
+} from "../../lib/settings";
+import {
   type RefObject,
   useCallback,
   useEffect,
@@ -40,6 +46,15 @@ export function Sidebar({
   onCloseSettings?: () => void;
 }) {
   const { repo, setRepo } = useSession();
+  const { sidebarWidth } = useSettings();
+  const sidebar = useRef<HTMLElement>(null);
+  const resize = (width: number) =>
+    updateSettings({
+      sidebarWidth: Math.min(
+        sidebarWidthRange.max,
+        Math.max(sidebarWidthRange.min, Math.round(width)),
+      ),
+    });
   const activePath = repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [error, setError] = useState<DisplayError | null>(null);
@@ -101,7 +116,9 @@ export function Sidebar({
   return (
     <styled.nav
       aria-label={m.sidebar_navigation()}
-      w="248px"
+      id="repository-sidebar"
+      ref={sidebar}
+      style={{ width: sidebarWidth }}
       h="calc(100vh - 72px)"
       position="sticky"
       top="72px"
@@ -113,6 +130,52 @@ export function Sidebar({
       flexShrink="0"
       flexDirection="column"
     >
+      <styled.div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={m.sidebar_resize()}
+        aria-controls="repository-sidebar"
+        aria-valuemin={sidebarWidthRange.min}
+        aria-valuemax={sidebarWidthRange.max}
+        aria-valuenow={sidebarWidth}
+        tabIndex={0}
+        position="absolute"
+        right="-4px"
+        top="0"
+        w="8px"
+        h="full"
+        cursor="col-resize"
+        touchAction="none"
+        zIndex="1"
+        _hover={{ bg: "border.strong" }}
+        _focusVisible={{ outline: "2px solid", outlineColor: "accent.default" }}
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            resize(event.clientX - (sidebar.current?.getBoundingClientRect().left ?? 0));
+        }}
+        onPointerUp={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onDoubleClick={() => resize(defaultSettings.sidebarWidth)}
+        onKeyDown={(event) => {
+          const values: Record<string, number> = {
+            ArrowLeft: sidebarWidth - 10,
+            ArrowRight: sidebarWidth + 10,
+            Home: sidebarWidthRange.min,
+            End: sidebarWidthRange.max,
+          };
+          const width = values[event.key];
+          if (width === undefined) return;
+          event.preventDefault();
+          resize(width);
+        }}
+      />
       <Button
         size="sm"
         variant="outline"

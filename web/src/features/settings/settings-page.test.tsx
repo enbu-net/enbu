@@ -75,6 +75,7 @@ describe("settings document", () => {
     const text = settingsDocument({ ...defaultSettings, fontSize: 16 }, "ja");
     expect(JSON.parse(text)).toEqual({
       theme: "system",
+      sidebarWidth: 248,
       language: "ja",
       fontSize: 16,
       clipboardClearSeconds: 30,
@@ -96,7 +97,7 @@ describe("settings document", () => {
   it("describes every setting in the schema", () => {
     const schema = settingsSchema() as { properties: Record<string, unknown> };
     expect(Object.keys(schema.properties).sort()).toEqual(
-      ["clipboardClearSeconds", "fontSize", "language", "theme"].sort(),
+      ["clipboardClearSeconds", "fontSize", "language", "sidebarWidth", "theme"].sort(),
     );
   });
 });

@@ -38,13 +38,27 @@ describe("parseSettings", () => {
   });
 });
 
+describe("sidebar width", () => {
+  it("persists a valid width and rejects out-of-range values", () => {
+    updateSettings({ sidebarWidth: 320 });
+    expect(readSettings().sidebarWidth).toBe(320);
+    expect(() => updateSettings({ sidebarWidth: 100 })).toThrow(SettingsError);
+    expect(() => updateSettings({ sidebarWidth: 500 })).toThrow(SettingsError);
+  });
+});
+
 describe("readSettings", () => {
   it("keeps the valid saved values and drops the rest", () => {
     localStorage.setItem(
       settingsStorageKey,
       JSON.stringify({ theme: "dark", fontSize: 99, clipboardClearSeconds: 0 }),
     );
-    expect(readSettings()).toEqual({ theme: "dark", fontSize: 14, clipboardClearSeconds: 0 });
+    expect(readSettings()).toEqual({
+      ...defaultSettings,
+      theme: "dark",
+      fontSize: 14,
+      clipboardClearSeconds: 0,
+    });
   });
 
   it("falls back to the defaults on broken JSON or refused storage", () => {

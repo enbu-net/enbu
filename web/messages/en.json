@@ -281,5 +281,7 @@
   "error_output_unreadable": "{file} is not a dotenv file enbu can read. Pull again and overwrite it to replace its content.",
   "error_trust_root_changed": "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then accept the new root ('enbu init --accept-new-genesis').",
   "error_import_conflict": "{count} secrets already have different values: {keys}. Use --overwrite to replace them.",
-  "error_update_unverified": "The downloaded update failed signature verification and was not installed."
+  "error_update_unverified": "The downloaded update failed signature verification and was not installed.",
+  "sidebar_resize": "Resize sidebar",
+  "settings_sidebarWidth": "Sidebar width"
 }
