@@ -219,13 +219,8 @@ func run() error {
 	})
 
 	desktop.Attach(ctx, core, desktop.Host{
-		PickDirectory: func(context.Context) (string, error) {
-			return wailsApp.Dialog.OpenFile().
-				SetTitle("Select Git repository").
-				CanChooseFiles(false).
-				CanChooseDirectories(true).
-				CanCreateDirectories(true).
-				PromptForSingleSelection()
+		PickDirectory: func(ctx context.Context) (string, error) {
+			return pickDirectory(ctx, wailsApp, mainWindow)
 		},
 		OpenURL: wailsApp.Browser.OpenURL,
 		Emit: func(name string, data any) {

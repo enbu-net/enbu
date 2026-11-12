@@ -286,5 +286,9 @@
   "storage_description": "An admin can copy encrypted history to another OCI registry or S3 location. Pause all team writes before migrating. The old storage is retained.",
   "storage_writesPaused": "Every team member has paused writes until the new enbu.toml is shared.",
   "storage_migrate": "Migrate storage",
-  "storage_done": "Storage migrated. Share the updated enbu.toml with every member before resuming writes."
+  "storage_done": "Storage migrated. Share the updated enbu.toml with every member before resuming writes.",
+  "auth_copyCode": "Copy code",
+  "auth_codeCopied": "Code copied",
+  "auth_openBrowser": "Open in browser",
+  "auth_addAccountHint": "Sign in with the GitHub account you want to add. Your browser opens automatically; you can also reopen it below."
 }

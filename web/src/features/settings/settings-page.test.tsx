@@ -56,7 +56,7 @@ beforeEach(() => {
 
 async function renderPage() {
   await act(async () => {
-    root.render(<>{withSession(<SettingsPage />)}</>);
+    root.render(<>{withSession(<SettingsPage onAddAccount={() => {}} />)}</>);
   });
   await settle();
 }
@@ -102,6 +102,32 @@ describe("settings document", () => {
 });
 
 describe("SettingsPage", () => {
+  it("keeps storage settings and the dedicated account-addition action together", async () => {
+    const addAccount = vi.fn();
+    vi.mocked(backend).ReadConfig.mockResolvedValueOnce(
+      'version = "v1alpha2"\n[storage]\nurl = "oci://ghcr.io/octo/workspace-enbu"\n',
+    );
+    act(() =>
+      root.render(
+        withSession(<SettingsPage onAddAccount={addAccount} />, {
+          repo: {
+            path: "/workspace",
+            initialized: true,
+            has_remote: false,
+            storage_configured: true,
+          },
+        }),
+      ),
+    );
+    await settle();
+    expect(container.querySelector('section[aria-label="Workspace storage"]')).not.toBeNull();
+    act(() => {
+      queryButton("Add account")?.click();
+    });
+    expect(addAccount).toHaveBeenCalledTimes(1);
+    expect(backend.StartOAuthLogin).not.toHaveBeenCalled();
+  });
+
   it("shows the sections and the app version", async () => {
     vi.mocked(backend).GetAppVersion.mockResolvedValueOnce("v1.2.3");
     await renderPage();

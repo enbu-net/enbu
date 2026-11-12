@@ -286,5 +286,9 @@
   "storage_description": "管理者は暗号化済みの履歴を別の OCI レジストリや S3 へ移行できます。移行前にチーム全員の書き込みを止めてください。元の保存先は残ります。",
   "storage_writesPaused": "新しい enbu.toml の共有が完了するまで、チーム全員が書き込みを停止しています。",
   "storage_migrate": "保存先を移行",
-  "storage_done": "保存先を移行しました。更新した enbu.toml を全員に共有してから書き込みを再開してください。"
+  "storage_done": "保存先を移行しました。更新した enbu.toml を全員に共有してから書き込みを再開してください。",
+  "auth_copyCode": "コードをコピー",
+  "auth_codeCopied": "コードをコピーしました",
+  "auth_openBrowser": "ブラウザで開く",
+  "auth_addAccountHint": "追加する GitHub アカウントでログインしてください。ブラウザは自動で開きます。下のボタンから開き直すこともできます。"
 }
