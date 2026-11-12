@@ -1,3 +1,4 @@
+import { writeClipboard } from "../../lib/platform";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { parse as parseToml } from "smol-toml";
@@ -8,6 +9,8 @@ import { ConfigPanel } from "./config-panel";
 vi.mock("../../lib/backend", async () => ({
   backend: (await import("../../test/backend-mock")).createBackendMock(),
 }));
+
+vi.mock("../../lib/platform", () => ({ writeClipboard: vi.fn(async () => {}) }));
 
 setupDom();
 
@@ -33,6 +36,28 @@ async function renderPanel() {
 }
 
 describe("ConfigPanel", () => {
+  it("shows and copies the encrypted storage location without editing config", async () => {
+    mocked.ReadConfig.mockResolvedValueOnce(
+      config + '\n[storage]\nurl = "oci://ghcr.io/octo/team-enbu"\n',
+    );
+    await renderPanel();
+    expect(container.textContent).toContain("Encrypted data location");
+    expect(container.textContent).toContain("oci://ghcr.io/octo/team-enbu");
+    await act(async () => queryButton("Copy storage URL")?.click());
+    expect(writeClipboard).toHaveBeenCalledWith("oci://ghcr.io/octo/team-enbu");
+    expect(container.textContent).toContain("Storage URL copied");
+    expect(queryButton("Save")?.disabled).toBe(true);
+    expect(mocked.WriteConfig).not.toHaveBeenCalled();
+  });
+  it("shows the custom S3 endpoint and region alongside the bucket location", async () => {
+    mocked.ReadConfig.mockResolvedValueOnce(
+      config +
+        '\n[storage]\nurl = "s3://bucket/team"\nendpoint = "https://objects.example"\nregion = "eu-west-1"\n',
+    );
+    await renderPanel();
+    for (const value of ["s3://bucket/team", "https://objects.example", "eu-west-1"])
+      expect(container.textContent).toContain(value);
+  });
   it("keeps where an environment is stored when its output file changes", async () => {
     mocked.ReadConfig.mockResolvedValueOnce(config);
     await renderPanel();
