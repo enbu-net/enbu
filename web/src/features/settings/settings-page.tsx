@@ -23,6 +23,7 @@ import { getLocale, locales, setLocale, type Locale } from "../../paraglide/runt
 import { AccountList } from "./account-list";
 import { Section } from "./section";
 import { SettingsJsonEditor } from "./settings-json-editor";
+import { StorageSection } from "./storage-section";
 import { UpdateSection } from "./update-section";
 
 /** What the JSON view shows: the settings and the language, in one object. */
@@ -175,6 +176,7 @@ function SettingsForm({ settings, version }: { settings: Settings; version: stri
   return (
     <VStack alignItems="stretch" gap="8">
       <AccountList />
+      <StorageSection />
 
       <Section title={m.settings_display()}>
         <Card>

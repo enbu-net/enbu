@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"uuid"
@@ -78,11 +79,15 @@ func (a *App) initializeRepository(ctx context.Context, opts InitOptions) (*Init
 	if missing {
 		cfg = a.newProject(DefaultEnvironment)
 	}
+	originalStorage := cfg.Storage
 	if opts.Storage != nil {
 		cfg.Storage = *opts.Storage
 	}
 	if a.StorageURL != "" {
 		cfg.Storage.URL = a.StorageURL
+	}
+	if cfg.ControlGenesis != "" && cfg.Storage != originalStorage {
+		return nil, nil, apperr.New(apperr.CodeConfigProtected, "use enbu storage migrate to change established storage", apperr.Params{"key": "storage"})
 	}
 	if cfg.Storage.URL == "" {
 		if cfg.Storage.URL, err = a.DefaultStorageURL(); err != nil {
@@ -179,23 +184,37 @@ func (a *App) initializeRepository(ctx context.Context, opts InitOptions) (*Init
 }
 
 // DefaultStorageURL is the storage a new workspace gets when none is given:
-// a GHCR repository beside the GitHub repository named by the origin remote.
+// a GHCR repository beside the GitHub origin, or under the signed-in account
+// using the folder name when there is no usable GitHub origin.
 // It is used once, when init writes enbu.toml, and never derived again.
 func (a *App) DefaultStorageURL() (_ string, err error) {
 	defer apperr.NormalizeInto(&err)
-	owner, repo, err := a.RepoDetector.LoadRepo()
-	if err != nil {
-		return "", apperr.Wrap(apperr.CodeInvalidArgument, "no storage given and the origin remote is not a GitHub repository; pass --storage", err, nil)
-	}
+	owner, repo, repoErr := a.RepoDetector.LoadRepo()
 	path := strings.ToLower(owner) + "/" + strings.ToLower(repo) + "-enbu"
-	if !ociRepositoryName.MatchString(path) {
-		// GitHub allows names OCI does not, such as ".github".
-		return "", apperr.New(apperr.CodeInvalidArgument, "the GitHub repository name is not a valid GHCR repository name; pass --storage", nil)
+	if repoErr == nil && ociRepositoryName.MatchString(path) {
+		return "oci://ghcr.io/" + path, nil
+	}
+	if a.TokenProvider == nil {
+		return "", apperr.New(apperr.CodeInvalidArgument, "no GHCR account available; sign in or pass --storage", nil)
+	}
+	_, username, tokenErr := a.TokenProvider.LoadToken()
+	if tokenErr != nil {
+		return "", apperr.Wrap(apperr.CodeNotAuthenticated, "sign in to use GHCR or pass --storage", tokenErr, nil)
+	}
+	name := strings.Trim(ghcrFolderSeparator.ReplaceAllString(strings.ToLower(filepath.Base(a.RepositoryDir)), "-"), "-")
+	if name == "" {
+		name = "workspace"
+	}
+	path = strings.ToLower(username) + "/" + name + "-enbu"
+	if username == "" || !ociRepositoryName.MatchString(path) {
+		return "", apperr.New(apperr.CodeInvalidArgument, "no valid GHCR account available; sign in or pass --storage", nil)
 	}
 	return "oci://ghcr.io/" + path, nil
 }
 
 // ociRepositoryName is the OCI distribution spec's repository name grammar.
+var ghcrFolderSeparator = regexp.MustCompile(`[^a-z0-9]+`)
+
 var ociRepositoryName = regexp.MustCompile(`^[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*(/[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*)*$`)
 
 // ensureControl verifies the workspace's Control, creating the genesis Control

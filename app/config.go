@@ -75,6 +75,9 @@ func checkProtectedConfig(current, next *config.ProjectConfig) error {
 	protected := func(key string) error {
 		return apperr.New(apperr.CodeConfigProtected, fmt.Sprintf("%s cannot be changed by editing enbu.toml here", key), apperr.Params{"key": key})
 	}
+	if current.ControlGenesis != "" && next.Storage != current.Storage {
+		return protected("storage")
+	}
 	if current.WorkspaceID != "" && next.WorkspaceID != current.WorkspaceID {
 		return protected("workspace_id")
 	}

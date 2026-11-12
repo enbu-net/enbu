@@ -57,9 +57,10 @@ func TestInitializeFoundsAndJoinsWorkspace(t *testing.T) {
 	}
 }
 
-// Without a GitHub origin there is no storage to suggest.
-func TestSuggestStorageNeedsGitHubOrigin(t *testing.T) {
+// Without a GitHub origin or login there is no storage to suggest.
+func TestSuggestStorageNeedsGitHubOriginOrLogin(t *testing.T) {
 	s := newInitService(t, t.TempDir())
+	s.app.TokenProvider = nil
 	if _, err := s.SuggestStorage(); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("suggest: %v", err)
 	}

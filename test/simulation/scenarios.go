@@ -466,6 +466,22 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		}
 		return w.fileLifecycle(ctx)
 	case "public-surface":
+		migrationApp := *a
+		migrationApp.StorageURL = ""
+		migrationCfg, e := config.LoadProjectFrom(a.RepositoryDir)
+		if e != nil {
+			return e
+		}
+		if e := migrationApp.ChangeStorage(ctx, migrationCfg.Storage); e != nil {
+			return fmt.Errorf("unchanged storage: %w", e)
+		}
+		if e := requireCode(migrationApp.ChangeStorage(ctx, config.StorageConfig{URL: "invalid://destination"}), apperr.CodeInvalidArgument); e != nil {
+			return e
+		}
+		after, e := config.LoadProjectFrom(a.RepositoryDir)
+		if e != nil || after.Storage != migrationCfg.Storage {
+			return fmt.Errorf("failed migration changed config: %v", e)
+		}
 		a.SetRepositoryDir(a.RepositoryDir)
 		if _, e := a.WorkspaceID(); e != nil {
 			return e
