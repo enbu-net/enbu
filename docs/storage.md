@@ -74,9 +74,11 @@ The URL identifies a repository without a tag or digest. `ghcr.io` uses enbu's
 GitHub login; any other registry reads Docker credential helpers/configuration.
 
 When `init` founds a workspace without `--storage` and `enbu.toml` names none,
-it uses `oci://ghcr.io/OWNER/REPO-enbu` (lower-cased) for a GitHub `origin`
-remote and fails for any other. The result is written to `enbu.toml` and never
-derived again, so changing the remote later does not move the storage.
+it uses `oci://ghcr.io/OWNER/REPO-enbu` (lower-cased) for a usable GitHub `origin`
+remote. Otherwise, it uses the signed-in GitHub account and the normalized folder
+name, such as `oci://ghcr.io/USERNAME/FOLDER-enbu`; Git is not required. The result
+is written to `enbu.toml` and never derived again, so changing the remote or
+switching accounts later does not move the storage.
 
 ### S3
 
