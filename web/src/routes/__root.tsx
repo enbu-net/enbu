@@ -26,8 +26,8 @@ function RootWithProviders() {
 function RootLayout() {
   const { loading } = useSession();
   const navigate = useNavigate();
-  const settingsOpen =
-    useRouterState({ select: (state) => state.location.pathname }) === "/settings";
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  const settingsOpen = path === "/settings" || path === "/add-account";
   return (
     <>
       {/* Past the header and the sidebar to the screen itself. */}

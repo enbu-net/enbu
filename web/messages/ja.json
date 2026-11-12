@@ -281,5 +281,9 @@
   "error_output_unreadable": "{file} は enbu が読める dotenv ファイルではありません。上書きして pull すると、中身を置き換えます。",
   "error_trust_root_changed": "enbu.toml の信頼の根 (control_genesis) が、このデバイスがこのワークスペースで信頼しているものと異なります。管理者がワークスペースを作り直したことを別経路で確認できるまで続けないでください。確認できたら新しい信頼の根を受け入れてください ('enbu init --accept-new-genesis')。",
   "error_import_conflict": "{count} 個のシークレットに異なる値が保存されています: {keys}。置き換えるには --overwrite を指定してください。",
-  "error_update_unverified": "ダウンロードした更新は署名の検証に失敗したため、インストールしていません。"
+  "error_update_unverified": "ダウンロードした更新は署名の検証に失敗したため、インストールしていません。",
+  "auth_copyCode": "コードをコピー",
+  "auth_codeCopied": "コードをコピーしました",
+  "auth_openBrowser": "ブラウザで開く",
+  "auth_addAccountHint": "追加する GitHub アカウントでログインしてください。ブラウザは自動で開きます。下のボタンから開き直すこともできます。"
 }

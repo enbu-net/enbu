@@ -171,10 +171,18 @@ function Label({ htmlFor, children }: { htmlFor: string; children: ReactNode }) 
   );
 }
 
-function SettingsForm({ settings, version }: { settings: Settings; version: string }) {
+function SettingsForm({
+  settings,
+  version,
+  onAddAccount,
+}: {
+  settings: Settings;
+  version: string;
+  onAddAccount: () => void;
+}) {
   return (
     <VStack alignItems="stretch" gap="8">
-      <AccountList />
+      <AccountList onAddAccount={onAddAccount} />
 
       <Section title={m.settings_display()}>
         <Card>
@@ -236,7 +244,7 @@ function SettingsForm({ settings, version }: { settings: Settings; version: stri
  * The settings of this app on this device: accounts, display, clipboard and
  * version. Like VS Code, the same settings open as JSON with one button.
  */
-export function SettingsPage() {
+export function SettingsPage({ onAddAccount }: { onAddAccount: () => void }) {
   const settings = useSettings();
   const [view, setView] = useState<"form" | "json">("form");
   const [draft, setDraft] = useState("");
@@ -309,7 +317,7 @@ export function SettingsPage() {
             onSave={() => void applyDraft()}
           />
         ) : (
-          <SettingsForm settings={settings} version={version} />
+          <SettingsForm settings={settings} version={version} onAddAccount={onAddAccount} />
         )}
       </Box>
     </Box>
