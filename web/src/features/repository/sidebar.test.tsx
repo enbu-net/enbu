@@ -1,3 +1,4 @@
+import { defaultSettings, getSettings, loadSettings } from "../../lib/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
@@ -29,6 +30,59 @@ function repoInfo(path: string, owner = "", repo = ""): RepoInfo {
     storage_configured: true,
   };
 }
+
+describe("sidebar resizing", () => {
+  it("resizes with the keyboard, clamps the range and persists the width", async () => {
+    loadSettings();
+    act(() => root.render(withSession(<Sidebar />)));
+    await settle();
+    const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(getSettings().sidebarWidth).toBe(defaultSettings.sidebarWidth + 10);
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+    });
+    expect(handle.getAttribute("aria-valuenow")).toBe("420");
+    act(() => {
+      handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(getSettings().sidebarWidth).toBe(420);
+    act(() => {
+      handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+    expect(getSettings().sidebarWidth).toBe(defaultSettings.sidebarWidth);
+  });
+  it("drags the edge and releases pointer capture", async () => {
+    loadSettings();
+    act(() => root.render(withSession(<Sidebar />)));
+    await settle();
+    const handle = container.querySelector<HTMLElement>('[role="separator"]')!;
+    let captured = false;
+    handle.setPointerCapture = () => {
+      captured = true;
+    };
+    handle.hasPointerCapture = () => captured;
+    handle.releasePointerCapture = () => {
+      captured = false;
+    };
+    const dispatch = (type: string, x: number) => {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { pointerId: 1, button: 0, clientX: x });
+      act(() => {
+        handle.dispatchEvent(event);
+      });
+    };
+    dispatch("pointerdown", 248);
+    dispatch("pointermove", 340);
+    expect(getSettings().sidebarWidth).toBe(340);
+    dispatch("pointerup", 340);
+    dispatch("pointermove", 400);
+    expect(getSettings().sidebarWidth).toBe(340);
+    expect(captured).toBe(false);
+  });
+});
 
 describe("RepositoryContextMenu", () => {
   it("removes a repository from the right-click menu", () => {

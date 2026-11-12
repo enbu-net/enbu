@@ -13,6 +13,7 @@ export type ThemePreference = (typeof themePreferences)[number];
 
 export type Settings = {
   theme: ThemePreference;
+  sidebarWidth: number;
   /** The body text size in px; every other text size scales with it. */
   fontSize: number;
   /** Seconds after which a copied secret value is cleared from the clipboard; 0 keeps it. */
@@ -21,10 +22,12 @@ export type Settings = {
 
 export const defaultSettings: Settings = {
   theme: "system",
+  sidebarWidth: 248,
   fontSize: 14,
   clipboardClearSeconds: 30,
 };
 
+export const sidebarWidthRange = { min: 200, max: 420 } as const;
 export const fontSizeRange = { min: 10, max: 24 } as const;
 export const clipboardClearRange = { min: 0, max: 600 } as const;
 
@@ -48,6 +51,10 @@ function integerIn(value: unknown, range: { min: number; max: number }): value i
 }
 
 const checks: { [K in keyof Settings]: (value: unknown) => string | null } = {
+  sidebarWidth: (value) =>
+    integerIn(value, sidebarWidthRange)
+      ? null
+      : `${sidebarWidthRange.min}-${sidebarWidthRange.max}`,
   theme: (value) =>
     themePreferences.includes(value as ThemePreference)
       ? null

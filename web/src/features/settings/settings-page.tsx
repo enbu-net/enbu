@@ -10,6 +10,7 @@ import { displayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import {
   clipboardClearRange,
+  sidebarWidthRange,
   fontSizeRange,
   getSettings,
   parseSettings,
@@ -32,6 +33,7 @@ export type SettingsDocument = Settings & { language: Locale };
 export function settingsDocument(settings: Settings, language: Locale): string {
   const document: SettingsDocument = {
     theme: settings.theme,
+    sidebarWidth: settings.sidebarWidth,
     language,
     fontSize: settings.fontSize,
     clipboardClearSeconds: settings.clipboardClearSeconds,
@@ -64,6 +66,13 @@ export function settingsSchema(): object {
         description: m.settings_themeDescription(),
       },
       language: { enum: [...locales], description: m.settings_languageDescription() },
+      sidebarWidth: {
+        type: "integer",
+        minimum: sidebarWidthRange.min,
+        maximum: sidebarWidthRange.max,
+        default: 248,
+        description: m.settings_sidebarWidth(),
+      },
       fontSize: {
         type: "integer",
         minimum: fontSizeRange.min,
@@ -193,6 +202,14 @@ function SettingsForm({
           </Row>
           <Row label={<Label htmlFor="language-select">{m.app_language()}</Label>}>
             <LanguageSelector label={false} />
+          </Row>
+          <Row label={<Label htmlFor="sidebar-width">{m.settings_sidebarWidth()}</Label>}>
+            <NumberSetting
+              id="sidebar-width"
+              value={settings.sidebarWidth}
+              range={sidebarWidthRange}
+              onCommit={(sidebarWidth) => updateSettings({ sidebarWidth })}
+            />
           </Row>
           <Row
             label={<Label htmlFor="font-size">{m.settings_fontSize()}</Label>}

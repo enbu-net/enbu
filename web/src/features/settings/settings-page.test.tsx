@@ -75,6 +75,7 @@ describe("settings document", () => {
     const text = settingsDocument({ ...defaultSettings, fontSize: 16 }, "ja");
     expect(JSON.parse(text)).toEqual({
       theme: "system",
+      sidebarWidth: 248,
       language: "ja",
       fontSize: 16,
       clipboardClearSeconds: 30,
@@ -96,12 +97,24 @@ describe("settings document", () => {
   it("describes every setting in the schema", () => {
     const schema = settingsSchema() as { properties: Record<string, unknown> };
     expect(Object.keys(schema.properties).sort()).toEqual(
-      ["clipboardClearSeconds", "fontSize", "language", "theme"].sort(),
+      ["clipboardClearSeconds", "fontSize", "language", "sidebarWidth", "theme"].sort(),
     );
   });
 });
 
 describe("SettingsPage", () => {
+  it("keeps sidebar width settings beside the dedicated account-addition action", async () => {
+    const addAccount = vi.fn();
+    act(() => root.render(withSession(<SettingsPage onAddAccount={addAccount} />)));
+    await settle();
+    typeInto(container.querySelector<HTMLInputElement>("#sidebar-width"), "300");
+    act(() => {
+      queryButton("Add account")?.click();
+    });
+    expect(getSettings().sidebarWidth).toBe(300);
+    expect(addAccount).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the sections and the app version", async () => {
     vi.mocked(backend).GetAppVersion.mockResolvedValueOnce("v1.2.3");
     await renderPage();
