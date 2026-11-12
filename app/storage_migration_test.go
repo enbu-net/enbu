@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
@@ -173,6 +176,95 @@ func TestMigrateStorageRefusesAnotherWorkspace(t *testing.T) {
 	next := *s.cfg
 	next.Storage.URL = "s3://new-bucket/team"
 	if err := a.migrateStorage(ctx, s, other.Storage, &next); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMigrateStorageUpdatesAncestorConfig(t *testing.T) {
+	a := migrationApp(t)
+	ctx := context.Background()
+	parent := a.RepositoryDir
+	child := filepath.Join(parent, "nested")
+	if err := os.Mkdir(child, 0700); err != nil {
+		t.Fatal(err)
+	}
+	a.RepositoryDir = child
+	s, err := a.openSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	next := *s.cfg
+	next.Storage.URL = "s3://new-bucket/team"
+	if err := a.migrateStorage(ctx, s, newMemRegistry(), &next); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.LoadProjectFrom(parent)
+	if err != nil || cfg.Storage != next.Storage {
+		t.Fatalf("parent config %+v %v", cfg, err)
+	}
+	if _, err := os.Stat(filepath.Join(child, "enbu.toml")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("created child config: %v", err)
+	}
+}
+
+func TestMigrateStorageRefusesCompactionOnlyDestination(t *testing.T) {
+	a := migrationApp(t)
+	ctx := context.Background()
+	target := newMemRegistry()
+	object := storagetest.Object(storage.KindCompaction, storage.StateScope("other", "secrets/other"), "compaction-only", "")
+	if err := target.Publish(ctx, object); err != nil {
+		t.Fatal(err)
+	}
+	s, err := a.openSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	next := *s.cfg
+	next.Storage.URL = "s3://new-bucket/team"
+	if err := a.migrateStorage(ctx, s, target, &next); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMigrateStorageRefusesUnexaminedScopeRevisions(t *testing.T) {
+	a := migrationApp(t)
+	ctx := context.Background()
+	if err := a.CreateEnvironment("prod"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(ctx, "prod", "KEY", "hidden"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("prod"))
+	delete(cfg.Environments, "prod")
+	if err := a.saveProject(cfg); err != nil {
+		t.Fatal(err)
+	}
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, bucket string) ([]digest.Digest, error) {
+		revs, err := next.Discover(ctx, kind, bucket)
+		if err != nil || kind != storage.KindState || bucket != scope {
+			return revs, err
+		}
+		prefix := make([]digest.Digest, maxResourceProbes)
+		for i := range prefix {
+			prefix[i] = digest.FromString(fmt.Sprint("missing", i))
+		}
+		return append(prefix, revs...), nil
+	}})
+	s, err := a.openSession(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	next := *s.cfg
+	next.Storage.URL = "s3://new-bucket/team"
+	if err := a.migrateStorage(ctx, s, newMemRegistry(), &next); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("got %v", err)
 	}
 }

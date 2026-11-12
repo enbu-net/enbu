@@ -201,7 +201,11 @@ func (a *App) DefaultStorageURL() (_ string, err error) {
 	if tokenErr != nil {
 		return "", apperr.Wrap(apperr.CodeNotAuthenticated, "sign in to use GHCR or pass --storage", tokenErr, nil)
 	}
-	name := strings.Trim(ghcrFolderSeparator.ReplaceAllString(strings.ToLower(filepath.Base(a.RepositoryDir)), "-"), "-")
+	dir, err := filepath.Abs(a.RepositoryDir)
+	if err != nil {
+		return "", err
+	}
+	name := strings.Trim(ghcrFolderSeparator.ReplaceAllString(strings.ToLower(filepath.Base(dir)), "-"), "-")
 	if name == "" {
 		name = "workspace"
 	}

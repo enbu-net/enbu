@@ -207,16 +207,18 @@ func (s s3) Discover(ctx context.Context, kind Kind, scope string) ([]digest.Dig
 }
 
 func (s s3) Scopes(ctx context.Context) ([]string, error) {
-	l, _ := KindState.letter()
 	base := s.key("")
 	var names []string
 	listCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + l + "-", Recursive: true}) {
-		if entry.Err != nil {
-			return nil, s3Error(entry.Err)
+	for _, kind := range []Kind{KindState, KindCompaction} {
+		letter, _ := kind.letter()
+		for entry := range s.client.ListObjects(listCtx, s.bucket, minio.ListObjectsOptions{Prefix: base + letter + "-", Recursive: true}) {
+			if entry.Err != nil {
+				return nil, s3Error(entry.Err)
+			}
+			names = append(names, strings.TrimPrefix(entry.Key, base))
 		}
-		names = append(names, strings.TrimPrefix(entry.Key, base))
 	}
 	return sortedScopes(names), ctx.Err()
 }

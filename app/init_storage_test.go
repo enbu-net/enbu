@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -141,5 +142,22 @@ func TestInitializeWithoutGitDefaultsToAccountGHCR(t *testing.T) {
 	result, err := a.InitializeRepository(context.Background(), InitOptions{})
 	if err != nil || result.Storage != want || !result.Founded {
 		t.Fatalf("got %+v, %v", result, err)
+	}
+}
+
+func TestDefaultStorageUsesWorkingDirectoryWhenRepositoryDirIsEmpty(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "My Project")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, path := range []string{"", ".", filepath.Join("..", "My Project")} {
+		a := newFreshApp(t, failingRepoDetector{})
+		a.RepositoryDir = path
+		a.TokenProvider = &staticTokenProvider{token: "tok", username: "octo"}
+		got, err := a.DefaultStorageURL()
+		if err != nil || got != "oci://ghcr.io/octo/my-project-enbu" {
+			t.Fatalf("path %q: %q %v", path, got, err)
+		}
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
 )
@@ -130,6 +131,9 @@ func (s *session) scopeResource(ctx context.Context, scope string) (string, erro
 			continue
 		}
 		return resource, nil
+	}
+	if len(revs) > maxResourceProbes {
+		return "", apperr.New(apperr.CodeInvalidArgument, "an unlisted storage scope could not be fully identified; add its environment to enbu.toml before migrating or syncing", nil)
 	}
 	return "", nil
 }

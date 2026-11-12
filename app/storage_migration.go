@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 
@@ -203,5 +204,9 @@ func (a *App) migrateStorage(ctx context.Context, s *session, target storage.Sto
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("migrating storage: %w", err)
 	}
-	return a.saveProject(current)
+	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	if err != nil {
+		return err
+	}
+	return config.SaveProjectTo(filepath.Dir(path), current)
 }
