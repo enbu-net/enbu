@@ -56,7 +56,7 @@ beforeEach(() => {
 
 async function renderPage() {
   await act(async () => {
-    root.render(<>{withSession(<SettingsPage />)}</>);
+    root.render(<>{withSession(<SettingsPage onAddAccount={() => {}} />)}</>);
   });
   await settle();
 }
@@ -103,6 +103,18 @@ describe("settings document", () => {
 });
 
 describe("SettingsPage", () => {
+  it("keeps sidebar width settings beside the dedicated account-addition action", async () => {
+    const addAccount = vi.fn();
+    act(() => root.render(withSession(<SettingsPage onAddAccount={addAccount} />)));
+    await settle();
+    typeInto(container.querySelector<HTMLInputElement>("#sidebar-width"), "300");
+    act(() => {
+      queryButton("Add account")?.click();
+    });
+    expect(getSettings().sidebarWidth).toBe(300);
+    expect(addAccount).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the sections and the app version", async () => {
     vi.mocked(backend).GetAppVersion.mockResolvedValueOnce("v1.2.3");
     await renderPage();

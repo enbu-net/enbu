@@ -7,8 +7,6 @@ import { ErrorAlert } from "../../components/error-alert";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
-import { OAuthLoginPanel } from "../auth/oauth-login-panel";
-import { useGitHubLogin } from "../auth/use-github-login";
 import { Section } from "./section";
 import { m } from "../../paraglide/messages";
 
@@ -62,7 +60,7 @@ function ProviderLabel() {
  * The accounts signed in on this device: the one in use, switching to
  * another, signing one out, and signing in with another account.
  */
-export function AccountList() {
+export function AccountList({ onAddAccount }: { onAddAccount: () => void }) {
   const { status, refresh, reloadRepo } = useSession();
   const [busy, setBusy] = useState("");
   const [error, setError] = useState<DisplayError | null>(null);
@@ -70,7 +68,6 @@ export function AccountList() {
     () => Promise.all([refresh({ force: true, invalidate: true }), reloadRepo()]),
     [refresh, reloadRepo],
   );
-  const login = useGitHubLogin(reload);
 
   const current = status?.authenticated ? (status.username ?? "") : "";
   const accounts = status?.accounts ?? [];
@@ -90,28 +87,11 @@ export function AccountList() {
     }
   }
 
-  if (login.start) {
-    return (
-      <Section title={m.settings_accounts()}>
-        <Flex justify="center" py="4">
-          <OAuthLoginPanel
-            userCode={login.start.user_code}
-            verificationURI={login.start.verification_uri}
-            status={login.status}
-            expiresIn={login.expiresIn}
-            onCancel={login.cancel}
-            onRetry={login.reset}
-          />
-        </Flex>
-      </Section>
-    );
-  }
-
   // The account in use first, then the others from the latest sign-in back.
   const others = accounts.filter((account) => account !== current).reverse();
   const rows = current ? [current, ...others] : others;
   const addAccount = (
-    <Button size="sm" variant="outline" loading={login.starting} onClick={login.begin}>
+    <Button size="sm" variant="outline" onClick={onAddAccount}>
       <Plus size={14} aria-hidden="true" />
       {m.settings_addAccount()}
     </Button>
@@ -120,7 +100,6 @@ export function AccountList() {
     <Section title={m.settings_accounts()} action={addAccount}>
       <VStack alignItems="stretch" gap="3">
         {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
-        {login.error && <ErrorAlert error={login.error} onDismiss={login.clearError} />}
         {rows.length === 0 && (
           <Text fontSize="sm" color="fg.muted">
             {m.settings_noAccounts()}

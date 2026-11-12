@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { HStack, VStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
-import { displayError, type DisplayError } from "../../lib/app-error";
+import { toDisplayError, displayError, type DisplayError } from "../../lib/app-error";
+import { copySecret } from "../../lib/clipboard";
+import { openURL } from "../../lib/platform";
 import { m } from "../../paraglide/messages";
 
 /** Where a sign-in stands, as the panel shows it. */
@@ -26,6 +29,8 @@ export function OAuthLoginPanel({
   onCancel: () => Promise<void>;
   onRetry: () => void;
 }) {
+  const [copiedCode, setCopiedCode] = useState("");
+  const [copyError, setCopyError] = useState<DisplayError | null>(null);
   const terminal = status?.state && status.state !== "pending";
 
   return (
@@ -48,6 +53,33 @@ export function OAuthLoginPanel({
           {userCode}
         </Text>
       </VStack>
+
+      <HStack justifyContent="center" flexWrap="wrap" gap="3">
+        <Button
+          variant="outline"
+          disabled={!!terminal}
+          onClick={async () => {
+            setCopyError(null);
+            try {
+              await copySecret(userCode);
+              setCopiedCode(userCode);
+            } catch (err) {
+              setCopyError(toDisplayError(err));
+            }
+          }}
+        >
+          {m.auth_copyCode()}
+        </Button>
+        <Button variant="outline" disabled={!!terminal} onClick={() => openURL(verificationURI)}>
+          {m.auth_openBrowser()}
+        </Button>
+      </HStack>
+      {copiedCode === userCode && (
+        <Text role="status" textAlign="center">
+          {m.auth_codeCopied()}
+        </Text>
+      )}
+      {copyError && <ErrorAlert error={copyError} onDismiss={() => setCopyError(null)} />}
 
       {!terminal && status?.state === "pending" && (
         <HStack justifyContent="center">

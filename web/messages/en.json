@@ -283,5 +283,9 @@
   "error_import_conflict": "{count} secrets already have different values: {keys}. Use --overwrite to replace them.",
   "error_update_unverified": "The downloaded update failed signature verification and was not installed.",
   "sidebar_resize": "Resize sidebar",
-  "settings_sidebarWidth": "Sidebar width"
+  "settings_sidebarWidth": "Sidebar width",
+  "auth_copyCode": "Copy code",
+  "auth_codeCopied": "Code copied",
+  "auth_openBrowser": "Open in browser",
+  "auth_addAccountHint": "Sign in with the GitHub account you want to add. Your browser opens automatically; you can also reopen it below."
 }

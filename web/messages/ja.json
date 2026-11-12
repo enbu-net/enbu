@@ -283,5 +283,9 @@
   "error_import_conflict": "{count} 個のシークレットに異なる値が保存されています: {keys}。置き換えるには --overwrite を指定してください。",
   "error_update_unverified": "ダウンロードした更新は署名の検証に失敗したため、インストールしていません。",
   "sidebar_resize": "サイドバーの幅を変更",
-  "settings_sidebarWidth": "サイドバーの幅"
+  "settings_sidebarWidth": "サイドバーの幅",
+  "auth_copyCode": "コードをコピー",
+  "auth_codeCopied": "コードをコピーしました",
+  "auth_openBrowser": "ブラウザで開く",
+  "auth_addAccountHint": "追加する GitHub アカウントでログインしてください。ブラウザは自動で開きます。下のボタンから開き直すこともできます。"
 }
