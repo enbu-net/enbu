@@ -6,6 +6,7 @@ import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { TomlCodeEditor } from "../../components/toml-code-editor";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
+import { writeClipboard } from "../../lib/platform";
 import { backend } from "../../lib/backend";
 import type { EnvInfo } from "../../lib/types";
 import { parseConfigDraft, serializeConfigDraft, type EnbuConfigDraft } from "./config-draft";
@@ -20,6 +21,7 @@ export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<DisplayError | null>(null);
+  const [copiedLocation, setCopiedLocation] = useState("");
   const [saveError, setSaveError] = useState<DisplayError | null>(null);
 
   const load = useCallback(async () => {
@@ -120,6 +122,57 @@ export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
         />
       ) : gui ? (
         <VStack alignItems="stretch" gap="4">
+          {gui.storage && typeof gui.storage.url === "string" && (
+            <SettingsGroup title={m.config_storageLocation()}>
+              <Box px="4" py="3">
+                <Text fontSize="sm" color="fg.muted">
+                  {m.config_storageLocationHint()}
+                </Text>
+              </Box>
+              <SettingRow label={m.init_storage()}>
+                <VStack alignItems="stretch" gap="2">
+                  <Text as="code" fontSize="sm" wordBreak="break-all">
+                    {gui.storage.url}
+                  </Text>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const url = gui.storage?.url;
+                        if (typeof url !== "string") return;
+                        await writeClipboard(url);
+                        setCopiedLocation(url);
+                      } catch (err) {
+                        setSaveError(toDisplayError(err));
+                      }
+                    }}
+                  >
+                    {m.config_copyStorageLocation()}
+                  </Button>
+                  {copiedLocation === gui.storage.url && (
+                    <Text role="status" fontSize="sm">
+                      {m.config_storageLocationCopied()}
+                    </Text>
+                  )}
+                </VStack>
+              </SettingRow>
+              {typeof gui.storage.endpoint === "string" && gui.storage.endpoint && (
+                <SettingRow label={m.init_endpoint()}>
+                  <Text as="code" fontSize="sm" wordBreak="break-all">
+                    {gui.storage.endpoint}
+                  </Text>
+                </SettingRow>
+              )}
+              {typeof gui.storage.region === "string" && gui.storage.region && (
+                <SettingRow label={m.init_region()}>
+                  <Text as="code" fontSize="sm">
+                    {gui.storage.region}
+                  </Text>
+                </SettingRow>
+              )}
+            </SettingsGroup>
+          )}
           <SettingsGroup title={m.config_general()}>
             <SettingRow label={m.config_defaultEnvironment()} htmlFor={defaultEnvId}>
               <styled.select
