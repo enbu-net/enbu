@@ -285,5 +285,9 @@
   "config_storageLocation": "Encrypted data location",
   "config_storageLocationHint": "Encrypted secrets and signed history are stored here. enbu.toml records this location.",
   "config_copyStorageLocation": "Copy storage URL",
-  "config_storageLocationCopied": "Storage URL copied"
+  "config_storageLocationCopied": "Storage URL copied",
+  "auth_copyCode": "Copy code",
+  "auth_codeCopied": "Code copied",
+  "auth_openBrowser": "Open in browser",
+  "auth_addAccountHint": "Sign in with the GitHub account you want to add. Your browser opens automatically; you can also reopen it below."
 }

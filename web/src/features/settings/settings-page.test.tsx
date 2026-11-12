@@ -56,7 +56,7 @@ beforeEach(() => {
 
 async function renderPage() {
   await act(async () => {
-    root.render(<>{withSession(<SettingsPage />)}</>);
+    root.render(<>{withSession(<SettingsPage onAddAccount={() => {}} />)}</>);
   });
   await settle();
 }

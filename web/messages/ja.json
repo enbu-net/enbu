@@ -285,5 +285,9 @@
   "config_storageLocation": "暗号化データの保存先",
   "config_storageLocationHint": "暗号化されたシークレットと署名付きの履歴はこの場所に保存されています。enbu.toml にはこの保存先が記録されています。",
   "config_copyStorageLocation": "保存先 URL をコピー",
-  "config_storageLocationCopied": "保存先 URL をコピーしました"
+  "config_storageLocationCopied": "保存先 URL をコピーしました",
+  "auth_copyCode": "コードをコピー",
+  "auth_codeCopied": "コードをコピーしました",
+  "auth_openBrowser": "ブラウザで開く",
+  "auth_addAccountHint": "追加する GitHub アカウントでログインしてください。ブラウザは自動で開きます。下のボタンから開き直すこともできます。"
 }
