@@ -143,4 +143,29 @@ describe("SettingsPage", () => {
     expect(container.querySelector("textarea")).not.toBeNull();
     log.mockRestore();
   });
+  it("keeps storage settings and the dedicated account-addition action together", async () => {
+    const addAccount = vi.fn();
+    vi.mocked(backend).ReadConfig.mockResolvedValueOnce(
+      'version = "v1alpha2"\n[storage]\nurl = "oci://ghcr.io/octo/workspace-enbu"\n',
+    );
+    act(() =>
+      root.render(
+        withSession(<SettingsPage onAddAccount={addAccount} />, {
+          repo: {
+            path: "/workspace",
+            initialized: true,
+            has_remote: false,
+            storage_configured: true,
+          },
+        }),
+      ),
+    );
+    await settle();
+    expect(container.querySelector('section[aria-label="Workspace storage"]')).not.toBeNull();
+    act(() => {
+      queryButton("Add account")?.click();
+    });
+    expect(addAccount).toHaveBeenCalledTimes(1);
+    expect(backend.StartOAuthLogin).not.toHaveBeenCalled();
+  });
 });

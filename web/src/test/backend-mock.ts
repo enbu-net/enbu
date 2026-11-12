@@ -67,6 +67,7 @@ export function createBackendMock() {
       keyring_locked: false,
     })),
     ReadConfig: vi.fn(async () => ""),
+    ChangeStorage: vi.fn(async () => {}),
     WriteConfig: vi.fn(async () => {}),
     GetAppVersion: vi.fn(async () => ""),
     CheckForUpdate: vi.fn(async () => ({ method: "development", current: "", available: false })),

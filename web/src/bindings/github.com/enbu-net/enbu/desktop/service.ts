@@ -53,6 +53,13 @@ export function CancelOAuthLogin(sessionID: string): $CancellablePromise<void> {
 }
 
 /**
+ * ChangeStorage migrates verified history before updating the shared configuration.
+ */
+export function ChangeStorage(settings: config$0.StorageConfig): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ChangeStorage", settings);
+}
+
+/**
  * CheckForUpdate compares the running app with the newest release. Without
  * an updater the app is an editor extension's, which the editor updates.
  */
@@ -295,7 +302,7 @@ export function StartOAuthLogin(): $CancellablePromise<$models.OAuthStart> {
 
 /**
  * SuggestStorage is the storage Initialize founds a workspace in when given
- * none: a GHCR repository beside the GitHub origin, as `enbu init` picks.
+ * none: GHCR beside the GitHub origin, or under the signed-in account.
  */
 export function SuggestStorage(): $CancellablePromise<string> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SuggestStorage");

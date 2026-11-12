@@ -118,7 +118,7 @@ func (m *Memory) Scopes(ctx context.Context) ([]string, error) {
 	seen := map[string]bool{}
 	var scopes []string
 	for _, o := range m.objs {
-		if o.Kind == storage.KindState && !seen[o.Scope] {
+		if (o.Kind == storage.KindState || o.Kind == storage.KindCompaction) && !seen[o.Scope] {
 			seen[o.Scope] = true
 			scopes = append(scopes, o.Scope)
 		}
@@ -265,9 +265,14 @@ func Contract(t *testing.T, s storage.Store) {
 	if revs, err := s.Discover(ctx, storage.KindState, Scope("secrets/none")); err != nil || len(revs) != 0 {
 		t.Fatalf("discover empty scope = %v %v", revs, err)
 	}
-	// Scopes lists every state scope once, and nothing of other kinds.
-	if scopes, err := s.Scopes(ctx); err != nil || !slices.Equal(scopes, sortedScopes(scope, other)) {
-		t.Fatalf("scopes = %v %v, want %v", scopes, err, sortedScopes(scope, other))
+	compactionScope := Scope("secrets/compaction-only")
+	compactionOnly := Object(storage.KindCompaction, compactionScope, "orphaned-compaction", "")
+	if err := s.Publish(ctx, compactionOnly); err != nil {
+		t.Fatal(err)
+	}
+	// Scopes includes compaction-only buckets and deduplicates state buckets.
+	if scopes, err := s.Scopes(ctx); err != nil || !slices.Equal(scopes, sortedScopes(scope, other, compactionScope)) {
+		t.Fatalf("scopes = %v %v, want %v", scopes, err, sortedScopes(scope, other, compactionScope))
 	}
 
 	// Missing and invalid references.

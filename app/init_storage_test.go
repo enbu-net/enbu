@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
@@ -103,5 +105,59 @@ func TestOCICredentialFollowsTheHost(t *testing.T) {
 	a.TokenProvider = failingTokenProvider{}
 	if _, err := a.ociCredential("ghcr.io")(ctx, "ghcr.io"); !apperr.Is(err, apperr.CodeNotAuthenticated) {
 		t.Fatalf("ghcr.io without a login: %v", err)
+	}
+}
+
+func TestDefaultStorageUsesSignedInAccountWithoutGit(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"My App", "my-app"}, {"日本語", "workspace"}, {".config", "config"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newFreshApp(t, failingRepoDetector{})
+			a.RepositoryDir = filepath.Join(t.TempDir(), tc.name)
+			a.TokenProvider = &staticTokenProvider{token: "tok", username: "Octo"}
+			got, err := a.DefaultStorageURL()
+			if want := "oci://ghcr.io/octo/" + tc.want + "-enbu"; err != nil || got != want {
+				t.Fatalf("got %q, %v; want %q", got, err, want)
+			}
+		})
+	}
+}
+
+func TestDefaultStorageWithoutGitRequiresAccount(t *testing.T) {
+	a := newFreshApp(t, failingRepoDetector{})
+	a.TokenProvider = failingTokenProvider{}
+	if _, err := a.DefaultStorageURL(); !apperr.Is(err, apperr.CodeNotAuthenticated) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestInitializeWithoutGitDefaultsToAccountGHCR(t *testing.T) {
+	a := newFreshApp(t, failingRepoDetector{})
+	a.TokenProvider = &staticTokenProvider{token: "tok", username: "octo"}
+	want, err := a.DefaultStorageURL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.InitializeRepository(context.Background(), InitOptions{})
+	if err != nil || result.Storage != want || !result.Founded {
+		t.Fatalf("got %+v, %v", result, err)
+	}
+}
+
+func TestDefaultStorageUsesWorkingDirectoryWhenRepositoryDirIsEmpty(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "My Project")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, path := range []string{"", ".", filepath.Join("..", "My Project")} {
+		a := newFreshApp(t, failingRepoDetector{})
+		a.RepositoryDir = path
+		a.TokenProvider = &staticTokenProvider{token: "tok", username: "octo"}
+		got, err := a.DefaultStorageURL()
+		if err != nil || got != "oci://ghcr.io/octo/my-project-enbu" {
+			t.Fatalf("path %q: %q %v", path, got, err)
+		}
 	}
 }

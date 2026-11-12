@@ -4,8 +4,7 @@ Identity and Storage are independent. TPM, Secure Enclave and OS keyring identit
 can each use OCI or S3 storage. The application stores signed, encrypted
 environment revisions, join requests and the signed member list through the same
 `pkg/storage.Store` interface: `Publish` a revision, `Discover` revisions, then
-`FetchHead` and `OpenPayload` to read them. `Scopes` lists the state scopes that hold
-revisions, so a membership change re-encrypts environments missing from the local
+`FetchHead` and `OpenPayload` to read them. `Scopes` lists scopes that hold state revisions or compaction records, so a membership change re-encrypts environments missing from the local
 `enbu.toml`.
 
 ## Configuration
@@ -23,18 +22,42 @@ url = "oci://registry.example.com/team/secrets"
 output = ".env"
 ```
 
-`enbu init --storage URL` persists the chosen backend. On other commands,
-`--storage URL` overrides the URL for that invocation. `identity create` and
-`identity show` use the workspace UUID in `enbu.toml`. `doctor` requires no config.
-OCI (with Docker credentials) and S3 require neither Git nor GitHub. Desktop reads the configured
-backend; configure a new backend with the CLI before opening it in Desktop.
+`enbu init` defaults to GHCR. It uses the GitHub origin when one is available;
+otherwise it uses the signed-in GitHub account and the folder name. Git is not
+required. `enbu init --storage URL` chooses a different backend. On other
+commands, `--storage URL` overrides the URL for that invocation without migrating
+data. `identity create` and `identity show` use the workspace UUID in `enbu.toml`.
+`doctor` requires no config. OCI (with Docker credentials) and S3 require neither
+Git nor GitHub. The desktop setup suggests the same GHCR location and also
+accepts OCI and S3 settings.
 
-Each storage location belongs to one workspace. Copy `enbu.toml` to share that
-workspace; a different user's `init` creates their own device Identity. A folder
-move keeps the UUID and Identity. A storage URL change is accepted only if the
-destination has the same UUID; `init` can bind an empty destination to it, but does
-not copy ciphertext or history. To move data, copy the entire storage contents.
-Old config/Identity formats have no migration or compatibility reader.
+Each storage location belongs to one workspace. Share `enbu.toml` to let another
+member join; their `init` creates their own device Identity. A folder move keeps
+the UUID and Identity. Old config/Identity formats have no migration or
+compatibility reader.
+
+### Moving storage
+
+An admin can move a workspace from Settings → Workspace storage, or use:
+
+```bash
+enbu storage                              # Show the current URL
+enbu storage migrate s3://bucket/team --region eu-west-1 --writes-paused
+```
+
+Pause writes by every member before migrating. The command copies verified
+signed history, compaction records, pending join requests, and ciphertext to an
+empty destination, reads the copied bytes back, and updates `enbu.toml` only after
+success. It never decrypts the ciphertext or deletes the source. A failed copy
+leaves the old configuration active; retrying can reuse its partial copy.
+S3 accepts `--endpoint` and `--path-style`; OCI accepts `--plain-http` for a local
+registry.
+
+Share the updated `enbu.toml` with every member before resuming writes. OCI and S3
+provide no lock across locations: a write to the old location after migration
+will not appear in the new one. Source changes observed during copying abort the
+switch, but the team must still pause writes. Editing storage through the config
+editor is refused for an established workspace; use the migration operation.
 
 ### OCI
 
@@ -51,9 +74,11 @@ The URL identifies a repository without a tag or digest. `ghcr.io` uses enbu's
 GitHub login; any other registry reads Docker credential helpers/configuration.
 
 When `init` founds a workspace without `--storage` and `enbu.toml` names none,
-it uses `oci://ghcr.io/OWNER/REPO-enbu` (lower-cased) for a GitHub `origin`
-remote and fails for any other. The result is written to `enbu.toml` and never
-derived again, so changing the remote later does not move the storage.
+it uses `oci://ghcr.io/OWNER/REPO-enbu` (lower-cased) for a usable GitHub `origin`
+remote. Otherwise, it uses the signed-in GitHub account and the normalized folder
+name, such as `oci://ghcr.io/USERNAME/FOLDER-enbu`; Git is not required. The result
+is written to `enbu.toml` and never derived again, so changing the remote or
+switching accounts later does not move the storage.
 
 ### S3
 

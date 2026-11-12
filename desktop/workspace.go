@@ -53,8 +53,13 @@ func (s *Service) WriteConfig(content string) error {
 	return s.withRepo(func() error { return s.app.WriteConfig(content) })
 }
 
+// ChangeStorage migrates verified history before updating the shared configuration.
+func (s *Service) ChangeStorage(settings config.StorageConfig) error {
+	return s.withRepo(func() error { return s.app.ChangeStorage(s.context(), settings) })
+}
+
 // SuggestStorage is the storage Initialize founds a workspace in when given
-// none: a GHCR repository beside the GitHub origin, as `enbu init` picks.
+// none: GHCR beside the GitHub origin, or under the signed-in account.
 func (s *Service) SuggestStorage() (string, error) {
 	return withRepoResult(s, func() (string, error) { return s.app.DefaultStorageURL() })
 }

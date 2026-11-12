@@ -236,6 +236,9 @@ func revFromName(prefix, name string) (digest.Digest, bool) {
 // the name is not a well-formed state revision.
 func scopeFromName(name string) (string, bool) {
 	l, _ := KindState.letter()
+	if strings.HasPrefix(name, "k-") {
+		l, _ = KindCompaction.letter()
+	}
 	rest, ok := strings.CutPrefix(name, l+"-")
 	if !ok || len(rest) <= scopeHexLen || rest[scopeHexLen] != '-' {
 		return "", false
@@ -250,7 +253,7 @@ func scopeFromName(name string) (string, bool) {
 	return scope, true
 }
 
-// sortedScopes returns the distinct state scopes among names, sorted.
+// sortedScopes returns the distinct state or compaction scopes among names, sorted.
 func sortedScopes(names []string) []string {
 	seen := map[string]bool{}
 	var out []string

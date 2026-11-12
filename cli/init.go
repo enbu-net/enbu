@@ -73,5 +73,5 @@ func ghcrAccessHint(result *app.InitResult) string {
 		return ""
 	}
 	owner, pkg, _ := strings.Cut(path, "/")
-	return fmt.Sprintf("GHCR created the package %s private to you. So that teammates can join, open it on GitHub (%s → Packages → %s → Package settings), connect this repository and turn on 'Inherit access from repository'.", pkg, owner, pkg)
+	return fmt.Sprintf("GHCR created the package %s private to you. So that teammates can join, open it on GitHub (%s → Packages → %s → Package settings), grant teammates access. If the project is on GitHub, you can connect its repository and turn on 'Inherit access from repository'.", pkg, owner, pkg)
 }

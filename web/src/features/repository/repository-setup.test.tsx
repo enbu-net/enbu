@@ -12,8 +12,6 @@ import {
   typeInto,
   withSession,
 } from "../../test/dom";
-import { openURL } from "../../lib/platform";
-import { setLocale } from "../../paraglide/runtime";
 import { RepositorySetup, setupStep } from "./repository-setup";
 
 vi.mock("../../lib/backend", async () => ({
@@ -52,19 +50,7 @@ describe("setupStep", () => {
 });
 
 describe("RepositorySetup", () => {
-  it("opens the Japanese guide in Japanese", async () => {
-    await setLocale("ja", { reload: false });
-    try {
-      act(() => root.render(withSession(<RepositorySetup step="found" />)));
-      await settle();
-      act(() => queryButton("詳しい手順を見る")?.click());
-      expect(openURL).toHaveBeenCalledWith("https://enbu.net/ja/docs/put-your-project-on-github/");
-    } finally {
-      await setLocale("en", { reload: false });
-    }
-  });
-
-  it("founds a workspace in the suggested storage and tells how to share it", async () => {
+  it("founds a workspace in suggested GHCR storage without a Git remote", async () => {
     mocked.SuggestStorage.mockResolvedValueOnce("oci://ghcr.io/octo/app-enbu");
     mocked.Initialize.mockResolvedValueOnce(
       initResult({ founded: true, storage: "oci://ghcr.io/octo/app-enbu" }),
@@ -88,13 +74,12 @@ describe("RepositorySetup", () => {
     expect(reloadRepo).toHaveBeenCalledTimes(1);
   });
 
-  it("asks for a storage, pointing to the GitHub guide, when there is no suggestion", async () => {
+  it("allows custom storage when the GHCR suggestion is unavailable", async () => {
     mocked.Initialize.mockResolvedValueOnce(initResult());
     const reloadRepo = vi.fn(async () => {});
     act(() => root.render(withSession(<RepositorySetup step="found" />, { reloadRepo })));
     await settle();
-    act(() => queryButton("Open the step-by-step guide")?.click());
-    expect(openURL).toHaveBeenCalledWith("https://enbu.net/docs/put-your-project-on-github/");
+    expect(container.textContent).toContain("Could not suggest a GHCR location");
     expect(queryButton("Found workspace")?.disabled).toBe(true);
 
     const input = container.querySelector<HTMLInputElement>("#init-storage")!;
@@ -131,7 +116,7 @@ describe("RepositorySetup", () => {
     act(() => root.render(withSession(<RepositorySetup step="found" />, { repo })));
     await settle();
     expect(queryButton("Open the step-by-step guide")).toBeNull();
-    expect(container.textContent).toContain("not one GHCR accepts");
+    expect(container.textContent).toContain("Could not suggest a GHCR location");
   });
 
   it("joins the workspace in enbu.toml and reloads", async () => {

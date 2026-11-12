@@ -40,6 +40,7 @@ Named clock/device journeys and the scenario catalog use a stable test-name hash
 | `DeleteEnvironment` with purge, `PurgeIncarnation` | environments, purge operation fault matrix; orphan incarnation reclamation and restartable partial deletion; only admin may delete. |
 | `ListHistory`, `DiffHistory`, `RestoreHistory`, `CompactHistory` | history, delete-faults; expected diff and restored state; compaction preserves current content and checkpoints; faults at every observed external call. Existing compaction scenarios cover old offline branches and repeated compactions. |
 | `PullSecretsToFile`, `PullSecretsToFileWith` | file-output; dotenv output, preservation of local-only variables, deletion with and without markers, repeat pulls, unreadable historical revisions, and explicit replace; file-pull faults verify the original output remains intact on failure and correct after recovery. |
+| `ChangeStorage` | public-surface; unchanged destination is idempotent and an invalid destination leaves configuration unchanged. Copy, retry, history, and source-change behavior is covered by app migration tests. |
 | `ReadConfig`, `WriteConfig` | file-output, public-surface, local-corruption; protected workspace ID, malformed personal state, cache damage. No transport calls; storage scheduling is inapplicable. |
 
 The catalog test fails when an exported App operation has no driver or inventory

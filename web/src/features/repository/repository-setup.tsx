@@ -6,11 +6,9 @@ import { ErrorAlert } from "../../components/error-alert";
 import { PageCenter } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import { openURL } from "../../lib/platform";
 import { useSession } from "../../lib/session";
 import type { InitResult, RepoInfo, StorageConfig } from "../../lib/types";
 import { m } from "../../paraglide/messages";
-import { getLocale } from "../../paraglide/runtime";
 
 /**
  * The step a selected folder still needs before enbu can manage it, if any:
@@ -152,12 +150,10 @@ function FoundWorkspace({
   action: ReturnType<typeof useAction>;
   onFound: (storage: StorageConfig) => Promise<void>;
 }) {
-  const { repo, reloadRepo } = useSession();
+  const { reloadRepo } = useSession();
   const [storage, setStorage] = useState<StorageConfig>(noStorage);
-  // null while asking, "" when there is none: no GitHub origin, or one whose
-  // name GHCR does not accept.
+  // null while asking, "" when no signed-in account can supply a default.
   const [suggested, setSuggested] = useState<string | null>(null);
-  const hasRemote = repo?.has_remote ?? false;
   const set = (change: Partial<StorageConfig>) =>
     setStorage((current) => ({ ...current, ...change }));
 
@@ -234,17 +230,9 @@ function FoundWorkspace({
           onChange={(plain_http) => set({ plain_http })}
         />
       )}
-      {suggested === "" && hasRemote && <Text fontSize="sm">{m.init_noGhcrName()}</Text>}
-      {suggested === "" && !hasRemote && (
+      {suggested === "" && (
         <VStack alignItems="stretch" gap="2">
           <Text fontSize="sm">{m.init_noSuggestion()}</Text>
-          <Button
-            variant="outline"
-            borderColor="border.strong"
-            onClick={() => openURL(publishGuideURL())}
-          >
-            {m.publish_openGuide()}
-          </Button>
           <Button
             variant="outline"
             loading={action.loading}
@@ -321,12 +309,6 @@ function InitDone({ result, onContinue }: { result: InitResult; onContinue: () =
       </Button>
     </SetupScreen>
   );
-}
-
-/** The guide on enbu's website to putting a folder on GitHub, in the app's language. */
-export function publishGuideURL() {
-  const prefix = getLocale() === "ja" ? "/ja" : "";
-  return `https://enbu.net${prefix}/docs/put-your-project-on-github/`;
 }
 
 function Command({ children }: { children: string }) {

@@ -1,3 +1,4 @@
+import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import type {
   UpdateMethod,
   UpdateStatus,
@@ -432,6 +433,11 @@ export const mockBackend: Backend = {
   },
   async ReadConfig(): Promise<string> {
     return mockConfig;
+  },
+  async ChangeStorage(settings: StorageConfig): Promise<void> {
+    const config = parseToml(mockConfig);
+    config.storage = { ...settings };
+    mockConfig = stringifyToml(config);
   },
   async WriteConfig(content: string): Promise<void> {
     mockConfig = content;
