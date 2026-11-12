@@ -13,7 +13,7 @@ setupDom();
 
 async function renderList(session: Partial<Session>) {
   await act(async () => {
-    root.render(<>{withSession(<AccountList />, session)}</>);
+    root.render(<>{withSession(<AccountList onAddAccount={() => {}} />, session)}</>);
   });
   await settle();
 }
@@ -25,6 +25,14 @@ function rows() {
 }
 
 describe("AccountList", () => {
+  it("opens account addition without starting login inside settings", async () => {
+    const add = vi.fn();
+    act(() => root.render(withSession(<AccountList onAddAccount={add} />)));
+    await settle();
+    act(() => queryButton("Add account")?.click());
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(backend.StartOAuthLogin).not.toHaveBeenCalled();
+  });
   it("lists the accounts and marks the one in use", async () => {
     await renderList({
       status: {
