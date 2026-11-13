@@ -48,7 +48,7 @@ export function SecretRow({
       display="grid"
       gridTemplateColumns={{
         base: "minmax(0,1fr) auto",
-        md: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
+        lg: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
       }}
       alignItems="center"
       gap="3"
@@ -62,8 +62,8 @@ export function SecretRow({
       <HStack
         minW="0"
         gap="1"
-        gridColumn={{ base: "1", md: "auto" }}
-        gridRow={{ base: "1", md: "auto" }}
+        gridColumn={{ base: "1", lg: "auto" }}
+        gridRow={{ base: "1", lg: "auto" }}
       >
         <Text flex="1" minW="0" fontFamily="mono" fontSize="sm" fontWeight="bold" truncate>
           {secretKey}
@@ -95,8 +95,8 @@ export function SecretRow({
         type={visible ? "text" : "password"}
         h="auto"
         minH="38px"
-        gridColumn={{ base: "1 / -1", md: "auto" }}
-        gridRow={{ base: "2", md: "auto" }}
+        gridColumn={{ base: "1 / -1", lg: "auto" }}
+        gridRow={{ base: "2", lg: "auto" }}
         borderColor="border.default"
         borderRadius="md"
         onChange={(e) => setEditValue(e.target.value)}
@@ -104,7 +104,7 @@ export function SecretRow({
           if (e.target.value !== secretValue) await onEdit(e.target.value);
         }}
       />
-      <HStack gap="1" gridColumn={{ base: "2", md: "auto" }} gridRow={{ base: "1", md: "auto" }}>
+      <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
         <Button
           variant="ghost"
           w="34px"

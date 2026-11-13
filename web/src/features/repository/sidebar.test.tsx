@@ -106,6 +106,27 @@ describe("RepositoryContextMenu", () => {
     expect(container.querySelector("[popover]")).toBeNull();
   });
 
+  it("opens a fresh menu when right-clicking another repository", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a"), repoInfo("/b")]);
+    await act(async () => root.render(withSession(<Sidebar />)));
+    const rows = container.querySelectorAll<HTMLButtonElement>("button[data-repository-path]");
+    act(() => {
+      rows[0].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    const first = container.querySelector<HTMLElement>("[popover]");
+    act(() => {
+      rows[1].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }),
+      );
+    });
+    const second = container.querySelector<HTMLElement>("[popover]");
+    expect(second).not.toBe(first);
+    expect(second?.dataset.popoverOpen).toBe("true");
+    expect(second?.style.left).toBe("40px");
+  });
+
   it("removes a repository from the right-click menu", () => {
     const onRemove = vi.fn();
     act(() => {

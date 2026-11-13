@@ -179,7 +179,8 @@ func TestReportIncludesSafeHTTPDiagnostics(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
 		t.Fatal(err)
 	}
-	if record["http_status"] != float64(http.StatusForbidden) || record["cause_type"] == "" {
+	causeType, causeTypeOK := record["cause_type"].(string)
+	if record["http_status"] != float64(http.StatusForbidden) || !causeTypeOK || causeType == "" {
 		t.Fatalf("missing safe HTTP diagnostics: %s", out.String())
 	}
 	if strings.Contains(out.String(), "secret-value") || strings.Contains(out.String(), "/secret-path") {

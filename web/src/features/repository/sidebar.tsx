@@ -63,10 +63,12 @@ export function Sidebar({
   const [repositoryPendingRemoval, setRepositoryPendingRemoval] = useState<RepoInfo | null>(null);
   const removeTriggerRef = useRef<HTMLElement>(null);
   const [contextMenu, setContextMenu] = useState<{
+    id: number;
     repo: RepoInfo;
     x: number;
     y: number;
   } | null>(null);
+  const nextContextMenuId = useRef(0);
 
   const loadRepos = useCallback(async () => {
     try {
@@ -253,6 +255,7 @@ export function Sidebar({
                 const x = keyboard ? rect.left + 16 : event.clientX;
                 const y = keyboard ? rect.bottom : event.clientY;
                 setContextMenu({
+                  id: ++nextContextMenuId.current,
                   repo: item,
                   x: Math.max(8, Math.min(x, window.innerWidth - 180)),
                   y: Math.max(8, Math.min(y, window.innerHeight - 56)),
@@ -265,11 +268,13 @@ export function Sidebar({
               <Text
                 minW="0"
                 flex="1"
+                direction="rtl"
+                textAlign="left"
                 fontSize="sm"
                 fontWeight={isActive ? "semibold" : "normal"}
                 truncate
               >
-                {item.owner ? `${item.owner}/${item.repo}` : item.path}
+                <span dir="ltr">{item.owner ? `${item.owner}/${item.repo}` : item.path}</span>
               </Text>
             </styled.button>
           );
@@ -277,6 +282,7 @@ export function Sidebar({
       </VStack>
       {contextMenu && (
         <RepositoryContextMenu
+          key={contextMenu.id}
           x={contextMenu.x}
           y={contextMenu.y}
           removing={removingRepository}
