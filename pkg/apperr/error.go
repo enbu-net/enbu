@@ -22,6 +22,7 @@ const (
 	CodeEnvironmentExists  Code = "environment_already_exists"
 	CodeSecretMissing      Code = "secret_not_found"
 	CodeSecretExists       Code = "secret_already_exists"
+	CodeSecretNameInvalid  Code = "secret_name_invalid"
 	CodeImportConflict     Code = "import_conflict"
 	CodeArtifactNotFound   Code = "artifact_not_found"
 	CodeConflict           Code = "conflict"
@@ -174,7 +175,7 @@ func ExitCode(err error) int {
 		return exit.Code
 	}
 	switch CodeOf(err) {
-	case CodeInvalidArgument, CodeOutputUnreadable:
+	case CodeInvalidArgument, CodeSecretNameInvalid, CodeOutputUnreadable:
 		return 2
 	case CodeNotAuthenticated, CodeAccessDenied:
 		return 3

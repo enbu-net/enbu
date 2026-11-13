@@ -277,6 +277,7 @@
   "error_environment_already_exists": "環境「{name}」はすでに存在します。",
   "error_secret_not_found": "シークレット「{key}」は存在しません。",
   "error_secret_already_exists": "シークレット「{key}」はすでに存在します。",
+  "error_secret_name_invalid": "シークレット名「{key}」は .env に書き出せません。英字または _ で始まる英数字と _ の名前を使ってください。保存済みの場合は同じ値を有効な名前で追加してから、古い名前を削除してください。",
   "error_artifact_not_found": "対象のシークレットが見つかりません。",
   "error_conflict": "リモートのシークレットが変更されました。もう一度お試しください。",
   "error_unavailable": "必要なサービスを利用できません。",
