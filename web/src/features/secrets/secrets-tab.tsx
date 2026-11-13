@@ -175,7 +175,7 @@ export function SecretsTab({
         <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
           {secrets?.secrets.map((secret) => (
             <SecretRow
-              key={secret.key}
+              key={JSON.stringify([env, secret.key])}
               secretKey={secret.key}
               secretValue={secret.value}
               onEdit={async (value) => {
