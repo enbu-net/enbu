@@ -47,13 +47,16 @@ export function Sidebar({
 }) {
   const { repo, setRepo } = useSession();
   const { sidebarWidth } = useSettings();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const maxVisibleWidth = Math.min(
+    sidebarWidthRange.max,
+    Math.max(sidebarWidthRange.min, viewportWidth - 520),
+  );
+  const visibleWidth = Math.min(sidebarWidth, maxVisibleWidth);
   const sidebar = useRef<HTMLElement>(null);
   const resize = (width: number) =>
     updateSettings({
-      sidebarWidth: Math.min(
-        sidebarWidthRange.max,
-        Math.max(sidebarWidthRange.min, Math.round(width)),
-      ),
+      sidebarWidth: Math.min(maxVisibleWidth, Math.max(sidebarWidthRange.min, Math.round(width))),
     });
   const activePath = repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -69,6 +72,12 @@ export function Sidebar({
     y: number;
   } | null>(null);
   const nextContextMenuId = useRef(0);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const loadRepos = useCallback(async () => {
     try {
@@ -119,7 +128,7 @@ export function Sidebar({
       aria-label={m.sidebar_navigation()}
       id="repository-sidebar"
       ref={sidebar}
-      style={{ width: sidebarWidth }}
+      style={{ width: visibleWidth }}
       h="calc(100vh - 72px)"
       position="sticky"
       top="72px"
@@ -137,8 +146,8 @@ export function Sidebar({
         aria-label={m.sidebar_resize()}
         aria-controls="repository-sidebar"
         aria-valuemin={sidebarWidthRange.min}
-        aria-valuemax={sidebarWidthRange.max}
-        aria-valuenow={sidebarWidth}
+        aria-valuemax={maxVisibleWidth}
+        aria-valuenow={visibleWidth}
         tabIndex={0}
         position="absolute"
         right="-4px"
@@ -166,10 +175,10 @@ export function Sidebar({
         onDoubleClick={() => resize(defaultSettings.sidebarWidth)}
         onKeyDown={(event) => {
           const values: Record<string, number> = {
-            ArrowLeft: sidebarWidth - 10,
-            ArrowRight: sidebarWidth + 10,
+            ArrowLeft: visibleWidth - 10,
+            ArrowRight: visibleWidth + 10,
             Home: sidebarWidthRange.min,
-            End: sidebarWidthRange.max,
+            End: maxVisibleWidth,
           };
           const width = values[event.key];
           if (width === undefined) return;
