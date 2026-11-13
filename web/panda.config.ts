@@ -119,7 +119,7 @@ export default defineConfig({
       semanticTokens: {
         shadows: {
           app: { value: { _light: "0 24px 80px rgba(15, 23, 42, 0.12)", _dark: "0 24px 80px rgba(0, 0, 0, 0.5)" } },
-          dropdown: { value: { _light: "0 16px 40px rgba(31, 35, 40, 0.16)", _dark: "0 16px 40px rgba(0, 0, 0, 0.56)" } },
+          dropdown: { value: { _light: "0 4px 12px rgba(31, 35, 40, 0.10)", _dark: "0 4px 12px rgba(0, 0, 0, 0.32)" } },
         },
         colors: {
           bg: {
