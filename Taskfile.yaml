@@ -362,7 +362,7 @@ tasks:
     dir: vscode
     cmds:
       - task: vp/env
-      - vp install --frozen-lockfile
+      - pnpm install --frozen-lockfile
 
   vscode/build/frontend:
     internal: true
@@ -646,7 +646,7 @@ tasks:
     dir: web
     cmds:
       - task: vp/env
-      - vp install --frozen-lockfile
+      - pnpm install --frozen-lockfile
 
   gui/build/frontend:
     internal: true

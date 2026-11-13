@@ -50,7 +50,7 @@ export function DashboardTab({
       <Box as="span" aria-hidden="true">
         {icon}
       </Box>
-      <Text as="span" display={{ base: "none", sm: "inline" }} fontSize="inherit">
+      <Text as="span" display={{ base: "none", lg: "inline" }} fontSize="inherit">
         {label}
       </Text>
     </Tabs.Trigger>

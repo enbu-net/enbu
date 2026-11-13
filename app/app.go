@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"oras.land/oras-go/v2/registry/remote/auth"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 
 	enbuauth "github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
@@ -177,6 +179,7 @@ func (a *App) workspaceStorage(ctx context.Context, cfg *config.ProjectConfig) (
 }
 
 func storageError(err error) error {
+	var response *errcode.ErrorResponse
 	switch {
 	case errors.Is(err, storage.ErrNotFound):
 		return apperr.Wrap(apperr.CodeArtifactNotFound, "storage object not found", err, nil)
@@ -184,6 +187,8 @@ func storageError(err error) error {
 		return apperr.Wrap(apperr.CodeUntrusted, "stored data does not match its name", err, nil)
 	case errors.Is(err, storage.ErrUnsupported):
 		return apperr.Wrap(apperr.CodeInvalidArgument, "this storage cannot delete stored revisions", err, nil)
+	case errors.As(err, &response) && response.StatusCode == http.StatusForbidden:
+		return apperr.Wrap(apperr.CodeAccessDenied, "storage access was denied", err, nil)
 	default:
 		return err
 	}

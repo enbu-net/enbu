@@ -49,6 +49,11 @@ func TestInitializeReusesSavedIdentityAfterRegistrationFailure(t *testing.T) {
 	}
 	if _, err := a.InitializeRepository(context.Background(), InitOptions{}); err == nil {
 		t.Fatal("registration should fail")
+	} else {
+		var staged interface{ DiagnosticStage() string }
+		if !errors.As(err, &staged) || staged.DiagnosticStage() != "init.load_control" {
+			t.Fatalf("registration error missing diagnostic stage: %v", err)
+		}
 	}
 	saved, err := manager.Info(testWorkspaceID)
 	if err != nil {

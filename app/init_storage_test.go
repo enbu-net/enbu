@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,7 +12,16 @@ import (
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
+
+func TestStorageErrorClassifiesRegistryForbidden(t *testing.T) {
+	cause := &errcode.ErrorResponse{Method: "GET", URL: &url.URL{Scheme: "https", Host: "ghcr.io"}, StatusCode: http.StatusForbidden}
+	err := storageError(cause)
+	if !apperr.Is(err, apperr.CodeAccessDenied) || !errors.Is(err, cause) {
+		t.Fatalf("403 must preserve cause and report access denied: %v", err)
+	}
+}
 
 type failingRepoDetector struct{}
 

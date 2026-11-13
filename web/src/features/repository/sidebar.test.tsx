@@ -1,4 +1,4 @@
-import { defaultSettings, getSettings, loadSettings } from "../../lib/settings";
+import { defaultSettings, getSettings, loadSettings, updateSettings } from "../../lib/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
@@ -32,6 +32,27 @@ function repoInfo(path: string, owner = "", repo = ""): RepoInfo {
 }
 
 describe("sidebar resizing", () => {
+  it("keeps room for the content when a saved sidebar width is wider than a half-screen window", async () => {
+    const originalWidth = window.innerWidth;
+    try {
+      updateSettings({ sidebarWidth: 420 });
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 800 });
+      act(() => root.render(withSession(<Sidebar />)));
+      await settle();
+      const sidebar = container.querySelector<HTMLElement>("#repository-sidebar")!;
+      expect(sidebar.style.width).toBe("280px");
+      expect(container.querySelector('[role="separator"]')?.getAttribute("aria-valuenow")).toBe(
+        "280",
+      );
+      expect(getSettings().sidebarWidth).toBe(420);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    }
+  });
+
   it("resizes with the keyboard, clamps the range and persists the width", async () => {
     loadSettings();
     act(() => root.render(withSession(<Sidebar />)));
@@ -85,6 +106,48 @@ describe("sidebar resizing", () => {
 });
 
 describe("RepositoryContextMenu", () => {
+  it("keeps the menu through the opening button release and dismisses on the next outside press", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    await act(async () => root.render(withSession(<Sidebar />)));
+    const row = container.querySelector<HTMLButtonElement>("button[data-repository-path]");
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    const menu = container.querySelector<HTMLElement>("[popover]");
+    expect(menu?.getAttribute("popover")).toBe("manual");
+    act(() => {
+      document.body.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(menu?.dataset.popoverOpen).toBe("true");
+    act(() => {
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(container.querySelector("[popover]")).toBeNull();
+  });
+
+  it("opens a fresh menu when right-clicking another repository", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a"), repoInfo("/b")]);
+    await act(async () => root.render(withSession(<Sidebar />)));
+    const rows = container.querySelectorAll<HTMLButtonElement>("button[data-repository-path]");
+    act(() => {
+      rows[0].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    const first = container.querySelector<HTMLElement>("[popover]");
+    act(() => {
+      rows[1].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }),
+      );
+    });
+    const second = container.querySelector<HTMLElement>("[popover]");
+    expect(second).not.toBe(first);
+    expect(second?.dataset.popoverOpen).toBe("true");
+    expect(second?.style.left).toBe("40px");
+  });
+
   it("removes a repository from the right-click menu", () => {
     const onRemove = vi.fn();
     act(() => {
@@ -211,8 +274,10 @@ describe("accessibility: sidebar keyboard", () => {
     expect(menu?.style.left).toBe("16px");
     expect(document.activeElement?.textContent).toContain("Remove");
 
-    // Esc (the browser hides the popover) closes it and returns focus to the row.
-    act(() => menu?.hidePopover());
+    // Escape closes the manual popover and returns focus to the row.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
     expect(container.querySelector("[popover]")).toBeNull();
     expect(document.activeElement).toBe(row);
   });

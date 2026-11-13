@@ -47,13 +47,16 @@ export function Sidebar({
 }) {
   const { repo, setRepo } = useSession();
   const { sidebarWidth } = useSettings();
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const maxVisibleWidth = Math.min(
+    sidebarWidthRange.max,
+    Math.max(sidebarWidthRange.min, viewportWidth - 520),
+  );
+  const visibleWidth = Math.min(sidebarWidth, maxVisibleWidth);
   const sidebar = useRef<HTMLElement>(null);
   const resize = (width: number) =>
     updateSettings({
-      sidebarWidth: Math.min(
-        sidebarWidthRange.max,
-        Math.max(sidebarWidthRange.min, Math.round(width)),
-      ),
+      sidebarWidth: Math.min(maxVisibleWidth, Math.max(sidebarWidthRange.min, Math.round(width))),
     });
   const activePath = repo?.path ?? "";
   const [repos, setRepos] = useState<RepoInfo[]>([]);
@@ -63,10 +66,18 @@ export function Sidebar({
   const [repositoryPendingRemoval, setRepositoryPendingRemoval] = useState<RepoInfo | null>(null);
   const removeTriggerRef = useRef<HTMLElement>(null);
   const [contextMenu, setContextMenu] = useState<{
+    id: number;
     repo: RepoInfo;
     x: number;
     y: number;
   } | null>(null);
+  const nextContextMenuId = useRef(0);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const loadRepos = useCallback(async () => {
     try {
@@ -90,8 +101,7 @@ export function Sidebar({
     void loadRepos();
   }, [loadRepos, activePath]);
 
-  // The menu is a popover, which closes itself on Esc and outside clicks; it
-  // sits at the pointer, so it closes when the page under it moves.
+  // The menu sits at the pointer, so it closes when the page under it moves.
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
@@ -118,7 +128,7 @@ export function Sidebar({
       aria-label={m.sidebar_navigation()}
       id="repository-sidebar"
       ref={sidebar}
-      style={{ width: sidebarWidth }}
+      style={{ width: visibleWidth }}
       h="calc(100vh - 72px)"
       position="sticky"
       top="72px"
@@ -136,8 +146,8 @@ export function Sidebar({
         aria-label={m.sidebar_resize()}
         aria-controls="repository-sidebar"
         aria-valuemin={sidebarWidthRange.min}
-        aria-valuemax={sidebarWidthRange.max}
-        aria-valuenow={sidebarWidth}
+        aria-valuemax={maxVisibleWidth}
+        aria-valuenow={visibleWidth}
         tabIndex={0}
         position="absolute"
         right="-4px"
@@ -165,10 +175,10 @@ export function Sidebar({
         onDoubleClick={() => resize(defaultSettings.sidebarWidth)}
         onKeyDown={(event) => {
           const values: Record<string, number> = {
-            ArrowLeft: sidebarWidth - 10,
-            ArrowRight: sidebarWidth + 10,
+            ArrowLeft: visibleWidth - 10,
+            ArrowRight: visibleWidth + 10,
             Home: sidebarWidthRange.min,
-            End: sidebarWidthRange.max,
+            End: maxVisibleWidth,
           };
           const width = values[event.key];
           if (width === undefined) return;
@@ -254,6 +264,7 @@ export function Sidebar({
                 const x = keyboard ? rect.left + 16 : event.clientX;
                 const y = keyboard ? rect.bottom : event.clientY;
                 setContextMenu({
+                  id: ++nextContextMenuId.current,
                   repo: item,
                   x: Math.max(8, Math.min(x, window.innerWidth - 180)),
                   y: Math.max(8, Math.min(y, window.innerHeight - 56)),
@@ -266,11 +277,13 @@ export function Sidebar({
               <Text
                 minW="0"
                 flex="1"
+                direction="rtl"
+                textAlign="left"
                 fontSize="sm"
                 fontWeight={isActive ? "semibold" : "normal"}
                 truncate
               >
-                {item.owner ? `${item.owner}/${item.repo}` : item.path}
+                <span dir="ltr">{item.owner ? `${item.owner}/${item.repo}` : item.path}</span>
               </Text>
             </styled.button>
           );
@@ -278,6 +291,7 @@ export function Sidebar({
       </VStack>
       {contextMenu && (
         <RepositoryContextMenu
+          key={contextMenu.id}
           x={contextMenu.x}
           y={contextMenu.y}
           removing={removingRepository}
@@ -346,9 +360,9 @@ export function Sidebar({
 }
 
 /**
- * The right-click menu of a repository: a popover at the pointer, so the
- * browser closes it on Esc and outside clicks. It opens from the context menu
- * key and Shift+F10 too, with focus on its first item.
+ * The right-click menu of a repository. A manual popover stays open when
+ * WebKit releases the right button after contextmenu; later outside presses
+ * and Escape dismiss it. The context menu key and Shift+F10 also open it.
  */
 export function RepositoryContextMenu({
   x,
@@ -373,8 +387,6 @@ export function RepositoryContextMenu({
     const menu = ref.current;
     if (!menu) return;
     const state = { shown: true };
-    menu.showPopover();
-    menu.querySelector("button")?.focus();
     const onToggle = (event: Event) => {
       if ((event as ToggleEvent).newState !== "closed") return;
       state.shown = false;
@@ -383,9 +395,23 @@ export function RepositoryContextMenu({
       }
       handleDismiss();
     };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menu.contains(event.target as Node)) menu.hidePopover();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      menu.hidePopover();
+    };
     menu.addEventListener("toggle", onToggle);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    menu.showPopover();
+    menu.querySelector("button")?.focus();
     return () => {
       menu.removeEventListener("toggle", onToggle);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
       if (state.shown) menu.hidePopover();
     };
   }, [returnFocusRef]);
@@ -393,7 +419,7 @@ export function RepositoryContextMenu({
   return (
     <Box
       ref={ref}
-      popover="auto"
+      popover="manual"
       aria-label={m.sidebar_repositoryOptions()}
       position="fixed"
       inset="auto"

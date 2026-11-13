@@ -294,7 +294,7 @@ function AddSecretForm({
       display="grid"
       gridTemplateColumns={{
         base: "1fr",
-        md: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
+        lg: "minmax(160px,.8fr) minmax(220px,1.2fr) auto",
       }}
       gap="2"
       alignItems="end"

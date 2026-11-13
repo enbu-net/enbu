@@ -233,8 +233,8 @@ func run() error {
 		Title:  "enbu",
 		Width:  1100,
 		Height: 760,
-		// Wide enough for the repository sidebar, which shows from 768px.
-		MinWidth:         800,
+		// The sidebar hides below 768px, so half-screen windows can shrink further.
+		MinWidth:         640,
 		MinHeight:        520,
 		URL:              "/",
 		BackgroundColour: application.NewRGB(0xfa, 0xfa, 0xfa),
