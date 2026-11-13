@@ -90,8 +90,7 @@ export function Sidebar({
     void loadRepos();
   }, [loadRepos, activePath]);
 
-  // The menu is a popover, which closes itself on Esc and outside clicks; it
-  // sits at the pointer, so it closes when the page under it moves.
+  // The menu sits at the pointer, so it closes when the page under it moves.
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
@@ -346,9 +345,9 @@ export function Sidebar({
 }
 
 /**
- * The right-click menu of a repository: a popover at the pointer, so the
- * browser closes it on Esc and outside clicks. It opens from the context menu
- * key and Shift+F10 too, with focus on its first item.
+ * The right-click menu of a repository. A manual popover stays open when
+ * WebKit releases the right button after contextmenu; later outside presses
+ * and Escape dismiss it. The context menu key and Shift+F10 also open it.
  */
 export function RepositoryContextMenu({
   x,
@@ -373,8 +372,6 @@ export function RepositoryContextMenu({
     const menu = ref.current;
     if (!menu) return;
     const state = { shown: true };
-    menu.showPopover();
-    menu.querySelector("button")?.focus();
     const onToggle = (event: Event) => {
       if ((event as ToggleEvent).newState !== "closed") return;
       state.shown = false;
@@ -383,9 +380,23 @@ export function RepositoryContextMenu({
       }
       handleDismiss();
     };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!menu.contains(event.target as Node)) menu.hidePopover();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      menu.hidePopover();
+    };
     menu.addEventListener("toggle", onToggle);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    menu.showPopover();
+    menu.querySelector("button")?.focus();
     return () => {
       menu.removeEventListener("toggle", onToggle);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
       if (state.shown) menu.hidePopover();
     };
   }, [returnFocusRef]);
@@ -393,7 +404,7 @@ export function RepositoryContextMenu({
   return (
     <Box
       ref={ref}
-      popover="auto"
+      popover="manual"
       aria-label={m.sidebar_repositoryOptions()}
       position="fixed"
       inset="auto"

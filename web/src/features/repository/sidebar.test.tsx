@@ -85,6 +85,27 @@ describe("sidebar resizing", () => {
 });
 
 describe("RepositoryContextMenu", () => {
+  it("keeps the menu through the opening button release and dismisses on the next outside press", async () => {
+    vi.mocked(backend).ListRepositories.mockResolvedValue([repoInfo("/a", "acme", "app")]);
+    await act(async () => root.render(withSession(<Sidebar />)));
+    const row = container.querySelector<HTMLButtonElement>("button[data-repository-path]");
+    act(() => {
+      row?.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 }),
+      );
+    });
+    const menu = container.querySelector<HTMLElement>("[popover]");
+    expect(menu?.getAttribute("popover")).toBe("manual");
+    act(() => {
+      document.body.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    });
+    expect(menu?.dataset.popoverOpen).toBe("true");
+    act(() => {
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(container.querySelector("[popover]")).toBeNull();
+  });
+
   it("removes a repository from the right-click menu", () => {
     const onRemove = vi.fn();
     act(() => {
@@ -211,8 +232,10 @@ describe("accessibility: sidebar keyboard", () => {
     expect(menu?.style.left).toBe("16px");
     expect(document.activeElement?.textContent).toContain("Remove");
 
-    // Esc (the browser hides the popover) closes it and returns focus to the row.
-    act(() => menu?.hidePopover());
+    // Escape closes the manual popover and returns focus to the row.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
     expect(container.querySelector("[popover]")).toBeNull();
     expect(document.activeElement).toBe(row);
   });

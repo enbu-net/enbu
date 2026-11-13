@@ -3,12 +3,17 @@ package apperr
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/newmo-oss/ergo"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+
+	"oras.land/oras-go/v2/registry/remote/errcode"
 )
 
 func TestErrorWrapPreservesCauseAndCode(t *testing.T) {
@@ -154,6 +159,41 @@ func TestReportDoesNotLogSecretDetails(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	Report(context.Background(), "test", New(CodeInternal, "secret-value", Params{"token": "secret-value"}))
 	if strings.Contains(out.String(), "secret-value") || !strings.Contains(out.String(), "error_test.go:") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestReportIncludesSafeHTTPDiagnostics(t *testing.T) {
+	var out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	response := &errcode.ErrorResponse{
+		Method:     "GET",
+		URL:        &url.URL{Scheme: "https", Host: "ghcr.io", Path: "/secret-path", RawQuery: "token=secret-value"},
+		StatusCode: http.StatusForbidden,
+		Errors:     errcode.Errors{{Code: "DENIED", Message: "secret-value"}},
+	}
+	Report(context.Background(), "desktop", fmt.Errorf("secret-value: %w", response))
+	var record map[string]any
+	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	if record["http_status"] != float64(http.StatusForbidden) || record["cause_type"] == "" {
+		t.Fatalf("missing safe HTTP diagnostics: %s", out.String())
+	}
+	if strings.Contains(out.String(), "secret-value") || strings.Contains(out.String(), "/secret-path") {
+		t.Fatalf("logged sensitive error details: %s", out.String())
+	}
+}
+
+func TestReportIncludesDiagnosticStage(t *testing.T) {
+	var out bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	Report(context.Background(), "desktop", WithStage("init.ensure_control", errors.New("secret-value")))
+	if !strings.Contains(out.String(), `"stage":"init.ensure_control"`) || strings.Contains(out.String(), "secret-value") {
 		t.Fatal(out.String())
 	}
 }
