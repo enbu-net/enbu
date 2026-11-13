@@ -66,3 +66,23 @@ func TestDeleteEnvironmentRejectsUnknownName(t *testing.T) {
 		t.Fatalf("deleted an unknown environment: %+v %v", deleted, err)
 	}
 }
+
+func TestDemoVisibleEnvironmentsFiltersList(t *testing.T) {
+	f := newMembersFixture(t)
+	for _, name := range []string{"development", "staging", "production"} {
+		if err := f.alice.CreateEnvironment(name); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := f.alice.ListEnvironments()
+	if err != nil || len(all) != 4 {
+		t.Fatalf("unfiltered environments: %+v %v", all, err)
+	}
+
+	t.Setenv("ENBU_DEMO_VISIBLE_ENVS", "development, staging")
+	visible, err := f.alice.ListEnvironments()
+	if err != nil || len(visible) != 2 || visible[0].Name != "development" || visible[1].Name != "staging" {
+		t.Fatalf("demo environments: %+v %v", visible, err)
+	}
+}

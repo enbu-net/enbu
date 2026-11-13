@@ -8,6 +8,7 @@ import {
   queryInput,
   root,
   setupDom,
+  typeInto,
 } from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
@@ -86,20 +87,37 @@ describe("SecretRow", () => {
   it("copies the secret key and value independently", async () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     await act(async () => {
-      queryButton("Copy key")?.click();
+      queryButton("API_KEY")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("API_KEY");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Key copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
 
     await act(async () => {
       queryButton("Copy value")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("super-secret");
+    expect(
+      queryButton("Copy value")?.parentElement?.querySelector('input[aria-label="Value: API_KEY"]'),
+    ).toBeTruthy();
     // The buttons keep their names; the status message says what was copied.
     expect(queryButton("Copy value")).toBeTruthy();
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Value copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
+  });
+
+  it("saves an edited value with an explicit button", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+    expect(onEdit).not.toHaveBeenCalled();
+    await act(async () => {
+      queryButton("Save")?.click();
+      await Promise.resolve();
+    });
+    expect(onEdit).toHaveBeenCalledWith("new-secret");
   });
 
   it("renders the secret key as a monospace label", () => {
