@@ -20,7 +20,7 @@ const (
 
 var (
 	ErrInvalid  = errors.New("invalid dotenv")
-	namePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	namePattern = regexp.MustCompile(`^[\p{L}_][\p{L}\p{N}\p{M}_]*$`)
 	escaper     = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\r", "\\r", "\t", "\\t", "$", "\\$")
 )
 

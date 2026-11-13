@@ -277,7 +277,7 @@
   "error_environment_already_exists": "Environment \"{name}\" already exists.",
   "error_secret_not_found": "Secret \"{key}\" does not exist.",
   "error_secret_already_exists": "Secret \"{key}\" already exists.",
-  "error_secret_name_invalid": "Secret name \"{key}\" cannot be written to .env. Use letters, digits, and underscores, starting with a letter or underscore. For an existing secret, add its value under a valid name, then delete the old name.",
+  "error_secret_name_invalid": "Secret name \"{key}\" cannot be written to .env. Use Unicode letters, numbers, marks, and underscores, starting with a letter or underscore. For an existing secret, add its value under a valid name, then delete the old name.",
   "error_artifact_not_found": "The requested secrets were not found.",
   "error_conflict": "Secrets changed remotely. Try again.",
   "error_unavailable": "The required service is unavailable.",

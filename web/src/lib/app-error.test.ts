@@ -41,10 +41,10 @@ describe("display errors", () => {
 
   it("explains a secret name that cannot be pulled into .env", () => {
     const error = toDisplayError(
-      new AppError({ code: "secret_name_invalid", params: { key: "こんにちは" } }),
+      new AppError({ code: "secret_name_invalid", params: { key: "BAD-NAME" } }),
     );
 
-    expect(formatDisplayError(error, "ja")).toContain("こんにちは");
+    expect(formatDisplayError(error, "ja")).toContain("BAD-NAME");
     expect(formatDisplayError(error, "ja")).toContain(".env に書き出せません");
   });
 
