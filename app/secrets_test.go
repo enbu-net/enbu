@@ -7,6 +7,7 @@ import (
 
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -82,6 +83,30 @@ func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	}
 	if secrets["FOO"] != "bar" || secrets["BAZ"] != "qux" {
 		t.Fatalf("unexpected secrets: %v", secrets)
+	}
+}
+
+func TestSecretNamesMustBeDotenvVariableNames(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(context.Background(), "default", "", "value"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Errorf("AddSecret(empty) = %v", err)
+	}
+	for _, name := range []string{"こんにちは", "BAD-NAME", "1START"} {
+		if err := alice.AddSecret(context.Background(), "default", name, "value"); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+			t.Errorf("AddSecret(%q) = %v", name, err)
+		} else if payload := apperr.PayloadOf(err); payload.Params["key"] != name || !strings.Contains(payload.Message, name) {
+			t.Errorf("AddSecret(%q) payload = %+v", name, payload)
+		}
+	}
+	if err := alice.EditSecret(context.Background(), "default", "こんにちは", "value"); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+		t.Errorf("EditSecret = %v", err)
+	}
+	if _, err := alice.ImportSecrets(context.Background(), "default", map[string]string{"GOOD": "value", "こんにちは": "value"}, false); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+		t.Errorf("ImportSecrets = %v", err)
+	}
+	secrets, err := alice.ListSecrets(context.Background(), "default")
+	if err != nil || len(secrets) != 1 || secrets["KEY"] != "v1" {
+		t.Fatalf("invalid names changed the workspace: %v, %v", secrets, err)
 	}
 }
 

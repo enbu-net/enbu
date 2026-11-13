@@ -39,6 +39,15 @@ describe("display errors", () => {
     expect(formatDisplayError(error, "en")).toBe("Access was denied.");
   });
 
+  it("explains a secret name that cannot be pulled into .env", () => {
+    const error = toDisplayError(
+      new AppError({ code: "secret_name_invalid", params: { key: "こんにちは" } }),
+    );
+
+    expect(formatDisplayError(error, "ja")).toContain("こんにちは");
+    expect(formatDisplayError(error, "ja")).toContain(".env に書き出せません");
+  });
+
   it("preserves replacement-token characters in params", () => {
     const error = displayError("secret_not_found", { key: "$&$'$`" });
 
