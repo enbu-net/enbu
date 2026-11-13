@@ -2,9 +2,7 @@ package desktop
 
 import (
 	"log/slog"
-	"os"
 	"sort"
-	"strings"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -92,27 +90,7 @@ func (s *Service) Initialize(storage config.StorageConfig, acceptNewGenesis bool
 }
 
 func (s *Service) ListEnvironments() ([]app.EnvInfo, error) {
-	return withRepoResult(s, func() ([]app.EnvInfo, error) {
-		environments, err := s.app.ListEnvironments()
-		if err != nil {
-			return nil, err
-		}
-		visible := strings.TrimSpace(os.Getenv("ENBU_DEMO_VISIBLE_ENVS"))
-		if visible == "" {
-			return environments, nil
-		}
-		allowed := make(map[string]bool)
-		for _, name := range strings.Split(visible, ",") {
-			allowed[strings.TrimSpace(name)] = true
-		}
-		filtered := make([]app.EnvInfo, 0, len(environments))
-		for _, environment := range environments {
-			if allowed[environment.Name] {
-				filtered = append(filtered, environment)
-			}
-		}
-		return filtered, nil
-	})
+	return withRepoResult(s, s.app.ListEnvironments)
 }
 
 func (s *Service) CreateEnvironment(name string) error {
