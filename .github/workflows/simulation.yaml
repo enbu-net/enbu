@@ -62,7 +62,7 @@ jobs:
     strategy:
       fail-fast: false
       # Reserve runner capacity for normal PR checks while the nightly is large.
-      max-parallel: ${{ needs.plan.outputs.mode == 'full' && 10 || 5 }}
+      max-parallel: 5
       matrix:
         # Full keeps the same 1,024 seeds, spread over eight runners per OS.
         # Each runner still owns only four native parallel steps. With four
