@@ -214,7 +214,7 @@ func TestFullDSTRunnerGroupsCoverEveryLogicalLaneOnce(t *testing.T) {
 			t.Fatalf("mode %d changes seed budget: %d * %d", i, seedCount, laneCount)
 		}
 	}
-	if field(field(job, "strategy"), "max-parallel").Value != "${{ needs.plan.outputs.mode == 'full' && 10 || 5 }}" {
+	if field(field(job, "strategy"), "max-parallel").Value != "5" {
 		t.Fatal("full exploration can monopolize routine CI capacity")
 	}
 	steps := field(job, "steps")
