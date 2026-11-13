@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"sync/atomic"
@@ -14,6 +13,7 @@ import (
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -25,10 +25,9 @@ func firstContactPins(d *Device, workspace string, want wsp.Root) error {
 	if err != nil {
 		return err
 	}
-	path, err = filepath.Abs(path)
-	if err != nil {
-		return err
-	}
+	// Repository pins use canonical paths; macOS temporary directories commonly
+	// pass through /var -> /private/var, so Abs alone reads a different pin.
+	path = fsutil.Canonical(path)
 	trust := wsp.OpenTrust(d.App.CheckpointDir, d.App.Runtime.Clock)
 	for _, pinned := range []func() (wsp.Root, error){
 		func() (wsp.Root, error) { return trust.Pinned(workspace) },
