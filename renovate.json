@@ -6,7 +6,9 @@
     ":label(renovate)",
     ":timezone(Asia/Tokyo)"
   ],
-  "dependencyDashboard": false,
+  "dependencyDashboard": {
+    "enabled": false
+  },
   "configMigration": true,
   "minimumReleaseAge": "3 days",
   "internalChecksFilter": "strict",
