@@ -104,6 +104,17 @@ func pipeClient(t *testing.T, s *Server) *Client {
 	return c
 }
 
+type observedDoneContext struct {
+	context.Context
+	observed chan struct{}
+	once     sync.Once
+}
+
+func (c *observedDoneContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.observed) })
+	return c.Context.Done()
+}
+
 func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 	c := pipeClient(t, newServer(t.TempDir()))
 	dial := c.Dial
@@ -137,9 +148,20 @@ func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 		t.Fatalf("reading hello: got %q, %v", req.Method, err)
 	}
 	waiting, cancelWaiting := context.WithCancel(t.Context())
-	cancelWaiting()
+	defer cancelWaiting()
+	observed := &observedDoneContext{Context: waiting, observed: make(chan struct{})}
 	waitingResult := make(chan error, 1)
-	go func() { waitingResult <- c.CheckProtocol(waiting) }()
+	go func() { waitingResult <- c.CheckProtocol(observed) }()
+	// The stalled hello owns the lock. Done is consulted by the second
+	// caller while attempting to acquire it, with its context still live.
+	select {
+	case <-observed.observed:
+	case err := <-waitingResult:
+		t.Fatalf("queued preflight returned before cancellation: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("queued preflight did not start waiting")
+	}
+	cancelWaiting()
 	select {
 	case err := <-waitingResult:
 		if !errors.Is(err, context.Canceled) {
