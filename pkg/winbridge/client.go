@@ -15,7 +15,6 @@ import (
 	enbuage "github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
@@ -133,6 +132,13 @@ func (c *Client) connect() error {
 
 func unavailable(err error) error {
 	return &identity.UnavailableError{Reason: "WSL keeps enbu's keys in Windows: " + err.Error(), Err: err}
+}
+
+// CheckProtocol performs the version handshake before a delegated command.
+func (c *Client) CheckProtocol() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connect()
 }
 
 func (c *Client) call(method string, params, result any) error {
@@ -333,34 +339,11 @@ func (s *remoteSigner) Sign(domain string, body []byte) ([]byte, error) {
 
 func (s *remoteSigner) Close() error { return s.c.release(s.gen, s.handle) }
 
-// Keyring is the OS keyring of Windows, for the entries the Windows side
-// shares (the GitHub token).
-func (c *Client) Keyring() *Keyring { return &Keyring{c: c} }
-
-// Keyring implements keystore.Backend over the bridge.
-type Keyring struct{ c *Client }
-
-func (k *Keyring) Store(service, key string, secret []byte) error {
-	return keyringError(k.c.call(methodKeyringStore, keyringParams{Service: service, Key: key, Secret: secret}, nil))
-}
-
-func (k *Keyring) Load(service, key string) ([]byte, error) {
-	var r keyringResult
-	if err := k.c.call(methodKeyringLoad, keyringParams{Service: service, Key: key}, &r); err != nil {
-		return nil, keyringError(err)
+// GitHubAuth calls the Windows GitHub credential service.
+func (c *Client) GitHubAuth(operation string, params, result any) error {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return errors.New("invalid GitHub credential request")
 	}
-	return r.Secret, nil
-}
-
-func (k *Keyring) Delete(service, key string) error {
-	return keyringError(k.c.call(methodKeyringDelete, keyringParams{Service: service, Key: key}, nil))
-}
-
-// keyringError reports a bridge that cannot be reached as a missing keyring,
-// so the token store says what to fix instead of an internal error.
-func keyringError(err error) error {
-	if err == nil || !errors.Is(err, identity.ErrUnavailable) || errors.Is(err, keystore.ErrLocked) || errors.Is(err, keystore.ErrNoKeyring) {
-		return err
-	}
-	return fmt.Errorf("%w: %w", keystore.ErrNoKeyring, err)
+	return c.call(methodGitHubAuth, githubAuthParams{Operation: operation, Request: raw}, result)
 }

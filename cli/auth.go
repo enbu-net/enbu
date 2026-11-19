@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
-	"os/exec"
 	"strings"
 
 	"github.com/enbu-net/enbu/app"
@@ -11,19 +9,12 @@ import (
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/spf13/cobra"
 )
 
 type authLoginDeps struct {
 	login       func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error)
 	openBrowser func(string) error
-	// windows runs the login in the Windows enbu.exe instead, inside WSL:
-	// the token goes to the Windows keyring and Windows opens the browser.
-	windows func(ctx context.Context, cmd *cobra.Command, args ...string) error
-	// useLatest makes the account Windows just signed in with the one in use
-	// in this data directory, which Windows does not see.
-	useLatest func() error
 }
 
 type authStatusDeps struct {
@@ -46,37 +37,18 @@ func newAuthCommand(a *app.App) *cobra.Command {
 		newAuthLogoutCommand(),
 		newAuthSwitchCommand(),
 		newAuthStatusCommand(a),
+		newAuthMaintenanceCommand(false),
+		newAuthMaintenanceCommand(true),
 	)
 
 	return cmd
 }
 
 func newAuthLoginCommand() *cobra.Command {
-	deps := authLoginDeps{
+	return newAuthLoginCommandWithDeps(authLoginDeps{
 		login:       auth.Client{Clock: clock.New()}.Login,
 		openBrowser: auth.OpenBrowser,
-	}
-	if inWSL() {
-		deps.windows = runInWindows
-		deps.useLatest = auth.UseLatestAccount
-	}
-	return newAuthLoginCommandWithDeps(deps)
-}
-
-// runInWindows runs an enbu command in the Windows enbu.exe on this terminal.
-// Windows prints its own errors, so a failure only carries the exit status.
-// An enbu.exe that is missing or cannot start is identity_unavailable, as for
-// every other key operation inside WSL.
-func runInWindows(ctx context.Context, cmd *cobra.Command, args ...string) error {
-	err := winbridge.RunWindows(ctx, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), args...)
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return &apperr.ExitError{Code: exit.ExitCode()}
-	}
-	if err != nil {
-		return apperr.Wrap(apperr.CodeIdentityUnavailable, "Inside WSL, enbu signs in through the Windows enbu.exe, which could not run: "+err.Error()+". Run enbu doctor.", err, nil)
-	}
-	return nil
+	})
 }
 
 func newAuthLoginCommandWithDeps(deps authLoginDeps) *cobra.Command {
@@ -90,29 +62,18 @@ adds it beside the accounts already signed in and makes it the one in use;
 switch back with 'enbu auth switch'.`,
 		Args: appArgs(cobra.NoArgs),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			if deps.windows != nil {
-				args := []string{"auth", "login"}
-				if jsonEnabled(cmd) {
-					args = append(args, "--json")
-				}
-				if err := deps.windows(ctx, cmd, args...); err != nil {
-					return err
-				}
-				if deps.useLatest != nil {
-					return deps.useLatest()
-				}
-				return nil
+			token := auth.TokenFromEnvironment()
+			var err error
+			if token == nil {
+				token, err = deps.login(cmd.Context(), func(device auth.DeviceAuthorization) error {
+					cmd.PrintErrf("Enter the code %s at %s\n", device.UserCode, device.VerificationURI)
+					if err := deps.openBrowser(device.VerificationURI); err != nil {
+						cmd.PrintErrln("Could not open the browser automatically; open the URL above manually.")
+					}
+					cmd.PrintErrln("Waiting for authorization...")
+					return nil
+				})
 			}
-
-			token, err := deps.login(ctx, func(device auth.DeviceAuthorization) error {
-				cmd.PrintErrf("Enter the code %s at %s\n", device.UserCode, device.VerificationURI)
-				if err := deps.openBrowser(device.VerificationURI); err != nil {
-					cmd.PrintErrln("Could not open the browser automatically; open the URL above manually.")
-				}
-				cmd.PrintErrln("Waiting for authorization...")
-				return nil
-			})
 			if err != nil {
 				return err
 			}
@@ -185,6 +146,40 @@ GITHUB_TOKEN, when set, is used instead of any account.`,
 	}
 }
 
+func newAuthMaintenanceCommand(reset bool) *cobra.Command {
+	use, short := "migrate", "Move saved GitHub accounts from the OS keyring to the TPM"
+	operation := auth.MigrateCredentials
+	if reset {
+		use, short = "reset", "Reset saved GitHub credentials for this OS user"
+		operation = auth.ResetCredentials
+	}
+	var yes bool
+	cmd := &cobra.Command{
+		Use: use, Short: short, Args: appArgs(cobra.NoArgs),
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if reset && !yes {
+				return invalidArgument("reset removes all saved GitHub accounts from the selected store; pass --yes to confirm", nil)
+			}
+			if err := operation(); err != nil {
+				return err
+			}
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]bool{"completed": true})
+			}
+			if reset {
+				cmd.Println("GitHub credentials reset. Run 'enbu auth login' to sign in again.")
+			} else {
+				cmd.Println("GitHub credential migration complete.")
+			}
+			return nil
+		},
+	}
+	if reset {
+		cmd.Flags().BoolVar(&yes, "yes", false, "Confirm reset of all saved GitHub accounts")
+	}
+	return cmd
+}
+
 func newAuthStatusCommand(a *app.App) *cobra.Command {
 	return newAuthStatusCommandWithDeps(a, authStatusDeps{
 		loadToken:     auth.LoadToken,
@@ -200,6 +195,9 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := deps.loadToken()
 			if err != nil {
+				if !apperr.Is(err, apperr.CodeNotAuthenticated) {
+					return err
+				}
 				if jsonEnabled(cmd) {
 					return writeJSON(cmd, map[string]any{
 						"authenticated":      false,
@@ -215,7 +213,7 @@ func newAuthStatusCommandWithDeps(a *app.App, deps authStatusDeps) *cobra.Comman
 			}
 			humanPrintf(cmd, "Auth: logged in as %s\n", token.Username)
 			accounts := []string{}
-			if deps.accounts != nil {
+			if deps.accounts != nil && auth.TokenFromEnvironment() == nil {
 				if logins, _, err := deps.accounts(); err == nil && logins != nil {
 					accounts = logins
 				}

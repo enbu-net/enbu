@@ -8,10 +8,7 @@ package winbridge
 
 import (
 	"bytes"
-	"context"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -81,23 +78,4 @@ func Locate() (string, error) {
 		return "", errors.New("the Windows enbu.exe was not found on PATH: install enbu on Windows too (the same version as in WSL), or set " + ExeEnv + " to its path; inside WSL, enbu keeps its keys in Windows")
 	}
 	return p, nil
-}
-
-// RunWindows runs the Windows enbu.exe with args on this terminal, for a
-// command such as `auth login` that Windows does as a whole.
-func RunWindows(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, args ...string) error {
-	path, err := Locate()
-	if err != nil {
-		return err
-	}
-	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	if err := cmd.Run(); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return err
-		}
-		return fmt.Errorf("could not start the Windows %s (%s): %w; %s", exe, path, err, interopHint)
-	}
-	return nil
 }

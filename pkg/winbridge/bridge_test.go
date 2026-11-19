@@ -29,7 +29,7 @@ const serveEnv = "ENBU_WINBRIDGE_TEST_SERVE"
 // serves the bridge on stdin and stdout, so the exec path is tested too.
 func TestMain(m *testing.M) {
 	if dir := os.Getenv(serveEnv); dir != "" {
-		s := newServer(dir, &memVault{})
+		s := newServer(dir)
 		if err := s.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
 			os.Exit(1)
 		}
@@ -75,12 +75,10 @@ func (v *memVault) Delete(service, key string) error {
 	return nil
 }
 
-func newServer(dir string, keyring keystore.Backend) *Server {
+func newServer(dir string) *Server {
 	return &Server{
 		Version:    "v1.2.3",
 		Identities: &identity.Manager{Dir: dir, Mode: "keyring", Vault: &memVault{}},
-		Keyring:    keyring,
-		Entries:    []KeyringEntry{{Service: "enbu", Key: "github-oauth"}},
 	}
 }
 
@@ -108,7 +106,7 @@ func pipeClient(t *testing.T, s *Server) *Client {
 // After enbu.exe restarts, a handle from the old process may name another key
 // in the new one, so it is refused, and closing it sends nothing.
 func TestAHandleBelongsToItsProcess(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 	device, info, _, err := c.Create("a")
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +135,7 @@ func TestAHandleBelongsToItsProcess(t *testing.T) {
 }
 
 func TestIdentityRoundTrip(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 
 	device, info, _, err := c.Create("ws")
 	if err != nil {
@@ -180,7 +178,7 @@ func TestIdentityRoundTrip(t *testing.T) {
 }
 
 func TestAnotherRecipientIsNotAnError(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 	device, _, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +204,7 @@ func TestAnotherRecipientIsNotAnError(t *testing.T) {
 }
 
 func TestSignerRoundTrip(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 	device, _, _, err := c.Create("ws")
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +233,7 @@ func TestSignerRoundTrip(t *testing.T) {
 }
 
 func TestMissingIdentityIsNotExist(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 	if _, err := c.Load("nope"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Load = %v, want fs.ErrNotExist", err)
 	}
@@ -244,28 +242,18 @@ func TestMissingIdentityIsNotExist(t *testing.T) {
 	}
 }
 
-func TestKeyringSharesOnlyItsEntries(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
-	k := c.Keyring()
-	if _, err := k.Load("enbu", "github-oauth"); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("Load before Store = %v, want fs.ErrNotExist", err)
-	}
-	if err := k.Store("enbu", "github-oauth", []byte("token")); err != nil {
-		t.Fatal(err)
-	}
-	if b, err := k.Load("enbu", "github-oauth"); err != nil || string(b) != "token" {
-		t.Fatalf("Load = %q, %v", b, err)
-	}
-	if err := k.Delete("enbu", "github-oauth"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := k.Load("enbu-identity", "anything"); err == nil || !strings.Contains(err.Error(), errKeyringEntryForbidden) {
-		t.Fatalf("Load of an identity key = %v, want refused", err)
+func TestGitHubAuthDoesNotExposeOldKeyringRPC(t *testing.T) {
+	c := pipeClient(t, newServer(t.TempDir()))
+	for _, method := range []string{"keyring.load", "keyring.store", "keyring.delete"} {
+		err := c.call(method, map[string]string{"service": "enbu", "key": "github-oauth"}, nil)
+		if err == nil || !strings.Contains(err.Error(), errUnknownMethod) {
+			t.Fatalf("%s = %v, want unknown method", method, err)
+		}
 	}
 }
 
 func TestDoctorNamesTheWindowsSide(t *testing.T) {
-	c := pipeClient(t, newServer(t.TempDir(), &memVault{}))
+	c := pipeClient(t, newServer(t.TempDir()))
 	d := c.Doctor(context.Background())
 	if d.WSL == nil || d.WSL.Version != "v1.2.3" || d.WSL.Error != "" {
 		t.Fatalf("WSL = %+v", d.WSL)
@@ -282,8 +270,8 @@ func TestNoBridgeIsUnavailable(t *testing.T) {
 	if !errors.As(err, &unavailable) || !strings.Contains(unavailable.Reason, "not found on PATH") {
 		t.Fatalf("Load = %v, want unavailable with the reason", err)
 	}
-	if _, err := c.Keyring().Load("enbu", "github-oauth"); !errors.Is(err, keystore.ErrNoKeyring) {
-		t.Fatalf("token Load = %v, want ErrNoKeyring", err)
+	if err := c.GitHubAuth("load", struct{}{}, nil); !errors.Is(err, identity.ErrUnavailable) {
+		t.Fatalf("credential load = %v, want ErrUnavailable", err)
 	}
 	d := c.Doctor(context.Background())
 	if d.WSL == nil || !strings.Contains(d.WSL.Error, "not found on PATH") || d.Available {
@@ -292,7 +280,7 @@ func TestNoBridgeIsUnavailable(t *testing.T) {
 }
 
 func TestOtherProtocolIsRefused(t *testing.T) {
-	s := newServer(t.TempDir(), &memVault{})
+	s := newServer(t.TempDir())
 	in := strings.NewReader(`{"id":1,"method":"device.load","params":{"workspace_id":"ws"}}` + "\n" +
 		`{"id":2,"method":"hello","params":{"protocol":99}}` + "\n")
 	var out strings.Builder
@@ -403,30 +391,6 @@ func TestLocate(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	if _, err := Locate(); err == nil || !strings.Contains(err.Error(), "not found on PATH") || !strings.Contains(err.Error(), ExeEnv) {
 		t.Fatalf("Locate = %v, want a not-found message naming %s", err, ExeEnv)
-	}
-}
-
-func TestRunWindowsPassesTheTerminal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script as enbu.exe")
-	}
-	script := filepath.Join(t.TempDir(), "enbu.exe")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nread line\necho \"$* $line\"\necho oops >&2\nexit 3\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(ExeEnv, script)
-	var out, errOut strings.Builder
-	err := RunWindows(context.Background(), strings.NewReader("typed\n"), &out, &errOut, "auth", "login")
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
-		t.Fatalf("RunWindows = %v, want exit status 3", err)
-	}
-	if out.String() != "auth login typed\n" || errOut.String() != "oops\n" {
-		t.Fatalf("stdout %q, stderr %q", out.String(), errOut.String())
-	}
-	t.Setenv(ExeEnv, filepath.Join(t.TempDir(), "missing.exe"))
-	if err := RunWindows(context.Background(), nil, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "interop") {
-		t.Fatalf("RunWindows = %v, want a start failure naming interop", err)
 	}
 }
 
