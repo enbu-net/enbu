@@ -67,6 +67,9 @@ var ErrTPMUnsupported = errors.New("TPM does not support the required P-256 ECDH
 // ErrTPMParentChanged indicates that the current storage primary cannot open the saved keys.
 var ErrTPMParentChanged = errors.New("TPM storage primary does not match the one this key was created under")
 
+// ErrTPMObjectInvalid indicates malformed TPM object metadata.
+var ErrTPMObjectInvalid = errors.New("invalid TPM object metadata")
+
 func (b *TPMBackend) Probe() Diagnosis {
 	d := Diagnosis{Backend: "tpm", Device: b.Device}
 	if err := b.ProbeECDH(); err != nil {
@@ -341,7 +344,7 @@ func (b *TPMBackend) LoadECDH(parent []byte, obj TPMObject) (HardwareKey, error)
 	pk, err := tpm2.ECDHPub(k.parms, k.point)
 	if err != nil {
 		_ = k.close()
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrTPMObjectInvalid, err)
 	}
 	return &tpmKey{loaded: k, pk: pk}, nil
 }
@@ -365,32 +368,32 @@ type loaded struct {
 func (b *TPMBackend) load(parent []byte, obj TPMObject, template tpm2.TPMTPublic) (*loaded, error) {
 	public, err := tpm2.Unmarshal[tpm2.TPM2BPublic](obj.Public)
 	if err != nil {
-		return nil, fmt.Errorf("TPM public blob: %w", err)
+		return nil, fmt.Errorf("%w: public blob: %w", ErrTPMObjectInvalid, err)
 	}
 	private, err := tpm2.Unmarshal[tpm2.TPM2BPrivate](obj.Private)
 	if err != nil {
-		return nil, fmt.Errorf("TPM private blob: %w", err)
+		return nil, fmt.Errorf("%w: private blob: %w", ErrTPMObjectInvalid, err)
 	}
 	pub, err := public.Contents()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrTPMObjectInvalid, err)
 	}
 	expected := template
 	expected.Unique = pub.Unique
 	if !bytes.Equal(tpm2.Marshal(expected), tpm2.Marshal(*pub)) {
-		return nil, errors.New("TPM key does not match its template")
+		return nil, fmt.Errorf("%w: TPM key does not match its template", ErrTPMObjectInvalid)
 	}
 	name, err := tpm2.ObjectName(pub)
 	if err != nil || !bytes.Equal(name.Buffer, obj.Name) {
-		return nil, errors.New("TPM object Name mismatch")
+		return nil, fmt.Errorf("%w: TPM object Name mismatch", ErrTPMObjectInvalid)
 	}
 	parms, err := pub.Parameters.ECCDetail()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrTPMObjectInvalid, err)
 	}
 	point, err := pub.Unique.ECC()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrTPMObjectInvalid, err)
 	}
 	c, err := b.acquire()
 	if err != nil {
@@ -410,7 +413,7 @@ func (b *TPMBackend) load(parent []byte, obj TPMObject, template tpm2.TPMTPublic
 	l := &loaded{b: b, c: c, handle: rsp.ObjectHandle, name: rsp.Name, parms: parms, point: point}
 	if !bytes.Equal(rsp.Name.Buffer, obj.Name) {
 		_ = l.close()
-		return nil, errors.New("loaded TPM object Name mismatch")
+		return nil, fmt.Errorf("%w: loaded TPM object Name mismatch", ErrTPMObjectInvalid)
 	}
 	return l, nil
 }

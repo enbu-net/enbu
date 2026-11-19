@@ -16,6 +16,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/enbu-net/enbu/pkg/identity"
+	"github.com/google/go-tpm/tpm2"
 )
 
 const (
@@ -140,6 +141,7 @@ func (s tpmStore) write(stored storedAccounts, reset bool) error {
 	if reset || errors.Is(err, fs.ErrNotExist) {
 		envelope.Metadata = tokenKeyMetadata{Version: 1, Purpose: tokenSealDomain}
 		envelope.Metadata.Parent, envelope.Metadata.Key, key, err = s.keys.CreateECDH()
+		err = tpmAccessError(err)
 	} else if err == nil {
 		key, err = s.keys.LoadECDH(envelope.Metadata.Parent, envelope.Metadata.Key)
 		err = classifyTPMLoad(err)
@@ -181,7 +183,7 @@ func (s tpmStore) write(stored storedAccounts, reset bool) error {
 func tokenAEAD(key identity.HardwareKey) (cipher.AEAD, error) {
 	shared, err := key.ECDH(key.PublicKey())
 	if err != nil {
-		return nil, err
+		return nil, tpmAccessError(err)
 	}
 	defer clear(shared)
 	aesKey, err := hkdf.Key(sha256.New, shared, nil, tokenSealDomain, 32)
@@ -197,10 +199,13 @@ func tokenAEAD(key identity.HardwareKey) (cipher.AEAD, error) {
 }
 
 func classifyTPMLoad(err error) error {
-	if err == nil || errors.Is(err, identity.ErrTPMParentChanged) || tpmDenied(err) {
-		return err
+	switch {
+	case errors.Is(err, identity.ErrTPMObjectInvalid), errors.Is(err, tpm2.TPMRCIntegrity),
+		errors.Is(err, tpm2.TPMRCBinding), errors.Is(err, tpm2.TPMRCSize),
+		errors.Is(err, tpm2.TPMRCValue), errors.Is(err, tpm2.TPMRCType):
+		return fmt.Errorf("%w: %w", errCorruptStore, err)
 	}
-	return fmt.Errorf("%w: %w", errCorruptStore, err)
+	return tpmAccessError(err)
 }
 
 func regularFile(path string) (os.FileInfo, error) {

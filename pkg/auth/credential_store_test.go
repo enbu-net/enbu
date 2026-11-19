@@ -82,6 +82,19 @@ func TestCredentialBackendPolicy(t *testing.T) {
 	}
 }
 
+func TestCredentialErrorDistinguishesTPMAndStoreFailures(t *testing.T) {
+	if !apperr.Is(classifyTPMLoad(fs.ErrPermission), apperr.CodeAuthTPMAccessDenied) {
+		t.Fatal("TPM permission error was not classified")
+	}
+	if err := authStoreError(fs.ErrPermission); apperr.Is(err, apperr.CodeAuthTPMAccessDenied) {
+		t.Fatal("filesystem or keyring permission error was classified as TPM access")
+	}
+	transportErr := errors.New("TPM transport failed")
+	if err := classifyTPMLoad(transportErr); !errors.Is(err, transportErr) || errors.Is(err, errCorruptStore) {
+		t.Fatal("transport error was classified as corrupted data")
+	}
+}
+
 func TestEnvironmentTokenIgnoresUnavailableTPM(t *testing.T) {
 	stubBackend(t)
 	t.Setenv("ENBU_AUTH_BACKEND", "auto")

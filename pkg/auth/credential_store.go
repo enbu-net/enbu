@@ -230,7 +230,7 @@ func (s credentialStores) choose(forceHardware bool) (credentialStore, string, e
 	if s.tpm == nil {
 		err = identity.ErrTPMUnsupported
 	} else {
-		err = s.tpm.ProbeECDH()
+		err = tpmAccessError(s.tpm.ProbeECDH())
 	}
 	if err == nil {
 		return tpmStore{path: s.path, keys: s.tpm}, "", nil
@@ -242,19 +242,22 @@ func (s credentialStores) choose(forceHardware bool) (credentialStore, string, e
 	if exists && (state == "tpm_absent" || state == "tpm_unsupported") {
 		return nil, state, apperr.Wrap(apperr.CodeAuthTPMRecovery, "saved GitHub credentials require the original TPM", err, nil)
 	}
-	if tpmDenied(err) {
-		return nil, state, authStoreError(err)
+	if apperr.Is(err, apperr.CodeAuthTPMAccessDenied) {
+		return nil, state, err
 	}
 	return nil, state, apperr.Wrap(apperr.CodeUnavailable, "GitHub TPM store unavailable: "+err.Error(), err, nil)
 }
 
-func tpmDenied(err error) bool {
-	return errors.Is(err, fs.ErrPermission) || errors.Is(err, tpm2.TPMRCAuthFail) || errors.Is(err, tpm2.TPMRCBadAuth)
+func tpmAccessError(err error) error {
+	if errors.Is(err, fs.ErrPermission) || errors.Is(err, tpm2.TPMRCAuthFail) || errors.Is(err, tpm2.TPMRCBadAuth) {
+		return apperr.Wrap(apperr.CodeAuthTPMAccessDenied, "cannot access the TPM for GitHub credentials", err, nil)
+	}
+	return err
 }
 
 func tpmStatus(err error) string {
 	switch {
-	case tpmDenied(err):
+	case apperr.Is(err, apperr.CodeAuthTPMAccessDenied):
 		return "tpm_permission_denied"
 	case errors.Is(err, fs.ErrNotExist):
 		return "tpm_absent"
@@ -341,8 +344,6 @@ func authStoreError(err error) error {
 		return apperr.Wrap(apperr.CodeAuthTPMRecovery, "the GitHub store belongs to the previous TPM; run 'enbu auth reset --yes' and sign in again", err, nil)
 	case errors.Is(err, errCorruptStore):
 		return apperr.Wrap(apperr.CodeAuthTPMRecovery, errCorruptStore.Error(), err, nil)
-	case tpmDenied(err):
-		return apperr.Wrap(apperr.CodeAuthTPMAccessDenied, "cannot access the TPM for GitHub credentials: "+err.Error(), err, nil)
 	}
 	return err
 }
