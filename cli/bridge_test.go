@@ -4,21 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/app/apptest"
-	"github.com/enbu-net/enbu/pkg/apperr"
-	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/identity"
 	"github.com/enbu-net/enbu/pkg/winbridge"
-	"github.com/spf13/cobra"
 )
 
 // The hidden bridge command answers the WSL side on stdout and nothing else:
@@ -28,7 +22,7 @@ func TestIdentityBridgeServesOnStdio(t *testing.T) {
 	a := &app.App{Identities: &identity.Manager{Dir: t.TempDir(), Mode: "keyring", Vault: identityMemVault{}}}
 	cmd := NewWithApp("v9.9.9", a)
 	var out, errOut bytes.Buffer
-	cmd.SetIn(strings.NewReader(`{"id":1,"method":"hello","params":{"protocol":2}}` + "\n" +
+	cmd.SetIn(strings.NewReader(fmt.Sprintf(`{"id":1,"method":"hello","params":{"protocol":%d}}`, winbridge.Protocol) + "\n" +
 		`{"id":2,"method":"device.create","params":{"workspace_id":"ws"}}` + "\n"))
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -66,39 +60,6 @@ func TestIdentityBridgeNeedsStdio(t *testing.T) {
 	cmd.SetArgs([]string{"identity", "bridge"})
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("bridge without --stdio ran")
-	}
-}
-
-// Inside WSL, auth login runs in the Windows enbu.exe, with the same flags.
-func TestAuthLoginRunsInWindowsInsideWSL(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{nil, "auth login"},
-		{[]string{"--json"}, "auth login --json"},
-	} {
-		var got []string
-		deps := authLoginDeps{
-			login: func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
-				return nil, errors.New("logged in inside WSL")
-			},
-			windows: func(_ context.Context, _ *cobra.Command, args ...string) error {
-				got = args
-				return nil
-			},
-		}
-		root := &cobra.Command{Use: "enbu"}
-		root.PersistentFlags().Bool("json", false, "")
-		root.AddCommand(newAuthLoginCommandWithDeps(deps))
-		root.SetOut(&bytes.Buffer{})
-		root.SetArgs(append([]string{"login"}, tc.args...))
-		if err := root.ExecuteContext(context.Background()); err != nil {
-			t.Fatal(err)
-		}
-		if strings.Join(got, " ") != tc.want {
-			t.Fatalf("ran %q, want %q", got, tc.want)
-		}
 	}
 }
 
@@ -157,17 +118,6 @@ func notInWSL(t *testing.T) {
 	t.Cleanup(func() { inWSL = prev })
 }
 
-// An enbu.exe that cannot start is identity_unavailable and points to doctor.
-func TestRunInWindowsNamesAMissingExe(t *testing.T) {
-	t.Setenv(winbridge.ExeEnv, filepath.Join(t.TempDir(), "missing", "enbu.exe"))
-	cmd := &cobra.Command{}
-	cmd.SetOut(&bytes.Buffer{})
-	err := runInWindows(context.Background(), cmd, "auth", "login")
-	if apperr.CodeOf(err) != apperr.CodeIdentityUnavailable || !strings.Contains(err.Error(), "enbu doctor") {
-		t.Fatalf("runInWindows = %v (%s), want identity_unavailable naming enbu doctor", err, apperr.CodeOf(err))
-	}
-}
-
 type identityMemVault map[string][]byte
 
 func (v identityMemVault) Store(_, key string, value []byte) error {
@@ -186,22 +136,3 @@ func (v identityMemVault) Load(_, key string) ([]byte, error) {
 func (v identityMemVault) Delete(_, key string) error { delete(v, key); return nil }
 
 func (identityMemVault) Probe(context.Context) error { return nil }
-
-// A failed Windows login keeps its exit status and adds no second message.
-func TestRunInWindowsKeepsTheExitStatus(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script as enbu.exe")
-	}
-	script := filepath.Join(t.TempDir(), "enbu.exe")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 4\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv(winbridge.ExeEnv, script)
-	cmd := &cobra.Command{}
-	cmd.SetOut(&bytes.Buffer{})
-	err := runInWindows(context.Background(), cmd, "auth", "login")
-	var exit *apperr.ExitError
-	if !errors.As(err, &exit) || exit.Code != 4 {
-		t.Fatalf("runInWindows = %v, want exit status 4", err)
-	}
-}

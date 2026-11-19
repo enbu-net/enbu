@@ -161,6 +161,10 @@ func (a *App) ociCredential(registry string) auth.CredentialFunc {
 		}
 		token, username, err := a.TokenProvider.LoadToken()
 		if err != nil {
+			switch apperr.CodeOf(err) {
+			case apperr.CodeAuthTPMAccessDenied, apperr.CodeAuthTPMRecovery, apperr.CodeAuthBackendConflict, apperr.CodeKeyringLocked, apperr.CodeUnavailable:
+				return auth.EmptyCredential, err
+			}
 			return auth.EmptyCredential, apperr.Wrap(apperr.CodeNotAuthenticated, "ghcr.io storage uses enbu's GitHub login; run 'enbu auth login'", err, nil)
 		}
 		return auth.Credential{Username: username, Password: token}, nil

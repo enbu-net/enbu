@@ -15,16 +15,16 @@ import (
 	enbuage "github.com/enbu-net/enbu/pkg/age"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
 // Conn is one bridge stream: requests go to W, responses come from R. Close
 // ends the Windows process.
 type Conn struct {
-	R     io.Reader
+	R     io.ReadCloser
 	W     io.WriteCloser
 	Close func() error
+	abort func()
 }
 
 // Client is the WSL side. It implements the app's identity store by asking
@@ -34,7 +34,7 @@ type Client struct {
 	// Dial opens the stream. It defaults to starting enbu.exe from Locate.
 	Dial func() (*Conn, error)
 
-	mu      sync.Mutex
+	mu      contextMutex
 	conn    *Conn
 	enc     *json.Encoder
 	dec     *json.Decoder
@@ -43,6 +43,26 @@ type Client struct {
 	exe     string
 	version string
 }
+
+// contextMutex lets a cancelled preflight leave the queue even if an
+// earlier RPC is still waiting for Windows.
+type contextMutex struct {
+	once sync.Once
+	slot chan struct{}
+}
+
+func (m *contextMutex) acquire(ctx context.Context) error {
+	m.once.Do(func() { m.slot = make(chan struct{}, 1) })
+	select {
+	case m.slot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *contextMutex) Lock()   { _ = m.acquire(context.Background()) }
+func (m *contextMutex) Unlock() { <-m.slot }
 
 var shared = sync.OnceValue(func() *Client { return &Client{} })
 
@@ -65,10 +85,14 @@ func Exec(path string) (*Conn, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("could not start the Windows %s (%s): %w; %s", exe, path, err, interopHint)
 	}
-	return &Conn{R: r, W: w, Close: func() error {
-		_ = w.Close()
-		return waitOrKill(cmd, clock.New(), closeGrace)
-	}}, nil
+	return &Conn{
+		R: r, W: w,
+		Close: func() error {
+			_ = w.Close()
+			return waitOrKill(cmd, clock.New(), closeGrace)
+		},
+		abort: func() { _ = cmd.Process.Kill() },
+	}, nil
 }
 
 // closeGrace is how long enbu.exe gets to exit after its stdin closes. One
@@ -104,7 +128,10 @@ func (c *Client) dial() (*Conn, error) {
 
 // connect starts the bridge and agrees on the protocol. A failure is an
 // unavailable identity backend: inside WSL there is no other place for keys.
-func (c *Client) connect() error {
+func (c *Client) connect(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if c.conn != nil {
 		return nil
 	}
@@ -115,7 +142,12 @@ func (c *Client) connect() error {
 	c.conn, c.enc, c.dec = conn, json.NewEncoder(conn.W), json.NewDecoder(conn.R)
 	c.gen++
 	var hello helloResult
-	if err := c.roundTrip(methodHello, helloParams{Protocol: Protocol}, &hello); err != nil {
+	if err := c.handshake(ctx, conn, &hello); err != nil {
+		if ctx.Err() != nil {
+			c.version = ""
+			c.reset()
+			return ctx.Err()
+		}
 		c.reset()
 		var remote *remoteError
 		if errors.As(err, &remote) {
@@ -131,8 +163,37 @@ func (c *Client) connect() error {
 	return nil
 }
 
+func (c *Client) handshake(ctx context.Context, conn *Conn, hello *helloResult) error {
+	// Interrupt only this connection. The callback never takes the client
+	// lock, which remains held until the protocol read returns.
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = conn.R.Close()
+		_ = conn.W.Close()
+		if conn.abort != nil {
+			conn.abort()
+		}
+		close(interrupted)
+	})
+	err := c.roundTrip(methodHello, helloParams{Protocol: Protocol}, hello)
+	if !stop() {
+		<-interrupted
+		return ctx.Err()
+	}
+	return err
+}
+
 func unavailable(err error) error {
 	return &identity.UnavailableError{Reason: "WSL keeps enbu's keys in Windows: " + err.Error(), Err: err}
+}
+
+// CheckProtocol verifies the version before starting sign-in.
+func (c *Client) CheckProtocol(ctx context.Context) error {
+	if err := c.mu.acquire(ctx); err != nil {
+		return err
+	}
+	defer c.mu.Unlock()
+	return c.connect(ctx)
 }
 
 func (c *Client) call(method string, params, result any) error {
@@ -145,7 +206,7 @@ func (c *Client) call(method string, params, result any) error {
 func (c *Client) open(method string, params, result any) (uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.connect(); err != nil {
+	if err := c.connect(context.Background()); err != nil {
 		return 0, err
 	}
 	return c.gen, c.send(method, params, result)
@@ -217,7 +278,7 @@ func (c *Client) status() *identity.WSLStatus {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := &identity.WSLStatus{Exe: c.exe, Version: c.version}
-	if err := c.connect(); err != nil {
+	if err := c.connect(context.Background()); err != nil {
 		s.Error = err.Error()
 	}
 	s.Exe, s.Version = c.exe, c.version
@@ -333,34 +394,11 @@ func (s *remoteSigner) Sign(domain string, body []byte) ([]byte, error) {
 
 func (s *remoteSigner) Close() error { return s.c.release(s.gen, s.handle) }
 
-// Keyring is the OS keyring of Windows, for the entries the Windows side
-// shares (the GitHub token).
-func (c *Client) Keyring() *Keyring { return &Keyring{c: c} }
-
-// Keyring implements keystore.Backend over the bridge.
-type Keyring struct{ c *Client }
-
-func (k *Keyring) Store(service, key string, secret []byte) error {
-	return keyringError(k.c.call(methodKeyringStore, keyringParams{Service: service, Key: key, Secret: secret}, nil))
-}
-
-func (k *Keyring) Load(service, key string) ([]byte, error) {
-	var r keyringResult
-	if err := k.c.call(methodKeyringLoad, keyringParams{Service: service, Key: key}, &r); err != nil {
-		return nil, keyringError(err)
+// GitHubAuth calls the Windows GitHub credential service.
+func (c *Client) GitHubAuth(operation string, params, result any) error {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return errors.New("invalid GitHub credential request")
 	}
-	return r.Secret, nil
-}
-
-func (k *Keyring) Delete(service, key string) error {
-	return keyringError(k.c.call(methodKeyringDelete, keyringParams{Service: service, Key: key}, nil))
-}
-
-// keyringError reports a bridge that cannot be reached as a missing keyring,
-// so the token store says what to fix instead of an internal error.
-func keyringError(err error) error {
-	if err == nil || !errors.Is(err, identity.ErrUnavailable) || errors.Is(err, keystore.ErrLocked) || errors.Is(err, keystore.ErrNoKeyring) {
-		return err
-	}
-	return fmt.Errorf("%w: %w", keystore.ErrNoKeyring, err)
+	return c.call(methodGitHubAuth, githubAuthParams{Operation: operation, Request: raw}, result)
 }
