@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
@@ -54,44 +55,65 @@ func ecdhTemplate() (tpm2.TPMTPublic, error) {
 	}, nil
 }
 
+// SystemTPM returns the native TPM transport when the platform supports it.
+func SystemTPM() *TPMBackend {
+	b, _ := platformHardware(clock.New()).(*TPMBackend)
+	return b
+}
+
+// ErrTPMUnsupported indicates that the TPM cannot provide the required ECDH.
+var ErrTPMUnsupported = errors.New("TPM does not support the required P-256 ECDH parameters")
+
+// ErrTPMParentChanged indicates that the current storage primary cannot open the saved keys.
+var ErrTPMParentChanged = errors.New("TPM storage primary does not match the one this key was created under")
+
 func (b *TPMBackend) Probe() Diagnosis {
 	d := Diagnosis{Backend: "tpm", Device: b.Device}
-	t, err := b.Open()
-	if err != nil {
+	if err := b.ProbeECDH(); err != nil {
 		d.Reason = err.Error()
-		// A TPM this user may not open is still a TPM: falling back to a
-		// software key would lower the protection over a permission mistake.
 		d.Denied = errors.Is(err, fs.ErrPermission)
-		return d
-	}
-	defer func() { _ = t.Close() }()
-	pub, err := ecdhTemplate()
-	if err == nil {
-		_, err = (tpm2.TestParms{Parameters: tpm2.TPMTPublicParms{Type: pub.Type, Parameters: pub.Parameters}}).Execute(t)
-	}
-	// The storage primary also needs ECC + AES-CFB support.
-	if err == nil {
-		_, err = (tpm2.TestParms{Parameters: tpm2.TPMTPublicParms{Type: tpm2.ECCSRKTemplate.Type, Parameters: tpm2.ECCSRKTemplate.Parameters}}).Execute(t)
-	}
-	if err == nil {
-		// Query the command specifically; unsupported ECDH cannot be repaired by creating a key.
-		var rsp *tpm2.GetCapabilityResponse
-		rsp, err = (tpm2.GetCapability{Capability: tpm2.TPMCapCommands, Property: uint32(tpm2.TPMCCECDHZGen), PropertyCount: 1}).Execute(t)
-		if err == nil {
-			commands, e := rsp.CapabilityData.Data.Command()
-			if e != nil {
-				err = e
-			} else if len(commands.CommandAttributes) == 0 || commands.CommandAttributes[0].CommandIndex != uint16(tpm2.TPMCCECDHZGen) {
-				err = errors.New("TPM does not support ECDH_ZGen")
-			}
-		}
-	}
-	if err != nil {
-		d.Reason = err.Error()
 	} else {
 		d.Available = true
 	}
 	return d
+}
+
+// ProbeECDH checks capability without creating a key or storage primary.
+func (b *TPMBackend) ProbeECDH() error {
+	t, err := b.Open()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = t.Close() }()
+	pub, err := ecdhTemplate()
+	if err != nil {
+		return err
+	}
+	for _, template := range []tpm2.TPMTPublic{pub, tpm2.ECCSRKTemplate} {
+		_, err := (tpm2.TestParms{Parameters: tpm2.TPMTPublicParms{Type: template.Type, Parameters: template.Parameters}}).Execute(t)
+		if err != nil {
+			switch {
+			case errors.Is(err, tpm2.TPMRCScheme), errors.Is(err, tpm2.TPMRCCurve),
+				errors.Is(err, tpm2.TPMRCHash), errors.Is(err, tpm2.TPMRCType),
+				errors.Is(err, tpm2.TPMRCSymmetric), errors.Is(err, tpm2.TPMRCKeySize),
+				errors.Is(err, tpm2.TPMRCMode), errors.Is(err, tpm2.TPMRCKDF):
+				return fmt.Errorf("%w: %w", ErrTPMUnsupported, err)
+			}
+			return err
+		}
+	}
+	rsp, err := (tpm2.GetCapability{Capability: tpm2.TPMCapCommands, Property: uint32(tpm2.TPMCCECDHZGen), PropertyCount: 1}).Execute(t)
+	if err != nil {
+		return err
+	}
+	commands, err := rsp.CapabilityData.Data.Command()
+	if err != nil {
+		return err
+	}
+	if len(commands.CommandAttributes) == 0 || commands.CommandAttributes[0].CommandIndex != uint16(tpm2.TPMCCECDHZGen) {
+		return ErrTPMUnsupported
+	}
+	return nil
 }
 
 // tpmConn is one TPM connection and its storage primary, shared by every key
@@ -207,7 +229,7 @@ func checkParent(c *tpmConn, pinned []byte) error {
 		return errors.New("TPM key metadata does not pin its storage primary; create a new identity")
 	}
 	if !bytes.Equal(c.name.Buffer, pinned) {
-		return errors.New("TPM storage primary does not match the one this key was created under")
+		return ErrTPMParentChanged
 	}
 	return nil
 }
@@ -263,17 +285,8 @@ func (b *TPMBackend) Load(md *Metadata) (HardwareKey, signing.Signer, error) {
 	if md.Backend != "tpm" || md.TPM == nil {
 		return nil, nil, errors.New("invalid TPM backend metadata")
 	}
-	ecdhPub, err := ecdhTemplate()
+	key, err := b.LoadECDH(md.TPM.Parent, md.TPM.ECDH)
 	if err != nil {
-		return nil, nil, err
-	}
-	k, err := b.load(md.TPM.Parent, md.TPM.ECDH, ecdhPub)
-	if err != nil {
-		return nil, nil, fmt.Errorf("loading TPM ECDH key: %w", err)
-	}
-	key := &tpmKey{loaded: k}
-	if key.pk, err = tpm2.ECDHPub(k.parms, k.point); err != nil {
-		_ = key.Close()
 		return nil, nil, err
 	}
 	s, err := b.load(md.TPM.Parent, md.TPM.Sign, signTemplate())
@@ -292,6 +305,45 @@ func (b *TPMBackend) Load(md *Metadata) (HardwareKey, signing.Signer, error) {
 		return nil, nil, err
 	}
 	return key, signer, nil
+}
+
+// CreateECDH creates a dedicated, non-exportable P-256 key under the TPM's
+// storage primary and returns the pinned parent Name and reloadable blobs.
+func (b *TPMBackend) CreateECDH() (parent []byte, obj TPMObject, key HardwareKey, err error) {
+	template, err := ecdhTemplate()
+	if err != nil {
+		return nil, TPMObject{}, nil, err
+	}
+	c, err := b.acquire()
+	if err != nil {
+		return nil, TPMObject{}, nil, err
+	}
+	defer func() { _ = b.release(c) }()
+	obj, err = c.create(template)
+	if err != nil {
+		return nil, TPMObject{}, nil, err
+	}
+	parent = c.name.Buffer
+	key, err = b.LoadECDH(parent, obj)
+	return parent, obj, key, err
+}
+
+// LoadECDH validates the template, object Name, and parent pin before loading.
+func (b *TPMBackend) LoadECDH(parent []byte, obj TPMObject) (HardwareKey, error) {
+	template, err := ecdhTemplate()
+	if err != nil {
+		return nil, err
+	}
+	k, err := b.load(parent, obj, template)
+	if err != nil {
+		return nil, fmt.Errorf("loading TPM ECDH key: %w", err)
+	}
+	pk, err := tpm2.ECDHPub(k.parms, k.point)
+	if err != nil {
+		_ = k.close()
+		return nil, err
+	}
+	return &tpmKey{loaded: k, pk: pk}, nil
 }
 
 // loaded is a TPM object loaded under the shared storage primary.
