@@ -68,10 +68,10 @@ pkg/merge/               → 3-way merge of concurrent revisions, conflicts
 pkg/identity/            → device Identity: hardware P-256 (TPM / Secure Enclave) or a software key in the OS keyring, plus the signing key
 pkg/signing/             → signing keys (P-256 / Ed25519), canonical signatures, DeviceID derivation
 pkg/age/                 → encrypt/decrypt with age (hybrid ML-KEM-768 recipients, plus classical X25519 / P-256 tagged recipients)
-pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt; the GitHub token lives there too (no plaintext file backend)
-pkg/winbridge/          → inside WSL, hands key operations and the GitHub token to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, JSON over stdio, one protocol version, no paths cross); WSL never uses the Linux keystore
+pkg/keystore/            → OS keyring access; on Linux each use first checks the Secret Service over D-Bus (a missing one gives `identity_unavailable`, a locked one `keyring_locked`) so go-keyring never waits on an unlock prompt
+pkg/winbridge/          → inside WSL, hands Identity and GitHub credential operations to the Windows enbu.exe (hidden `enbu identity bridge --stdio`, versioned JSON over stdio, no paths cross); WSL never uses the Linux keystore
 pkg/dotenv/              → .env parsing and rendering
-pkg/auth/                → GitHub Device Flow sign-in, token persistence
+pkg/auth/                → GitHub Device Flow and OS-user credential store, TPM ECDH on Linux and Windows with keyring fallback, Keychain on macOS, Windows via winbridge on WSL
 pkg/provider/git/        → finds the repository root and origin remote from .git files (never runs git)
 pkg/provider/github/     → GitHub API client (the signed-in user)
 pkg/process/             → hardens the process (no core dumps or ptrace on Linux)
@@ -100,6 +100,7 @@ test/                    → scenario tests (build tag: scenario)
 - Frontends: the CLI has every operation, and the GUI (desktop app and VS Code extension) offers the same workspace operations, founding a workspace included (it suggests the same GHCR storage `enbu init` defaults to). `run`, `completion`, `rpc` and history compaction stay CLI only. Neither frontend runs `git init` or creates GitHub repositories; the GUI shows the commands instead
 - The desktop app updates itself only when it was unpacked from a release archive into a place the user may write (`selfupdate.Detect`); Homebrew, .deb/.rpm and read-only installs get instructions, VS Code updates its extension, and development builds never update. An update installs only after `checksums.txt` verifies against the Sigstore signature of `release-build.yaml` in this repository (keyless, trusted root over TUF) and the archive matches its checksum
 - The GUI's own settings (theme, font size, clipboard clearing) are one JSON object in localStorage per host (`web/src/lib/settings.ts`); the settings screen edits it as a form or as JSON. The language stays with Paraglide
+- GitHub account storage is independent of Workspace Identity. `ENBU_AUTH_BACKEND=auto|hardware|keyring` controls persistence. `GITHUB_TOKEN` overrides saved accounts. TPM account data is encrypted under a dedicated TPM-generated ECDH key, shared across the OS user's data directories, and updated under a process lock. Active selection stays per data directory. Use `enbu auth migrate` to import legacy keyring accounts, and `enbu auth reset --yes` to recover an unreadable store. See [docs/identity.md](docs/identity.md#github-credential-store).
 - No bot/CI decryption — re-encryption requires a human to run `enbu sync`
 
 ## Error handling
