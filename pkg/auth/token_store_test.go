@@ -11,6 +11,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/keystore"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 // memoryBackend is an in-memory OS keyring.
@@ -40,6 +41,9 @@ func stubBackend(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("ENBU_AUTH_BACKEND", "keyring")
+	originalRouting := winbridge.InWSL
+	winbridge.InWSL = func() bool { return false }
+	t.Cleanup(func() { winbridge.InWSL = originalRouting })
 	origDir := authStoreDir
 	dir := filepath.Join(t.TempDir(), "github-auth")
 	authStoreDir = func() string { return dir }
@@ -60,15 +64,8 @@ func useDataDir(t *testing.T, dir string) {
 
 // A locked keyring is reported with its own code on every token operation.
 func TestTokenStoreReportsALockedKeyring(t *testing.T) {
-	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("ENBU_AUTH_BACKEND", "keyring")
-	origDir := authStoreDir
-	dir := filepath.Join(t.TempDir(), "github-auth")
-	authStoreDir = func() string { return dir }
-	t.Cleanup(func() { authStoreDir = origDir })
-	orig := tokenBackend
+	stubBackend(t)
 	tokenBackend = &errorBackend{err: fmt.Errorf("%w: test", keystore.ErrLocked)}
-	t.Cleanup(func() { tokenBackend = orig })
 	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("LoadToken = %v", err)
 	}

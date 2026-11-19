@@ -340,7 +340,8 @@ TPM に保存した GitHub 認証情報は GUI、D-Bus、Secret Service がな�
 旧エントリの有無を調べていない状態は `legacy_unchecked` と表示します。
 
 TPM の初期化・交換や保存ファイルの紛失後は、元の TPM とファイルの復元を試してください。
-復元できない場合は `enbu auth reset --yes` で OS ユーザーの保存済み GitHub アカウントをすべてリセットし、再ログインします。
+復元できない場合は `enbu auth reset --yes` で選択中の保存先にある GitHub アカウントをリセットし、再ログインします。
+TPM の保存先をリセットした後も、OS keyring に旧エントリが残る場合があります。
 TPM を撤去して OS keyring に切り替える場合は、`ENBU_AUTH_BACKEND=keyring enbu auth reset --yes` を実行してから再ログインします。
 保存形式は [GitHub 認証ストアの構成](docs/identity.md#github-credential-store) を参照してください。
 

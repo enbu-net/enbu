@@ -150,7 +150,7 @@ func newAuthMaintenanceCommand(reset bool) *cobra.Command {
 	use, short := "migrate", "Move saved GitHub accounts from the OS keyring to the TPM"
 	operation := auth.MigrateCredentials
 	if reset {
-		use, short = "reset", "Reset saved GitHub credentials for this OS user"
+		use, short = "reset", "Reset GitHub accounts in the selected credential store"
 		operation = auth.ResetCredentials
 	}
 	var yes bool
@@ -175,7 +175,7 @@ func newAuthMaintenanceCommand(reset bool) *cobra.Command {
 		},
 	}
 	if reset {
-		cmd.Flags().BoolVar(&yes, "yes", false, "Confirm reset of all saved GitHub accounts")
+		cmd.Flags().BoolVar(&yes, "yes", false, "Confirm reset of accounts in the selected credential store")
 	}
 	return cmd
 }

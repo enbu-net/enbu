@@ -382,9 +382,9 @@ deleting the old entry. If cleanup fails, run the same command again.
 
 After a TPM clear, replacement, or loss of the credential file, try restoring
 the original TPM and files. If recovery is impossible, run
-`enbu auth reset --yes` and sign in again. This clears all saved GitHub
-accounts for the OS user. If the TPM has been removed and you want to use the
-OS keyring, explicitly choose it with
+`enbu auth reset --yes` and sign in again. This clears the GitHub accounts in the
+selected credential store. A legacy OS keyring entry can remain after a TPM reset.
+If the TPM has been removed and you want to use the OS keyring, choose it with
 `ENBU_AUTH_BACKEND=keyring enbu auth reset --yes` before signing in again.
 See [TPM credential architecture](docs/identity.md#github-credential-store).
 

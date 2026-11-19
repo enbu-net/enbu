@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	enbuage "github.com/enbu-net/enbu/pkg/age"
@@ -101,6 +102,73 @@ func pipeClient(t *testing.T, s *Server) *Client {
 	}}
 	t.Cleanup(func() { _ = c.Close() })
 	return c
+}
+
+func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
+	c := pipeClient(t, newServer(t.TempDir()))
+	dial := c.Dial
+	reqR, reqW := io.Pipe()
+	respR, respW := io.Pipe()
+	t.Cleanup(func() {
+		_ = reqR.Close()
+		_ = respW.Close()
+		_ = reqW.Close()
+		_ = respR.Close()
+	})
+	dials := 0
+	c.Dial = func() (*Conn, error) {
+		dials++
+		if dials > 1 {
+			return dial()
+		}
+		return &Conn{R: respR, W: reqW, Close: func() error {
+			_ = reqW.Close()
+			return respR.Close()
+		}}, nil
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- c.CheckProtocol(ctx) }()
+
+	// Read the client's request but leave stdout open without a response.
+	var req request
+	if err := json.NewDecoder(reqR).Decode(&req); err != nil || req.Method != methodHello {
+		t.Fatalf("reading hello: got %q, %v", req.Method, err)
+	}
+	waiting, cancelWaiting := context.WithCancel(t.Context())
+	cancelWaiting()
+	waitingResult := make(chan error, 1)
+	go func() { waitingResult <- c.CheckProtocol(waiting) }()
+	select {
+	case err := <-waitingResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("queued preflight = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("queued preflight did not cancel")
+	}
+
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stalled preflight = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stalled preflight did not cancel")
+	}
+
+	retry, stopRetry := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stopRetry()
+	for range 2 {
+		if err := c.CheckProtocol(retry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if dials != 2 {
+		t.Fatalf("dialed %d times, want one cancelled and one reused connection", dials)
+	}
 }
 
 // After enbu.exe restarts, a handle from the old process may name another key
@@ -426,7 +494,7 @@ func TestAnExeThatCannotStartNamesInterop(t *testing.T) {
 func TestAnOlderExeIsNamed(t *testing.T) {
 	// An enbu.exe without the bridge prints its usage error and exits.
 	c := &Client{Dial: func() (*Conn, error) {
-		return &Conn{R: strings.NewReader(""), W: nopWriteCloser{io.Discard}, Close: func() error { return nil }}, nil
+		return &Conn{R: io.NopCloser(strings.NewReader("")), W: nopWriteCloser{io.Discard}, Close: func() error { return nil }}, nil
 	}}
 	_, err := c.Info("ws")
 	if !errors.Is(err, identity.ErrUnavailable) || !strings.Contains(err.Error(), "same version") {

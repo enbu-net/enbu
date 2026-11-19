@@ -93,7 +93,7 @@ func (c Client) Login(ctx context.Context, prompt DevicePrompter) (*StoredToken,
 		return token, nil
 	}
 	if winbridge.InWSL() {
-		if err := winbridge.Shared().CheckProtocol(); err != nil {
+		if err := winbridge.Shared().CheckProtocol(ctx); err != nil {
 			return nil, bridgeAuthError(err)
 		}
 	}
