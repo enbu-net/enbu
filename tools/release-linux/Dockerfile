@@ -6,7 +6,7 @@
 # versions whenever and wherever it is built. Bump SNAPSHOT and the digests
 # together, deliberately; a release can be rebuilt only with the Dockerfile of
 # its tag.
-FROM golang:1.27.4@sha256:08bcb99a38f85a265f9a93d1d3323e2440eec333380f3ea26ee0dec9264bb41c AS go
+FROM golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf AS go
 
 FROM ubuntu:26.04@sha256:d66b366dac61b575bee2aef07e9c26e8070096fbe84a3d4d3eb0da069b5d76db
 
