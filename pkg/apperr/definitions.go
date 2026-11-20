@@ -19,6 +19,7 @@ var definitions = map[Code]definition{
 	CodeEnvironmentExists:   {message: "Environment \"{name}\" already exists.", params: []string{"name"}},
 	CodeSecretMissing:       {message: "Secret \"{key}\" does not exist.", params: []string{"key"}},
 	CodeSecretExists:        {message: "Secret \"{key}\" already exists.", params: []string{"key"}},
+	CodeSecretNameInvalid:   {message: "Secret name \"{key}\" cannot be written to .env. Use Unicode letters, numbers, marks, and underscores, starting with a letter or underscore. For an existing secret, add its value under a valid name, then delete the old name.", params: []string{"key"}},
 	CodeArtifactNotFound:    {message: "The requested secrets were not found.", params: []string{}},
 	CodeConflict:            {message: "Secrets changed remotely. Try again.", params: []string{}},
 	CodeUnavailable:         {message: "The required service is unavailable.", params: []string{}},

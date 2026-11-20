@@ -98,7 +98,7 @@ func setupLogger() *os.File {
 	}
 	dir = filepath.Join(dir, "enbu")
 	_ = os.MkdirAll(dir, 0o700)
-	name := filepath.Join(dir, fmt.Sprintf("enbu-%s.log", clock.New().Now().Format("20060102-150405")))
+	name := filepath.Join(dir, fmt.Sprintf("enbu-%s-%d.log", clock.New().Now().Format("20060102-150405"), os.Getpid()))
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil

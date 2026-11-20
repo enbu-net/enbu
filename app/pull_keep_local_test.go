@@ -87,6 +87,48 @@ func TestPullWritesAFreshFileWithTheMarker(t *testing.T) {
 	}
 }
 
+func TestPullExplainsLegacyInvalidSecretNameWithoutChangingOutput(t *testing.T) {
+	alice := newAlice(t)
+	path := writeOutput(t, alice, "LOCAL_ONLY=keep\n")
+	if err := alice.changeSecret(bg, "default", "legacy", func(secrets map[string]string) error {
+		secrets["BAD\nKEY"] = "Hello"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := alice.PullSecretsToFileWith(bg, "default", false)
+	if !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+		t.Fatalf("PullSecretsToFileWith = %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != "LOCAL_ONLY=keep\n" {
+		t.Fatalf("output changed on failed pull: %q", got)
+	}
+	if err := alice.DeleteSecret(bg, "default", "BAD\nKEY"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
+		t.Fatalf("pull after deleting invalid name: %v", err)
+	}
+}
+
+func TestPullWritesAndReadsJapaneseSecretName(t *testing.T) {
+	alice := newAlice(t)
+	if err := alice.AddSecret(bg, "default", "こんにちは", "Hello"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(alice.RepositoryDir, ".env")
+	got, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(got), "こんにちは=\"Hello\"") {
+		t.Fatalf("written file = %q, %v", got, err)
+	}
+	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
+		t.Fatalf("reading the pulled file: %v", err)
+	}
+}
+
 // A secret deleted from the environment leaves the file on the next pull and
 // is reported, instead of staying on disk in plaintext as a "local" variable.
 // Variables below the marker stay.

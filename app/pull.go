@@ -36,6 +36,9 @@ func (a *App) PullSecrets(ctx context.Context, env string) (data []byte, output 
 	if err != nil {
 		return nil, "", 0, err
 	}
+	if err := validateSecretNames(result.Secrets); err != nil {
+		return nil, "", 0, err
+	}
 	data, err = dotenv.Format(result.Secrets)
 	if err != nil {
 		return nil, "", 0, err
@@ -191,6 +194,9 @@ const keptMarker = "# Local variables below are kept by enbu pull; enbu does not
 // hold now, and if it fails those variables are kept.
 // With replace the file's content is ignored.
 func dotenvWithLocal(path string, secrets map[string]string, replace bool, everStored func() (map[string]bool, error)) (data []byte, kept, removed []string, err error) {
+	if err := validateSecretNames(secrets); err != nil {
+		return nil, nil, nil, err
+	}
 	data, err = dotenv.Format(secrets)
 	if err != nil {
 		return nil, nil, nil, err
@@ -278,6 +284,15 @@ func dotenvWithLocal(path string, secrets map[string]string, replace bool, everS
 		return nil, nil, nil, err
 	}
 	return append(data, extra...), kept, removed, nil
+}
+
+func validateSecretNames(secrets map[string]string) error {
+	for _, key := range slices.Sorted(maps.Keys(secrets)) {
+		if err := validateSecretName(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // splitAtMarker returns what an earlier pull wrote above its marker and the
