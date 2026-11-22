@@ -19,26 +19,24 @@ type ImportResult struct {
 }
 
 // ImportTarget pins a file chosen asynchronously to the lineage shown when
-// the user picked it. A CLI import resolves its environment in one operation.
+// the user picked it.
 type ImportTarget struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 	Incarnation string `json:"incarnation"`
 }
 
-// ImportDotenv adds every variable of a dotenv file's content to env, as
-// ImportSecrets does.
-func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, overwrite bool, target ...ImportTarget) (result *ImportResult, err error) {
+// ImportDotenv adds every variable of a dotenv file to the captured target.
+func (a *App) ImportDotenv(ctx context.Context, target ImportTarget, content []byte, overwrite bool) (result *ImportResult, err error) {
 	defer apperr.NormalizeInto(&err)
+	if target.WorkspaceID == "" || target.Environment == "" {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "an import target is required", nil)
+	}
 	secrets, err := dotenv.Parse(content)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file (save it as UTF-8)", err, nil)
 	}
-	var expected *ImportTarget
-	if len(target) != 0 {
-		expected = &target[0]
-	}
-	return a.importSecrets(ctx, env, secrets, overwrite, expected)
+	return a.importSecrets(ctx, target.Environment, secrets, overwrite, &target)
 }
 
 // ImportSecrets adds every key of secrets to env in one signed state. A key
@@ -59,7 +57,7 @@ func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]
 		return nil, err
 	}
 	if expected != nil && (expected.WorkspaceID != s.workspace ||
-		expected.Environment != resolved.Name || expected.Incarnation != s.cfg.Environments[resolved.Name].Incarnation) {
+		expected.Incarnation != s.cfg.Environments[resolved.Name].Incarnation) {
 		s.Close()
 		return nil, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
 	}

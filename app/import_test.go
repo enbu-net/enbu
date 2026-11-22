@@ -76,14 +76,27 @@ func TestImportConflictPublicPayloadListsAllKeys(t *testing.T) {
 
 func TestImportDotenvParsesTheFile(t *testing.T) {
 	alice := newAlice(t)
-	res, err := alice.ImportDotenv(bg, "default", []byte("NEW=n\n# comment\nOTHER=\"quoted value\"\n"), false)
+	if _, err := alice.ImportDotenv(bg, ImportTarget{}, []byte("UNSCOPED=value\n"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("unscoped import: %v", err)
+	}
+	target := importTestTarget(t, alice)
+	res, err := alice.ImportDotenv(bg, target, []byte("NEW=n\n# comment\nOTHER=\"quoted value\"\n"), false)
 	if err != nil || len(res.Added) != 2 {
 		t.Fatalf("%+v %v", res, err)
 	}
 	if got := mustSecrets(t, alice, "default"); got["OTHER"] != "quoted value" {
 		t.Fatalf("imported: %v", got)
 	}
-	if _, err := alice.ImportDotenv(bg, "default", []byte("not a dotenv line"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := alice.ImportDotenv(bg, target, []byte("not a dotenv line"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("invalid dotenv: %v", err)
 	}
+}
+
+func importTestTarget(t *testing.T, a *App) ImportTarget {
+	t.Helper()
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ImportTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default", Incarnation: cfg.Environments["default"].Incarnation}
 }

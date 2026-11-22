@@ -546,10 +546,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if _, e := a.ImportSecrets(ctx, "default", map[string]string{"BASE": "overwrite"}, false); requireCode(e, apperr.CodeSecretExists) != nil {
 			return fmt.Errorf("import conflict: %v", e)
 		}
-		if _, e := a.ImportDotenv(ctx, "default", []byte("not a dotenv line"), false); requireCode(e, apperr.CodeInvalidArgument) != nil {
+		target := app.ImportTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default", Incarnation: cfg.Environments["default"].Incarnation}
+		if _, e := a.ImportDotenv(ctx, target, []byte("not a dotenv line"), false); requireCode(e, apperr.CodeInvalidArgument) != nil {
 			return fmt.Errorf("invalid dotenv import: %v", e)
 		}
-		if _, e := a.ImportDotenv(ctx, "default", []byte("BASE=overwrite\n"), false); requireCode(e, apperr.CodeSecretExists) != nil {
+		if _, e := a.ImportDotenv(ctx, target, []byte("BASE=overwrite\n"), false); requireCode(e, apperr.CodeSecretExists) != nil {
 			return fmt.Errorf("dotenv import conflict: %v", e)
 		}
 		return w.Check(ctx, "default")
