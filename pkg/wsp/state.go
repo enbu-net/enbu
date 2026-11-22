@@ -239,11 +239,8 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		for _, rev := range batch {
 			f := fetched[rev]
 			switch {
-			case errors.Is(f.err, storage.ErrNotFound):
+			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
 				sv.Unavailable = append(sv.Unavailable, rev)
-				sv.Skipped++
-				continue
-			case errors.Is(f.err, storage.ErrCorrupt):
 				sv.Skipped++
 				continue
 			}

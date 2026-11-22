@@ -53,7 +53,7 @@ func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
 	}
 }
 
-func TestRemoveMemberRejectsMissingRevisionMetadata(t *testing.T) {
+func TestRemoveMemberRejectsUnavailableRevisionMetadata(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	target := mustMember(t, alice, bob).DeviceID
@@ -69,19 +69,24 @@ func TestRemoveMemberRejectsMissingRevisionMetadata(t *testing.T) {
 	if err != nil || len(view.Heads) != 1 {
 		t.Fatalf("read Bob's head: %v", err)
 	}
-	latest := view.Heads[0].Digest
-	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
-		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
-			if kind == storage.KindState && rev == latest {
-				return nil, storage.ErrNotFound
+	base := alice.Storage
+	for _, failure := range []error{storage.ErrNotFound, storage.ErrCorrupt} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			latest := view.Heads[0].Digest
+			alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+				FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+					if kind == storage.KindState && rev == latest {
+						return nil, failure
+					}
+					return next.FetchHead(ctx, kind, scope, rev)
+				},
+			})
+			if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeUntrusted) {
+				t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
 			}
-			return next.FetchHead(ctx, kind, scope, rev)
-		},
-	})
-	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeUntrusted) {
-		t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
+			_ = mustMember(t, alice, bob)
+		})
 	}
-	_ = mustMember(t, alice, bob)
 }
 
 func TestRemoveMemberRechecksControlAfterAcceptingStates(t *testing.T) {
