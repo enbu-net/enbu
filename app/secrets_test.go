@@ -144,6 +144,10 @@ func TestReadWorkspaceSelectsAnExistingEnvironment(t *testing.T) {
 		len(snapshot.Environments) != 1 || !snapshot.Environments[0].IsCurrent {
 		t.Fatalf("unusable snapshot: %+v %v", snapshot, err)
 	}
+	envs, err := a.ListEnvironments()
+	if err != nil || len(envs) != 1 || !envs[0].IsCurrent || envs[0].Name != snapshot.Environment {
+		t.Fatalf("workspace and environment APIs disagree: %+v %v", envs, err)
+	}
 }
 
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {

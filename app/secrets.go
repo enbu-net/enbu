@@ -27,13 +27,16 @@ func (a *App) ReadWorkspace(ctx context.Context) (snapshot WorkspaceSnapshot, er
 	}
 	defer s.Close()
 	env := s.cfg.CurrentEnvironment()
-	if !s.cfg.HasEnvironment(env) {
-		// The dashboard must still offer the remaining environments when its
-		// configured selection is stale.
-		env = s.cfg.EnvironmentNames()[0]
-	}
 	snapshot = WorkspaceSnapshot{
 		WorkspaceID: s.workspace, Environments: environmentInfos(s.cfg, env), Environment: env,
+	}
+	// An invalid explicit default still needs to show available environments
+	// so a person can switch to one. There is no active resource to read.
+	if _, err := s.cfg.Environment(env); apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		snapshot.Environment = ""
+		return snapshot, nil
+	} else if err != nil {
+		return WorkspaceSnapshot{}, err
 	}
 	read, err := s.readResource(ctx, s.resource(env), nil, true)
 	if IsNotFoundError(err) {
