@@ -196,3 +196,24 @@ func TestGitignoreKeepsConfiguredExampleOutputSecret(t *testing.T) {
 		t.Fatalf("unrelated template should be unignored, git returned %v", err)
 	}
 }
+
+func TestGitignorePreservesFirstRuleAndHistoricalExampleExclusion(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	writeGitignore(t, dir, "\uFEFF/keep.out\n/.env.example\n")
+	content := ensureGitignoreIn(t, dir, nil)
+	if !strings.HasPrefix(content, "\uFEFF") {
+		t.Fatal("UTF-8 BOM moved or disappeared")
+	}
+	for _, name := range []string{"keep.out", ".env.example"} {
+		if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", name).CombinedOutput(); err != nil {
+			t.Fatalf("git check-ignore %s: %v %s", name, err, out)
+		}
+	}
+}

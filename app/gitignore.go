@@ -73,7 +73,7 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	existing := string(data)
+	existing, bom := strings.CutPrefix(string(data), "\uFEFF")
 	listed := make(map[string]bool)
 	for _, line := range strings.Split(existing, "\n") {
 		listed[strings.TrimSpace(line)] = true
@@ -105,7 +105,7 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	}
 	var outputs []string
 	for _, rule := range gitignoreEntries(cfg) {
-		if !listed[rule] && !(rule == "/.env" && listed[".env"]) {
+		if !listed[rule] && (rule != "/.env" || !listed[".env"]) {
 			outputs = append(outputs, rule)
 			listed[rule] = true
 		}
@@ -115,6 +115,9 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	}
 	if content == existing {
 		return nil
+	}
+	if bom {
+		content = "\uFEFF" + content
 	}
 	return fsutil.WriteFileAtomic(path, []byte(content), perm)
 }
