@@ -176,8 +176,10 @@ export const mockBackend: Backend = {
     return {
       session_id: mockSignIn.session,
       expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      user_code: "ENBU-0000",
-      verification_uri: "https://github.com/login/device",
+      // Nothing to enter anywhere: the preview completes the sign-in itself,
+      // and its "open in browser" link points back at the preview.
+      user_code: "PREVIEW",
+      verification_uri: globalThis.location?.href ?? "",
     };
   },
 
@@ -263,7 +265,9 @@ export const mockBackend: Backend = {
   async RenameEnvironment(name: string, newName: string): Promise<void> {
     if (!validEnvironmentName(newName)) throw createAppError("invalid_argument", { name: newName });
     // Names are unique ignoring case (ProjectConfig.RenameEnvironment).
-    if (mockEnvs.some((e) => e.name.toLowerCase() === newName.toLowerCase())) {
+    // A case-only change of the same environment is allowed.
+    const taken = (e: EnvInfo) => e.name !== name && e.name.toLowerCase() === newName.toLowerCase();
+    if (name === newName || mockEnvs.some(taken)) {
       throw createAppError("environment_already_exists", { name: newName });
     }
     mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
