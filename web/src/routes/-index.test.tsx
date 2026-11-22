@@ -3,7 +3,7 @@ import { act } from "react-dom/test-utils";
 import { backend } from "../lib/backend";
 import type { Session } from "../lib/session";
 import { noRepo, type RepoInfo } from "../lib/types";
-import { container, queryButton, root, settle, setupDom, withSession } from "../test/dom";
+import { container, queryButton, root, settle, setupDom, typeInto, withSession } from "../test/dom";
 import { HomePage } from "./index";
 
 vi.mock("../lib/backend", async () => ({
@@ -12,6 +12,14 @@ vi.mock("../lib/backend", async () => ({
 vi.mock("../lib/platform", () => ({
   openURL: vi.fn(),
   onProgress: () => () => {},
+}));
+
+vi.mock("../features/auth/add-account", () => ({
+  AddAccount: ({ onDone }: { onDone: () => void }) => (
+    <button type="button" onClick={onDone}>
+      Return from GitHub
+    </button>
+  ),
 }));
 
 setupDom();
@@ -66,6 +74,27 @@ describe("HomePage", () => {
     });
     expect(container.textContent).toContain("This folder has no enbu.toml yet");
     expect(container.querySelector("#init-storage")).toBeTruthy();
+  });
+
+  it("resets storage input when moving between unconfigured folders", async () => {
+    const repo = repoInfo({ initialized: false, storage_configured: false });
+    await renderHome({ repo });
+    typeInto(container.querySelector("#init-storage"), "s3://first/team");
+    await renderHome({ repo: { ...repo, path: "/other" } });
+    expect(container.querySelector("#init-storage")).toHaveProperty("value", "");
+  });
+
+  it("keeps a typed GHCR URL when returning from sign-in", async () => {
+    await renderHome({
+      status: { authenticated: false, workspace_configured: false },
+      repo: repoInfo({ initialized: false, storage_configured: false }),
+    });
+    const url = "oci://ghcr.io/example/workspace";
+    typeInto(container.querySelector("#init-storage"), url);
+    await act(async () => queryButton("Connect with GitHub")?.click());
+    await act(async () => queryButton("Return from GitHub")?.click());
+    await settle();
+    expect(container.querySelector("#init-storage")).toHaveProperty("value", url);
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {

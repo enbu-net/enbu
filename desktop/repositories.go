@@ -186,9 +186,9 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
-			info.StorageConfigured = cfg.Storage.URL != ""
+			info.StorageConfigured = cfg.Storage.URL != "" && cfg.ControlGenesis != ""
 			_, identityErr := s.app.IdentityInfo()
-			info.Initialized = identityErr == nil
+			info.Initialized = info.StorageConfigured && identityErr == nil
 		}
 		return info, nil
 	})

@@ -38,6 +38,6 @@ export function HomePage() {
   if (step !== "found" && !status?.authenticated && !status?.workspace_configured) {
     return <SignIn />;
   }
-  if (step) return <RepositorySetup key={step} step={step} />;
+  if (step) return <RepositorySetup key={JSON.stringify([repo.path, step])} step={step} />;
   return <Dashboard key={repo.path} repo={repo} />;
 }

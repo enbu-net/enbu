@@ -316,7 +316,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\ncontrol_genesis = \"sha256:example\"\n[storage]\nurl = \"s3://test/store\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	keyStore := &apptest.Identities{}
@@ -348,6 +348,7 @@ func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.Storage = config.StorageConfig{URL: "local:///tmp/enbu-desktop-test"}
+	cfg.ControlGenesis = "sha256:example"
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}

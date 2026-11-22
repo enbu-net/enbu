@@ -91,18 +91,23 @@ const primaryButton = {
 
 /** Sets up enbu in a selected folder, as `enbu init` does. */
 export function RepositorySetup({ step }: { step: SetupStep }) {
-  const { reloadRepo } = useSession();
+  const { reloadRepo, refresh } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
   const [done, setDone] = useState<InitResult | null>(null);
 
-  if (done) return <InitDone result={done} onContinue={reloadRepo} />;
+  async function latestRepository() {
+    await refresh({ force: true, invalidate: true });
+    await reloadRepo();
+  }
+
+  if (done) return <InitDone result={done} onContinue={latestRepository} />;
 
   async function initialize(storage: StorageConfig, acceptNewGenesis: boolean) {
     const result = await backend.Initialize(storage, acceptNewGenesis);
     // Founding or waiting for approval leaves the person something to do first.
     if (result.founded || result.pending || result.replaced_genesis) setDone(result);
-    else await reloadRepo();
+    else await latestRepository();
   }
 
   return step === "found" ? (
