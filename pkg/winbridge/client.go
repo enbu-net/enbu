@@ -31,8 +31,9 @@ type Conn struct {
 // the Windows enbu.exe, which it starts on first use and keeps for the life
 // of this process.
 type Client struct {
-	// Dial opens the stream. It defaults to starting enbu.exe from Locate.
-	Dial func() (*Conn, error)
+	// Dial opens the stream and may stop opening it when ctx ends.
+	// Nil starts enbu.exe from Locate.
+	Dial func(context.Context) (*Conn, error)
 	// Clock supplies the RPC deadline. Nil uses the system clock.
 	Clock clock.Clock
 
@@ -154,16 +155,54 @@ func waitOrKill(cmd *exec.Cmd, c clock.Clock, grace time.Duration) error {
 	}
 }
 
-func (c *Client) dial() (*Conn, error) {
-	if c.Dial != nil {
-		return c.Dial()
+// dial leaves the stream lock promptly even if process startup is blocked in
+// the OS. A connection that eventually opens after cancellation is discarded.
+func (c *Client) dial(ctx context.Context) (*Conn, string, error) {
+	type result struct {
+		conn *Conn
+		path string
+		err  error
 	}
-	path, err := Locate()
-	if err != nil {
-		return nil, err
+	done := make(chan result)
+	start := c.Dial
+	go func() {
+		var r result
+		if start != nil {
+			r.conn, r.err = start(ctx)
+		} else {
+			r.path, r.err = Locate()
+			if r.err == nil {
+				r.err = ctx.Err()
+			}
+			if r.err == nil {
+				r.conn, r.err = Exec(r.path)
+			}
+		}
+		select {
+		case done <- r:
+		case <-ctx.Done():
+			if r.conn != nil {
+				r.conn.interrupt()
+				if r.conn.Close != nil {
+					_ = r.conn.Close()
+				}
+			}
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil, "", ctx.Err()
+	case r := <-done:
+		return r.conn, r.path, r.err
 	}
-	c.exe = path
-	return Exec(path)
+}
+
+func (c *Conn) interrupt() {
+	_ = c.R.Close()
+	_ = c.W.Close()
+	if c.abort != nil {
+		c.abort()
+	}
 }
 
 // connect starts the bridge and agrees on the protocol. A failure is an
@@ -175,10 +214,14 @@ func (c *Client) connect(ctx context.Context) error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := c.dial()
+	conn, path, err := c.dial(ctx)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return unavailable(err)
 	}
+	c.exe = path
 	c.conn, c.enc, c.dec = conn, json.NewEncoder(conn.W), json.NewDecoder(conn.R)
 	c.gen++
 	var hello helloResult
@@ -209,11 +252,7 @@ func (c *Client) roundTripContext(ctx context.Context, method string, params, re
 	// lock, which remains held until the protocol read returns.
 	interrupted := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
-		_ = conn.R.Close()
-		_ = conn.W.Close()
-		if conn.abort != nil {
-			conn.abort()
-		}
+		conn.interrupt()
 		close(interrupted)
 	})
 	err := c.roundTrip(method, params, result)
