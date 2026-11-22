@@ -263,7 +263,7 @@ export class ImportResult {
 
 /**
  * ImportTarget pins a file chosen asynchronously to the lineage shown when
- * the user picked it. A CLI import resolves its environment in one operation.
+ * the user picked it.
  */
 export class ImportTarget {
     "workspace_id": string;
