@@ -22,9 +22,6 @@ func (cfg *ProjectConfig) teamDefault() string {
 	if cfg.DefaultEnv != "" {
 		return cfg.DefaultEnv
 	}
-	if len(cfg.Environments) != 0 && !cfg.HasEnvironment("default") {
-		return cfg.EnvironmentNames()[0]
-	}
 	return "default"
 }
 
