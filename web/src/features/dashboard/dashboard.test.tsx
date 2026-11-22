@@ -176,9 +176,28 @@ describe("Dashboard", () => {
       environments: [{ name: "staging", current: false }],
       secrets: { environment: "", secrets: [] },
     });
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      environments: [{ name: "staging", current: true }],
+      secrets: { ...snapshot.secrets, environment: "staging" },
+    });
     await renderDashboard();
     expect(labelledInput("Key")).toBeNull();
     expect(queryButton("Pull")).toHaveProperty("disabled", true);
+
+    const selector = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Current environment"]',
+    );
+    expect(selector).not.toBeNull();
+    await act(async () => selector?.click());
+    const staging = queryButton("staging");
+    expect(staging).not.toBeNull();
+    await act(async () => staging?.click());
+    await settle();
+
+    expect(mocked.SwitchEnvironment).toHaveBeenLastCalledWith("staging");
+    expect(labelledInput("Key")).not.toBeNull();
+    expect(queryButton("Pull")).toHaveProperty("disabled", false);
   });
 
   it("keeps the secret rows mounted while a refresh runs", async () => {
