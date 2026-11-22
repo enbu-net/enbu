@@ -254,7 +254,7 @@ func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
 			}
 			select {
 			case diagnosis := <-done:
-				if diagnosis.WSL == nil || diagnosis.WSL.Error != want.Error() {
+				if diagnosis.WSL == nil || !strings.Contains(diagnosis.WSL.Error, want.Error()) {
 					t.Fatalf("diagnosis = %+v", diagnosis)
 				}
 			case <-time.After(5 * time.Second):
@@ -266,6 +266,41 @@ func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
 				t.Fatal("Close stayed blocked")
 			}
 		})
+	}
+}
+
+func TestBeginRejectsClosingBridge(t *testing.T) {
+	c := &Client{closing: true}
+	if ctx, done, err := c.begin(t.Context()); err == nil || ctx != nil || done != nil {
+		t.Fatal("closing bridge returned a usable operation")
+	}
+}
+
+func TestRequestDeadlineStartsAfterAcquiringStream(t *testing.T) {
+	fake := clockwork.NewFakeClock()
+	c := &Client{Clock: fake}
+	if err := c.mu.acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	parent := &observedDoneContext{Context: t.Context(), observed: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		ctx, done, err := c.begin(parent)
+		if err == nil {
+			err = ctx.Err()
+			done()
+		}
+		result <- err
+	}()
+	select {
+	case <-parent.observed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not queue")
+	}
+	fake.Advance(2 * rpcTimeout)
+	c.mu.Unlock()
+	if err := <-result; err != nil {
+		t.Fatalf("queued request already expired: %v", err)
 	}
 }
 

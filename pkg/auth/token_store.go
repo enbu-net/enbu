@@ -141,6 +141,9 @@ func DeleteToken() error { return DeleteAccount("") }
 // DeleteAccount signs out of the matching account or the account in use if login is empty.
 func DeleteAccount(login string) error {
 	if winbridge.InWSL() {
+		if strings.TrimSpace(login) == "" {
+			return apperr.New(apperr.CodeInvalidArgument, "name the GitHub account to sign out from WSL", nil)
+		}
 		_, err := accountOperation("delete", accountRequest{Login: login, Active: loadActive()})
 		return err
 	}

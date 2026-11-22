@@ -75,22 +75,24 @@ const rpcTimeout = time.Minute
 // begin registers cancellation independently of the stream lock so Close can
 // interrupt a request even while it is blocked in pipe I/O.
 func (c *Client) begin(parent context.Context) (context.Context, func(), error) {
+	if err := c.mu.acquire(parent); err != nil {
+		return nil, nil, err
+	}
+	c.activeMu.Lock()
+	err := parent.Err()
+	if c.closing && err == nil {
+		err = unavailable(errors.New("the Windows bridge is closing"))
+	}
+	if err != nil {
+		c.activeMu.Unlock()
+		c.mu.Unlock()
+		return nil, nil, err
+	}
 	cclock := c.Clock
 	if cclock == nil {
 		cclock = clock.New()
 	}
 	ctx, cancel := clock.WithTimeout(parent, cclock, rpcTimeout)
-	if err := c.mu.acquire(ctx); err != nil {
-		cancel()
-		return nil, nil, err
-	}
-	c.activeMu.Lock()
-	if c.closing || ctx.Err() != nil {
-		c.activeMu.Unlock()
-		cancel()
-		c.mu.Unlock()
-		return nil, nil, ctx.Err()
-	}
 	c.cancel = cancel
 	c.activeMu.Unlock()
 	return ctx, func() {
@@ -228,12 +230,16 @@ func unavailable(err error) error {
 
 // CheckProtocol verifies the version before starting sign-in.
 func (c *Client) CheckProtocol(ctx context.Context) error {
-	ctx, done, err := c.begin(ctx)
+	request, done, err := c.begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer done()
-	return c.connect(ctx)
+	err = c.connect(request)
+	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+		return unavailable(fmt.Errorf("waiting for the Windows bridge handshake: %w", err))
+	}
+	return err
 }
 
 func (c *Client) call(method string, params, result any) error {
@@ -275,8 +281,8 @@ func (c *Client) send(ctx context.Context, method string, params, result any) er
 	if err != nil && !errors.As(err, &remote) && !errors.Is(err, age.ErrIncorrectIdentity) {
 		// The stream broke: start again on the next call.
 		c.reset()
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if errors.Is(err, context.Canceled) {
+			return err
 		}
 		return unavailable(fmt.Errorf("the Windows %s stopped answering: %w", exe, err))
 	}
