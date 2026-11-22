@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"errors"
 	"os"
 
 	"golang.org/x/sys/windows"
@@ -13,3 +14,5 @@ func lockFile(f *os.File, wait bool) error {
 	}
 	return windows.LockFileEx(windows.Handle(f.Fd()), flags, 0, 1, 0, &windows.Overlapped{})
 }
+
+func lockBusy(err error) bool { return errors.Is(err, windows.ERROR_LOCK_VIOLATION) }

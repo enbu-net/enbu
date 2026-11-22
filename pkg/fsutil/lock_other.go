@@ -10,3 +10,5 @@ import (
 func lockFile(*os.File, bool) error {
 	return errors.New("file locks are not supported on this platform")
 }
+
+func lockBusy(error) bool { return false }

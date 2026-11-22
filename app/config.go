@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -19,12 +20,12 @@ func (a *App) projectPath() string {
 	return filepath.Join(a.RepositoryDir, "enbu.toml")
 }
 
-func (a *App) lockProject() (*os.File, error) {
+func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	dir, err := filepath.EvalSymlinks(filepath.Dir(a.projectPath()))
 	if err != nil {
 		return nil, fmt.Errorf("resolving project directory: %w", err)
 	}
-	return fsutil.LockFile(filepath.Join(dir, config.ProjectLockName), true)
+	return fsutil.LockFileContext(ctx, filepath.Join(dir, config.ProjectLockName))
 }
 
 func (a *App) ReadConfig() (content string, err error) {
@@ -50,7 +51,7 @@ func (a *App) WriteConfig(content, previous string) (err error) {
 		}
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(context.Background())
 	if err != nil {
 		return err
 	}

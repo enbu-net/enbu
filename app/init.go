@@ -60,7 +60,7 @@ type InitOptions struct {
 // writes out of Git.
 func (a *App) InitializeRepository(ctx context.Context, opts InitOptions) (result *InitResult, err error) {
 	defer apperr.NormalizeInto(&err)
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(ctx)
 	if err != nil {
 		return nil, err
 	}

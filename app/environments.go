@@ -61,7 +61,7 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 		return err
 	}
 	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
-		lock, err := a.lockProject()
+		lock, err := a.lockProject(context.Background())
 		if err != nil {
 			return err
 		}
@@ -119,7 +119,7 @@ func (a *App) CreateEnvironment(name string) (err error) {
 	if !config.ValidEnvironmentName(name) {
 		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(context.Background())
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ type EnvironmentDeletion struct {
 // enbu.toml until they are gone so a failure halfway can simply be repeated.
 func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (deletion EnvironmentDeletion, err error) {
 	defer apperr.NormalizeInto(&err)
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(ctx)
 	if err != nil {
 		return deletion, err
 	}
@@ -227,7 +227,7 @@ func checkDeletable(cfg *config.ProjectConfig, name string) error {
 
 func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	defer apperr.NormalizeInto(&err)
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(context.Background())
 	if err != nil {
 		return err
 	}
@@ -273,7 +273,7 @@ func (a *App) PurgeIncarnation(ctx context.Context, incarnation string) (deleted
 	if _, perr := uuid.Parse(incarnation); perr != nil {
 		return 0, apperr.New(apperr.CodeInvalidArgument, "an incarnation is a UUID", nil)
 	}
-	lock, err := a.lockProject()
+	lock, err := a.lockProject(ctx)
 	if err != nil {
 		return 0, err
 	}

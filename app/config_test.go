@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -130,7 +131,7 @@ func TestProjectLockUsesSameFileForSymlinkedCheckout(t *testing.T) {
 	}
 	aliasApp := *a
 	aliasApp.RepositoryDir = alias
-	first, err := aliasApp.lockProject()
+	first, err := aliasApp.lockProject(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,5 +357,36 @@ func TestWriteConfigSavesBeforeReportingAGitignoreFailure(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
 	if err != nil || string(data) != content {
 		t.Fatalf("enbu.toml = %q, %v", data, err)
+	}
+}
+
+func TestCanceledDeleteReturnsWhileProjectLockIsHeld(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := a.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := a.DeleteEnvironment(ctx, "default", true)
+		result <- err
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiting delete: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delete waited for the project lock after cancellation")
 	}
 }
