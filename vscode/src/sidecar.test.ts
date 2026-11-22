@@ -54,7 +54,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
   if (msg.method === "GetAppVersion") reply("9.9.9");
   if (msg.method === "Exit") process.exit(3);
   if (msg.method === "Echo") reply(msg.params);
-  if (msg.method === "BadFrame") process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600 } }) + "\\n");
+  if (msg.method === "BadFrame") process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "message too large" } }) + "\\n");
 });
 `;
 
