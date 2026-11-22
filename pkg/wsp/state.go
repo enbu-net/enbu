@@ -239,8 +239,11 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 		for _, rev := range batch {
 			f := fetched[rev]
 			switch {
-			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
+			case errors.Is(f.err, storage.ErrNotFound):
 				sv.Unavailable = append(sv.Unavailable, rev)
+				sv.Skipped++
+				continue
+			case errors.Is(f.err, storage.ErrCorrupt):
 				sv.Skipped++
 				continue
 			}
@@ -274,6 +277,11 @@ func (sv *StateView) With(st *VerifiedState) *StateView {
 		for d, v := range sv.States {
 			out.States[d] = v
 			out.Graph.Add(d, v.Parents)
+		}
+		for _, d := range sv.Unavailable {
+			if d != st.Digest {
+				out.Unavailable = append(out.Unavailable, d)
+			}
 		}
 		out.Skipped = sv.Skipped
 		out.Compacted = sv.Compacted

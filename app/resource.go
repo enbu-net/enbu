@@ -149,7 +149,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	maps := make([]map[string]string, len(r.heads))
 	for i, h := range r.heads {
 		if maps[i], err = s.decrypt(ctx, h); err != nil {
-			return r, err
+			return nil, err
 		}
 	}
 	if len(maps) == 1 {

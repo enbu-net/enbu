@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	agecrypto "filippo.io/age"
-
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -195,14 +193,7 @@ func (s *session) acceptCurrentStates(ctx context.Context) error {
 		return err
 	}
 	for _, t := range targets {
-		read, err := s.readResourceChecked(ctx, t.resource, nil, true, checkRemovalMetadata)
-		var noMatch *agecrypto.NoIdentityMatchError
-		if read != nil && errors.As(err, &noMatch) {
-			// Preserve the verified heads as a checkpoint even when this device
-			// is not a recipient. Revocation can proceed, but re-encryption
-			// must report the unreadable head instead of going back to a parent.
-			err = wspError(s.cps.AcceptStates(t.resource, read.view.Graph, read.view.Compacted.Excuses, read.parents(), s.head.Digest))
-		}
+		_, err := s.readResourceChecked(ctx, t.resource, nil, true, checkRemovalMetadata)
 		if IsNotFoundError(err) {
 			continue // An environment without revisions has nothing to preserve.
 		}

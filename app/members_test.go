@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	agecrypto "filippo.io/age"
 	apptest "github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -83,39 +82,6 @@ func TestRemoveMemberRejectsMissingRevisionMetadata(t *testing.T) {
 		t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
 	}
 	_ = mustMember(t, alice, bob)
-}
-
-func TestRemoveMemberWithUnreadableHeadReportsPartialCompletion(t *testing.T) {
-	alice := newAlice(t)
-	bob := approved(t, alice)
-	target := mustMember(t, alice, bob).DeviceID
-	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
-		t.Fatal(err)
-	}
-	// Only the latest head is unreadable. A fallback could still read its parent.
-	var unreadable digest.Digest
-	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
-		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
-			if unreadable == "" {
-				unreadable = rev
-			}
-			if rev == unreadable {
-				return nil, &agecrypto.NoIdentityMatchError{}
-			}
-			return next.OpenPayload(ctx, kind, scope, rev)
-		},
-	})
-	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeReencryptIncomplete) {
-		t.Fatalf("unreadable head should leave re-encryption incomplete: %v", err)
-	}
-	members, err := alice.ListMembers(bg)
-	if err != nil || len(members) != 1 || !members[0].Self {
-		t.Fatalf("revocation did not publish: %v, %v", members, err)
-	}
-	var noMatch *agecrypto.NoIdentityMatchError
-	if _, err := alice.ListSecrets(bg, "default"); !errors.As(err, &noMatch) {
-		t.Fatalf("read fell back to an older revision: %v", err)
-	}
 }
 
 func TestRemoveMemberRechecksControlAfterAcceptingStates(t *testing.T) {
