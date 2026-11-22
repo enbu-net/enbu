@@ -6,6 +6,25 @@ import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { copySecret } from "../../lib/clipboard";
 import { m } from "../../paraglide/messages";
 
+function applyTextareaEdit(previous: string, next: string): string {
+  if (!previous.includes("\r")) return next;
+  // Textareas expose CRLF and CR as LF. Keep the original bytes on both
+  // sides of the edited span and take the new text only for that span.
+  const original = previous.match(/\r\n|[^]/g) ?? [];
+  const normalized = previous.replace(/\r\n?/g, "\n");
+  let start = 0;
+  while (start < next.length && normalized[start] === next[start]) start++;
+  let end = normalized.length;
+  let nextEnd = next.length;
+  while (end > start && nextEnd > start && normalized[end - 1] === next[nextEnd - 1]) {
+    end--;
+    nextEnd--;
+  }
+  return (
+    original.slice(0, start).join("") + next.slice(start, nextEnd) + original.slice(end).join("")
+  );
+}
+
 export function SecretRow({
   secretKey,
   secretValue,
@@ -129,7 +148,7 @@ export function SecretRow({
             borderWidth="1px"
             borderColor="border.default"
             borderRadius="md"
-            onChange={(event) => setEditValue(event.target.value)}
+            onChange={(event) => setEditValue(applyTextareaEdit(editValue, event.target.value))}
           />
         ) : (
           <Input

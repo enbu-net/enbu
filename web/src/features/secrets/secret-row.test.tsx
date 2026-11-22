@@ -120,9 +120,9 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith("new-secret");
   });
 
-  it("preserves multiline values on blur and saves edits with their newlines", async () => {
+  it.each(["\n", "\r\n", "\r"])("preserves %j separators on blur and edit", async (separator) => {
     const onEdit = vi.fn(async () => {});
-    const value = "header\nbody\nfooter";
+    const value = ["header", "body", "footer"].join(separator);
     renderSecretRow({ secretKey: "PEM", secretValue: value, onEdit });
     expect(container.querySelector('input[aria-label="Value: PEM"]')).toHaveProperty(
       "readOnly",
@@ -130,7 +130,7 @@ describe("SecretRow", () => {
     );
     act(() => queryButton("Show value")?.click());
     const editor = container.querySelector("textarea")!;
-    expect(editor.value).toBe(value);
+    expect(editor.value).toBe("header\nbody\nfooter");
     act(() => {
       editor.focus();
       editor.blur();
@@ -144,7 +144,7 @@ describe("SecretRow", () => {
     });
     await act(async () => queryButton("Save")?.click());
     expect(onEdit).toHaveBeenCalledOnce();
-    expect(onEdit).toHaveBeenCalledWith(changed);
+    expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
   });
 
   it("renders the secret key as a monospace label", () => {
