@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Flex } from "styled-system/jsx";
 import { Button, Spinner, Text } from "./ui";
+import { loadMonaco } from "../lib/monaco";
 import type { TomlLanguageSession } from "../lib/toml-language-client";
 
 export function TomlCodeEditor({
@@ -31,17 +32,9 @@ export function TomlCodeEditor({
     let disposed = false;
     let cleanup = () => {};
 
-    void Promise.all([
-      import("monaco-editor"),
-      import("monaco-editor/editor/editor.worker?worker"),
-      import("../lib/toml-language-client"),
-    ])
-      .then(async ([monaco, workerModule, language]) => {
+    void Promise.all([loadMonaco(), import("../lib/toml-language-client")])
+      .then(async ([monaco, language]) => {
         if (disposed || !containerRef.current) return;
-        (globalThis as typeof globalThis & { MonacoEnvironment: { getWorker: () => Worker } })
-          .MonacoEnvironment = {
-          getWorker: () => new workerModule.default(),
-        };
         const model = monaco.editor.createModel(
           initialValueRef.current,
           "toml",
