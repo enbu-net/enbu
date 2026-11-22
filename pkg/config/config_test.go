@@ -529,3 +529,16 @@ func TestRemovingTeamDefaultKeepsFreshDevicesOnAnExistingEnvironment(t *testing.
 		t.Fatalf("fresh device chose %q, configured default %q", got, cfg.DefaultEnv)
 	}
 }
+
+func TestUnspecifiedDefaultChoosesAnExistingEnvironment(t *testing.T) {
+	cfg := &ProjectConfig{Environments: map[string]EnvironmentConfig{
+		"staging":    {},
+		"production": {},
+	}}
+	if got := cfg.CurrentEnvironment(); got != "production" {
+		t.Fatalf("current environment = %q", got)
+	}
+	if _, err := cfg.Environment(""); err != nil {
+		t.Fatal(err)
+	}
+}
