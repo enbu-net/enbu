@@ -33,6 +33,7 @@ export interface ClientHandlers {
 export interface InitializeResult {
   protocol_version: number;
   app_version: string;
+  max_message_size?: number;
   methods: string[];
   events: string[];
 }
@@ -50,6 +51,9 @@ type Pending = { resolve: (value: unknown) => void; reject: (reason: unknown) =>
 
 const codeMethodNotFound = -32601;
 const codeApplication = -32000;
+const codeInvalidRequest = -32600;
+// The default protects clients talking to a server that predates negotiation.
+const defaultMaxMessageSize = 16 << 20;
 
 export class RpcClient {
   readonly #output: Writable;
@@ -57,6 +61,7 @@ export class RpcClient {
   readonly #pending = new Map<number, Pending>();
   #nextID = 0;
   #closed = false;
+  #maxMessageSize = defaultMaxMessageSize;
 
   constructor(input: Readable, output: Writable, handlers: ClientHandlers) {
     this.#output = output;
@@ -64,6 +69,8 @@ export class RpcClient {
     const lines = createInterface({ input, crlfDelay: Infinity });
     lines.on("line", (line) => this.#receive(line));
     lines.on("close", () => this.dispose());
+    lines.on("error", () => this.dispose());
+    output.on("error", () => this.dispose());
   }
 
   /** Calls a server method with positional params. */
@@ -71,17 +78,38 @@ export class RpcClient {
     if (this.#closed) return Promise.reject(new RpcError(codeApplication, "enbu is not running"));
     const id = ++this.#nextID;
     return new Promise((resolve, reject) => {
+      const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
+      if (Buffer.byteLength(line) > this.#maxMessageSize) {
+        reject(
+          new RpcError(codeInvalidRequest, "message too large", {
+            code: "invalid_argument",
+            message: "message too large",
+            params: {},
+          }),
+        );
+        return;
+      }
       this.#pending.set(id, { resolve, reject });
-      this.#send({ jsonrpc: "2.0", id, method, params });
+      this.#output.write(line);
     });
+  }
+
+  setMaxMessageSize(size: number | undefined): void {
+    if (size !== undefined && Number.isSafeInteger(size) && size > 0) {
+      this.#maxMessageSize = size;
+    }
   }
 
   /** Rejects the calls in flight; later calls fail at once. */
   dispose(): void {
+    this.#fail(new RpcError(codeApplication, "enbu exited"));
+  }
+
+  #fail(error: RpcError): void {
     if (this.#closed) return;
     this.#closed = true;
     for (const pending of this.#pending.values()) {
-      pending.reject(new RpcError(codeApplication, "enbu exited"));
+      pending.reject(error);
     }
     this.#pending.clear();
   }
@@ -102,6 +130,11 @@ export class RpcClient {
     if (!message || typeof message !== "object") return;
     if (typeof message.method === "string") {
       this.#serve(message.id, message.method, message.params);
+      return;
+    }
+    if (message.jsonrpc === "2.0" && message.id === null && message.error) {
+      // No request ID means we cannot know which result will never arrive.
+      this.#fail(new RpcError(message.error.code, "enbu protocol error"));
       return;
     }
     if (typeof message.id !== "number") return;
@@ -174,6 +207,7 @@ export async function initialize(client: RpcClient): Promise<InitializeResult> {
       `unsupported enbu protocol version ${String(result?.protocol_version)}`,
     );
   }
+  client.setMaxMessageSize(result.max_message_size);
   return result;
 }
 

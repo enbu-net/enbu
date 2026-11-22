@@ -30,6 +30,31 @@ function setup(handlers: Partial<ClientHandlers> = {}) {
 }
 
 describe("RpcClient", () => {
+  it("rejects an oversized encoded import without disturbing other requests", async () => {
+    const { client, send, next } = setup();
+    await expect(
+      client.request("ImportSecrets", ["default", "\\".repeat(8 << 20), false]),
+    ).rejects.toMatchObject({ data: { code: "invalid_argument" } });
+    const version = client.request("GetAppVersion");
+    expect(await next()).toMatchObject({ id: 2, method: "GetAppVersion" });
+    send({ jsonrpc: "2.0", id: 2, result: "1.2.3" });
+    await expect(version).resolves.toBe("1.2.3");
+  });
+
+  it("settles every pending call after an error without a request ID", async () => {
+    const { client, send, next } = setup();
+    const results = Promise.allSettled([
+      client.request("ImportSecrets"),
+      client.request("GetAppVersion"),
+    ]);
+    await next();
+    await next();
+    send({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "message too large" } });
+    expect(await results).toMatchObject([
+      { status: "rejected", reason: { code: -32600 } },
+      { status: "rejected", reason: { code: -32600 } },
+    ]);
+  });
   it("sends positional params and resolves each call with its own result", async () => {
     const { client, send, next } = setup();
     const first = client.request("ListSecrets", ["dev"]);
