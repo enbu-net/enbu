@@ -66,7 +66,13 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	}
 	listed := make(map[string]bool)
 	for _, line := range strings.Split(existing, "\n") {
-		listed[strings.TrimSpace(line)] = true
+		entry := strings.TrimSpace(line)
+		if strings.HasPrefix(entry, "!") && entry != "!.env.example" {
+			// This negation can override an earlier exclusion. Append our
+			// exclusions after it, keeping the user's patterns intact.
+			clear(listed)
+		}
+		listed[entry] = true
 	}
 	var toAdd []string
 	for _, entry := range gitignoreEntries(cfg) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,13 +146,20 @@ func TestGitignoreMatchesNormalizedOutput(t *testing.T) {
 	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v %s", err, out)
 	}
-	ensureGitignoreIn(t, dir, &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+	writeGitignore(t, dir, "/secrets.env\n!/*.env\n")
+	cfg := &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
 		"default": {Output: "./secrets.env"},
-	}})
+	}}
+	updated := ensureGitignoreIn(t, dir, cfg)
+	if got := ensureGitignoreIn(t, dir, cfg); got != updated {
+		t.Fatal("repeated save changed .gitignore")
+	}
 	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", "secrets.env").CombinedOutput(); err != nil {
 		t.Fatalf("git check-ignore: %v %s", err, out)
 	}
-	if err := exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "subdir/secrets.env").Run(); err == nil {
-		t.Fatal("root output rule ignored a nested file")
+	err = exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "subdir/secrets.env").Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("expected the nested file to be unignored, git returned %v", err)
 	}
 }
