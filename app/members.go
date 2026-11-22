@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	agecrypto "filippo.io/age"
+
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/wsp"
@@ -88,7 +90,21 @@ func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 		}
 		// The current Control still authorizes the member's last writes.
 		// After publishing the new Control, those writes need a checkpoint.
-		return s.acceptCurrentStates(ctx)
+		if err := s.acceptCurrentStates(ctx); err != nil {
+			return err
+		}
+		latest, err := a.openControlView(ctx)
+		if err != nil {
+			return err
+		}
+		head, err := latest.view.Head()
+		if err != nil {
+			return err
+		}
+		if head.Digest != s.head.Digest || latest.cfg.Storage != s.cfg.Storage {
+			return apperr.New(apperr.CodeConflict, "workspace membership or storage changed during removal; retry", nil)
+		}
+		return nil
 	})
 }
 
@@ -172,20 +188,35 @@ func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
 // acceptCurrentStates records each environment in this device's checkpoint
 // before removing an author whose writes it may not have seen yet.
 func (s *session) acceptCurrentStates(ctx context.Context) error {
-	targets, unexamined, err := s.environmentResources(ctx)
+	// Unknown scopes beyond the discovery budget must not prevent revocation.
+	// The subsequent re-encryption reports any incomplete coverage.
+	targets, _, err := s.environmentResources(ctx)
 	if err != nil {
 		return err
 	}
-	if unexamined > 0 {
-		return fmt.Errorf("membership unchanged: unable to examine %d storage scopes", unexamined)
-	}
 	for _, t := range targets {
-		_, err := s.readResource(ctx, t.resource, nil, true)
+		read, err := s.readResourceChecked(ctx, t.resource, nil, true, checkRemovalMetadata)
+		var noMatch *agecrypto.NoIdentityMatchError
+		if read != nil && errors.As(err, &noMatch) {
+			// Preserve the verified heads as a checkpoint even when this device
+			// is not a recipient. Revocation can proceed, but re-encryption
+			// must report the unreadable head instead of going back to a parent.
+			err = wspError(s.cps.AcceptStates(t.resource, read.view.Graph, read.view.Compacted.Excuses, read.parents(), s.head.Digest))
+		}
 		if IsNotFoundError(err) {
 			continue // An environment without revisions has nothing to preserve.
 		}
 		if err != nil {
 			return fmt.Errorf("reading %s before removing a member: %w", t.name, err)
+		}
+	}
+	return nil
+}
+
+func checkRemovalMetadata(sv *wsp.StateView) error {
+	for _, rev := range sv.Unavailable {
+		if !sv.Compacted.Excuses(rev) {
+			return wspError(fmt.Errorf("%w: revision %s metadata is unavailable", wsp.ErrInvalid, rev))
 		}
 	}
 	return nil

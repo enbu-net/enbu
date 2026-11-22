@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	agecrypto "filippo.io/age"
 	apptest "github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
@@ -51,6 +52,102 @@ func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
 	if got := listOK(t, alice)["LATEST"]; got != "bob" {
 		t.Fatalf("latest value = %q", got)
 	}
+}
+
+func TestRemoveMemberRejectsMissingRevisionMetadata(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.loadResource(bg, s.resource("default"))
+	s.Close()
+	if err != nil || len(view.Heads) != 1 {
+		t.Fatalf("read Bob's head: %v", err)
+	}
+	latest := view.Heads[0].Digest
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+			if kind == storage.KindState && rev == latest {
+				return nil, storage.ErrNotFound
+			}
+			return next.FetchHead(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeUntrusted) {
+		t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
+	}
+	_ = mustMember(t, alice, bob)
+}
+
+func TestRemoveMemberWithUnreadableHeadReportsPartialCompletion(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	// Only the latest head is unreadable. A fallback could still read its parent.
+	var unreadable digest.Digest
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if unreadable == "" {
+				unreadable = rev
+			}
+			if rev == unreadable {
+				return nil, &agecrypto.NoIdentityMatchError{}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("unreadable head should leave re-encryption incomplete: %v", err)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 || !members[0].Self {
+		t.Fatalf("revocation did not publish: %v, %v", members, err)
+	}
+	var noMatch *agecrypto.NoIdentityMatchError
+	if _, err := alice.ListSecrets(bg, "default"); !errors.As(err, &noMatch) {
+		t.Fatalf("read fell back to an older revision: %v", err)
+	}
+}
+
+func TestRemoveMemberRechecksControlAfterAcceptingStates(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	aliceID := mustMember(t, alice, alice).DeviceID
+	bobID := mustMember(t, alice, bob).DeviceID
+	if err := alice.SetAdmin(bg, bobID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	demoted := false
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !demoted {
+				demoted = true
+				if err := bob.SetAdmin(ctx, aliceID, false); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, bobID); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("removal did not detect changed Control: %v", err)
+	}
+	if got := mustMember(t, alice, alice); got.Admin {
+		t.Fatalf("demotion did not remain the current Control: %+v", got)
+	}
+	_ = mustMember(t, alice, bob)
 }
 
 // approved returns a device that asked to join and has been approved by alice.

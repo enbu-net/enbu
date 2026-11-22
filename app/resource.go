@@ -52,10 +52,10 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 				}
 				return nil, wspError(fmt.Errorf("%w: all previously accepted revisions are missing", wsp.ErrRollback))
 			}
-			return nil, storageError(storage.ErrNotFound)
+			return sv, storageError(storage.ErrNotFound)
 		}
 		// Load signed deletion records only when something is missing.
-		if len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
+		if len(sv.Unavailable) > 0 || len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
 			records, err := wsp.LoadCompactions(ctx, s.store, s.view, s.workspace, resource)
 			if err != nil {
 				return nil, wspError(err)
@@ -106,8 +106,17 @@ func (s *session) decrypt(ctx context.Context, st *wsp.VerifiedState) (map[strin
 // settles conflicts a person has already decided. With record set the verified
 // view becomes this device's checkpoint.
 func (s *session) readResource(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, also ...digest.Digest) (*resourceRead, error) {
+	return s.readResourceChecked(ctx, resource, choices, record, nil, also...)
+}
+
+func (s *session) readResourceChecked(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, check func(*wsp.StateView) error, also ...digest.Digest) (*resourceRead, error) {
 	for attempt := 0; ; attempt++ {
 		sv, err := s.loadResource(ctx, resource, also...)
+		if sv != nil && check != nil {
+			if checkErr := check(sv); checkErr != nil {
+				return nil, checkErr
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -140,7 +149,7 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	maps := make([]map[string]string, len(r.heads))
 	for i, h := range r.heads {
 		if maps[i], err = s.decrypt(ctx, h); err != nil {
-			return nil, err
+			return r, err
 		}
 	}
 	if len(maps) == 1 {
