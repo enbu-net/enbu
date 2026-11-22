@@ -42,7 +42,7 @@ describe("HomePage", () => {
         initialized: false,
         storage_configured: false,
         config_error: {
-          code: "config_resource_collision",
+          code: "config_resource_collision" as NonNullable<RepoInfo["config_error"]>["code"],
           message: "",
           params: { first: "dev", second: "scratch" },
         },
