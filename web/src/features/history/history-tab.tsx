@@ -79,6 +79,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
           <styled.select
             id={envId}
             value={env}
+            title={env}
             {...selectStyles}
             onChange={(event) => {
               setRestored(null);

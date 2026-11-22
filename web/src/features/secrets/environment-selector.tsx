@@ -41,7 +41,13 @@ export function EnvironmentSelector({
           >
             <Layers3 size={16} />
             {/* A name may be 100 characters long: it ends in an ellipsis. */}
-            <styled.span minW="0" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+            <styled.span
+              minW="0"
+              overflow="hidden"
+              textOverflow="ellipsis"
+              whiteSpace="nowrap"
+              title={value}
+            >
               {value}
             </styled.span>
             <ChevronDown size={15} />
@@ -77,7 +83,12 @@ export function EnvironmentSelector({
                     >
                       <HStack gap="2" minW="0">
                         <Layers3 size={15} />
-                        <styled.span overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                        <styled.span
+                          overflow="hidden"
+                          textOverflow="ellipsis"
+                          whiteSpace="nowrap"
+                          title={environment.name}
+                        >
                           {environment.name}
                         </styled.span>
                       </HStack>
