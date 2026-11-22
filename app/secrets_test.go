@@ -119,7 +119,7 @@ func TestReadWorkspaceKeepsEnvironmentAndSecretsOnOneConfig(t *testing.T) {
 	}
 }
 
-func TestReadWorkspaceSelectsAnExistingEnvironment(t *testing.T) {
+func TestReadWorkspaceOffersAnExplicitSwitchForAnInvalidDefault(t *testing.T) {
 	a := newAlice(t)
 	if err := a.CreateEnvironment("staging"); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestReadWorkspaceSelectsAnExistingEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(cfg.Environments, "default")
-	cfg.DefaultEnv = ""
+	cfg.DefaultEnv = "staging "
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -140,13 +140,16 @@ func TestReadWorkspaceSelectsAnExistingEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, err := a.ReadWorkspace(bg)
-	if err != nil || snapshot.Environment != "staging" || snapshot.Secrets["STAGE"] != "value" ||
-		len(snapshot.Environments) != 1 || !snapshot.Environments[0].IsCurrent {
-		t.Fatalf("unusable snapshot: %+v %v", snapshot, err)
+	if err != nil || snapshot.Environment != "" || len(snapshot.Secrets) != 0 ||
+		len(snapshot.Environments) != 1 || snapshot.Environments[0].Name != "staging" || snapshot.Environments[0].IsCurrent {
+		t.Fatalf("invalid explicit default hid available environments: %+v %v", snapshot, err)
 	}
-	envs, err := a.ListEnvironments()
-	if err != nil || len(envs) != 1 || !envs[0].IsCurrent || envs[0].Name != snapshot.Environment {
-		t.Fatalf("workspace and environment APIs disagree: %+v %v", envs, err)
+	if err := a.SwitchEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := a.ReadWorkspace(bg)
+	if err != nil || selected.Environment != "staging" || selected.Secrets["STAGE"] != "value" {
+		t.Fatalf("explicit switch did not persist: %+v %v", selected, err)
 	}
 }
 

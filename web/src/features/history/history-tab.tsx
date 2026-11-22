@@ -20,7 +20,8 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   const envId = useId();
   const [picked, setPicked] = useState("");
   const selected = workspace.environments.find(({ name }) => name === picked);
-  const env = selected?.name ?? workspace.currentEnvironment;
+  const env =
+    selected?.name ?? (workspace.currentEnvironment || workspace.environments[0]?.name || "");
   const incarnation = workspace.environments.find(({ name }) => name === env)?.incarnation ?? "";
   return (
     <>

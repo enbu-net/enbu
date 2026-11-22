@@ -32,7 +32,7 @@ func (a *App) ReadWorkspace(ctx context.Context) (snapshot WorkspaceSnapshot, er
 	}
 	// An invalid explicit default still needs to show available environments
 	// so a person can switch to one. There is no active resource to read.
-	if _, err := s.cfg.Environment(env); apperr.Is(err, apperr.CodeEnvironmentMissing) {
+	if _, err := s.cfg.Environment(env); apperr.Is(err, apperr.CodeEnvironmentMissing) || apperr.Is(err, apperr.CodeInvalidArgument) {
 		snapshot.Environment = ""
 		return snapshot, nil
 	} else if err != nil {
