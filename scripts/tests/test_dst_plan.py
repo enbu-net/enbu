@@ -607,7 +607,11 @@ def test_missing_mapped_test_broadens_selection(monkeypatch, tmp_path):
     (tmp_path / "renamed_test.go").write_text(
         "package simulation\nfunc TestRenamed(t *testing.T) {}"
     )
+    (tmp_path / "untouched_test.go").write_text(
+        "package simulation\nfunc TestUntouched(t *testing.T) {}"
+    )
     monkeypatch.setattr(dst_plan, "SIM", tmp_path)
     plan = dst_plan.select(["app/secrets.go", "test/simulation/renamed_test.go"])
     assert selected(plan, "TestRenamed")
+    assert selected(plan, "TestUntouched")
     assert plan["mutation"]
