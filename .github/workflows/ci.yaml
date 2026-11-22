@@ -264,6 +264,9 @@ jobs:
 
   # Bombadil explores the browser preview at random and checks the properties
   # in web/bombadil/spec.ts: a minute on a pull request, longer every night.
+  # Each run picks its own random path, so a violation may surface on a pull
+  # request that did not cause it: the job is left out of the required Check
+  # (status-check) and reports, with its trace, without blocking a merge.
   gui-properties:
     name: GUI properties
     needs: [changes]
@@ -425,7 +428,7 @@ jobs:
   status-check:
     name: Check
     if: always() && github.event.action != 'closed'
-    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, gui-properties, test, desktop, scenario, renovate-config]
+    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
