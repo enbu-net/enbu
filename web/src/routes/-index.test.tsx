@@ -117,7 +117,7 @@ describe("HomePage", () => {
         },
       }),
     });
-    const input = container.querySelector("#init-storage");
+    const input = container.querySelector<HTMLInputElement>("#init-storage");
     expect(input).toHaveProperty("value", "s3://bucket/team");
     typeInto(input, "");
     const option = queryButton(url);
