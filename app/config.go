@@ -25,7 +25,7 @@ func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving project directory: %w", err)
 	}
-	return fsutil.LockFileContext(ctx, filepath.Join(dir, config.ProjectLockName))
+	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(dir, config.ProjectLockName))
 }
 
 func (a *App) ReadConfig() (content string, err error) {

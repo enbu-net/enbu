@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"time"
+
+	"github.com/enbu-net/enbu/pkg/clock"
 )
 
 // LockFile takes an exclusive process lock until the returned file is closed.
@@ -23,7 +25,7 @@ func LockFile(path string, wait bool) (*os.File, error) {
 
 // LockFileContext waits for an exclusive lock without trapping a cancelled
 // operation inside an OS lock call.
-func LockFileContext(ctx context.Context, path string) (*os.File, error) {
+func LockFileContext(ctx context.Context, c clock.Clock, path string) (*os.File, error) {
 	if ctx.Done() == nil {
 		return LockFile(path, true)
 	}
@@ -34,8 +36,6 @@ func LockFileContext(ctx context.Context, path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	ticker := time.NewTicker(25 * time.Millisecond)
-	defer ticker.Stop()
 	for ctx.Err() == nil {
 		err = lockFile(f, false)
 		if err == nil {
@@ -48,9 +48,8 @@ func LockFileContext(ctx context.Context, path string) (*os.File, error) {
 			_ = f.Close()
 			return nil, err
 		}
-		select {
-		case <-ctx.Done():
-		case <-ticker.C:
+		if err = clock.Wait(ctx, c, 25*time.Millisecond); err != nil {
+			break
 		}
 	}
 	_ = f.Close()
