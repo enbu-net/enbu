@@ -135,3 +135,20 @@ func TestGitignoreLiteralMatchesOnlyThePath(t *testing.T) {
 		}
 	}
 }
+
+func TestGitignoreMatchesNormalizedOutput(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	ensureGitignoreIn(t, dir, &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+		"default": {Output: "./secrets.env"},
+	}})
+	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", "secrets.env").CombinedOutput(); err != nil {
+		t.Fatalf("git check-ignore: %v %s", err, out)
+	}
+}

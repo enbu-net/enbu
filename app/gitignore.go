@@ -30,7 +30,7 @@ func gitignoreEntries(cfg *config.ProjectConfig) []string {
 		if output == "" || strings.HasPrefix(output, "/") || filepath.IsAbs(output) {
 			continue
 		}
-		entries = append(entries, gitignoreLiteral(filepath.ToSlash(output)))
+		entries = append(entries, gitignoreLiteral(filepath.ToSlash(filepath.Clean(output))))
 	}
 	return entries
 }
