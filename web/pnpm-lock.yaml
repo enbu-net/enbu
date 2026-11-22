@@ -54,6 +54,9 @@ importers:
         specifier: ^1.7.0
         version: 1.9.1
     devDependencies:
+      '@antithesishq/bombadil':
+        specifier: 0.8.0
+        version: 0.8.0
       '@inlang/paraglide-js':
         specifier: 3.2.2
         version: 3.2.2(@voidzero-dev/vite-plus-core@1.5.1(@types/node@26.6.6)(jiti@2.7.0)(typescript@7.0.2))(typescript@7.0.2)
@@ -113,6 +116,10 @@ importers:
         version: 1.5.1(@types/node@26.6.6)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(jiti@2.7.0)(jsdom@31.0.0)(playwright@1.63.0)(typescript@7.0.2)
 
 packages:
+
+  '@antithesishq/bombadil@0.8.0':
+    resolution: {integrity: sha512-BVMjC4vDR2wOhSS0uWMiS3KqVWb8Y9BdN+KiJwBSXi7+vZ5HkLkBfTCk83Dal5E0Evb3wSOT46SFxLgNCGXbmQ==}
+    hasBin: true
 
   '@ark-ui/anatomy@3.5.0':
     resolution: {integrity: sha512-KoROLVVT23BvFHcye/GYhG8NJ2CH0C+CaoJhXrkEjvk8pbEx80Xk5NIUy5gL7xmX+LDD7kY5t3NotBqCu+2L2w==}
@@ -3022,6 +3029,8 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@antithesishq/bombadil@0.8.0': {}
 
   '@ark-ui/anatomy@3.5.0(@internationalized/date@3.12.4)':
     dependencies:
