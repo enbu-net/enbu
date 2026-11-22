@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,47 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/registry/remote/auth"
 )
+
+func TestOCIRejectsInvalidPayloadDigest(t *testing.T) {
+	head := []byte("head")
+	object := Object{Kind: KindState, Scope: StateScope("team", "default"), Rev: digest.FromBytes(head), Head: head, Payload: []byte("payload")}
+	_, raw, _, err := manifestFor(object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest ocispec.Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Layers[1].Digest = "not-a-digest"
+	raw, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/manifests/") {
+			t.Errorf("fetched a blob with an invalid descriptor: %s", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", ocispec.MediaTypeImageManifest)
+		w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
+		w.Header().Set("Docker-Content-Digest", digest.FromBytes(raw).String())
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(raw)
+		}
+	}))
+	defer server.Close()
+	store, err := NewOCI(strings.TrimPrefix(server.URL, "http://")+"/team/secrets", func(context.Context, string) (auth.Credential, error) {
+		return auth.EmptyCredential, nil
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.OpenPayload(t.Context(), object.Kind, object.Scope, object.Rev); !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("opening payload: %v", err)
+	}
+}
 
 func TestRemoteInterruptedResponseBody(t *testing.T) {
 	for _, transport := range []string{"http", "https"} {

@@ -289,6 +289,9 @@ func (s ociStore) OpenPayload(ctx context.Context, kind Kind, scope string, rev 
 		return nil, fmt.Errorf("%w: %s has no payload", ErrNotFound, name)
 	}
 	layer := m.Layers[1]
+	if err := layer.Digest.Validate(); err != nil {
+		return nil, fmt.Errorf("%w: invalid OCI payload digest: %v", ErrCorrupt, err)
+	}
 	if layer.Size < 0 || layer.Size > MaxPayloadBytes {
 		return nil, ErrTooLarge
 	}
