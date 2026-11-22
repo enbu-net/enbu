@@ -42,6 +42,11 @@ type Client struct {
 	gen     uint64 // counts connections; a handle is valid only on its own
 	exe     string
 	version string
+
+	closeMu  sync.Mutex
+	activeMu sync.Mutex
+	cancel   context.CancelFunc
+	closing  bool
 }
 
 // contextMutex lets a cancelled preflight leave the queue even if an
@@ -61,8 +66,35 @@ func (m *contextMutex) acquire(ctx context.Context) error {
 	}
 }
 
-func (m *contextMutex) Lock()   { _ = m.acquire(context.Background()) }
 func (m *contextMutex) Unlock() { <-m.slot }
+
+const rpcTimeout = time.Minute
+
+// begin registers cancellation independently of the stream lock so Close can
+// interrupt a request even while it is blocked in pipe I/O.
+func (c *Client) begin(parent context.Context) (context.Context, func(), error) {
+	ctx, cancel := context.WithTimeout(parent, rpcTimeout)
+	if err := c.mu.acquire(ctx); err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	c.activeMu.Lock()
+	if c.closing || ctx.Err() != nil {
+		c.activeMu.Unlock()
+		cancel()
+		c.mu.Unlock()
+		return nil, nil, ctx.Err()
+	}
+	c.cancel = cancel
+	c.activeMu.Unlock()
+	return ctx, func() {
+		c.activeMu.Lock()
+		c.cancel = nil
+		c.activeMu.Unlock()
+		cancel()
+		c.mu.Unlock()
+	}, nil
+}
 
 var shared = sync.OnceValue(func() *Client { return &Client{} })
 
@@ -142,7 +174,7 @@ func (c *Client) connect(ctx context.Context) error {
 	c.conn, c.enc, c.dec = conn, json.NewEncoder(conn.W), json.NewDecoder(conn.R)
 	c.gen++
 	var hello helloResult
-	if err := c.handshake(ctx, conn, &hello); err != nil {
+	if err := c.roundTripContext(ctx, methodHello, helloParams{Protocol: Protocol}, &hello); err != nil {
 		if ctx.Err() != nil {
 			c.version = ""
 			c.reset()
@@ -163,7 +195,8 @@ func (c *Client) connect(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) handshake(ctx context.Context, conn *Conn, hello *helloResult) error {
+func (c *Client) roundTripContext(ctx context.Context, method string, params, result any) error {
+	conn := c.conn
 	// Interrupt only this connection. The callback never takes the client
 	// lock, which remains held until the protocol read returns.
 	interrupted := make(chan struct{})
@@ -175,7 +208,7 @@ func (c *Client) handshake(ctx context.Context, conn *Conn, hello *helloResult) 
 		}
 		close(interrupted)
 	})
-	err := c.roundTrip(methodHello, helloParams{Protocol: Protocol}, hello)
+	err := c.roundTrip(method, params, result)
 	if !stop() {
 		<-interrupted
 		return ctx.Err()
@@ -189,10 +222,11 @@ func unavailable(err error) error {
 
 // CheckProtocol verifies the version before starting sign-in.
 func (c *Client) CheckProtocol(ctx context.Context) error {
-	if err := c.mu.acquire(ctx); err != nil {
+	ctx, done, err := c.begin(ctx)
+	if err != nil {
 		return err
 	}
-	defer c.mu.Unlock()
+	defer done()
 	return c.connect(ctx)
 }
 
@@ -204,31 +238,40 @@ func (c *Client) call(method string, params, result any) error {
 // open is call for a request that opens handles: it also returns the
 // connection they belong to.
 func (c *Client) open(method string, params, result any) (uint64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if err := c.connect(context.Background()); err != nil {
+	ctx, done, err := c.begin(context.Background())
+	if err != nil {
 		return 0, err
 	}
-	return c.gen, c.send(method, params, result)
+	defer done()
+	if err := c.connect(ctx); err != nil {
+		return 0, err
+	}
+	return c.gen, c.send(ctx, method, params, result)
 }
 
 // callHandle uses a handle opened on connection gen. After enbu.exe restarted,
 // the same number may name another key, so the call is refused instead.
 func (c *Client) callHandle(gen uint64, method string, params, result any) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	ctx, done, err := c.begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer done()
 	if c.conn == nil || c.gen != gen {
 		return unavailable(fmt.Errorf("the Windows %s restarted, and the key this command opened is closed; run the command again", exe))
 	}
-	return c.send(method, params, result)
+	return c.send(ctx, method, params, result)
 }
 
-func (c *Client) send(method string, params, result any) error {
-	err := c.roundTrip(method, params, result)
+func (c *Client) send(ctx context.Context, method string, params, result any) error {
+	err := c.roundTripContext(ctx, method, params, result)
 	var remote *remoteError
 	if err != nil && !errors.As(err, &remote) && !errors.Is(err, age.ErrIncorrectIdentity) {
 		// The stream broke: start again on the next call.
 		c.reset()
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		return unavailable(fmt.Errorf("the Windows %s stopped answering: %w", exe, err))
 	}
 	return err
@@ -268,21 +311,21 @@ func (c *Client) reset() {
 
 // Close ends the Windows process.
 func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.reset()
-	return nil
-}
-
-func (c *Client) status() *identity.WSLStatus {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	s := &identity.WSLStatus{Exe: c.exe, Version: c.version}
-	if err := c.connect(context.Background()); err != nil {
-		s.Error = err.Error()
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	c.activeMu.Lock()
+	c.closing = true
+	if c.cancel != nil {
+		c.cancel()
 	}
-	s.Exe, s.Version = c.exe, c.version
-	return s
+	c.activeMu.Unlock()
+	_ = c.mu.acquire(context.Background())
+	c.reset()
+	c.activeMu.Lock()
+	c.closing = false
+	c.activeMu.Unlock()
+	c.mu.Unlock()
+	return nil
 }
 
 func ws(id string) workspaceParams { return workspaceParams{WorkspaceID: id} }
@@ -323,12 +366,18 @@ func (c *Client) Info(workspaceID string) (identity.PublicInfo, error) {
 // missing enbu.exe, disabled interop or another version is the problem to
 // fix first.
 func (c *Client) Doctor(ctx context.Context) identity.Diagnosis {
-	status := c.status()
-	if status.Error != "" {
-		return identity.Diagnosis{Backend: "windows", Reason: status.Error, WSL: status}
-	}
 	var d identity.Diagnosis
-	if err := c.call(methodDoctor, struct{}{}, &d); err != nil {
+	status := &identity.WSLStatus{}
+	ctx, done, err := c.begin(ctx)
+	if err == nil {
+		defer done()
+		err = c.connect(ctx)
+		status.Exe, status.Version = c.exe, c.version
+		if err == nil {
+			err = c.send(ctx, methodDoctor, struct{}{}, &d)
+		}
+	}
+	if err != nil {
 		status.Error = err.Error()
 		return identity.Diagnosis{Backend: "windows", Reason: status.Error, WSL: status}
 	}
@@ -349,12 +398,15 @@ func (c *Client) device(gen uint64, r deviceResult) (*identity.Device, error) {
 }
 
 func (c *Client) release(gen, h uint64) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	ctx, done, err := c.begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer done()
 	if c.conn == nil || c.gen != gen {
 		return nil // the process is gone, and its handles with it
 	}
-	return c.roundTrip(methodClose, handleParams{Handle: h}, nil)
+	return c.send(ctx, methodClose, handleParams{Handle: h}, nil)
 }
 
 type remoteIdentity struct {

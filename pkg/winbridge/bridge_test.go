@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -190,6 +191,74 @@ func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 	}
 	if dials != 2 {
 		t.Fatalf("dialed %d times, want one cancelled and one reused connection", dials)
+	}
+}
+
+func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
+	for _, shutdown := range []string{"context", "close"} {
+		t.Run(shutdown, func(t *testing.T) {
+			reqR, reqW := io.Pipe()
+			respR, respW := io.Pipe()
+			t.Cleanup(func() {
+				_ = reqR.Close()
+				_ = respW.Close()
+			})
+			c := &Client{Dial: func() (*Conn, error) {
+				return &Conn{R: respR, W: reqW}, nil
+			}}
+			requested := make(chan error, 1)
+			go func() {
+				dec := json.NewDecoder(reqR)
+				var req request
+				if err := dec.Decode(&req); err != nil {
+					requested <- err
+					return
+				}
+				result, err := json.Marshal(helloResult{Protocol: Protocol, Version: "test"})
+				if err == nil {
+					err = json.NewEncoder(respW).Encode(response{ID: req.ID, Result: result})
+				}
+				if err == nil {
+					err = dec.Decode(&req)
+				}
+				if err == nil && req.Method != methodDoctor {
+					err = fmt.Errorf("unexpected method %q", req.Method)
+				}
+				requested <- err
+			}()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan identity.Diagnosis, 1)
+			go func() { done <- c.Doctor(ctx) }()
+			select {
+			case err := <-requested:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("doctor did not send a request")
+			}
+			closed := make(chan struct{})
+			if shutdown == "close" {
+				go func() { _ = c.Close(); close(closed) }()
+			} else {
+				cancel()
+				close(closed)
+			}
+			select {
+			case diagnosis := <-done:
+				if diagnosis.WSL == nil || diagnosis.WSL.Error != context.Canceled.Error() {
+					t.Fatalf("diagnosis = %+v", diagnosis)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("doctor stayed blocked")
+			}
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Close stayed blocked")
+			}
+		})
 	}
 }
 
