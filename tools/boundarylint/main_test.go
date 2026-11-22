@@ -3,6 +3,9 @@ package main
 import (
 	"go/parser"
 	"go/token"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -69,5 +72,36 @@ func (s *session) purgeResource() { _ = s.store.Delete(ctx, kind, scope, rev) }`
 				t.Fatalf("got %v, want %q", got, tc.diagnostic)
 			}
 		})
+	}
+}
+
+func TestCommandRejectsBoundaryViolations(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"app", "cli", "desktop/nested"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, source := range map[string]string{
+		"app/deletion.go":     "package app; var cleanup = func() { del := store.Delete; del(ctx) }",
+		"app/ignored_test.go": "package app; var ignored = store.Delete",
+		"desktop/nested/wire.go": `package nested
+import storageAlias "github.com/enbu-net/enbu/pkg/storage"
+import oci "oras.land/oras-go/v2/registry"
+import s3 "github.com/minio/minio-go/v7"`,
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.CommandContext(t.Context(), "go", "run", ".", root)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("command accepted boundary violations")
+	}
+	got := string(out)
+	if !strings.Contains(got, "app/deletion.go:") || strings.Contains(got, "ignored_test.go") ||
+		strings.Count(got, "desktop/nested/wire.go:") != 3 {
+		t.Fatalf("unexpected diagnostics:\n%s", got)
 	}
 }

@@ -92,27 +92,39 @@ func inspect(files *token.FileSet, file *ast.File, layer, path string) []string 
 	if layer != "app" {
 		return violations
 	}
+	allowed := map[*ast.SelectorExpr]bool{}
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
+		kind := deletionKinds[path+":"+fn.Name.Name]
+		if kind == "" {
+			continue
+		}
 		ast.Inspect(fn.Body, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
-			if !ok || len(call.Args) != 4 {
-				return true
-			}
-			method, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || method.Sel.Name != "Delete" {
-				return true
-			}
-			kind := deletionKinds[path+":"+fn.Name.Name]
-			if kind == "" || !isImportedSelector(call.Args[1], storageAlias, kind) {
-				emit(call.Pos(), "physical storage deletion must stay in a reviewed path with a fixed object kind")
+			if ok && len(call.Args) == 4 {
+				if method, ok := call.Fun.(*ast.SelectorExpr); ok && method.Sel.Name == "Delete" &&
+					isImportedSelector(call.Args[1], storageAlias, kind) {
+					allowed[method] = true
+				}
 			}
 			return true
 		})
 	}
+	ast.Inspect(file, func(node ast.Node) bool {
+		// Conflict choices carry a boolean Delete field in the wire format.
+		if field, ok := node.(*ast.KeyValueExpr); ok && path == "app/conflicts.go" {
+			if key, ok := field.Key.(*ast.Ident); ok && key.Name == "Delete" && isImportedSelector(field.Value, "c", "Delete") {
+				allowed[field.Value.(*ast.SelectorExpr)] = true
+			}
+		}
+		if method, ok := node.(*ast.SelectorExpr); ok && method.Sel.Name == "Delete" && !allowed[method] {
+			emit(method.Pos(), "physical storage deletion must stay in a reviewed path with a fixed object kind")
+		}
+		return true
+	})
 	return violations
 }
 
