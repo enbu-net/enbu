@@ -42,12 +42,12 @@ func TestEnsureGitignoreCreatesNewFile(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignoreAppendsToExisting(t *testing.T) {
+func TestEnsureGitignoreKeepsExistingRulesAfterDefaults(t *testing.T) {
 	dir := t.TempDir()
 	existing := "node_modules/\n*.log\n"
 	writeGitignore(t, dir, existing)
 	content := ensureGitignoreIn(t, dir, nil)
-	if !strings.HasPrefix(content, existing) {
+	if !strings.HasSuffix(content, existing) {
 		t.Error("existing content was overwritten")
 	}
 	for _, entry := range baseGitignoreEntries {
@@ -78,11 +78,11 @@ func TestEnsureGitignorePartialExisting(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignoreNoTrailingNewline(t *testing.T) {
+func TestEnsureGitignorePreservesExistingRuleWithoutTrailingNewline(t *testing.T) {
 	dir := t.TempDir()
 	writeGitignore(t, dir, "node_modules/")
-	if content := ensureGitignoreIn(t, dir, nil); !strings.HasPrefix(content, "node_modules/\n") {
-		t.Error("newline not added after existing content without trailing newline")
+	if content := ensureGitignoreIn(t, dir, nil); !strings.HasSuffix(content, "\nnode_modules/") {
+		t.Error("existing rule was not preserved on its own line")
 	}
 }
 
@@ -181,7 +181,18 @@ func TestGitignoreKeepsConfiguredExampleOutputSecret(t *testing.T) {
 	if got := ensureGitignoreIn(t, dir, cfg); got != first {
 		t.Fatal("repeated save changed .gitignore")
 	}
-	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", ".env.example").CombinedOutput(); err != nil {
-		t.Fatalf("git check-ignore: %v %s", err, out)
+	cfg.Environments["staging"] = config.EnvironmentConfig{Output: "staging/.env.example"}
+	ensureGitignoreIn(t, dir, cfg)
+	cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env"}
+	ensureGitignoreIn(t, dir, cfg)
+	for _, output := range []string{".env.example", "staging/.env.example"} {
+		if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", output).CombinedOutput(); err != nil {
+			t.Fatalf("git check-ignore %s: %v %s", output, err, out)
+		}
+	}
+	err = exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "docs/.env.example").Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("unrelated template should be unignored, git returned %v", err)
 	}
 }
