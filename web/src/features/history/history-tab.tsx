@@ -72,7 +72,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   return (
     <>
       <SectionHeader title={m.history_title()}>
-        <HStack gap="2">
+        <HStack gap="2" minW="0" maxW="full">
           <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
             {m.history_environment()}
           </styled.label>
@@ -259,4 +259,8 @@ const selectStyles = {
   borderColor: "border.default",
   borderRadius: "md",
   fontSize: "sm",
+  // A native select is as wide as its longest option, which may be a
+  // 100-character environment name.
+  minW: "0",
+  maxW: "full",
 } as const;

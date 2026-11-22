@@ -20,7 +20,7 @@ export function EnvironmentSelector({
   onAdd: () => void;
 }) {
   return (
-    <HStack gap="2" flexWrap="wrap">
+    <HStack gap="2" flexWrap="wrap" minW="0">
       <Popover.Root positioning={{ placement: "bottom-start", gutter: 6 }}>
         <Popover.Trigger asChild>
           <Button
@@ -36,10 +36,14 @@ export function EnvironmentSelector({
             borderRadius="lg"
             fontSize="lg"
             fontWeight="extrabold"
+            maxW="full"
             aria-label={`${m.dashboard_currentEnvironment()}: ${value}`}
           >
             <Layers3 size={16} />
-            {value}
+            {/* A name may be 100 characters long: it ends in an ellipsis. */}
+            <styled.span minW="0" overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+              {value}
+            </styled.span>
             <ChevronDown size={15} />
           </Button>
         </Popover.Trigger>
