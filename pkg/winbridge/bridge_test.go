@@ -283,9 +283,20 @@ func TestCheckProtocolClassifiesHandshakeTimeout(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 	done := make(chan error, 1)
 	go func() { done <- c.CheckProtocol(t.Context()) }()
-	var req request
-	if err := json.NewDecoder(reqR).Decode(&req); err != nil {
-		t.Fatal(err)
+	requested := make(chan error, 1)
+	go func() {
+		var req request
+		requested <- json.NewDecoder(reqR).Decode(&req)
+	}()
+	select {
+	case err := <-requested:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case err := <-done:
+		t.Fatalf("handshake returned before sending a request: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("handshake did not send a request")
 	}
 	clock.Advance(rpcTimeout)
 	select {

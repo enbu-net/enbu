@@ -325,3 +325,12 @@ func writeFile(t *testing.T) string {
 	}
 	return path
 }
+
+func TestBridgeLogoutRequiresAnExplicitAccount(t *testing.T) {
+	previous := winbridge.InWSL
+	t.Cleanup(func() { winbridge.InWSL = previous })
+	winbridge.InWSL = func() bool { return true }
+	if err := DeleteToken(); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("unqualified bridge logout: %v", err)
+	}
+}
