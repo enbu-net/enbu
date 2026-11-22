@@ -36,6 +36,7 @@ task gui/bindings       # Regenerate web/src/bindings after changing desktop.Ser
 task gui/test           # GUI tests
 task gui/check          # Format and lint GUI code (jsx-a11y included), fail on stale bindings, then run gui/a11y
 task gui/a11y           # WCAG 2.2 AA check of the browser preview with axe-core in Chromium (light/dark, en/ja, narrow); runs `playwright install chromium` first unless ENBU_A11Y_CHROMIUM names an installed Chromium
+task gui/bombadil       # Property-based exploration of the browser preview with Bombadil (web/bombadil/spec.ts) for ENBU_BOMBADIL_TIME_LIMIT (1m; CI: 1m per PR, 10m nightly); a failure leaves web/bombadil-trace.bin for `bombadil browser inspect`. Linux and macOS arm64 only
 task vscode/build       # Build the VS Code extension (vscode/dist, vscode/media)
 task vscode/package     # Package the extension with this machine's enbu (vscode/enbu-vscode.vsix)
 task vscode/test        # VS Code extension tests
