@@ -48,12 +48,12 @@ describe("SecretRow", () => {
     expect(queryInput("super-secret")?.type).toBe("password");
   });
 
-  it("toggles to text type on eye button click", () => {
+  it("opens the text editor on eye button click", () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     act(() => {
       queryButton("Show value")?.click();
     });
-    expect(queryInput("super-secret")?.type).toBe("text");
+    expect(container.querySelector("textarea")?.value).toBe("super-secret");
     expect(queryButton("Hide value")).toBeTruthy();
   });
 
@@ -118,6 +118,33 @@ describe("SecretRow", () => {
       await Promise.resolve();
     });
     expect(onEdit).toHaveBeenCalledWith("new-secret");
+  });
+
+  it("preserves multiline values on blur and saves edits with their newlines", async () => {
+    const onEdit = vi.fn(async () => {});
+    const value = "header\nbody\nfooter";
+    renderSecretRow({ secretKey: "PEM", secretValue: value, onEdit });
+    expect(container.querySelector('input[aria-label="Value: PEM"]')).toHaveProperty(
+      "readOnly",
+      true,
+    );
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    expect(editor.value).toBe(value);
+    act(() => {
+      editor.focus();
+      editor.blur();
+    });
+    expect(onEdit).not.toHaveBeenCalled();
+    const changed = "header\nnew body\nfooter";
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    act(() => {
+      setValue.call(editor, changed);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(onEdit).toHaveBeenCalledWith(changed);
   });
 
   it("renders the secret key as a monospace label", () => {

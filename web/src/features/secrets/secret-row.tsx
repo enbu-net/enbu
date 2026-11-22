@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Check, Copy, Eye, EyeOff, Save, Trash2 } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
 import { Button, Input } from "../../components/ui";
@@ -26,6 +26,9 @@ export function SecretRow({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [editValue, setEditValue] = useState(secretValue);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const editForm = useId();
+  const multiline = /[\r\n]/.test(editValue);
+  const valueLabel = `${m.dashboard_value()}: ${secretKey}`;
 
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -100,29 +103,50 @@ export function SecretRow({
           {secretKey}
         </styled.button>
       </HStack>
-      <Box
+      <styled.form
+        id={editForm}
         position="relative"
         gridColumn={{ base: "1 / -1", lg: "auto" }}
         gridRow={{ base: "2", lg: "auto" }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void saveValue();
+        }}
       >
-        <Input
-          aria-label={`${m.dashboard_value()}: ${secretKey}`}
-          value={editValue}
-          type={visible ? "text" : "password"}
-          h="auto"
-          minH="38px"
-          pr="10"
-          borderColor="border.default"
-          borderRadius="md"
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              void saveValue();
-            }
-          }}
-        />
+        {visible ? (
+          <styled.textarea
+            aria-label={valueLabel}
+            value={editValue}
+            rows={multiline ? 4 : 1}
+            w="full"
+            minH="38px"
+            px="3"
+            py="2"
+            pr="10"
+            resize="vertical"
+            fontSize="sm"
+            bg="bg.surface"
+            borderWidth="1px"
+            borderColor="border.default"
+            borderRadius="md"
+            onChange={(event) => setEditValue(event.target.value)}
+          />
+        ) : (
+          <Input
+            aria-label={valueLabel}
+            value={multiline ? "********" : editValue}
+            type="password"
+            readOnly={multiline}
+            h="auto"
+            minH="38px"
+            pr="10"
+            borderColor="border.default"
+            borderRadius="md"
+            onChange={(event) => setEditValue(event.target.value)}
+          />
+        )}
         <Button
+          type="button"
           variant="ghost"
           position="absolute"
           right="1"
@@ -145,10 +169,12 @@ export function SecretRow({
             <Copy size={16} aria-hidden="true" />
           )}
         </Button>
-      </Box>
+      </styled.form>
       <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
         {editValue !== secretValue && (
           <Button
+            type="submit"
+            form={editForm}
             variant="ghost"
             w="34px"
             h="34px"
@@ -157,7 +183,6 @@ export function SecretRow({
             aria-label={m.dashboard_save()}
             title={m.dashboard_save()}
             loading={saving}
-            onClick={() => void saveValue()}
           >
             <Save size={16} />
           </Button>
