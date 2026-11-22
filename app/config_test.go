@@ -90,7 +90,7 @@ func TestReadWriteConfig(t *testing.T) {
 	}
 
 	newContent := "version = \"v1alpha2\"\ndefault_env = \"production\"\n"
-	if err := a.WriteConfig(newContent); err != nil {
+	if err := a.WriteConfig(newContent, got); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestWriteConfigRejectsOutputOutsideRepository(t *testing.T) {
 	}
 
 	a := &App{RepositoryDir: dir}
-	err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"../secrets.local\"\n")
+	err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"../secrets.local\"\n", original)
 	if err == nil {
 		t.Fatal("WriteConfig succeeded for output outside repository")
 	}
@@ -162,7 +162,7 @@ output = ".env.legacy"
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := a.WriteConfig(strings.Replace(current, c.from, c.to, 1))
+			err := a.WriteConfig(strings.Replace(current, c.from, c.to, 1), current)
 			var appErr *apperr.Error
 			if !apperr.Is(err, apperr.CodeConfigProtected) || !errors.As(err, &appErr) || appErr.Params()["key"] != c.key {
 				t.Fatalf("WriteConfig = %v, want config_protected for %s", err, c.key)
@@ -178,12 +178,12 @@ output = ".env.legacy"
 	edited := strings.Replace(current, `default_env = "dev"`, `default_env = "legacy"`, 1)
 	edited = strings.Replace(edited, "output = \".env.dev\"", "output = \"config/dev.env\"", 1)
 	edited += "\n[env.new]\noutput = \".env.new\"\n"
-	if err := a.WriteConfig(edited); err != nil {
+	if err := a.WriteConfig(edited, current); err != nil {
 		t.Fatalf("ordinary edit: %v", err)
 	}
 	withoutLegacy := strings.Replace(edited, "[env.legacy]\noutput = \".env.legacy\"\n", "", 1)
 	withoutLegacy = strings.Replace(withoutLegacy, `default_env = "legacy"`, `default_env = "dev"`, 1)
-	if err := a.WriteConfig(withoutLegacy); err != nil {
+	if err := a.WriteConfig(withoutLegacy, edited); err != nil {
 		t.Fatalf("removing an environment: %v", err)
 	}
 }
@@ -197,7 +197,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{RepositoryDir: dir}
-	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n", broken); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("WriteConfig over an unreadable file = %v", err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(dir, "enbu.toml")); string(data) != broken {
@@ -208,7 +208,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeConfigProtected) {
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n", old); !apperr.Is(err, apperr.CodeConfigProtected) {
 		t.Fatalf("WriteConfig over an old version = %v", err)
 	}
 }
@@ -216,7 +216,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 func TestWriteConfigIgnoresACustomOutput(t *testing.T) {
 	dir := t.TempDir()
 	a := &App{RepositoryDir: dir}
-	if err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"config/dev.env\"\n"); err != nil {
+	if err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"config/dev.env\"\n", ""); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -233,7 +233,7 @@ func TestWriteConfigSavesBeforeReportingAGitignoreFailure(t *testing.T) {
 	}
 	a := &App{RepositoryDir: dir}
 	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"dev.env\"\n"
-	if err := a.WriteConfig(content); err == nil {
+	if err := a.WriteConfig(content, ""); err == nil {
 		t.Fatal("a .gitignore that could not be updated was not reported")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))

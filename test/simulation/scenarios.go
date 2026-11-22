@@ -517,7 +517,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e != nil {
 			return e
 		}
-		if e := a.WriteConfig(text); e != nil {
+		if e := a.WriteConfig(text, text); e != nil {
 			return e
 		}
 		cfg, e := config.LoadProjectFrom(a.RepositoryDir)
@@ -525,7 +525,7 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 			return e
 		}
 		protected := strings.Replace(text, cfg.WorkspaceID, "00000000-0000-4000-8000-000000000000", 1)
-		if e := requireCode(a.WriteConfig(protected), apperr.CodeConfigProtected); e != nil {
+		if e := requireCode(a.WriteConfig(protected, text), apperr.CodeConfigProtected); e != nil {
 			return e
 		}
 		if e := requireCode(a.SetAdmin(ctx, w.Devices[0].ID, false), apperr.CodeInvalidArgument); e != nil {

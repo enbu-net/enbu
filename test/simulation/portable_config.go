@@ -98,7 +98,7 @@ func (w *World) PortableConfig(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := a.WriteConfig(string(data)); err != nil {
+	if err := a.WriteConfig(string(data), original); err != nil {
 		return err
 	}
 	for _, run := range []func() error{
@@ -109,7 +109,7 @@ func (w *World) PortableConfig(ctx context.Context) error {
 			return fmt.Errorf("output collision during environment change: %w", err)
 		}
 	}
-	if err := a.WriteConfig(original); err != nil {
+	if err := a.WriteConfig(original, string(data)); err != nil {
 		return err
 	}
 	for i, d := range w.Devices {

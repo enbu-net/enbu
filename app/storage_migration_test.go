@@ -137,7 +137,11 @@ func TestWriteConfigCannotBypassStorageMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig(string(data)); !apperr.Is(err, apperr.CodeConfigProtected) {
+	previous, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(string(data), previous); !apperr.Is(err, apperr.CodeConfigProtected) {
 		t.Fatalf("got %v", err)
 	}
 }

@@ -49,11 +49,7 @@ func (s *Service) ReadConfig() (string, error) {
 	})
 }
 
-func (s *Service) WriteConfig(content string) error {
-	return s.withRepo(func() error { return s.app.WriteConfig(content) })
-}
-
-func (s *Service) WriteConfigIfUnchanged(content, previous string) error {
+func (s *Service) WriteConfig(content, previous string) error {
 	return s.withRepo(func() error { return s.app.WriteConfig(content, previous) })
 }
 

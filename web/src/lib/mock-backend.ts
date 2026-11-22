@@ -439,10 +439,7 @@ export const mockBackend: Backend = {
     config.storage = { ...settings };
     mockConfig = stringifyToml(config);
   },
-  async WriteConfig(content: string): Promise<void> {
-    mockConfig = content;
-  },
-  async WriteConfigIfUnchanged(content: string, previous: string): Promise<void> {
+  async WriteConfig(content: string, previous: string): Promise<void> {
     if (mockConfig !== previous) throw createAppError("conflict");
     mockConfig = content;
   },

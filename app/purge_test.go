@@ -30,7 +30,11 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.WriteConfig(string(content)); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		previous, err := alice.ReadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeInvalidArgument) {
 			t.Fatalf("saving aliased configuration: %v", err)
 		}
 		// An older enbu or a text editor could already have written the file.

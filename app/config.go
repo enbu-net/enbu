@@ -44,7 +44,7 @@ func (a *App) ReadConfig() (content string, err error) {
 	return string(data), nil
 }
 
-func (a *App) WriteConfig(content string, previous ...string) (err error) {
+func (a *App) WriteConfig(content, previous string) (err error) {
 	defer apperr.NormalizeInto(&err)
 
 	cfg, err := config.ParseProject(content)
@@ -59,14 +59,13 @@ func (a *App) WriteConfig(content string, previous ...string) (err error) {
 	path := a.projectPath()
 	// Fail closed: a current file that cannot be read may hold values to protect.
 	existing, err := os.ReadFile(path)
-	if (err == nil || errors.Is(err, fs.ErrNotExist)) && len(previous) > 0 && string(existing) != previous[0] {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("reading enbu.toml: %w", err)
+	}
+	if string(existing) != previous {
 		return apperr.New(apperr.CodeConflict, "enbu.toml changed since it was opened; reload it before saving", nil)
 	}
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
-		return fmt.Errorf("reading enbu.toml: %w", err)
-	default:
+	if err == nil {
 		current, err := config.DecodeProject(string(existing))
 		if err != nil {
 			return apperr.Wrap(apperr.CodeInvalidArgument, "the current enbu.toml cannot be read, so this edit cannot be checked; fix it in a text editor", err, nil)
