@@ -19,14 +19,10 @@ func (cfg *ProjectConfig) CurrentEnvironment() string {
 }
 
 func (cfg *ProjectConfig) teamDefault() string {
-	if cfg.HasEnvironment(cfg.DefaultEnv) {
+	if cfg.DefaultEnv != "" {
 		return cfg.DefaultEnv
 	}
-	if len(cfg.Environments) == 0 || cfg.HasEnvironment("default") {
-		return "default"
-	}
-	// Older configurations may omit default_env without defining "default".
-	return cfg.EnvironmentNames()[0]
+	return "default"
 }
 
 func (cfg *ProjectConfig) SetDefault(name string) {
@@ -66,7 +62,10 @@ func (cfg *ProjectConfig) RemoveEnvironment(name string) error {
 	if wasDefault {
 		cfg.DefaultEnv = ""
 		if len(cfg.Environments) != 0 {
-			cfg.DefaultEnv = cfg.teamDefault()
+			cfg.DefaultEnv = "default"
+			if !cfg.HasEnvironment("default") {
+				cfg.DefaultEnv = cfg.EnvironmentNames()[0]
+			}
 		}
 	}
 	return nil

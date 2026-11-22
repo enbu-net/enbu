@@ -510,12 +510,22 @@ func TestRemovingTeamDefaultKeepsFreshDevicesOnAnExistingEnvironment(t *testing.
 	if err := cfg.AddEnvironment("staging"); err != nil {
 		t.Fatal(err)
 	}
+	if err := cfg.AddEnvironment("production"); err != nil {
+		t.Fatal(err)
+	}
 	cfg.Current = "staging"
 	if err := cfg.RemoveEnvironment("dev"); err != nil {
 		t.Fatal(err)
 	}
-	cfg.Current = ""
-	if got := cfg.CurrentEnvironment(); got != "staging" || cfg.DefaultEnv != got {
+	dir := t.TempDir()
+	if err := SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadProjectFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.CurrentEnvironment(); got != "production" || cfg.DefaultEnv != got {
 		t.Fatalf("fresh device chose %q, configured default %q", got, cfg.DefaultEnv)
 	}
 }
