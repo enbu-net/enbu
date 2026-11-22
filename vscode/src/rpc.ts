@@ -33,7 +33,6 @@ export interface ClientHandlers {
 export interface InitializeResult {
   protocol_version: number;
   app_version: string;
-  max_message_size?: number;
   methods: string[];
   events: string[];
 }
@@ -52,8 +51,8 @@ type Pending = { resolve: (value: unknown) => void; reject: (reason: unknown) =>
 const codeMethodNotFound = -32601;
 const codeApplication = -32000;
 const codeInvalidRequest = -32600;
-// The default protects clients talking to a server that predates negotiation.
-const defaultMaxMessageSize = 16 << 20;
+// Matches desktop/rpc.maxMessageSize, including the terminating newline.
+const maxMessageSize = 16 << 20;
 
 export class RpcClient {
   readonly #output: Writable;
@@ -61,7 +60,6 @@ export class RpcClient {
   readonly #pending = new Map<number, Pending>();
   #nextID = 0;
   #closed = false;
-  #maxMessageSize = defaultMaxMessageSize;
 
   constructor(input: Readable, output: Writable, handlers: ClientHandlers) {
     this.#output = output;
@@ -79,7 +77,7 @@ export class RpcClient {
     const id = ++this.#nextID;
     return new Promise((resolve, reject) => {
       const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
-      if (Buffer.byteLength(line) > this.#maxMessageSize) {
+      if (Buffer.byteLength(line) > maxMessageSize) {
         reject(
           new RpcError(codeInvalidRequest, "message too large", {
             code: "invalid_argument",
@@ -92,12 +90,6 @@ export class RpcClient {
       this.#pending.set(id, { resolve, reject });
       this.#output.write(line);
     });
-  }
-
-  setMaxMessageSize(size: number | undefined): void {
-    if (size !== undefined && Number.isSafeInteger(size) && size > 0) {
-      this.#maxMessageSize = size;
-    }
   }
 
   /** Rejects the calls in flight; later calls fail at once. */
@@ -208,7 +200,6 @@ export async function initialize(client: RpcClient): Promise<InitializeResult> {
       `unsupported enbu protocol version ${String(result?.protocol_version)}`,
     );
   }
-  client.setMaxMessageSize(result.max_message_size);
   return result;
 }
 

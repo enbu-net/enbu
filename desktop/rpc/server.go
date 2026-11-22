@@ -112,7 +112,6 @@ func (e *Error) UnmarshalJSON(data []byte) error {
 type InitializeResult struct {
 	ProtocolVersion int      `json:"protocol_version"`
 	AppVersion      string   `json:"app_version"`
-	MaxMessageSize  int      `json:"max_message_size"`
 	Methods         []string `json:"methods"`
 	Events          []string `json:"events"`
 }
@@ -266,7 +265,6 @@ func (s *Server) handle(msg message) {
 		s.reply(msg.ID, InitializeResult{
 			ProtocolVersion: ProtocolVersion,
 			AppVersion:      s.core.GetAppVersion(),
-			MaxMessageSize:  maxMessageSize,
 			Methods:         Methods,
 			Events:          []string{desktop.EventProgress, desktop.EventProgressMessage, desktop.EventConflictRetry},
 		}, nil)
