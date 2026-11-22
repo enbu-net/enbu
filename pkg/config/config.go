@@ -112,7 +112,7 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 		seen[strings.ToLower(name)] = true
 		resource := cfg.Resource(name)
 		if other, exists := resources[resource]; exists {
-			return fmt.Errorf("environments %q and %q share a storage resource", other, name)
+			return apperr.New(apperr.CodeConfigResourceCollision, "environments share a storage resource", apperr.Params{"first": other, "second": name})
 		}
 		resources[resource] = name
 		env := cfg.Environments[name]

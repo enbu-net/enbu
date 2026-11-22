@@ -12,7 +12,7 @@ import type { EnvInfo } from "../../lib/types";
 import { parseConfigDraft, serializeConfigDraft, type EnbuConfigDraft } from "./config-draft";
 import { m } from "../../paraglide/messages";
 
-export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
+export function ConfigPanel({ environments, onSaved }: { environments: EnvInfo[]; onSaved?: () => Promise<void> }) {
   const defaultEnvId = useId();
   const [content, setContent] = useState("");
   const [draft, setDraft] = useState("");
@@ -54,6 +54,7 @@ export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
     try {
       await backend.WriteConfig(draft, content);
       setContent(draft);
+      await onSaved?.();
     } catch (err) {
       setSaveError(toDisplayError(err));
     } finally {

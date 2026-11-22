@@ -36,6 +36,21 @@ async function renderHome(session: Partial<Session>) {
 }
 
 describe("HomePage", () => {
+  it("opens the configuration editor when two environments share history", async () => {
+    await renderHome({
+      repo: repoInfo({
+        initialized: false,
+        storage_configured: false,
+        config_error: {
+          code: "config_resource_collision",
+          params: { first: "dev", second: "scratch" },
+        },
+      }),
+    });
+    expect(container.textContent).toContain("Environments dev and scratch share stored history");
+    expect(backend.ReadConfig).toHaveBeenCalled();
+    expect(container.querySelector("#init-storage")).toBeNull();
+  });
   it("waits for the session before choosing a screen", async () => {
     await renderHome({ loading: true });
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading");

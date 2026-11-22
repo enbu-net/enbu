@@ -18,12 +18,17 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resource := cfg.Resource("default")
-	scope := storage.StateScope(cfg.WorkspaceID, resource)
 	for _, inc := range []string{cfg.Environments["default"].Incarnation, "default"} {
 		cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env", Incarnation: inc}
 		if inc == "default" {
 			cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env"}
+			delete(cfg.Environments, "scratch")
+			if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := alice.AddSecret(bg, "default", "LEGACY", "keep"); err != nil {
+				t.Fatal(err)
+			}
 		}
 		cfg.Environments["scratch"] = config.EnvironmentConfig{Output: "scratch.env", Incarnation: inc}
 		content, err := config.MarshalProject(cfg)
@@ -44,9 +49,32 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 		if result, err := alice.DeleteEnvironment(bg, "scratch", true); err == nil || result.Purged != 0 {
 			t.Fatalf("purging aliased revisions: %+v %v", result, err)
 		}
+		scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
+		if left, err := alice.Storage.Discover(bg, storage.KindState, scope); err != nil || len(left) == 0 {
+			t.Fatalf("original revisions missing for %s: %v %v", scope, left, err)
+		}
 	}
-	if left, err := alice.Storage.Discover(bg, storage.KindState, scope); err != nil || len(left) == 0 {
-		t.Fatalf("original revisions missing: %v %v", left, err)
+}
+
+func TestPurgeIncarnationRefusesLiveLegacyName(t *testing.T) {
+	alice := newAlice(t)
+	const name = "7b26d19e-bb13-4e98-9300-9cbc96403aea"
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments[name] = config.EnvironmentConfig{Output: config.DefaultOutput(name)}
+	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.AddSecret(bg, name, "LEGACY", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.PurgeIncarnation(bg, name); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("purging a live legacy history: %v", err)
+	}
+	if got := mustSecrets(t, alice, name)["LEGACY"]; got != "keep" {
+		t.Fatalf("legacy history changed: %q", got)
 	}
 }
 

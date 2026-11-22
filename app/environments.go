@@ -196,6 +196,7 @@ func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (d
 		if err := checkPurgeResource(s.cfg, resource, name); err != nil {
 			return deletion, err
 		}
+		cfg = s.cfg
 		if deletion.Purged, err = s.purgeResource(ctx, resource); err != nil {
 			return deletion, err
 		}

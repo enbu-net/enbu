@@ -3,6 +3,9 @@ import { VStack } from "styled-system/jsx";
 import { Spinner, Text } from "../components/ui";
 import { PageCenter } from "../components/layout";
 import { SignIn } from "../features/auth/sign-in";
+import { ErrorAlert } from "../components/error-alert";
+import { toDisplayError } from "../lib/app-error";
+import { ConfigPanel } from "../features/config/config-panel";
 import { Dashboard } from "../features/dashboard/dashboard";
 import { RepositorySetup, setupStep } from "../features/repository/repository-setup";
 import { Welcome } from "../features/repository/welcome";
@@ -19,7 +22,7 @@ export const Route = createFileRoute("/")({
  * it up, then work in the dashboard.
  */
 export function HomePage() {
-  const { status, loading, repo } = useSession();
+  const { status, loading, repo, reloadRepo, refresh } = useSession();
 
   if (loading || !repo) {
     return (
@@ -32,6 +35,23 @@ export function HomePage() {
     );
   }
   if (!repo.path) return <Welcome />;
+  if (repo.config_error) {
+    return (
+      <PageCenter>
+        <VStack w="full" maxW="900px" alignItems="stretch">
+          <ErrorAlert error={toDisplayError(repo.config_error)} />
+          <ConfigPanel
+            key={repo.path}
+            environments={[]}
+            onSaved={async () => {
+              await refresh({ force: true, invalidate: true });
+              await reloadRepo();
+            }}
+          />
+        </VStack>
+      </PageCenter>
+    );
+  }
   // A workspace stored outside GHCR needs no GitHub sign-in.
   if (!status?.authenticated && !status?.workspace_configured) return <SignIn />;
   const step = setupStep(repo);
