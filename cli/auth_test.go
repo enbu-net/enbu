@@ -90,7 +90,7 @@ func TestWSLLogoutRequiresAnAccountAsInvalidArgument(t *testing.T) {
 	t.Cleanup(func() { winbridge.InWSL = original })
 	winbridge.InWSL = func() bool { return true }
 	cmd := newAuthLogoutCommand()
-	cmd.SetArgs(nil)
+	cmd.SetArgs([]string{})
 	if err := cmd.Execute(); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("logout without --user: %v", err)
 	}
