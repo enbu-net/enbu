@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/fsutil"
@@ -104,7 +105,14 @@ func lockTarget(target string) (string, *os.File, error) {
 		return "", nil, err
 	}
 	target = filepath.Join(dir, filepath.Base(target))
-	lock, err := fsutil.LockFile(target+".update.lock", false)
+	var lock *os.File
+	if runtime.GOOS == "windows" {
+		lock, err = fsutil.LockFile(target+".update.lock", false)
+	} else {
+		// Lock the directory inode so shared Unix installs need no private
+		// marker file, and replacing the target keeps the lock in force.
+		lock, err = fsutil.LockExisting(dir, false)
+	}
 	if err != nil {
 		return "", nil, fmt.Errorf("locking the installation: %w", err)
 	}
@@ -114,23 +122,20 @@ func lockTarget(target string) (string, *os.File, error) {
 func stagingPrefix(target string) string { return "." + filepath.Base(target) + ".update-" }
 
 // CleanUp removes what an earlier update left beside target: the old
-// Windows binary, which could not be deleted while it ran, and a new copy an
-// interrupted update did not rename into place.
+// Windows binary, which could not be deleted while it ran. Each installer
+// cleans its own unique staging path.
 func CleanUp(target string) {
+	info, err := os.Lstat(target + ".old")
+	if err != nil || !info.Mode().IsRegular() {
+		return
+	}
 	target, lock, err := lockTarget(target)
 	if err != nil {
 		return
 	}
 	defer func() { _ = lock.Close() }()
 	if _, err := os.Stat(target); err == nil {
-		_ = os.RemoveAll(target + ".old")
-	}
-	dir := filepath.Dir(target)
-	entries, _ := os.ReadDir(dir)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), stagingPrefix(target)) {
-			_ = os.RemoveAll(filepath.Join(dir, entry.Name()))
-		}
+		_ = os.Remove(target + ".old")
 	}
 }
 

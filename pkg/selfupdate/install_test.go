@@ -99,8 +99,8 @@ func TestInstallLinuxReplacesTheBinary(t *testing.T) {
 	if err != nil || info.Mode().Perm()&0o100 == 0 {
 		t.Errorf("target is not executable: %v %v", info, err)
 	}
-	if _, err := os.Stat(target + ".new"); !os.IsNotExist(err) {
-		t.Errorf("target.new left behind: %v", err)
+	if paths, err := filepath.Glob(filepath.Join(filepath.Dir(target), stagingPrefix(target)+"*")); err != nil || len(paths) != 0 {
+		t.Fatalf("staging paths left behind: %v, %v", paths, err)
 	}
 }
 
@@ -119,8 +119,8 @@ func TestInstallKeepsTheAppWhenTheArchiveLacksTheBinary(t *testing.T) {
 	if got := readFile(t, target); got != "old" {
 		t.Errorf("target = %q, want old", got)
 	}
-	if _, err := os.Stat(target + ".new"); !os.IsNotExist(err) {
-		t.Errorf("target.new left behind: %v", err)
+	if paths, err := filepath.Glob(filepath.Join(filepath.Dir(target), stagingPrefix(target)+"*")); err != nil || len(paths) != 0 {
+		t.Fatalf("staging paths left behind: %v, %v", paths, err)
 	}
 }
 
@@ -246,5 +246,27 @@ func TestConcurrentInstallAndCleanupCannotTouchActiveStaging(t *testing.T) {
 	}
 	if got := readFile(t, target+".old"); got != "backup" {
 		t.Fatalf("cleaned backup during the update: %q", got)
+	}
+}
+
+func TestCleanupLeavesUnrelatedSiblings(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "enbu-desktop")
+	for _, file := range []string{target, target + ".old"} {
+		if err := os.WriteFile(file, []byte("binary"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sibling := filepath.Join(dir, stagingPrefix(target)+"notes")
+	if err := os.Mkdir(sibling, 0700); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(sibling, "keep.txt")
+	if err := os.WriteFile(note, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	CleanUp(target)
+	if got := readFile(t, note); got != "keep" {
+		t.Fatalf("unrelated sibling changed: %q", got)
 	}
 }
