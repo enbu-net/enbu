@@ -115,9 +115,16 @@ func inspect(files *token.FileSet, file *ast.File, layer, path string) []string 
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		// Conflict choices carry a boolean Delete field in the wire format.
-		if field, ok := node.(*ast.KeyValueExpr); ok && path == "app/conflicts.go" {
-			if key, ok := field.Key.(*ast.Ident); ok && key.Name == "Delete" && isImportedSelector(field.Value, "c", "Delete") {
-				allowed[field.Value.(*ast.SelectorExpr)] = true
+		if literal, ok := node.(*ast.CompositeLit); ok && path == "app/conflicts.go" &&
+			isImportedSelector(literal.Type, "merge", "Choice") {
+			for _, element := range literal.Elts {
+				field, ok := element.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if key, ok := field.Key.(*ast.Ident); ok && key.Name == "Delete" && isImportedSelector(field.Value, "c", "Delete") {
+					allowed[field.Value.(*ast.SelectorExpr)] = true
+				}
 			}
 		}
 		if method, ok := node.(*ast.SelectorExpr); ok && method.Sel.Name == "Delete" && !allowed[method] {

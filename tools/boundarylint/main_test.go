@@ -54,6 +54,17 @@ func (a *App) initializeRepository() { _ = s.store.Delete(ctx, storage.KindState
 			diagnostic: "physical storage deletion must stay in a reviewed path",
 		},
 		{
+			name:  "conflict choice can copy its boolean field",
+			layer: "app", path: "app/conflicts.go",
+			source: `package app; func copy(c SecretChoice) { _ = merge.Choice{Delete: c.Delete} }`,
+		},
+		{
+			name:  "a literal cannot capture a deletion method",
+			layer: "app", path: "app/conflicts.go",
+			source:     `package app; func capture(c Store) { _ = struct{ Delete any }{Delete: c.Delete} }`,
+			diagnostic: "physical storage deletion must stay in a reviewed path",
+		},
+		{
 			name:  "physical deletion has a fixed kind",
 			layer: "app", path: "app/environments.go",
 			source: `package app
