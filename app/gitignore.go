@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/config"
@@ -31,6 +32,9 @@ func gitignoreEntries(cfg *config.ProjectConfig) []string {
 			continue
 		}
 		clean := filepath.ToSlash(filepath.Clean(output))
+		if clean == ".env.example" {
+			entries = slices.DeleteFunc(entries, func(entry string) bool { return entry == "!.env.example" })
+		}
 		if clean != ".env" {
 			entries = append(entries, "/"+gitignoreLiteral(clean))
 		}
@@ -64,10 +68,12 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	if data, err := os.ReadFile(path); err == nil {
 		existing = string(data)
 	}
+	entries := gitignoreEntries(cfg)
+	keepExample := slices.Contains(entries, "!.env.example")
 	listed := make(map[string]bool)
 	for _, line := range strings.Split(existing, "\n") {
 		entry := strings.TrimSpace(line)
-		if strings.HasPrefix(entry, "!") && entry != "!.env.example" {
+		if strings.HasPrefix(entry, "!") && (entry != "!.env.example" || !keepExample) {
 			// This negation can override an earlier exclusion. Append our
 			// exclusions after it, keeping the user's patterns intact.
 			clear(listed)
@@ -75,7 +81,7 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 		listed[entry] = true
 	}
 	var toAdd []string
-	for _, entry := range gitignoreEntries(cfg) {
+	for _, entry := range entries {
 		entry = strings.TrimSpace(entry)
 		if entry != "" && !listed[entry] {
 			toAdd = append(toAdd, entry)

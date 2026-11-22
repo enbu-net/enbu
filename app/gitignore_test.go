@@ -163,3 +163,25 @@ func TestGitignoreMatchesNormalizedOutput(t *testing.T) {
 		t.Fatalf("expected the nested file to be unignored, git returned %v", err)
 	}
 }
+
+func TestGitignoreKeepsConfiguredExampleOutputSecret(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	writeGitignore(t, dir, "/.env.example\n!.env.example\n")
+	cfg := &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+		"default": {Output: ".env.example"},
+	}}
+	first := ensureGitignoreIn(t, dir, cfg)
+	if got := ensureGitignoreIn(t, dir, cfg); got != first {
+		t.Fatal("repeated save changed .gitignore")
+	}
+	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", ".env.example").CombinedOutput(); err != nil {
+		t.Fatalf("git check-ignore: %v %s", err, out)
+	}
+}
