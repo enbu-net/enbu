@@ -314,7 +314,7 @@ tasks:
       - vp run a11y
 
   gui/bombadil:
-    desc: Explore the GUI at random with Bombadil and check the properties in web/bombadil/spec.ts (ENBU_BOMBADIL_TIME_LIMIT, default 1m; `-- --reproduce web/bombadil-trace.bin` replays a run)
+    desc: Explore the GUI at random with Bombadil and check the properties in web/bombadil/spec.ts (ENBU_BOMBADIL_TIME_LIMIT, default 1m; `-- --reproduce bombadil-trace.bin`, relative to web/, replays a run)
     deps:
       - gui/install
     dir: web

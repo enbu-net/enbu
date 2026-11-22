@@ -64,6 +64,32 @@ describe("mockBackend environment names", () => {
     await expect(mockBackend.RenameEnvironment("staging", "x".repeat(101))).rejects.toMatchObject({
       payload: { code: "invalid_argument" },
     });
-    expect((await mockBackend.ListEnvironments()).map((env) => env.name)).toContain("staging");
+    await expect(mockBackend.RenameEnvironment("staging", "Production")).rejects.toMatchObject({
+      payload: { code: "environment_already_exists" },
+    });
+    expect((await mockBackend.ListEnvironments()).map((env) => env.name)).toEqual(
+      expect.arrayContaining(["staging", "production"]),
+    );
+  });
+});
+
+describe("mockBackend sign-in", () => {
+  it("completes a sign-in after polling, adding the account", async () => {
+    const start = await mockBackend.StartOAuthLogin();
+    expect(start.user_code).not.toBe("");
+    expect((await mockBackend.GetOAuthLoginStatus(start.session_id)).state).toBe("pending");
+    expect(await mockBackend.GetOAuthLoginStatus(start.session_id)).toMatchObject({
+      state: "success",
+      username: "mona",
+    });
+    expect(await mockBackend.GetAuthStatus()).toMatchObject({ username: "mona" });
+  });
+
+  it("rejects a cancelled sign-in", async () => {
+    const start = await mockBackend.StartOAuthLogin();
+    await mockBackend.CancelOAuthLogin(start.session_id);
+    await expect(mockBackend.GetOAuthLoginStatus(start.session_id)).rejects.toMatchObject({
+      payload: { code: "authentication_expired" },
+    });
   });
 });

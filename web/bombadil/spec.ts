@@ -13,27 +13,24 @@ export * from "@antithesishq/bombadil/browser/defaults";
 
 const locales = [en, ja];
 
-/** The trimmed text of every element on the page that matches the selector. */
-function texts(state: State, selector: string): string[] {
-  return [...state.document.querySelectorAll(selector)].map((el) => el.textContent?.trim() ?? "");
+/** The page's visible text, one trimmed line per entry. */
+function lines(state: State): string[] {
+  return state.document.body.innerText.split("\n").map((line) => line.trim());
 }
 
-const internalShown = extract((state) =>
-  texts(state, '[role="alert"]').some((text) =>
-    locales.some((messages) => text.includes(messages.error_internal)),
-  ),
-);
+const internalShown = extract((state) => {
+  const text = state.document.body.innerText;
+  return locales.some((messages) => text.includes(messages.error_internal));
+});
 
 // The preview backend never fails in a way the UI does not know: an
-// `internal` error on screen is a render crash, an uncaught failure, or an
-// error the UI does not classify.
+// `internal` error anywhere on screen (the global alert or an inline one) is
+// a render crash, an uncaught failure, or an error the UI does not classify.
 export const noInternalError = always(() => !internalShown.current);
 
-const loading = extract((state) =>
-  texts(state, '[role="status"]').some((text) =>
-    locales.some((messages) => text === messages.common_loading),
-  ),
-);
+// What the screens and both editors show while they load.
+const loadingTexts = [...locales.map((messages) => messages.common_loading), "Starting TOML LSP"];
+const loading = extract((state) => lines(state).some((line) => loadingTexts.includes(line)));
 
 // A loading indicator goes away again: the preview answers every call at once.
 export const loadingFinishes = always(

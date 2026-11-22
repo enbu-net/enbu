@@ -156,6 +156,10 @@ function secretsForEnv(env: string): { key: string; value: string }[] {
 // Two signed-in accounts, so the preview shows switching and signing out.
 let mockAccounts = ["octocat", previewUsername];
 let mockCurrentAccount = previewUsername;
+// A sign-in the preview pretends to complete after two polls, adding this account.
+const mockSignInAccount = "mona";
+let mockSignIn: { session: string; polls: number } | null = null;
+let mockSignInCount = 0;
 
 export const mockBackend: Backend = {
   async GetAuthStatus(): Promise<AuthStatus> {
@@ -168,15 +172,28 @@ export const mockBackend: Backend = {
   },
 
   async StartOAuthLogin(): Promise<OAuthStart> {
-    throw new Error("Mock mode: auth is pre-configured");
+    mockSignIn = { session: `mock-sign-in-${++mockSignInCount}`, polls: 0 };
+    return {
+      session_id: mockSignIn.session,
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      user_code: "ENBU-0000",
+      verification_uri: "https://github.com/login/device",
+    };
   },
 
-  async GetOAuthLoginStatus(_sessionID: string): Promise<OAuthStatus> {
-    throw new Error("Mock mode: auth is pre-configured");
+  async GetOAuthLoginStatus(sessionID: string): Promise<OAuthStatus> {
+    if (mockSignIn?.session !== sessionID) {
+      throw createAppError("authentication_expired");
+    }
+    if (++mockSignIn.polls < 2) return { state: "pending" };
+    mockSignIn = null;
+    if (!mockAccounts.includes(mockSignInAccount)) mockAccounts.push(mockSignInAccount);
+    mockCurrentAccount = mockSignInAccount;
+    return { state: "success", username: mockSignInAccount };
   },
 
-  async CancelOAuthLogin(_sessionID: string): Promise<void> {
-    // no-op
+  async CancelOAuthLogin(sessionID: string): Promise<void> {
+    if (mockSignIn?.session === sessionID) mockSignIn = null;
   },
 
   async Logout(login: string): Promise<void> {
@@ -245,6 +262,10 @@ export const mockBackend: Backend = {
 
   async RenameEnvironment(name: string, newName: string): Promise<void> {
     if (!validEnvironmentName(newName)) throw createAppError("invalid_argument", { name: newName });
+    // Names are unique ignoring case (ProjectConfig.RenameEnvironment).
+    if (mockEnvs.some((e) => e.name.toLowerCase() === newName.toLowerCase())) {
+      throw createAppError("environment_already_exists", { name: newName });
+    }
     mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
