@@ -180,12 +180,9 @@ func (s *session) acceptCurrentStates(ctx context.Context) error {
 		return fmt.Errorf("membership unchanged: unable to examine %d storage scopes", unexamined)
 	}
 	for _, t := range targets {
-		state, err := s.readResource(ctx, t.resource, nil, true)
+		_, err := s.readResource(ctx, t.resource, nil, true)
 		if IsNotFoundError(err) {
 			continue // An environment without revisions has nothing to preserve.
-		}
-		if err == nil {
-			err = conflictError(state.conflicts)
 		}
 		if err != nil {
 			return fmt.Errorf("reading %s before removing a member: %w", t.name, err)
