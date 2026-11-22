@@ -229,16 +229,26 @@ def test_mutation_change_cannot_silently_skip_the_mutation_suite():
     assert not selected(plan, "TestOracleMutationExperiments")
 
 
-def test_diff_uses_push_before_and_after(monkeypatch):
-    def output(command, **_kwargs):
-        assert command == ["git", "diff", "--name-only", "-z", "old", "new"]
-        return b"app/secrets.go\0path with spaces\0"
+def test_later_push_keeps_tests_from_the_cancelled_push(monkeypatch):
+    def output(command, **kwargs):
+        if kwargs.get("text"):
+            assert command == ["git", "merge-base", "new", "refs/remotes/origin/main"]
+            return "base\n"
+        assert command == ["git", "diff", "--name-only", "-z", "base", "new"]
+        return b"app/secrets.go\0pkg/auth/token.go\0path with spaces\0"
 
     monkeypatch.setattr(dst_plan.subprocess, "check_output", output)
-    assert dst_plan.changed({"before": "old", "after": "new"}) == [
+    paths = dst_plan.changed(
+        {"before": "old", "after": "new", "repository": {"default_branch": "main"}}
+    )
+    assert paths == [
         "app/secrets.go",
+        "pkg/auth/token.go",
         "path with spaces",
     ]
+    plan = dst_plan.select(paths)
+    assert selected(plan, "TestConcurrentOperationMatrix")
+    assert plan["mutation"]
 
 
 def test_first_push_uses_default_branch_merge_base(monkeypatch):
@@ -254,7 +264,7 @@ def test_first_push_uses_default_branch_merge_base(monkeypatch):
     assert dst_plan.changed(
         {"before": "0" * 40, "after": "new", "repository": {"default_branch": "main"}}
     ) == ["app/history.go"]
-    assert calls[0] == ["git", "merge-base", "HEAD", "refs/remotes/origin/main"]
+    assert calls[0] == ["git", "merge-base", "new", "refs/remotes/origin/main"]
     assert calls[1][-2:] == ["base", "new"]
 
 
@@ -263,7 +273,9 @@ def test_missing_old_commit_never_skips_coverage(monkeypatch):
         raise subprocess.CalledProcessError(1, command)
 
     monkeypatch.setattr(dst_plan.subprocess, "check_output", output)
-    assert dst_plan.changed({"before": "missing", "after": "new"}) == ["go.mod"]
+    assert dst_plan.changed(
+        {"after": "new", "repository": {"default_branch": "main"}}
+    ) == ["go.mod"]
 
 
 @pytest.mark.parametrize("path", ["app/members.go", "pkg/wsp/checkpoint.go"])
