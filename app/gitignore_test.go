@@ -93,7 +93,7 @@ func TestEnsureGitignoreCustomOutputs(t *testing.T) {
 		"d": {Output: "/abs/path.env"},
 	}}
 	content := ensureGitignoreIn(t, t.TempDir(), cfg)
-	for _, want := range []string{"secrets.json", "config/dev.env", `\!literal.env`} {
+	for _, want := range []string{"secrets.json", "config/dev.env", "!literal.env"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("missing custom output %q in .gitignore", want)
 		}
@@ -150,5 +150,8 @@ func TestGitignoreMatchesNormalizedOutput(t *testing.T) {
 	}})
 	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", "secrets.env").CombinedOutput(); err != nil {
 		t.Fatalf("git check-ignore: %v %s", err, out)
+	}
+	if err := exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "subdir/secrets.env").Run(); err == nil {
+		t.Fatal("root output rule ignored a nested file")
 	}
 }
