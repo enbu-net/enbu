@@ -68,6 +68,7 @@ describe("mockBackend environment names", () => {
       payload: { code: "environment_already_exists" },
     });
     await mockBackend.RenameEnvironment("staging", "Staging");
+    expect((await mockBackend.ListEnvironments()).map((env) => env.name)).toContain("Staging");
     await mockBackend.RenameEnvironment("Staging", "staging");
     expect((await mockBackend.ListEnvironments()).map((env) => env.name)).toEqual(
       expect.arrayContaining(["staging", "production"]),
