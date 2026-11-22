@@ -14,6 +14,7 @@ var definitions = map[Code]definition{
 	CodeAuthExpired:         {message: "The authentication session expired. Try again.", params: []string{}},
 	CodeNotInitialized:      {message: "Set up enbu for this repository first.", params: []string{}},
 	CodeConfigNotFound:      {message: "enbu.toml was not found.", params: []string{}},
+	CodeConfigChanged:       {message: "enbu.toml changed while you were editing. Reload it before saving."},
 	CodeConfigProtected:     {message: "\"{key}\" in enbu.toml cannot be changed here: it decides which members the workspace trusts or where secrets are stored.", params: []string{"key"}},
 	CodeEnvironmentMissing:  {message: "Environment \"{name}\" does not exist.", params: []string{"name"}},
 	CodeEnvironmentExists:   {message: "Environment \"{name}\" already exists.", params: []string{"name"}},

@@ -440,7 +440,7 @@ export const mockBackend: Backend = {
     mockConfig = stringifyToml(config);
   },
   async WriteConfig(content: string, previous: string): Promise<void> {
-    if (mockConfig !== previous) throw createAppError("conflict");
+    if (mockConfig !== previous) throw createAppError("config_changed");
     mockConfig = content;
   },
   async GetAppVersion(): Promise<string> {

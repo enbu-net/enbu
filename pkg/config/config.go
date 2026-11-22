@@ -19,9 +19,8 @@ import (
 
 const currentVersion = "v1alpha2"
 
-// ProjectLockName lives beside enbu.toml. The existing .env.* gitignore
-// pattern covers it, and configuration validation reserves the path.
-const ProjectLockName = ".env.enbu-lock"
+// ProjectLockName is reserved for the transaction lock beside enbu.toml.
+const ProjectLockName = ".enbu.toml.lock"
 
 type StorageConfig struct {
 	URL       string `toml:"url" json:"url"`

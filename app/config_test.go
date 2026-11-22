@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"uuid"
 
@@ -13,14 +15,60 @@ import (
 	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
+func TestExplicitNestedCheckoutDoesNotEditParent(t *testing.T) {
+	parent := newAlice(t)
+	nested := filepath.Join(parent.RepositoryDir, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	child := &App{RepositoryDir: nested}
+	before, err := parent.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.CreateEnvironment("child"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := parent.ReadConfig()
+	if err != nil || before != after {
+		t.Fatalf("parent configuration changed: %v", err)
+	}
+	cfg, err := child.loadProject()
+	if err != nil || !cfg.HasEnvironment("child") {
+		t.Fatalf("child configuration was not written: %v", err)
+	}
+}
+
+func TestCanceledEnvironmentDeleteKeepsConfig(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := a.DeleteEnvironment(ctx, "staging", false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled delete: %v", err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil || !cfg.HasEnvironment("staging") {
+		t.Fatalf("canceled delete removed staging: %v", err)
+	}
+}
+
 func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 	a := newAlice(t)
 	b := *a
 	a.Runtime = &Runtime{}
 	started, resume := make(chan struct{}), make(chan struct{})
+	var pause sync.Once
 	a.Runtime.NewID = func() string {
-		close(started)
-		<-resume
+		pause.Do(func() {
+			close(started)
+			<-resume
+		})
 		return uuid.NewV4().String()
 	}
 	first := make(chan error, 1)
@@ -53,6 +101,46 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 	}
 }
 
+func TestProjectLockUsesSameFileForSymlinkedCheckout(t *testing.T) {
+	a := newAlice(t)
+	alias := filepath.Join(t.TempDir(), "checkout")
+	if err := os.Symlink(a.RepositoryDir, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	first, err := a.lockProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	canonical, err := filepath.EvalSymlinks(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fsutil.LockFile(filepath.Join(canonical, config.ProjectLockName), false)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("symlink path acquired the existing lock")
+	}
+}
+
+func TestConfigReservesOnlyTheNewProjectLockPath(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("enbu-lock"); err != nil {
+		t.Fatal(err)
+	}
+	original, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Replace(original, `".env.enbu-lock"`, `"`+config.ProjectLockName+`"`, 1)
+	if original == content {
+		t.Fatal("fixture did not contain the default output")
+	}
+	if err := a.WriteConfig(content, original); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("using the lock path as output: %v", err)
+	}
+}
+
 func TestConfigSaveRejectsAnOlderDraft(t *testing.T) {
 	a := newAlice(t)
 	original, err := a.ReadConfig()
@@ -62,7 +150,7 @@ func TestConfigSaveRejectsAnOlderDraft(t *testing.T) {
 	if err := a.CreateEnvironment("staging"); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig(original+"\n# edited draft\n", original); !apperr.Is(err, apperr.CodeConflict) {
+	if err := a.WriteConfig(original+"\n# edited draft\n", original); !apperr.Is(err, apperr.CodeConfigChanged) {
 		t.Fatalf("saving stale configuration: %v", err)
 	}
 	cfg, err := a.loadProject()

@@ -13,6 +13,9 @@ import (
 )
 
 func (a *App) projectPath() string {
+	if a.RepositoryDir != "" {
+		return filepath.Join(a.RepositoryDir, "enbu.toml")
+	}
 	if path, err := config.ProjectConfigPathFrom(a.RepositoryDir); err == nil {
 		return path
 	}
@@ -30,11 +33,7 @@ func (a *App) lockProject() (*os.File, error) {
 func (a *App) ReadConfig() (content string, err error) {
 	defer apperr.NormalizeInto(&err)
 
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
-	if err != nil {
-		return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
-	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(a.projectPath())
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
@@ -63,7 +62,7 @@ func (a *App) WriteConfig(content, previous string) (err error) {
 		return fmt.Errorf("reading enbu.toml: %w", err)
 	}
 	if string(existing) != previous {
-		return apperr.New(apperr.CodeConflict, "enbu.toml changed since it was opened; reload it before saving", nil)
+		return apperr.New(apperr.CodeConfigChanged, "enbu.toml changed since it was opened; reload it before saving", nil)
 	}
 	if err == nil {
 		current, err := config.DecodeProject(string(existing))

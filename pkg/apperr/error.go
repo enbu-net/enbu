@@ -17,6 +17,7 @@ const (
 	CodeAuthExpired        Code = "authentication_expired"
 	CodeNotInitialized     Code = "not_initialized"
 	CodeConfigNotFound     Code = "config_not_found"
+	CodeConfigChanged      Code = "config_changed"
 	CodeConfigProtected    Code = "config_protected" // an edit would change the trust root or where secrets are stored
 	CodeEnvironmentMissing Code = "environment_not_found"
 	CodeEnvironmentExists  Code = "environment_already_exists"

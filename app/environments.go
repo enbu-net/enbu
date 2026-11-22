@@ -56,15 +56,20 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 	if !config.ValidEnvironmentName(name) {
 		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
-	lock, err := a.lockProject()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = lock.Close() }()
-
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err
+	}
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		lock, err := a.lockProject()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = lock.Close() }()
+		cfg, err = a.loadProject()
+		if err != nil {
+			return err
+		}
 	}
 
 	if !cfg.HasEnvironment(name) {
@@ -164,6 +169,9 @@ func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (d
 		return deletion, err
 	}
 	defer func() { _ = lock.Close() }()
+	if err := ctx.Err(); err != nil {
+		return deletion, err
+	}
 
 	cfg, err := a.loadProject()
 	if err != nil {

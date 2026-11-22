@@ -69,6 +69,7 @@ describe("ConfigPanel", () => {
     await act(async () => queryButton("Save")?.click());
     await settle();
 
+    expect(mocked.WriteConfig.mock.lastCall?.[1]).toBe(config);
     const saved = parseToml(String(mocked.WriteConfig.mock.lastCall?.[0])) as {
       env: Record<string, { output: string; incarnation?: string }>;
     };
