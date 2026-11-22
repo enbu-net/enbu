@@ -128,7 +128,8 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
-		if strings.EqualFold(clean, ProjectLockName) {
+		root, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+		if strings.EqualFold(root, ProjectLockName) {
 			return fmt.Errorf("environment %q output uses the project lock path", name)
 		}
 		// A leading slash is rooted on Windows even without a drive letter,

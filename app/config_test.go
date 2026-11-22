@@ -159,12 +159,14 @@ func TestConfigReservesOnlyTheNewProjectLockPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := strings.Replace(original, `".env.enbu-lock"`, `"`+config.ProjectLockName+`"`, 1)
-	if original == content {
-		t.Fatal("fixture did not contain the default output")
-	}
-	if err := a.WriteConfig(content, original); !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Fatalf("using the lock path as output: %v", err)
+	for _, path := range []string{config.ProjectLockName, config.ProjectLockName + "/vars.env"} {
+		content := strings.Replace(original, `".env.enbu-lock"`, `"`+path+`"`, 1)
+		if original == content {
+			t.Fatal("fixture did not contain the default output")
+		}
+		if err := a.WriteConfig(content, original); !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Fatalf("using the lock path as output: %v", err)
+		}
 	}
 }
 
