@@ -136,6 +136,7 @@ try {
       await tabs.first().waitFor();
       if (theme === "light" && locale === "en" && width === 1280) {
         await checkSecretEditorKeyboard(page);
+        await tabs.first().waitFor();
       }
       const count = await tabs.count();
       const opened = new Set();
