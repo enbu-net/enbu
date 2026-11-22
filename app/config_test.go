@@ -101,22 +101,49 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 	}
 }
 
+func TestPersonalSwitchDoesNotOpenProjectLock(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(a.RepositoryDir, config.ProjectLockName)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := a.CurrentEnvironment()
+	if err != nil || current != "default" {
+		t.Fatalf("personal selection = %q, %v", current, err)
+	}
+}
+
 func TestProjectLockUsesSameFileForSymlinkedCheckout(t *testing.T) {
 	a := newAlice(t)
 	alias := filepath.Join(t.TempDir(), "checkout")
 	if err := os.Symlink(a.RepositoryDir, alias); err != nil {
 		t.Skipf("directory symlinks unavailable: %v", err)
 	}
-	first, err := a.lockProject()
+	aliasApp := *a
+	aliasApp.RepositoryDir = alias
+	first, err := aliasApp.lockProject()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = first.Close() }()
-	canonical, err := filepath.EvalSymlinks(alias)
+	canonical, err := filepath.EvalSymlinks(a.RepositoryDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := fsutil.LockFile(filepath.Join(canonical, config.ProjectLockName), false)
+	path := filepath.Join(canonical, config.ProjectLockName)
+	if first.Name() != path {
+		t.Fatalf("aliased lock path = %q, want %q", first.Name(), path)
+	}
+	second, err := fsutil.LockFile(path, false)
 	if err == nil {
 		_ = second.Close()
 		t.Fatal("symlink path acquired the existing lock")

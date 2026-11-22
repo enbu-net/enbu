@@ -245,7 +245,12 @@ func ProjectConfigPathFrom(dir string) (string, error) {
 }
 
 func findProjectConfigFrom(dir string) (string, error) {
-	dir = baseDir(dir)
+	if dir != "" {
+		path := filepath.Join(dir, "enbu.toml")
+		_, err := os.Stat(path)
+		return path, err
+	}
+	dir = baseDir("")
 
 	for {
 		path := filepath.Join(dir, "enbu.toml")

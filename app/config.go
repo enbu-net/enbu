@@ -13,9 +13,6 @@ import (
 )
 
 func (a *App) projectPath() string {
-	if a.RepositoryDir != "" {
-		return filepath.Join(a.RepositoryDir, "enbu.toml")
-	}
 	if path, err := config.ProjectConfigPathFrom(a.RepositoryDir); err == nil {
 		return path
 	}

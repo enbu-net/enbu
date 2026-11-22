@@ -19,6 +19,7 @@ export enum Code {
     CodeNotInitialized = "not_initialized",
     CodeConfigNotFound = "config_not_found",
     CodeConfigResourceCollision = "config_resource_collision",
+    CodeConfigChanged = "config_changed",
 
     /**
      * an edit would change the trust root or where secrets are stored

@@ -60,11 +60,7 @@ func (a *App) SetRepositoryDir(dir string) {
 
 // loadProject reads enbu.toml and the environment this user switched to.
 func (a *App) loadProject() (*config.ProjectConfig, error) {
-	text, err := a.ReadConfig()
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := config.ParseProject(text)
+	cfg, err := config.LoadProjectFrom(a.RepositoryDir)
 	if err != nil {
 		return nil, err
 	}

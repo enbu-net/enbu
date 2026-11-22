@@ -192,7 +192,8 @@ func TestMigrateStorageUpdatesAncestorConfig(t *testing.T) {
 	if err := os.Mkdir(child, 0700); err != nil {
 		t.Fatal(err)
 	}
-	a.RepositoryDir = child
+	t.Chdir(child)
+	a.RepositoryDir = ""
 	s, err := a.openSession(ctx)
 	if err != nil {
 		t.Fatal(err)
