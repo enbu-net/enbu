@@ -93,8 +93,9 @@ func TestRemoveMemberRejectsUnavailableRevisionMetadata(t *testing.T) {
 					return next.Discover(ctx, kind, scope)
 				},
 			})
-			if _, err := alice.ListSecrets(bg, "default"); err != nil {
-				t.Fatalf("ordinary read failed with a verified history: %v", err)
+			got, err := alice.ListSecrets(bg, "default")
+			if err != nil || got["KEY"] != "v1" {
+				t.Fatalf("ordinary read result = %v, %v", got, err)
 			}
 
 			_ = mustMember(t, alice, bob)
