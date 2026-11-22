@@ -26,11 +26,10 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 		return nil, err
 	}
 
-	return environmentInfos(cfg), nil
+	return environmentInfos(cfg, cfg.CurrentEnvironment()), nil
 }
 
-func environmentInfos(cfg *config.ProjectConfig) []EnvInfo {
-	current := cfg.CurrentEnvironment()
+func environmentInfos(cfg *config.ProjectConfig, current string) []EnvInfo {
 	names := cfg.EnvironmentNames()
 
 	envs := make([]EnvInfo, len(names))

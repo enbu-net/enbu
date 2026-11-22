@@ -739,6 +739,13 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {
 			return e
 		}
+		snapshot, e := a.ReadWorkspace(ctx)
+		if e != nil {
+			return e
+		}
+		if snapshot.Environment != "alpha" || snapshot.Secrets["ALPHA"] != "a" || len(snapshot.Environments) != 3 {
+			return fmt.Errorf("workspace snapshot mixed the active environment and its secrets")
+		}
 		w.Model["alpha"] = map[string]string{"ALPHA": "a"}
 		w.Model["beta"] = map[string]string{"BETA": "b"}
 		if e := w.Check(ctx, "alpha"); e != nil {

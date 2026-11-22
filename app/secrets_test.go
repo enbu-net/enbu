@@ -119,6 +119,33 @@ func TestReadWorkspaceKeepsEnvironmentAndSecretsOnOneConfig(t *testing.T) {
 	}
 }
 
+func TestReadWorkspaceSelectsAnExistingEnvironment(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(bg, "staging", "STAGE", "value"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg.Environments, "default")
+	cfg.DefaultEnv = ""
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.saveLocalState(cfg.WorkspaceID, &config.LocalConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := a.ReadWorkspace(bg)
+	if err != nil || snapshot.Environment != "staging" || snapshot.Secrets["STAGE"] != "value" ||
+		len(snapshot.Environments) != 1 || !snapshot.Environments[0].IsCurrent {
+		t.Fatalf("unusable snapshot: %+v %v", snapshot, err)
+	}
+}
+
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar", "BAZ": "qux"})

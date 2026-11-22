@@ -253,7 +253,9 @@ export const mockBackend: Backend = {
     const repo = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
     if (!repo || repo.path !== repoPath) throw createAppError("conflict");
     const environment = currentEnvName();
-    const conflicts = mockConflictsByEnv[environment] ?? null;
+    const conflicts = Object.hasOwn(mockConflictsByEnv, environment)
+      ? mockConflictsByEnv[environment]
+      : null;
     const secrets = conflicts ? [] : [...secretsForEnv(environment)];
     return {
       workspace_id: repo.workspace_id ?? "",

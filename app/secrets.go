@@ -21,15 +21,21 @@ type WorkspaceSnapshot struct {
 
 func (a *App) ReadWorkspace(ctx context.Context) (snapshot WorkspaceSnapshot, err error) {
 	defer apperr.NormalizeInto(&err)
-	s, env, err := a.openEnvironment(ctx, "")
+	s, err := a.openSession(ctx)
 	if err != nil {
 		return WorkspaceSnapshot{}, err
 	}
 	defer s.Close()
-	snapshot = WorkspaceSnapshot{
-		WorkspaceID: s.workspace, Environments: environmentInfos(s.cfg), Environment: env.Name,
+	env := s.cfg.CurrentEnvironment()
+	if !s.cfg.HasEnvironment(env) {
+		// The dashboard must still offer the remaining environments when its
+		// configured selection is stale.
+		env = s.cfg.EnvironmentNames()[0]
 	}
-	read, err := s.readResource(ctx, s.resource(env.Name), nil, true)
+	snapshot = WorkspaceSnapshot{
+		WorkspaceID: s.workspace, Environments: environmentInfos(s.cfg, env), Environment: env,
+	}
+	read, err := s.readResource(ctx, s.resource(env), nil, true)
 	if IsNotFoundError(err) {
 		return snapshot, nil
 	}
@@ -37,7 +43,7 @@ func (a *App) ReadWorkspace(ctx context.Context) (snapshot WorkspaceSnapshot, er
 		return WorkspaceSnapshot{}, err
 	}
 	if len(read.conflicts) != 0 {
-		snapshot.Conflicts = read.conflictSet(env.Name)
+		snapshot.Conflicts = read.conflictSet(env)
 	} else {
 		snapshot.Secrets = read.secrets
 	}
