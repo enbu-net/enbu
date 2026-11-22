@@ -28,7 +28,10 @@ the VSIX files like every other asset.
 - `enbu.path`: the `enbu` binary to run. When empty, the extension uses the
   binary bundled for this platform (`bin/<platform>-<arch>/`), then `enbu` on
   `PATH`. On macOS, a Secure Enclave identity works only with the binary that
-  created it, so point this at that binary.
+  created it, so point this at that binary. The extension and the selected binary
+  must use the same RPC protocol version. If you need to keep an older binary for
+  its Secure Enclave identity, keep the corresponding extension version until
+  you can set up the identity with the new binary.
 
 ## Development
 

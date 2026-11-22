@@ -20,6 +20,7 @@ import type {
   RepoInfo,
   SecretChoice,
   SecretsResponse,
+  WorkspaceResponse,
   StorageConfig,
   WrittenFile,
 } from "./types";
@@ -222,6 +223,20 @@ export const mockBackend: Backend = {
 
   async SuggestStorage(): Promise<string> {
     return "oci://ghcr.io/enbu-net/enbu-enbu";
+  },
+
+  async GetWorkspace(repoPath: string): Promise<WorkspaceResponse> {
+    const repo = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
+    if (!repo || repo.path !== repoPath) throw createAppError("conflict");
+    const environment = currentEnvName();
+    const conflicts = mockConflictsByEnv[environment] ?? null;
+    const secrets = conflicts ? [] : [...secretsForEnv(environment)];
+    return {
+      workspace_id: repo.workspace_id ?? "",
+      environments: [...mockEnvs],
+      secrets: { environment, secrets },
+      conflicts,
+    };
   },
 
   async ListEnvironments(): Promise<EnvInfo[]> {

@@ -43,6 +43,25 @@ func TestImportSecretsFromDotenvContent(t *testing.T) {
 	}
 }
 
+func TestGetWorkspaceRejectsAStaleRepository(t *testing.T) {
+	f := newMembersFixture(t)
+	if _, err := f.alice.GetWorkspace(f.bob.repoPath); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("stale repository read: %v", err)
+	}
+	if err := f.alice.AddSecret("default", "KEY", "value"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := f.alice.GetWorkspace(f.alice.repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.WorkspaceID != f.workspace || len(snapshot.Environments) != 1 ||
+		!snapshot.Environments[0].IsCurrent || snapshot.Environments[0].Name != snapshot.Secrets.Environment ||
+		len(snapshot.Secrets.Secrets) != 1 || snapshot.Secrets.Secrets[0].Key != "KEY" || snapshot.Conflicts != nil {
+		t.Fatalf("inconsistent workspace snapshot: %+v", snapshot)
+	}
+}
+
 func TestSetAdminGrantsAndRevokes(t *testing.T) {
 	f := newMembersFixture(t)
 	if err := f.alice.ApproveMember(f.bobDevice); err != nil {

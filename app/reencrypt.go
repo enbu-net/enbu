@@ -34,7 +34,7 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	for _, t := range targets {
 		s, err := a.openSession(ctx)
 		if err == nil {
-			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+			err = a.changeResource(ctx, s, a.openSession, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))

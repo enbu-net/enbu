@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
 
 const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
@@ -71,6 +73,51 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 }
 
 // --- tests ---
+
+func TestReadWorkspaceKeepsEnvironmentAndSecretsOnOneConfig(t *testing.T) {
+	a := newAlice(t)
+	if err := a.EditSecret(bg, "default", "KEY", "original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateEnvironment("replacement"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(bg, "replacement", "KEY", "replacement"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := cfg.Environments["default"].Incarnation
+	replacement := cfg.Environments["replacement"]
+	cfg.Environments["default"] = replacement
+	delete(cfg.Environments, "replacement")
+
+	changed := false
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !changed {
+				changed = true
+				if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	before, err := a.ReadWorkspace(bg)
+	if err != nil || !changed || before.Environments[0].Incarnation != original || before.Secrets["KEY"] != "original" {
+		t.Fatalf("initial snapshot: %+v %v", before, err)
+	}
+	after, err := a.ReadWorkspace(bg)
+	if err != nil || after.Environments[0].Incarnation != replacement.Incarnation || after.Secrets["KEY"] != "replacement" {
+		t.Fatalf("next snapshot: %+v %v", after, err)
+	}
+}
 
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	kp := mustKeyPair(t)

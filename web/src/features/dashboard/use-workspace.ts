@@ -13,6 +13,7 @@ export function resolveWorkspaceEnvironment(requested: string, environments: Env
 }
 
 export type Workspace = {
+  workspaceID: string;
   environments: EnvInfo[];
   currentEnvironment: string;
   secrets: SecretsResponse | null;
@@ -28,8 +29,8 @@ export type Workspace = {
 /** The environments and secrets of the selected repository. */
 export function useWorkspace(repoPath: string): Workspace {
   const [data, setData] = useState<
-    Pick<Workspace, "environments" | "currentEnvironment" | "secrets" | "conflicts">
-  >({ environments: [], currentEnvironment: "", secrets: null, conflicts: null });
+    Pick<Workspace, "workspaceID" | "environments" | "currentEnvironment" | "secrets" | "conflicts">
+  >({ workspaceID: "", environments: [], currentEnvironment: "", secrets: null, conflicts: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
@@ -42,31 +43,21 @@ export function useWorkspace(repoPath: string): Workspace {
     setLoading(true);
     setError(null);
     try {
-      const envs = await backend.ListEnvironments();
-      if (id !== request.current) return;
-      const nextEnv = resolveWorkspaceEnvironment("", envs);
-      let nextSecrets: SecretsResponse;
-      let nextConflicts: ConflictSet | null = null;
-      try {
-        nextSecrets = await backend.ListSecrets(nextEnv);
-      } catch (err) {
-        if (toDisplayError(err).code !== "secret_conflict") throw err;
-        nextSecrets = { environment: nextEnv, secrets: [] };
-        nextConflicts = await backend.ListConflicts(nextEnv);
-      }
+      const snapshot = await backend.GetWorkspace(repoPath);
       if (id !== request.current) return;
       setData({
-        environments: [...envs].sort((a, b) => a.name.localeCompare(b.name)),
-        currentEnvironment: nextEnv,
-        secrets: nextSecrets,
-        conflicts: nextConflicts,
+        workspaceID: snapshot.workspace_id,
+        environments: [...snapshot.environments].sort((a, b) => a.name.localeCompare(b.name)),
+        currentEnvironment: snapshot.secrets.environment,
+        secrets: snapshot.secrets,
+        conflicts: snapshot.conflicts,
       });
     } catch (err) {
       if (id === request.current) setError(toDisplayError(err));
     } finally {
       if (id === request.current) setLoading(false);
     }
-  }, []);
+  }, [repoPath]);
 
   // The dashboard is keyed by the repository, so a new repository starts empty.
   useEffect(() => {

@@ -5,6 +5,7 @@ import type { EnvInfo } from "../lib/types";
 /** A loaded workspace whose refresh is a mock. */
 export function testWorkspace(environments: EnvInfo[]): Workspace {
   return {
+    workspaceID: "test-workspace",
     environments,
     currentEnvironment: environments.find((env) => env.current)?.name ?? "",
     secrets: null,

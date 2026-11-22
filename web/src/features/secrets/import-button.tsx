@@ -25,7 +25,7 @@ export async function readDotenvFile(file: Blob): Promise<string> {
 
 /**
  * Imports a .env file the person chooses, as `enbu import FILE` does. Secrets
- * that already hold another value are replaced only after a pending, the
+ * that already hold another value are replaced only after confirmation, the
  * GUI's --overwrite.
  */
 type ImportButtonProps = {

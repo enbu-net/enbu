@@ -173,7 +173,7 @@ describe("ImportButton", () => {
   it("discards a file read that completed after switching repositories", async () => {
     const props = { onImported: vi.fn(), onError: vi.fn() };
     await renderAndSettle(
-      <ImportButton key="a" repoPath={repoPath} target={target("default")} {...props} />,
+      <ImportButton repoPath={repoPath} target={target("default")} {...props} />,
     );
     const input = container.querySelector<HTMLInputElement>('[data-testid="import-file"]')!;
     const file = new File([""], ".env");
@@ -187,7 +187,6 @@ describe("ImportButton", () => {
 
     await renderAndSettle(
       <ImportButton
-        key="b"
         repoPath="/repo-b"
         target={{ ...target("default"), workspace_id: "workspace-b" }}
         {...props}

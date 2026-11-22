@@ -62,7 +62,12 @@ func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]
 		return nil, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
 	}
 	result := &ImportResult{Environment: resolved.Name, Added: []string{}, Updated: []string{}, Unchanged: []string{}}
-	err = a.changeResource(ctx, s, s.resource(resolved.Name), "import", nil, nil, func(current map[string]string) error {
+	reopen := a.openSession
+	if expected != nil {
+		cfg := s.cfg
+		reopen = func(ctx context.Context) (*session, error) { return a.openSessionWith(ctx, cfg) }
+	}
+	err = a.changeResource(ctx, s, reopen, s.resource(resolved.Name), "import", nil, nil, func(current map[string]string) error {
 		result.Added, result.Updated, result.Unchanged = result.Added[:0], result.Updated[:0], result.Unchanged[:0]
 		var conflicts []string
 		for key, value := range secrets {

@@ -26,10 +26,14 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 		return nil, err
 	}
 
+	return environmentInfos(cfg), nil
+}
+
+func environmentInfos(cfg *config.ProjectConfig) []EnvInfo {
 	current := cfg.CurrentEnvironment()
 	names := cfg.EnvironmentNames()
 
-	envs = make([]EnvInfo, len(names))
+	envs := make([]EnvInfo, len(names))
 	for i, name := range names {
 		envs[i] = EnvInfo{
 			Name:        name,
@@ -37,7 +41,7 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 			Incarnation: cfg.Environments[name].Incarnation,
 		}
 	}
-	return envs, nil
+	return envs
 }
 
 func (a *App) CurrentEnvironment() (name string, err error) {

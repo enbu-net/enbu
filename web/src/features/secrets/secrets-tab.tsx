@@ -105,7 +105,7 @@ export function SecretsTab({
         <HStack gap="2">
           <ImportButton
             repoPath={repo.path ?? ""}
-            target={{ workspace_id: repo.workspace_id ?? "", environment: env, incarnation }}
+            target={{ workspace_id: workspace.workspaceID, environment: env, incarnation }}
             onError={setError}
             onImported={async (result) => {
               setImported(result);

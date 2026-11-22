@@ -47,7 +47,7 @@ func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 // showed when the person selected the file.
 func (s *Service) ImportSecrets(repoPath string, target app.ImportTarget, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
-		if repoPath == "" || s.repoPath != repoPath || s.app.RepositoryDir != repoPath {
+		if !s.matchesSelectedRepository(repoPath) {
 			return app.ImportResult{}, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
 		}
 		result, err := s.app.ImportDotenv(s.context(), target, []byte(content), overwrite)

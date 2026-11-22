@@ -7,6 +7,9 @@ import { Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as app$0 from "../app/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as apperr$0 from "../pkg/apperr/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -292,6 +295,51 @@ export const UpdateStatus = selfupdate$0.Status;
  */
 export type UpdateStatus = selfupdate$0.Status;
 
+export class WorkspaceResponse {
+    "workspace_id": string;
+    "environments": app$0.EnvInfo[];
+    "secrets": SecretsResponse;
+    "conflicts": app$0.ConflictSet | null;
+
+    /** Creates a new WorkspaceResponse instance. */
+    constructor($$source: Partial<WorkspaceResponse> = {}) {
+        if (!("workspace_id" in $$source)) {
+            this["workspace_id"] = "";
+        }
+        if (!("environments" in $$source)) {
+            this["environments"] = [];
+        }
+        if (!("secrets" in $$source)) {
+            this["secrets"] = (new SecretsResponse());
+        }
+        if (!("conflicts" in $$source)) {
+            this["conflicts"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new WorkspaceResponse instance from a string or object.
+     */
+    static createFrom($$source: any = {}): WorkspaceResponse {
+        const $$createField1_0 = $$createType8;
+        const $$createField2_0 = $$createType9;
+        const $$createField3_0 = $$createType11;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("environments" in $$parsedSource) {
+            $$parsedSource["environments"] = $$createField1_0($$parsedSource["environments"]);
+        }
+        if ("secrets" in $$parsedSource) {
+            $$parsedSource["secrets"] = $$createField2_0($$parsedSource["secrets"]);
+        }
+        if ("conflicts" in $$parsedSource) {
+            $$parsedSource["conflicts"] = $$createField3_0($$parsedSource["conflicts"]);
+        }
+        return new WorkspaceResponse($$parsedSource as Partial<WorkspaceResponse>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = RepoInfo.createFrom;
@@ -300,3 +348,8 @@ const $$createType3 = apperr$0.Payload.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
 const $$createType5 = SecretItem.createFrom;
 const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = app$0.EnvInfo.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = SecretsResponse.createFrom;
+const $$createType10 = app$0.ConflictSet.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);

@@ -49,13 +49,16 @@ async function renderDashboard(info = repo()) {
   await settle();
 }
 
+const snapshot = {
+  workspace_id: "workspace-a",
+  environments: [{ name: "default", current: true }],
+  secrets: { environment: "default", secrets: [{ key: "KEY", value: "value" }] },
+  conflicts: null,
+};
+
 describe("Dashboard", () => {
   beforeEach(() => {
-    mocked.ListEnvironments.mockResolvedValue([{ name: "default", current: true }]);
-    mocked.ListSecrets.mockResolvedValue({
-      environment: "default",
-      secrets: [{ key: "KEY", value: "value" }],
-    });
+    mocked.GetWorkspace.mockResolvedValue(snapshot);
   });
 
   it("opens the GitHub repository from its title", async () => {
@@ -85,7 +88,7 @@ describe("Dashboard", () => {
   });
 
   it("shows a workspace that cannot load as a display error", async () => {
-    mocked.ListEnvironments.mockRejectedValueOnce(new Error("token=secret"));
+    mocked.GetWorkspace.mockRejectedValueOnce(new Error("token=secret"));
     await renderDashboard();
     expect(container.textContent).toContain("An unexpected error occurred");
     expect(container.textContent).not.toContain("token=secret");
@@ -103,9 +106,6 @@ describe("Dashboard", () => {
   });
 
   it("asks for a value when concurrent edits conflict, then shows the resolved secrets", async () => {
-    mocked.ListSecrets.mockRejectedValueOnce(
-      new AppError({ code: "secret_conflict", params: { keys: "KEY" } }),
-    );
     const set = {
       environment: "default",
       id: "c1",
@@ -120,7 +120,11 @@ describe("Dashboard", () => {
         },
       ],
     };
-    mocked.ListConflicts.mockResolvedValueOnce(set);
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      secrets: { environment: "default", secrets: [] },
+      conflicts: set,
+    });
     mocked.ResolveConflicts.mockResolvedValueOnce(undefined);
     await renderDashboard();
 
@@ -172,23 +176,24 @@ describe("Dashboard", () => {
     expect(row).not.toBeNull();
 
     mocked.PullSecrets.mockResolvedValueOnce({ output: ".env", count: 1, kept: [], removed: [] });
-    mocked.ListEnvironments.mockClear();
-    mocked.ListEnvironments.mockImplementationOnce(() => new Promise(() => {}));
+    mocked.GetWorkspace.mockClear();
+    mocked.GetWorkspace.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => queryButton("Pull")?.click());
     await settle();
-    expect(mocked.ListEnvironments).toHaveBeenCalledTimes(1);
+    expect(mocked.GetWorkspace).toHaveBeenCalledTimes(1);
 
     expect(container.querySelector('input[aria-label="Value: KEY"]')).toBe(row);
   });
 
   it("keeps secrets matched to the selected environment after an earlier pull completes", async () => {
     let current = "default";
-    mocked.ListEnvironments.mockImplementation(async () =>
-      ["default", "staging"].map((name) => ({ name, current: name === current })),
-    );
-    mocked.ListSecrets.mockImplementation(async (environment) => ({
-      environment,
-      secrets: [{ key: environment === "staging" ? "STAGING_KEY" : "DEFAULT_KEY", value: "v" }],
+    mocked.GetWorkspace.mockImplementation(async () => ({
+      ...snapshot,
+      environments: ["default", "staging"].map((name) => ({ name, current: name === current })),
+      secrets: {
+        environment: current,
+        secrets: [{ key: current === "staging" ? "STAGING_KEY" : "DEFAULT_KEY", value: "v" }],
+      },
     }));
     mocked.SwitchEnvironment.mockImplementation(async (environment) => {
       current = environment;
@@ -213,7 +218,7 @@ describe("Dashboard", () => {
     expect(finishPull).toBeTypeOf("function");
     await act(async () => finishPull());
     await settle();
-    expect(mocked.ListSecrets).toHaveBeenLastCalledWith("staging");
+    expect(mocked.GetWorkspace).toHaveBeenLastCalledWith("/a");
     expect(container.textContent).toContain("STAGING_KEY");
     expect(container.textContent).not.toContain("DEFAULT_KEY");
   });
