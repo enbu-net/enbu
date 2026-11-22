@@ -35,6 +35,10 @@ func (r *resourceRead) parents() []digest.Digest {
 // loadResource verifies every revision of env that storage shows and checks it
 // against what this device accepted before. It decrypts nothing.
 func (s *session) loadResource(ctx context.Context, resource string, also ...digest.Digest) (*wsp.StateView, error) {
+	return s.loadResourceWith(ctx, resource, false, also...)
+}
+
+func (s *session) loadResourceWith(ctx context.Context, resource string, checkUnavailable bool, also ...digest.Digest) (*wsp.StateView, error) {
 	for attempt := 0; ; attempt++ {
 		sv, err := wsp.LoadStates(ctx, s.store, s.view, s.workspace, resource, also...)
 		if err != nil {
@@ -55,7 +59,7 @@ func (s *session) loadResource(ctx context.Context, resource string, also ...dig
 			return sv, storageError(storage.ErrNotFound)
 		}
 		// Load signed deletion records only when something is missing.
-		if len(sv.Unavailable) > 0 || len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
+		if (checkUnavailable && len(sv.Unavailable) > 0) || len(sv.Graph.Missing()) > 0 || s.cps.CheckStates(resource, sv.Graph, nil) != nil {
 			records, err := wsp.LoadCompactions(ctx, s.store, s.view, s.workspace, resource)
 			if err != nil {
 				return nil, wspError(err)
@@ -111,7 +115,7 @@ func (s *session) readResource(ctx context.Context, resource string, choices map
 
 func (s *session) readResourceChecked(ctx context.Context, resource string, choices map[string]merge.Choice, record bool, check func(*wsp.StateView) error, also ...digest.Digest) (*resourceRead, error) {
 	for attempt := 0; ; attempt++ {
-		sv, err := s.loadResource(ctx, resource, also...)
+		sv, err := s.loadResourceWith(ctx, resource, check != nil, also...)
 		if sv != nil && check != nil {
 			if checkErr := check(sv); checkErr != nil {
 				return nil, checkErr
