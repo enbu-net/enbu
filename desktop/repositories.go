@@ -11,12 +11,13 @@ import (
 )
 
 type RepoInfo struct {
-	Path              string `json:"path,omitempty"`
-	Owner             string `json:"owner,omitempty"`
-	Repo              string `json:"repo,omitempty"`
-	Initialized       bool   `json:"initialized"`
-	HasRemote         bool   `json:"has_remote"`
-	StorageConfigured bool   `json:"storage_configured"`
+	ConfigError       *apperr.Payload `json:"config_error,omitempty"`
+	Path              string          `json:"path,omitempty"`
+	Owner             string          `json:"owner,omitempty"`
+	Repo              string          `json:"repo,omitempty"`
+	Initialized       bool            `json:"initialized"`
+	HasRemote         bool            `json:"has_remote"`
+	StorageConfigured bool            `json:"storage_configured"`
 }
 
 func (s *Service) BrowseRepository() (_ RepoInfo, err error) {
@@ -189,6 +190,9 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 			info.StorageConfigured = cfg.Storage.URL != ""
 			_, identityErr := s.app.IdentityInfo()
 			info.Initialized = identityErr == nil
+		} else if apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			payload := apperr.PayloadOf(err)
+			info.ConfigError = &payload
 		}
 		return info, nil
 	})
