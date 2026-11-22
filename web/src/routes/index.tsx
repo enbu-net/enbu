@@ -32,9 +32,12 @@ export function HomePage() {
     );
   }
   if (!repo.path) return <Welcome />;
-  // A workspace stored outside GHCR needs no GitHub sign-in.
-  if (!status?.authenticated && !status?.workspace_configured) return <SignIn />;
   const step = setupStep(repo);
+  // An unconfigured workspace must choose storage before we know whether it
+  // needs a GitHub account.
+  if (step !== "found" && !status?.authenticated && !status?.workspace_configured) {
+    return <SignIn />;
+  }
   if (step) return <RepositorySetup key={step} step={step} />;
   return <Dashboard key={repo.path} repo={repo} />;
 }

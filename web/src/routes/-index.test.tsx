@@ -61,9 +61,11 @@ describe("HomePage", () => {
 
   it("founds a workspace in a folder without Git", async () => {
     await renderHome({
+      status: { authenticated: false, workspace_configured: false },
       repo: repoInfo({ initialized: false, has_remote: false, storage_configured: false }),
     });
     expect(container.textContent).toContain("This folder has no enbu.toml yet");
+    expect(container.querySelector("#init-storage")).toBeTruthy();
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {
