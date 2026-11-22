@@ -179,7 +179,7 @@ func TestInstallRefusesOtherSystems(t *testing.T) {
 	}
 }
 
-func TestInstallReplacesAStaleNewFileWithoutFollowingIt(t *testing.T) {
+func TestInstallIgnoresAFileOutsideItsStagingPath(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "enbu-desktop")
 	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {

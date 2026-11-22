@@ -125,7 +125,6 @@ func CleanUp(target string) {
 	if _, err := os.Stat(target); err == nil {
 		_ = os.RemoveAll(target + ".old")
 	}
-	_ = os.RemoveAll(target + ".new")
 	dir := filepath.Dir(target)
 	entries, _ := os.ReadDir(dir)
 	for _, entry := range entries {
