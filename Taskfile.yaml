@@ -314,14 +314,14 @@ tasks:
       - vp run a11y
 
   gui/bombadil:
-    desc: Explore the GUI at random with Bombadil and check the properties in web/bombadil/spec.ts (ENBU_BOMBADIL_TIME_LIMIT, default 1m)
+    desc: Explore the GUI at random with Bombadil and check the properties in web/bombadil/spec.ts (ENBU_BOMBADIL_TIME_LIMIT, default 1m; `-- --reproduce web/bombadil-trace.bin` replays a run)
     deps:
       - gui/install
     dir: web
     cmds:
       - task: gui/a11y/browser
       - vp run build:preview
-      - vp run bombadil
+      - node scripts/bombadil.mjs {{.CLI_ARGS}}
 
   # ENBU_A11Y_CHROMIUM names a Chromium that is already installed.
   gui/a11y/browser:

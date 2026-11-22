@@ -1,5 +1,5 @@
 // Serves the built browser preview (dist-preview, `vp build --mode preview`)
-// on a free loopback port, for the checks that drive it in a browser
+// on a loopback port, for the checks that drive it in a browser
 // (a11y.mjs, bombadil.mjs). Unknown paths get index.html, as on GitHub Pages.
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
@@ -21,8 +21,11 @@ const types = {
   ".json": "application/json",
 };
 
-/** Starts the server and returns the preview's URL and a function that stops it. */
-export async function servePreview() {
+/**
+ * Starts the server on `port` (0 picks a free one) and returns the preview's
+ * URL and a function that stops it.
+ */
+export async function servePreview(port = 0) {
   if (!existsSync(join(root, "index.html"))) {
     console.error("dist-preview/index.html is missing: run `vp build --mode preview` first.");
     process.exit(2);
@@ -36,8 +39,8 @@ export async function servePreview() {
     res.writeHead(200, { "Content-Type": types[extname(file)] ?? "application/octet-stream" });
     createReadStream(file).pipe(res);
   });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
   const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  return { url: `http://127.0.0.1:${port}${base}`, close: () => server.close() };
+  const listening = typeof address === "object" && address ? address.port : port;
+  return { url: `http://127.0.0.1:${listening}${base}`, close: () => server.close() };
 }
