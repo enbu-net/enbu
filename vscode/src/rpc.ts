@@ -120,7 +120,7 @@ export class RpcClient {
   }
 
   #receive(line: string): void {
-    if (line.trim() === "") return;
+    if (this.#closed || line.trim() === "") return;
     let message: Message;
     try {
       message = JSON.parse(line) as Message;
@@ -135,6 +135,7 @@ export class RpcClient {
     if (message.jsonrpc === "2.0" && message.id === null && message.error) {
       // No request ID means we cannot know which result will never arrive.
       this.#fail(new RpcError(message.error.code, "enbu protocol error"));
+      this.#output.end();
       return;
     }
     if (typeof message.id !== "number") return;

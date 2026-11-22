@@ -26,7 +26,7 @@ function setup(handlers: Partial<ClientHandlers> = {}) {
     await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
     return sent.shift() as Record<string, unknown>;
   };
-  return { client, send, next, fromServer };
+  return { client, send, next, fromServer, toServer };
 }
 
 describe("RpcClient", () => {
@@ -42,7 +42,7 @@ describe("RpcClient", () => {
   });
 
   it("settles every pending call after an error without a request ID", async () => {
-    const { client, send, next } = setup();
+    const { client, send, next, toServer } = setup();
     const results = Promise.allSettled([
       client.request("ImportSecrets"),
       client.request("GetAppVersion"),
@@ -54,6 +54,7 @@ describe("RpcClient", () => {
       { status: "rejected", reason: { code: -32600 } },
       { status: "rejected", reason: { code: -32600 } },
     ]);
+    expect(toServer.writableEnded).toBe(true);
   });
   it("sends positional params and resolves each call with its own result", async () => {
     const { client, send, next } = setup();
