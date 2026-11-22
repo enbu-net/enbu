@@ -195,7 +195,7 @@ func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 }
 
 func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
-	for _, shutdown := range []string{"context", "close"} {
+	for _, shutdown := range []string{"context", "close", "timeout"} {
 		t.Run(shutdown, func(t *testing.T) {
 			reqR, reqW := io.Pipe()
 			respR, respW := io.Pipe()
@@ -203,7 +203,8 @@ func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
 				_ = reqR.Close()
 				_ = respW.Close()
 			})
-			c := &Client{Dial: func() (*Conn, error) {
+			clock := clockwork.NewFakeClock()
+			c := &Client{Clock: clock, Dial: func() (*Conn, error) {
 				return &Conn{R: respR, W: reqW}, nil
 			}}
 			requested := make(chan error, 1)
@@ -239,15 +240,21 @@ func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
 				t.Fatal("doctor did not send a request")
 			}
 			closed := make(chan struct{})
+			want := context.Canceled
 			if shutdown == "close" {
 				go func() { _ = c.Close(); close(closed) }()
 			} else {
-				cancel()
+				if shutdown == "timeout" {
+					want = context.DeadlineExceeded
+					clock.Advance(rpcTimeout)
+				} else {
+					cancel()
+				}
 				close(closed)
 			}
 			select {
 			case diagnosis := <-done:
-				if diagnosis.WSL == nil || diagnosis.WSL.Error != context.Canceled.Error() {
+				if diagnosis.WSL == nil || diagnosis.WSL.Error != want.Error() {
 					t.Fatalf("diagnosis = %+v", diagnosis)
 				}
 			case <-time.After(5 * time.Second):

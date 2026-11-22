@@ -33,6 +33,8 @@ type Conn struct {
 type Client struct {
 	// Dial opens the stream. It defaults to starting enbu.exe from Locate.
 	Dial func() (*Conn, error)
+	// Clock supplies the RPC deadline. Nil uses the system clock.
+	Clock clock.Clock
 
 	mu      contextMutex
 	conn    *Conn
@@ -73,7 +75,11 @@ const rpcTimeout = time.Minute
 // begin registers cancellation independently of the stream lock so Close can
 // interrupt a request even while it is blocked in pipe I/O.
 func (c *Client) begin(parent context.Context) (context.Context, func(), error) {
-	ctx, cancel := context.WithTimeout(parent, rpcTimeout)
+	cclock := c.Clock
+	if cclock == nil {
+		cclock = clock.New()
+	}
+	ctx, cancel := clock.WithTimeout(parent, cclock, rpcTimeout)
 	if err := c.mu.acquire(ctx); err != nil {
 		cancel()
 		return nil, nil, err
