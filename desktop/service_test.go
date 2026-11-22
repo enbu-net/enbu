@@ -342,6 +342,26 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	}
 }
 
+func TestRepoInfoReturnsUnfoundedStorageSettings(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	dir := t.TempDir()
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.Storage = config.StorageConfig{
+		URL: "s3://bucket/team", Region: "test-region", Endpoint: "https://storage.example.test", PathStyle: true,
+	}
+	if err := config.SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	s := NewService(app.New(clock.New()))
+	info, err := s.SelectRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Initialized || info.StorageConfigured || info.StorageDraft == nil || *info.StorageDraft != cfg.Storage {
+		t.Fatalf("unfinished workspace: %+v", info)
+	}
+}
+
 func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")

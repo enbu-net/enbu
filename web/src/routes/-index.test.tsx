@@ -101,6 +101,31 @@ describe("HomePage", () => {
     expect(container.querySelector("#init-storage")).toHaveProperty("value", url);
   });
 
+  it("offers the GHCR suggestion after clearing a saved storage URL", async () => {
+    const url = "oci://ghcr.io/acme/workspace";
+    vi.mocked(backend.SuggestStorage).mockResolvedValueOnce(url);
+    await renderHome({
+      repo: repoInfo({
+        initialized: false,
+        storage_configured: false,
+        storage_draft: {
+          url: "s3://bucket/team",
+          region: "",
+          endpoint: "",
+          path_style: false,
+          plain_http: false,
+        },
+      }),
+    });
+    const input = container.querySelector("#init-storage");
+    expect(input).toHaveProperty("value", "s3://bucket/team");
+    typeInto(input, "");
+    const option = queryButton(url);
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+    expect(input).toHaveProperty("value", url);
+  });
+
   it("completes an S3 workspace using saved settings without GitHub sign-in", async () => {
     const storage = {
       url: "s3://bucket/team",

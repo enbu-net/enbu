@@ -183,8 +183,8 @@ function FoundWorkspace({
   }, []);
 
   useEffect(() => {
-    if (!storageDraft?.url) void suggest();
-  }, [storageDraft?.url, suggest]);
+    void suggest();
+  }, [suggest]);
 
   const url = storage.url.trim();
   const needsGitHub =
@@ -260,6 +260,11 @@ function FoundWorkspace({
           checked={storage.plain_http}
           onChange={(plain_http) => set({ plain_http })}
         />
+      )}
+      {!url && suggested && (
+        <Button variant="outline" onClick={() => set({ url: suggested })}>
+          {suggested}
+        </Button>
       )}
       {suggested === "" && !url && (
         <VStack alignItems="stretch" gap="2">
