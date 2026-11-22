@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"compress/gzip"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -202,5 +203,48 @@ func TestInstallReplacesAStaleNewFileWithoutFollowingIt(t *testing.T) {
 	}
 	if got := readFile(t, target); got != "new" {
 		t.Errorf("target = %q, want new", got)
+	}
+}
+
+func TestConcurrentInstallAndCleanupCannotTouchActiveStaging(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "enbu-desktop")
+	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target+".old", []byte("backup"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	started, resume := make(chan struct{}), make(chan struct{})
+	finished := make(chan error, 1)
+	go func() {
+		finished <- installBinary(target, func(w io.Writer) error {
+			close(started)
+			<-resume
+			_, err := io.WriteString(w, "complete")
+			return err
+		}, false)
+	}()
+	select {
+	case <-started:
+	case err := <-finished:
+		t.Fatalf("installer did not reach staging: %v", err)
+	}
+	CleanUp(target)
+	err := installBinary(target, func(w io.Writer) error {
+		_, err := io.WriteString(w, "other")
+		return err
+	}, false)
+	close(resume)
+	if err == nil {
+		t.Error("another installer entered the same installation")
+	}
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, target); got != "complete" {
+		t.Fatalf("installed %q", got)
+	}
+	if got := readFile(t, target+".old"); got != "backup" {
+		t.Fatalf("cleaned backup during the update: %q", got)
 	}
 }
