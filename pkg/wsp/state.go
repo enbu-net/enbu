@@ -119,7 +119,7 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 	}
 	written, ok := view.Get(s.Control)
 	if !ok {
-		return nil, invalid("state names control %s that is not part of the verified control", s.Control)
+		return nil, fmt.Errorf("%w: %w: %s", ErrInvalid, ErrUnknownStateControl, s.Control)
 	}
 	author, ok := written.Principal(s.Author)
 	if !ok {

@@ -149,7 +149,7 @@ func (s *session) unverifiable(ctx context.Context, resource, scope string, rev 
 		return false, storageError(err)
 	}
 	_, err = wsp.VerifyRevision(s.view, s.workspace, resource, rev, head)
-	return err != nil && !errors.Is(err, wsp.ErrRollback), nil
+	return errors.Is(err, wsp.ErrInvalid) && !errors.Is(err, wsp.ErrUnknownStateControl) && !errors.Is(err, wsp.ErrRollback), nil
 }
 
 // compactionFloor walks keep-1 steps back from head along first parents. A
