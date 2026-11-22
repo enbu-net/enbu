@@ -290,7 +290,7 @@ func (s ociStore) OpenPayload(ctx context.Context, kind Kind, scope string, rev 
 	}
 	layer := m.Layers[1]
 	if err := layer.Digest.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: invalid OCI payload digest: %v", ErrCorrupt, err)
+		return nil, fmt.Errorf("%w: invalid OCI payload digest: %w", ErrCorrupt, err)
 	}
 	if layer.Size < 0 || layer.Size > MaxPayloadBytes {
 		return nil, ErrTooLarge

@@ -59,7 +59,7 @@ func TestOCIRejectsInvalidPayloadDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.OpenPayload(t.Context(), object.Kind, object.Scope, object.Rev); !errors.Is(err, ErrCorrupt) {
+	if _, err := store.OpenPayload(t.Context(), object.Kind, object.Scope, object.Rev); !errors.Is(err, ErrCorrupt) || !errors.Is(err, digest.ErrDigestInvalidFormat) {
 		t.Fatalf("opening payload: %v", err)
 	}
 }
