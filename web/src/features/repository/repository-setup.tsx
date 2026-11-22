@@ -90,7 +90,13 @@ const primaryButton = {
 } as const;
 
 /** Sets up enbu in a selected folder, as `enbu init` does. */
-export function RepositorySetup({ step }: { step: SetupStep }) {
+export function RepositorySetup({
+  step,
+  storageDraft,
+}: {
+  step: SetupStep;
+  storageDraft?: StorageConfig;
+}) {
   const { reloadRepo, refresh } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
@@ -111,7 +117,11 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
   }
 
   return step === "found" ? (
-    <FoundWorkspace action={action} onFound={(storage) => initialize(storage, false)} />
+    <FoundWorkspace
+      action={action}
+      storageDraft={storageDraft}
+      onFound={(storage) => initialize(storage, false)}
+    />
   ) : (
     <SetupScreen
       title={m.init_title()}
@@ -151,13 +161,15 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
 /** Founds a workspace in a storage the person may change from the suggested one. */
 function FoundWorkspace({
   action,
+  storageDraft,
   onFound,
 }: {
   action: ReturnType<typeof useAction>;
+  storageDraft?: StorageConfig;
   onFound: (storage: StorageConfig) => Promise<void>;
 }) {
   const { reloadRepo, status } = useSession();
-  const [storage, setStorage] = useState<StorageConfig>(noStorage);
+  const [storage, setStorage] = useState<StorageConfig>(storageDraft ?? noStorage);
   const [signingIn, setSigningIn] = useState(false);
   // null while asking, "" when no signed-in account can supply a default.
   const [suggested, setSuggested] = useState<string | null>(null);
@@ -171,8 +183,8 @@ function FoundWorkspace({
   }, []);
 
   useEffect(() => {
-    void suggest();
-  }, [suggest]);
+    if (!storageDraft?.url) void suggest();
+  }, [storageDraft?.url, suggest]);
 
   const url = storage.url.trim();
   const needsGitHub =

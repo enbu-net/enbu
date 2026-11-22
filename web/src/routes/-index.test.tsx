@@ -91,10 +91,59 @@ describe("HomePage", () => {
     });
     const url = "oci://ghcr.io/example/workspace";
     typeInto(container.querySelector("#init-storage"), url);
-    await act(async () => queryButton("Connect with GitHub")?.click());
-    await act(async () => queryButton("Return from GitHub")?.click());
+    const connect = queryButton("Connect with GitHub");
+    expect(connect).toBeTruthy();
+    await act(async () => connect!.click());
+    const back = queryButton("Return from GitHub");
+    expect(back).toBeTruthy();
+    await act(async () => back!.click());
     await settle();
     expect(container.querySelector("#init-storage")).toHaveProperty("value", url);
+  });
+
+  it("completes an S3 workspace using saved settings without GitHub sign-in", async () => {
+    const storage = {
+      url: "s3://bucket/team",
+      region: "test-region",
+      endpoint: "https://storage.example.test",
+      path_style: true,
+      plain_http: false,
+    };
+    const status = { authenticated: false, workspace_configured: false };
+    const repo = repoInfo({
+      initialized: false,
+      storage_configured: false,
+      storage_draft: storage,
+    });
+    const refresh = vi.fn(async () => {});
+    const reloadRepo = vi.fn(async () => {
+      root.render(
+        withSession(<HomePage />, {
+          repo: repoInfo(),
+          status: { ...status, workspace_configured: true },
+        }),
+      );
+    });
+    vi.mocked(backend.Initialize).mockResolvedValue({
+      founded: true,
+      pending: false,
+      storage: storage.url,
+      fingerprint: "test-fingerprint",
+    } as Awaited<ReturnType<typeof backend.Initialize>>);
+    await renderHome({ status, repo, refresh, reloadRepo });
+    expect(container.querySelector("#init-storage")).toHaveProperty("value", storage.url);
+    const found = queryButton("Found workspace");
+    expect(found).toBeTruthy();
+    await act(async () => found!.click());
+    expect(backend.Initialize).toHaveBeenCalledWith(storage, false);
+    const next = queryButton("Continue");
+    expect(next).toBeTruthy();
+    await act(async () => next!.click());
+    await settle();
+    expect(refresh).toHaveBeenCalled();
+    expect(reloadRepo).toHaveBeenCalled();
+    expect(container.querySelector('[role="tab"]')).toBeTruthy();
+    expect(queryButton("Connect with GitHub")).toBeNull();
   });
 
   it("opens a configured workspace without GitHub login or Git setup", async () => {

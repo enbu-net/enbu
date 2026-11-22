@@ -10,6 +10,9 @@ import { Create as $Create } from "@wailsio/runtime";
 import * as apperr$0 from "../pkg/apperr/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as config$0 from "../pkg/config/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as selfupdate$0 from "../pkg/selfupdate/models.js";
 
 export class AuthStatus {
@@ -202,6 +205,7 @@ export class RepoInfo {
     "initialized": boolean;
     "has_remote": boolean;
     "storage_configured": boolean;
+    "storage_draft"?: config$0.StorageConfig | null;
 
     /** Creates a new RepoInfo instance. */
     constructor($$source: Partial<RepoInfo> = {}) {
@@ -222,7 +226,11 @@ export class RepoInfo {
      * Creates a new RepoInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): RepoInfo {
+        const $$createField6_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("storage_draft" in $$parsedSource) {
+            $$parsedSource["storage_draft"] = $$createField6_0($$parsedSource["storage_draft"]);
+        }
         return new RepoInfo($$parsedSource as Partial<RepoInfo>);
     }
 }
@@ -272,7 +280,7 @@ export class SecretsResponse {
      * Creates a new SecretsResponse instance from a string or object.
      */
     static createFrom($$source: any = {}): SecretsResponse {
-        const $$createField1_0 = $$createType6;
+        const $$createField1_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("secrets" in $$parsedSource) {
             $$parsedSource["secrets"] = $$createField1_0($$parsedSource["secrets"]);
@@ -297,5 +305,7 @@ const $$createType1 = RepoInfo.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
 const $$createType3 = apperr$0.Payload.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = SecretItem.createFrom;
-const $$createType6 = $Create.Array($$createType5);
+const $$createType5 = config$0.StorageConfig.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);
+const $$createType7 = SecretItem.createFrom;
+const $$createType8 = $Create.Array($$createType7);
