@@ -116,6 +116,7 @@ export function SecretsTab({
             size="sm"
             variant="outline"
             loading={pullLoading}
+            disabled={!env}
             title={m.dashboard_pullDescription()}
             onClick={() => void pull(false)}
           >
@@ -152,7 +153,7 @@ export function SecretsTab({
           <Spinner size="sm" aria-hidden="true" />
           <Text color="fg.muted">{m.common_loading()}</Text>
         </HStack>
-      ) : conflicts && conflicts.conflicts.length > 0 ? (
+      ) : !env ? null : conflicts && conflicts.conflicts.length > 0 ? (
         <ConflictPanel
           key={conflicts.heads.join()}
           set={conflicts}
@@ -207,23 +208,25 @@ export function SecretsTab({
           )}
         </Box>
       )}
-      <AddSecretForm
-        key={JSON.stringify([env, incarnation])}
-        existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
-        onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
-        onAdd={async (key, value) => {
-          try {
-            await transfer("add", async () => {
-              await backend.AddSecret(env, key, value);
-              await refresh();
-            });
-            return true;
-          } catch (err) {
-            report(err);
-            return false;
-          }
-        }}
-      />
+      {env && (
+        <AddSecretForm
+          key={JSON.stringify([env, incarnation])}
+          existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
+          onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
+          onAdd={async (key, value) => {
+            try {
+              await transfer("add", async () => {
+                await backend.AddSecret(env, key, value);
+                await refresh();
+              });
+              return true;
+            } catch (err) {
+              report(err);
+              return false;
+            }
+          }}
+        />
+      )}
       <EnvironmentNameModal
         open={environmentModalOpen}
         value={newEnv}

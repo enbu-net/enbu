@@ -170,6 +170,17 @@ describe("Dashboard", () => {
     expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
   });
 
+  it("lets the user choose an environment before offering secret actions", async () => {
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      environments: [{ name: "staging", current: false }],
+      secrets: { environment: "", secrets: [] },
+    });
+    await renderDashboard();
+    expect(labelledInput("Key")).toBeNull();
+    expect(queryButton("Pull")).toHaveProperty("disabled", true);
+  });
+
   it("keeps the secret rows mounted while a refresh runs", async () => {
     await renderDashboard();
     const row = container.querySelector('input[aria-label="Value: KEY"]');

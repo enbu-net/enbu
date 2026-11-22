@@ -65,7 +65,7 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 		return err
 	}
 
-	if !cfg.HasEnvironment(name) {
+	if !cfg.HasEnvironment(name) && (len(cfg.Environments) != 0 || name != "default") {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist (use create to add it)", name), apperr.Params{"name": name})
 	}
 

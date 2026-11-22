@@ -153,6 +153,33 @@ func TestReadWorkspaceOffersAnExplicitSwitchForAnInvalidDefault(t *testing.T) {
 	}
 }
 
+func TestReadWorkspaceCanSelectTheImplicitDefault(t *testing.T) {
+	a := newAlice(t)
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments = nil
+	cfg.DefaultEnv = "invalid "
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.saveLocalState(cfg.WorkspaceID, &config.LocalConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := a.ReadWorkspace(bg)
+	if err != nil || empty.Environment != "" || len(empty.Environments) != 1 || empty.Environments[0].Name != "default" {
+		t.Fatalf("snapshot did not offer implicit default: %+v %v", empty, err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := a.ReadWorkspace(bg)
+	if err != nil || selected.Environment != "default" {
+		t.Fatalf("implicit default was not selected: %+v %v", selected, err)
+	}
+}
+
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar", "BAZ": "qux"})
