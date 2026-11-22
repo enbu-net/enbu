@@ -50,6 +50,7 @@ export function EnvironmentSelector({
         <Popover.Positioner>
           <Popover.Content
             minW="240px"
+            maxW="calc(100vw - 2rem)"
             p="1.5"
             bg="bg.surface"
             borderWidth="1px"
@@ -74,9 +75,11 @@ export function EnvironmentSelector({
                       aria-current={selected ? "true" : undefined}
                       onClick={() => void onSelect(environment.name)}
                     >
-                      <HStack gap="2">
+                      <HStack gap="2" minW="0">
                         <Layers3 size={15} />
-                        {environment.name}
+                        <styled.span overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+                          {environment.name}
+                        </styled.span>
                       </HStack>
                       {selected && <Check size={15} color="currentColor" />}
                     </Button>

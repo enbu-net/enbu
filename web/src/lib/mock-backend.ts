@@ -28,6 +28,11 @@ import type { Backend } from "./backend";
 
 const previewUsername = "yashikota";
 
+/** The names the real backend accepts (config.ValidEnvironmentName). */
+export function validEnvironmentName(name: string): boolean {
+  return name.length <= 100 && /^[A-Za-z0-9_.-]+$/.test(name) && !name.endsWith(".");
+}
+
 let mockEnvs: EnvInfo[] = [
   { name: "development", current: true },
   { name: "production", current: false },
@@ -227,6 +232,7 @@ export const mockBackend: Backend = {
   },
 
   async CreateEnvironment(name: string): Promise<void> {
+    if (!validEnvironmentName(name)) throw createAppError("invalid_argument", { name });
     if (!mockEnvs.find((e) => e.name === name)) {
       mockEnvs.push({ name, current: false });
       mockSecretsByEnv[name] = [];
@@ -238,6 +244,7 @@ export const mockBackend: Backend = {
   },
 
   async RenameEnvironment(name: string, newName: string): Promise<void> {
+    if (!validEnvironmentName(newName)) throw createAppError("invalid_argument", { name: newName });
     mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
