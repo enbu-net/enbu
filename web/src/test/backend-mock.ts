@@ -69,6 +69,7 @@ export function createBackendMock() {
     ReadConfig: vi.fn(async () => ""),
     ChangeStorage: vi.fn(async () => {}),
     WriteConfig: vi.fn(async () => {}),
+    WriteConfigIfUnchanged: vi.fn(async () => {}),
     GetAppVersion: vi.fn(async () => ""),
     CheckForUpdate: vi.fn(async () => ({ method: "development", current: "", available: false })),
     InstallUpdate: vi.fn(),

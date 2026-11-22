@@ -442,6 +442,10 @@ export const mockBackend: Backend = {
   async WriteConfig(content: string): Promise<void> {
     mockConfig = content;
   },
+  async WriteConfigIfUnchanged(content: string, previous: string): Promise<void> {
+    if (mockConfig !== previous) throw createAppError("conflict");
+    mockConfig = content;
+  },
   async GetAppVersion(): Promise<string> {
     return "";
   },

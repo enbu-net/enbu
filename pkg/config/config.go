@@ -19,6 +19,10 @@ import (
 
 const currentVersion = "v1alpha2"
 
+// ProjectLockName lives beside enbu.toml. The existing .env.* gitignore
+// pattern covers it, and configuration validation reserves the path.
+const ProjectLockName = ".env.enbu-lock"
+
 type StorageConfig struct {
 	URL       string `toml:"url" json:"url"`
 	Region    string `toml:"region,omitempty" json:"region"`
@@ -125,6 +129,9 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
+		if strings.EqualFold(clean, ProjectLockName) {
+			return fmt.Errorf("environment %q output uses the project lock path", name)
+		}
 		// A leading slash is rooted on Windows even without a drive letter,
 		// where filepath.IsAbs alone would accept a nonportable configuration.
 		if strings.HasPrefix(output, "/") || filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -156,6 +163,12 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	if err != nil {
 		return fmt.Errorf("encoding enbu.toml: %w", err)
 	}
+	return WriteProjectFile(path, content)
+}
+
+// WriteProjectFile atomically replaces a project file while preserving its
+// permissions and ownership. The caller holds the project transaction lock.
+func WriteProjectFile(path string, content []byte) error {
 	// A failed write must leave the shared workspace definition intact. Keep
 	// existing regular-file permissions; new configurations remain private.
 	mode := os.FileMode(0o600)

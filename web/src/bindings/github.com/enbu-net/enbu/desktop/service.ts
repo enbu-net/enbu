@@ -327,6 +327,10 @@ export function WriteConfig(content: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content);
 }
 
+export function WriteConfigIfUnchanged(content: string, previous: string): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfigIfUnchanged", content, previous);
+}
+
 // Private type creation functions
 const $$createType0 = $models.RepoInfo.createFrom;
 const $$createType1 = selfupdate$0.Status.createFrom;

@@ -53,6 +53,10 @@ func (s *Service) WriteConfig(content string) error {
 	return s.withRepo(func() error { return s.app.WriteConfig(content) })
 }
 
+func (s *Service) WriteConfigIfUnchanged(content, previous string) error {
+	return s.withRepo(func() error { return s.app.WriteConfig(content, previous) })
+}
+
 // ChangeStorage migrates verified history before updating the shared configuration.
 func (s *Service) ChangeStorage(settings config.StorageConfig) error {
 	return s.withRepo(func() error { return s.app.ChangeStorage(s.context(), settings) })

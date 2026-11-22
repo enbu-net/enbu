@@ -52,7 +52,7 @@ export function ConfigPanel({ environments }: { environments: EnvInfo[] }) {
     setSaving(true);
     setSaveError(null);
     try {
-      await backend.WriteConfig(draft);
+      await backend.WriteConfigIfUnchanged(draft, content);
       setContent(draft);
     } catch (err) {
       setSaveError(toDisplayError(err));

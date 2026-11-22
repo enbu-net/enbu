@@ -6,9 +6,70 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
+
+func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
+	a := newAlice(t)
+	b := *a
+	a.Runtime = &Runtime{}
+	started, resume := make(chan struct{}), make(chan struct{})
+	a.Runtime.NewID = func() string {
+		close(started)
+		<-resume
+		return uuid.NewV4().String()
+	}
+	first := make(chan error, 1)
+	go func() { first <- a.CreateEnvironment("staging") }()
+	select {
+	case <-started:
+	case err := <-first:
+		t.Fatalf("first create failed before allocating an incarnation: %v", err)
+	}
+	// The first call is between reading and writing enbu.toml.
+	lock, err := fsutil.LockFile(filepath.Join(a.RepositoryDir, config.ProjectLockName), false)
+	if err == nil {
+		_ = lock.Close()
+		t.Error("config lock was not held between reading and writing")
+	}
+	second := make(chan error, 1)
+	go func() { second <- b.CreateEnvironment("production") }()
+	close(resume)
+	for _, result := range []chan error{first, second} {
+		if err := <-result; err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HasEnvironment("production") || !cfg.HasEnvironment("staging") {
+		t.Fatalf("lost a successful update: %+v", cfg.Environments)
+	}
+}
+
+func TestConfigSaveRejectsAnOlderDraft(t *testing.T) {
+	a := newAlice(t)
+	original, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(original+"\n# edited draft\n", original); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("saving stale configuration: %v", err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil || !cfg.HasEnvironment("staging") {
+		t.Fatalf("successful creation lost: %v %v", cfg, err)
+	}
+}
 
 func TestReadWriteConfig(t *testing.T) {
 	dir := t.TempDir()
