@@ -269,6 +269,36 @@ func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
 	}
 }
 
+func TestCheckProtocolClassifiesHandshakeTimeout(t *testing.T) {
+	reqR, reqW := io.Pipe()
+	respR, respW := io.Pipe()
+	t.Cleanup(func() {
+		_ = reqR.Close()
+		_ = respW.Close()
+	})
+	clock := clockwork.NewFakeClock()
+	c := &Client{Clock: clock, Dial: func() (*Conn, error) {
+		return &Conn{R: respR, W: reqW}, nil
+	}}
+	t.Cleanup(func() { _ = c.Close() })
+	done := make(chan error, 1)
+	go func() { done <- c.CheckProtocol(t.Context()) }()
+	var req request
+	if err := json.NewDecoder(reqR).Decode(&req); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(rpcTimeout)
+	select {
+	case err := <-done:
+		var unavailable *identity.UnavailableError
+		if !errors.As(err, &unavailable) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("handshake timeout = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("handshake stayed blocked")
+	}
+}
+
 func TestBeginRejectsClosingBridge(t *testing.T) {
 	c := &Client{closing: true}
 	if ctx, done, err := c.begin(t.Context()); err == nil || ctx != nil || done != nil {
