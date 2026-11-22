@@ -2,12 +2,49 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/opencontainers/go-digest"
 )
+
+func TestPurgeRefusesAliasedResource(t *testing.T) {
+	alice := newAlice(t)
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := cfg.Resource("default")
+	scope := storage.StateScope(cfg.WorkspaceID, resource)
+	for _, inc := range []string{cfg.Environments["default"].Incarnation, "default"} {
+		cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env", Incarnation: inc}
+		if inc == "default" {
+			cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env"}
+		}
+		cfg.Environments["scratch"] = config.EnvironmentConfig{Output: "scratch.env", Incarnation: inc}
+		content, err := config.MarshalProject(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.WriteConfig(string(content)); !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Fatalf("saving aliased configuration: %v", err)
+		}
+		// An older enbu or a text editor could already have written the file.
+		if err := os.WriteFile(filepath.Join(alice.RepositoryDir, "enbu.toml"), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := alice.DeleteEnvironment(bg, "scratch", true); err == nil || result.Purged != 0 {
+			t.Fatalf("purging aliased revisions: %+v %v", result, err)
+		}
+	}
+	if left, err := alice.Storage.Discover(bg, storage.KindState, scope); err != nil || len(left) == 0 {
+		t.Fatalf("original revisions missing: %v %v", left, err)
+	}
+}
 
 // noDelete is a backend that cannot delete, like a registry without a provider API.
 type noDelete struct{ storage.Store }
