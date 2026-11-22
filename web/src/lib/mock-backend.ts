@@ -10,6 +10,7 @@ import type {
   HistoryEntry,
   IdentityDiagnosis,
   ImportResult,
+  ImportTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,
@@ -128,6 +129,7 @@ let mockJoinRequests: JoinRequestInfo[] = [
 const mockRepoHistory: RepoInfo[] = [
   {
     path: "/demo/enbu",
+    workspace_id: "3f2b8c1e-9a4d-4e6b-8c2f-1a5d7e9b0c3d",
     owner: "enbu-net",
     repo: "enbu",
     initialized: true,
@@ -340,8 +342,19 @@ export const mockBackend: Backend = {
       .map(([key, value]) => ({ key, value }))
       .sort((a, b) => a.key.localeCompare(b.key));
   },
-  async ImportSecrets(env: string, dotenv: string, overwrite: boolean): Promise<ImportResult> {
-    const name = env || currentEnvName();
+  async ImportSecrets(
+    repoPath: string,
+    target: ImportTarget,
+    dotenv: string,
+    overwrite: boolean,
+  ): Promise<ImportResult> {
+    if (
+      repoPath !== mockSelectedRepoPath ||
+      target.workspace_id !== mockRepoHistory[0]?.workspace_id
+    ) {
+      throw createAppError("conflict");
+    }
+    const name = target.environment;
     const secrets = secretsForEnv(name);
     const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
     const incoming = dotenv

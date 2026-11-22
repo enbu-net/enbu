@@ -9,6 +9,7 @@ export {
     EnvironmentDeletion,
     HistoryEntry,
     ImportResult,
+    ImportTarget,
     InitResult,
     JoinRequestInfo,
     MemberInfo,

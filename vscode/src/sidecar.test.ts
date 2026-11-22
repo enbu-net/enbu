@@ -50,7 +50,7 @@ process.stderr.write("fake enbu started\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
   const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\\n");
-  if (msg.method === "initialize") reply({ protocol_version: protocol ?? 1, app_version: "9.9.9", methods: ["GetAppVersion"], events: [] });
+  if (msg.method === "initialize") reply({ protocol_version: protocol ?? 2, app_version: "9.9.9", methods: ["GetAppVersion"], events: [] });
   if (msg.method === "GetAppVersion") reply("9.9.9");
   if (msg.method === "Exit") process.exit(3);
   if (msg.method === "Echo") reply(msg.params);
@@ -157,11 +157,11 @@ describe.skipIf(process.platform === "win32")("startSidecar", () => {
   });
 
   it("fails and stops enbu when it speaks another protocol version", async () => {
-    vi.stubEnv("FAKE_ENBU", JSON.stringify({ protocol: 2 }));
+    vi.stubEnv("FAKE_ENBU", JSON.stringify({ protocol: 1 }));
     try {
       await expect(
         startSidecar({ binary, cwd: dir, handlers, log: () => {}, onExit: () => {} }),
-      ).rejects.toThrow("unsupported enbu protocol version 2");
+      ).rejects.toThrow("unsupported enbu protocol version 1");
     } finally {
       vi.unstubAllEnvs();
     }

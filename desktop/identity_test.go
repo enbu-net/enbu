@@ -3,24 +3,42 @@ package desktop
 import (
 	"testing"
 
+	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
 )
 
 func TestImportSecretsFromDotenvContent(t *testing.T) {
 	f := newMembersFixture(t)
-	result, err := f.alice.ImportSecrets("", "A=1\nB=2\n", false)
+	envs, err := f.alice.ListEnvironments()
+	if err != nil || len(envs) != 1 {
+		t.Fatalf("listing environments: %v %v", envs, err)
+	}
+	target := app.ImportTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: envs[0].Incarnation}
+	for _, stale := range []struct {
+		path   string
+		target app.ImportTarget
+	}{
+		{f.bob.repoPath, target},
+		{f.alice.repoPath, app.ImportTarget{WorkspaceID: "different", Environment: "default", Incarnation: target.Incarnation}},
+		{f.alice.repoPath, app.ImportTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: "replaced"}},
+	} {
+		if _, err := f.alice.ImportSecrets(stale.path, stale.target, "LEAK=value\n", false); !apperr.Is(err, apperr.CodeConflict) {
+			t.Fatalf("stale import: %v", err)
+		}
+	}
+	result, err := f.alice.ImportSecrets(f.alice.repoPath, target, "A=1\nB=2\n", false)
 	if err != nil || len(result.Added) != 2 || result.Environment != "default" {
 		t.Fatalf("import: %+v %v", result, err)
 	}
 	// Another value stops the import unless overwrite is set, as with --overwrite.
-	if _, err := f.alice.ImportSecrets("", "A=changed\nB=2\n", false); !apperr.Is(err, apperr.CodeSecretExists) {
+	if _, err := f.alice.ImportSecrets(f.alice.repoPath, target, "A=changed\nB=2\n", false); !apperr.Is(err, apperr.CodeSecretExists) {
 		t.Fatalf("changed value without overwrite: %v", err)
 	}
-	result, err = f.alice.ImportSecrets("", "A=changed\nB=2\n", true)
+	result, err = f.alice.ImportSecrets(f.alice.repoPath, target, "A=changed\nB=2\n", true)
 	if err != nil || len(result.Updated) != 1 || len(result.Unchanged) != 1 {
 		t.Fatalf("overwrite: %+v %v", result, err)
 	}
-	if _, err := f.alice.ImportSecrets("", "not dotenv", false); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := f.alice.ImportSecrets(f.alice.repoPath, target, "not dotenv", false); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("invalid content: %v", err)
 	}
 }

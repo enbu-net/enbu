@@ -12,6 +12,7 @@ import (
 
 type RepoInfo struct {
 	Path              string `json:"path,omitempty"`
+	WorkspaceID       string `json:"workspace_id,omitempty"`
 	Owner             string `json:"owner,omitempty"`
 	Repo              string `json:"repo,omitempty"`
 	Initialized       bool   `json:"initialized"`
@@ -186,6 +187,7 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
+			info.WorkspaceID = cfg.WorkspaceID
 			info.StorageConfigured = cfg.Storage.URL != ""
 			_, identityErr := s.app.IdentityInfo()
 			info.Initialized = identityErr == nil

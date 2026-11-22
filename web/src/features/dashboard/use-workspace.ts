@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import type { ConflictSet, EnvInfo, SecretsResponse } from "../../lib/types";
@@ -21,36 +21,30 @@ export type Workspace = {
   loading: boolean;
   error: DisplayError | null;
   setError: (error: DisplayError | null) => void;
-  /** Reloads the environments and the secrets of env, or of the current one. */
-  refresh: (env?: string) => Promise<void>;
+  /** Reloads the selected environment and its secrets from the same snapshot. */
+  refresh: () => Promise<void>;
 };
 
 /** The environments and secrets of the selected repository. */
 export function useWorkspace(repoPath: string): Workspace {
-  const [environments, setEnvironments] = useState<EnvInfo[]>([]);
-  const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
-  const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
+  const [data, setData] = useState<
+    Pick<Workspace, "environments" | "currentEnvironment" | "secrets" | "conflicts">
+  >({ environments: [], currentEnvironment: "", secrets: null, conflicts: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
+  const active = useRef(false);
 
-  const currentEnvironment = useMemo(
-    () => environments.find((env) => env.current)?.name ?? secrets?.environment ?? "",
-    [environments, secrets?.environment],
-  );
-  const currentRef = useRef(currentEnvironment);
-  useEffect(() => {
-    currentRef.current = currentEnvironment;
-  }, [currentEnvironment]);
-
-  const refresh = useCallback(async (env?: string) => {
+  const refresh = useCallback(async () => {
+    if (!active.current) return;
     // A newer refresh, for example after switching repositories, wins.
     const id = ++request.current;
     setLoading(true);
     setError(null);
     try {
       const envs = await backend.ListEnvironments();
-      const nextEnv = resolveWorkspaceEnvironment(env ?? currentRef.current, envs);
+      if (id !== request.current) return;
+      const nextEnv = resolveWorkspaceEnvironment("", envs);
       let nextSecrets: SecretsResponse;
       let nextConflicts: ConflictSet | null = null;
       try {
@@ -61,9 +55,12 @@ export function useWorkspace(repoPath: string): Workspace {
         nextConflicts = await backend.ListConflicts(nextEnv);
       }
       if (id !== request.current) return;
-      setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));
-      setSecrets(nextSecrets);
-      setConflicts(nextConflicts);
+      setData({
+        environments: [...envs].sort((a, b) => a.name.localeCompare(b.name)),
+        currentEnvironment: nextEnv,
+        secrets: nextSecrets,
+        conflicts: nextConflicts,
+      });
     } catch (err) {
       if (id === request.current) setError(toDisplayError(err));
     } finally {
@@ -73,14 +70,16 @@ export function useWorkspace(repoPath: string): Workspace {
 
   // The dashboard is keyed by the repository, so a new repository starts empty.
   useEffect(() => {
-    if (repoPath) void refresh("");
+    active.current = true;
+    if (repoPath) void refresh();
+    return () => {
+      active.current = false;
+      request.current++;
+    };
   }, [repoPath, refresh]);
 
   return {
-    environments,
-    currentEnvironment,
-    secrets,
-    conflicts,
+    ...data,
     loading,
     error,
     setError,

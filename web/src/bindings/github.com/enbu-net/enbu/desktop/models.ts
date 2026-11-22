@@ -197,6 +197,7 @@ export class OAuthStatus {
 
 export class RepoInfo {
     "path"?: string;
+    "workspace_id"?: string;
     "owner"?: string;
     "repo"?: string;
     "initialized": boolean;

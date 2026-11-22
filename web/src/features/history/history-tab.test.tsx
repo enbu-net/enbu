@@ -91,4 +91,28 @@ describe("HistoryTab", () => {
 
     expect(queryButton("Restore: Revision 1")).toBeNull();
   });
+
+  it("keeps the selected history when a restore in the previous environment finishes", async () => {
+    mocked.ListHistory.mockImplementation(async (env) =>
+      env === "default" ? entries : entries.slice(0, 2),
+    );
+    let finishRestore!: () => void;
+    mocked.RestoreHistory.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishRestore = resolve;
+      }),
+    );
+    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await act(async () => queryButton("Restore: Revision 1")?.click());
+    const select = container.querySelector("select")!;
+    await act(async () => {
+      select.value = "staging";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => finishRestore());
+    await settle();
+    expect(select.value).toBe("staging");
+    expect(mocked.ListHistory).toHaveBeenLastCalledWith("staging");
+    expect(container.textContent).not.toContain("Revision 3");
+  });
 });

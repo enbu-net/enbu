@@ -1,10 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ImportResult } from "../../lib/types";
+import type { ImportResult, ImportTarget } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -25,32 +25,49 @@ export async function readDotenvFile(file: Blob): Promise<string> {
 
 /**
  * Imports a .env file the person chooses, as `enbu import FILE` does. Secrets
- * that already hold another value are replaced only after a confirmation, the
+ * that already hold another value are replaced only after a pending, the
  * GUI's --overwrite.
  */
-export function ImportButton({
-  env,
-  onImported,
-  onError,
-}: {
-  env: string;
+type ImportButtonProps = {
+  repoPath: string;
+  target: ImportTarget;
   onImported: (result: ImportResult) => void | Promise<void>;
   onError: (error: DisplayError) => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const [loading, setLoading] = useState(false);
-  // The chosen file's content, its environment and the keys it would change,
-  // while confirming; the overwrite goes where the conflict was found.
-  const [pending, setPending] = useState<{ dotenv: string; env: string; keys: string } | null>(
-    null,
-  );
+};
 
-  async function run(dotenv: string, overwrite: boolean, target: string) {
+export function ImportButton(props: ImportButtonProps) {
+  const { repoPath, target } = props;
+  const { workspace_id, environment, incarnation } = target;
+  return (
+    <WorkspaceImportButton
+      key={JSON.stringify([repoPath, workspace_id, environment, incarnation])}
+      {...props}
+    />
+  );
+}
+
+function WorkspaceImportButton({ repoPath, target, onImported, onError }: ImportButtonProps) {
+  const input = useRef<HTMLInputElement>(null);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [loading, setLoading] = useState(false);
+  const [pending, setPending] = useState<{ dotenv: string; keys: string } | null>(null);
+
+  async function run(dotenv: string, overwrite: boolean) {
+    if (!mounted.current) return;
     setLoading(true);
     try {
-      await onImported(await backend.ImportSecrets(target, dotenv, overwrite));
+      const result = await backend.ImportSecrets(repoPath, target, dotenv, overwrite);
+      if (!mounted.current) return;
+      await onImported(result);
       setPending(null);
     } catch (err) {
+      if (!mounted.current) return;
       const display = toDisplayError(err);
       if (
         (display.code === "secret_already_exists" || display.code === "import_conflict") &&
@@ -58,7 +75,6 @@ export function ImportButton({
       ) {
         setPending({
           dotenv,
-          env: target,
           keys:
             display.code === "import_conflict"
               ? (display.params.keys ?? "")
@@ -69,7 +85,7 @@ export function ImportButton({
         onError(display);
       }
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   }
 
@@ -85,13 +101,17 @@ export function ImportButton({
           const file = event.target.files?.[0];
           event.target.value = "";
           if (file) {
-            const target = env;
             readDotenvFile(file).then(
-              (dotenv) => run(dotenv, false, target),
-              (err: unknown) =>
-                onError(
-                  err instanceof TypeError ? displayError("invalid_argument") : toDisplayError(err),
-                ),
+              (dotenv) => run(dotenv, false),
+              (err: unknown) => {
+                if (mounted.current) {
+                  onError(
+                    err instanceof TypeError
+                      ? displayError("invalid_argument")
+                      : toDisplayError(err),
+                  );
+                }
+              },
             );
           }
         }}
@@ -99,6 +119,7 @@ export function ImportButton({
       <Button
         size="sm"
         variant="outline"
+        disabled={!repoPath || !target.workspace_id || !target.environment}
         loading={loading && pending === null}
         title={m.import_description()}
         onClick={() => input.current?.click()}
@@ -114,7 +135,7 @@ export function ImportButton({
         confirmLabel={m.import_overwrite()}
         loading={loading}
         onClose={() => setPending(null)}
-        onConfirm={() => (pending ? run(pending.dotenv, true, pending.env) : undefined)}
+        onConfirm={() => (pending ? run(pending.dotenv, true) : undefined)}
       />
     </>
   );

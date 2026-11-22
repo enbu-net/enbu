@@ -180,4 +180,41 @@ describe("Dashboard", () => {
 
     expect(container.querySelector('input[aria-label="Value: KEY"]')).toBe(row);
   });
+
+  it("keeps secrets matched to the selected environment after an earlier pull completes", async () => {
+    let current = "default";
+    mocked.ListEnvironments.mockImplementation(async () =>
+      ["default", "staging"].map((name) => ({ name, current: name === current })),
+    );
+    mocked.ListSecrets.mockImplementation(async (environment) => ({
+      environment,
+      secrets: [{ key: environment === "staging" ? "STAGING_KEY" : "DEFAULT_KEY", value: "v" }],
+    }));
+    mocked.SwitchEnvironment.mockImplementation(async (environment) => {
+      current = environment;
+    });
+    let finishPull!: () => void;
+    mocked.PullSecrets.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        finishPull = resolve;
+      });
+      return { output: ".env", count: 1, kept: [], removed: [] };
+    });
+    await renderDashboard();
+    await act(async () => queryButton("Pull")?.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label^="Current environment"]')
+        ?.click(),
+    );
+    await act(async () => queryButton("staging")?.click());
+    await settle();
+    expect(container.textContent).toContain("STAGING_KEY");
+    expect(finishPull).toBeTypeOf("function");
+    await act(async () => finishPull());
+    await settle();
+    expect(mocked.ListSecrets).toHaveBeenLastCalledWith("staging");
+    expect(container.textContent).toContain("STAGING_KEY");
+    expect(container.textContent).not.toContain("DEFAULT_KEY");
+  });
 });

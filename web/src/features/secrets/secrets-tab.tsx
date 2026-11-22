@@ -8,7 +8,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ImportResult, WrittenFile } from "../../lib/types";
+import type { ImportResult, RepoInfo, WrittenFile } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
@@ -17,16 +17,16 @@ import { SecretRow } from "./secret-row";
 import { m } from "../../paraglide/messages";
 
 export function SecretsTab({
+  repo,
   workspace,
   transfer,
 }: {
+  repo: RepoInfo;
   workspace: Workspace;
   transfer: RunTransfer;
 }) {
   const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
-  // An import can finish after another environment was picked; reload that one.
-  const latestEnv = useRef(env);
-  latestEnv.current = env;
+  const incarnation = workspace.environments.find(({ name }) => env === name)?.incarnation ?? "";
   const [pullLoading, setPullLoading] = useState(false);
   const [pullNotice, setPullNotice] = useState<WrittenFile | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
@@ -47,7 +47,7 @@ export function SecretsTab({
       await transfer("pull", async () => {
         const result = await backend.PullSecrets(env, replace);
         setPullNotice(result.kept.length > 0 || result.removed.length > 0 ? result : null);
-        await refresh(env);
+        await refresh();
       });
       setReplaceFile(null);
     } catch (err) {
@@ -71,7 +71,7 @@ export function SecretsTab({
     try {
       await backend.CreateEnvironment(created);
       await backend.SwitchEnvironment(created);
-      await refresh(created);
+      await refresh();
       setEnvironmentModalOpen(false);
       setNewEnv("");
     } catch (err) {
@@ -93,7 +93,7 @@ export function SecretsTab({
               if (environment === env) return;
               try {
                 await backend.SwitchEnvironment(environment);
-                await refresh(environment);
+                await refresh();
               } catch (err) {
                 report(err);
               }
@@ -104,11 +104,12 @@ export function SecretsTab({
       >
         <HStack gap="2">
           <ImportButton
-            env={env}
+            repoPath={repo.path ?? ""}
+            target={{ workspace_id: repo.workspace_id ?? "", environment: env, incarnation }}
             onError={setError}
             onImported={async (result) => {
               setImported(result);
-              await refresh(latestEnv.current);
+              await refresh();
             }}
           />
           <Button
@@ -167,7 +168,7 @@ export function SecretsTab({
               setResolveLoading(false);
             }
             // If someone wrote meanwhile, this shows the values they added.
-            await refresh(env);
+            await refresh();
             if (failure) setError(failure);
           }}
         />
@@ -175,13 +176,13 @@ export function SecretsTab({
         <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
           {secrets?.secrets.map((secret) => (
             <SecretRow
-              key={secret.key}
+              key={JSON.stringify([env, incarnation, secret.key])}
               secretKey={secret.key}
               secretValue={secret.value}
               onEdit={async (value) => {
                 try {
                   await backend.EditSecret(env, secret.key, value);
-                  await refresh(env);
+                  await refresh();
                 } catch (err) {
                   report(err);
                 }
@@ -190,7 +191,7 @@ export function SecretsTab({
                 try {
                   await transfer("delete", async () => {
                     await backend.DeleteSecret(env, secret.key);
-                    await refresh(env);
+                    await refresh();
                   });
                 } catch (err) {
                   report(err);
@@ -207,13 +208,14 @@ export function SecretsTab({
         </Box>
       )}
       <AddSecretForm
+        key={JSON.stringify([env, incarnation])}
         existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
         onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
         onAdd={async (key, value) => {
           try {
             await transfer("add", async () => {
               await backend.AddSecret(env, key, value);
-              await refresh(env);
+              await refresh();
             });
             return true;
           } catch (err) {

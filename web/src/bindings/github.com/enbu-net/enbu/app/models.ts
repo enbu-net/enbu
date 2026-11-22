@@ -261,6 +261,39 @@ export class ImportResult {
     }
 }
 
+/**
+ * ImportTarget pins a file chosen asynchronously to the lineage shown when
+ * the user picked it. A CLI import resolves its environment in one operation.
+ */
+export class ImportTarget {
+    "workspace_id": string;
+    "environment": string;
+    "incarnation": string;
+
+    /** Creates a new ImportTarget instance. */
+    constructor($$source: Partial<ImportTarget> = {}) {
+        if (!("workspace_id" in $$source)) {
+            this["workspace_id"] = "";
+        }
+        if (!("environment" in $$source)) {
+            this["environment"] = "";
+        }
+        if (!("incarnation" in $$source)) {
+            this["incarnation"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ImportTarget instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ImportTarget {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ImportTarget($$parsedSource as Partial<ImportTarget>);
+    }
+}
+
 export class InitResult {
     "public_key": string;
     "username": string;

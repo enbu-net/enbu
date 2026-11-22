@@ -18,11 +18,47 @@ import { getLocale } from "../../paraglide/runtime";
  */
 export function HistoryTab({ workspace }: { workspace: Workspace }) {
   const envId = useId();
+  const [picked, setPicked] = useState("");
+  const selected = workspace.environments.find(({ name }) => name === picked);
+  const env = selected?.name ?? workspace.currentEnvironment;
+  const incarnation = workspace.environments.find(({ name }) => name === env)?.incarnation ?? "";
+  return (
+    <>
+      <SectionHeader title={m.history_title()}>
+        <HStack gap="2">
+          <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
+            {m.history_environment()}
+          </styled.label>
+          <styled.select
+            id={envId}
+            value={env}
+            {...selectStyles}
+            onChange={(event) => {
+              setPicked(event.target.value);
+            }}
+          >
+            {workspace.environments.map((environment) => (
+              <option key={environment.name} value={environment.name}>
+                {environment.name}
+              </option>
+            ))}
+          </styled.select>
+        </HStack>
+      </SectionHeader>
+      {env && (
+        <HistoryContent
+          key={JSON.stringify([env, incarnation])}
+          env={env}
+          refresh={workspace.refresh}
+        />
+      )}
+    </>
+  );
+}
+
+function HistoryContent({ env, refresh }: { env: string; refresh: Workspace["refresh"] }) {
   const fromId = useId();
   const toId = useId();
-  // The environment picked here, or until then the current one.
-  const [picked, setPicked] = useState("");
-  const env = picked || workspace.currentEnvironment;
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [from, setFrom] = useState(0);
   const [to, setTo] = useState(0);
@@ -31,6 +67,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   const [restored, setRestored] = useState<number | null>(null);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
+  const mounted = useRef(false);
 
   const load = useCallback(async (name: string) => {
     // A newer load, for example after picking another environment, wins.
@@ -51,7 +88,12 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   }, []);
 
   useEffect(() => {
-    if (env) void load(env);
+    mounted.current = true;
+    void load(env);
+    return () => {
+      mounted.current = false;
+      request.current++;
+    };
   }, [env, load]);
 
   async function run(action: () => Promise<void>) {
@@ -71,28 +113,6 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
 
   return (
     <>
-      <SectionHeader title={m.history_title()}>
-        <HStack gap="2">
-          <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
-            {m.history_environment()}
-          </styled.label>
-          <styled.select
-            id={envId}
-            value={env}
-            {...selectStyles}
-            onChange={(event) => {
-              setRestored(null);
-              setPicked(event.target.value);
-            }}
-          >
-            {workspace.environments.map((environment) => (
-              <option key={environment.name} value={environment.name}>
-                {environment.name}
-              </option>
-            ))}
-          </styled.select>
-        </HStack>
-      </SectionHeader>
       {error && (
         <Box mb="4">
           <ErrorAlert error={error} onDismiss={() => setError(null)} />
@@ -149,8 +169,12 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                       onClick={() =>
                         void run(async () => {
                           await backend.RestoreHistory(env, entry.index);
-                          setRestored(entry.index);
-                          await Promise.all([load(env), workspace.refresh()]);
+                          if (mounted.current) {
+                            setRestored(entry.index);
+                            await Promise.all([load(env), refresh()]);
+                          } else {
+                            await refresh();
+                          }
                         })
                       }
                     >

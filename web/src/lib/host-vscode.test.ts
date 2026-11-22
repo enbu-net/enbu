@@ -40,12 +40,13 @@ describe("in a VS Code webview", () => {
 
   it("calls the desktop service methods by name with the desktop app's arguments", async () => {
     posted.length = 0;
-    const call = backend.ImportSecrets("default", "A=1\n", true);
+    const target = { workspace_id: "workspace-a", environment: "default", incarnation: "" };
+    const call = backend.ImportSecrets("/repo", target, "A=1\n", true);
     await Promise.resolve();
     expect(posted.at(-1)).toMatchObject({
       type: "call",
       method: "ImportSecrets",
-      params: ["default", "A=1\n", true],
+      params: ["/repo", target, "A=1\n", true],
     });
     reply({ type: "result", result: { environment: "default" } });
     await expect(call).resolves.toMatchObject({ environment: "default", added: [] });

@@ -114,7 +114,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			// list so removed members are not encrypted for; a revision already
 			// published stays and is merged by the next read.
 			s.Close()
-			if s, err = a.openSession(ctx); err != nil {
+			if s, err = a.openSessionWith(ctx, s.cfg); err != nil {
 				return err
 			}
 			if attempt == attempts-1 {
