@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
 // of the current Control: the ones enbu.toml names and any other storage holds,
 // so an environment another member created, whose enbu.toml this device has not
 // pulled, does not stay encrypted for the old members.
-func (a *App) reencryptAll(ctx context.Context) error {
+func (a *App) reencryptAll(ctx context.Context, removal *memberRemoval) error {
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return err
@@ -33,6 +36,12 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	}
 	for _, t := range targets {
 		s, err := a.openSession(ctx)
+		if err == nil && removal != nil {
+			err = s.checkRemovalRace(ctx, t.resource, removal)
+			if err != nil {
+				s.Close()
+			}
+		}
 		if err == nil {
 			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
 		}
@@ -42,6 +51,45 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
+	}
+	return nil
+}
+
+type memberRemoval struct {
+	device   signing.DeviceID
+	observed map[string][]digest.Digest
+}
+
+var errRemovalWriteRace = errors.New("unaccepted revision by the removed device")
+
+// checkRemovalRace handles revisions observed after the Control publish. A
+// removed member's old-epoch signature cannot establish whether a revision
+// appeared before or after revocation. Preserve evidence and stop the
+// automatic rewrite instead of using an ancestor or accepting the new head.
+func (s *session) checkRemovalRace(ctx context.Context, resource string, removal *memberRemoval) error {
+	view, err := s.loadResourceWith(ctx, resource, true)
+	if view != nil {
+		if err := checkRemovalMetadata(view); err != nil {
+			return errors.Join(errRemovalWriteRace, err)
+		}
+	}
+	if IsNotFoundError(err) {
+		return nil
+	}
+	if err != nil {
+		return errors.Join(errRemovalWriteRace, err)
+	}
+	accepted, err := s.cps.Accepted(resource)
+	if err != nil {
+		return errors.Join(errRemovalWriteRace, err)
+	}
+	for _, head := range view.Heads {
+		if head.Author == removal.device &&
+			!slices.Contains(removal.observed[resource], head.Digest) &&
+			!slices.Contains(accepted.Heads, head.Digest) &&
+			view.Compacted.AboveFloors(view.Graph, head.Digest) {
+			return fmt.Errorf("%w: %s", errRemovalWriteRace, head.Digest)
+		}
 	}
 	return nil
 }

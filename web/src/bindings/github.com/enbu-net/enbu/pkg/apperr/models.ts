@@ -62,6 +62,7 @@ export enum Code {
      * two admins changed the members at once; an admin's next operation resolves it
      */
     CodeControlForked = "control_forked",
+    CodeRemovalWriteRace = "removal_write_race",
 
     /**
      * membership changed but secrets are not re-encrypted yet

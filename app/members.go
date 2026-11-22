@@ -8,6 +8,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 type MemberInfo struct {
@@ -54,7 +55,7 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 	if err := device.Validate(); err != nil {
 		return apperr.New(apperr.CodeInvalidArgument, "invalid device id", nil)
 	}
-	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
+	return a.changeMembers(ctx, true, nil, func(s *session, c *wsp.Control) error {
 		if _, member := c.Principal(device); member {
 			return apperr.New(apperr.CodeInvalidArgument, "device is already a member", nil)
 		}
@@ -72,7 +73,8 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
-	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
+	removal := &memberRemoval{device: device, observed: map[string][]digest.Digest{}}
+	return a.changeMembers(ctx, true, removal, func(s *session, c *wsp.Control) error {
 		kept := c.Principals[:0:0]
 		for _, p := range c.Principals {
 			if p.ID != device {
@@ -88,7 +90,7 @@ func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 		}
 		// The current Control still authorizes the member's last writes.
 		// After publishing the new Control, those writes need a checkpoint.
-		if err := s.acceptCurrentStates(ctx); err != nil {
+		if err := s.acceptCurrentStates(ctx, removal); err != nil {
 			return err
 		}
 		latest, err := a.openControlView(ctx)
@@ -122,7 +124,7 @@ func requireAdmin(c *wsp.Control) error {
 func (a *App) SetAdmin(ctx context.Context, deviceID string, admin bool) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
-	return a.changeMembers(ctx, false, func(s *session, c *wsp.Control) error {
+	return a.changeMembers(ctx, false, nil, func(s *session, c *wsp.Control) error {
 		for i := range c.Principals {
 			if c.Principals[i].ID == device {
 				c.Principals[i].Admin = admin
@@ -136,7 +138,7 @@ func (a *App) SetAdmin(ctx context.Context, deviceID string, admin bool) (err er
 // changeMembers appends an admin-signed Control. When reencrypt is set it then
 // re-encrypts every environment for the new recipient set. Changing who is an
 // admin does not change the recipients, so it passes false.
-func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*session, *wsp.Control) error) error {
+func (a *App) changeMembers(ctx context.Context, reencrypt bool, removal *memberRemoval, mutate func(*session, *wsp.Control) error) error {
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return err
@@ -164,7 +166,10 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, mutate func(*se
 	// The Control is already committed here, so a failure leaves membership
 	// changed but some environments still encrypted for the old recipient set.
 	// Say so explicitly: retrying approve/remove would fail on the new state.
-	if err := a.reencryptAll(ctx); err != nil {
+	if err := a.reencryptAll(ctx, removal); err != nil {
+		if errors.Is(err, errRemovalWriteRace) {
+			return apperr.Wrap(apperr.CodeRemovalWriteRace, "member removed but a concurrent revision needs review before re-encryption", err, nil)
+		}
 		return apperr.Wrap(apperr.CodeReencryptIncomplete, "membership changed but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return nil
@@ -185,7 +190,7 @@ func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
 
 // acceptCurrentStates records each environment in this device's checkpoint
 // before removing an author whose writes it may not have seen yet.
-func (s *session) acceptCurrentStates(ctx context.Context) error {
+func (s *session) acceptCurrentStates(ctx context.Context, removal *memberRemoval) error {
 	// Unknown scopes beyond the discovery budget must not prevent revocation.
 	// The subsequent re-encryption reports any incomplete coverage.
 	targets, _, err := s.environmentResources(ctx)
@@ -193,7 +198,16 @@ func (s *session) acceptCurrentStates(ctx context.Context) error {
 		return err
 	}
 	for _, t := range targets {
-		_, err := s.readResourceChecked(ctx, t.resource, nil, true, checkRemovalMetadata)
+		_, err := s.readResourceChecked(ctx, t.resource, nil, true, func(view *wsp.StateView) error {
+			observed := removal.observed[t.resource][:0]
+			for _, head := range view.Heads {
+				if head.Author == removal.device {
+					observed = append(observed, head.Digest)
+				}
+			}
+			removal.observed[t.resource] = observed
+			return checkRemovalMetadata(view)
+		})
 		if IsNotFoundError(err) {
 			continue // An environment without revisions has nothing to preserve.
 		}

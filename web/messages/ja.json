@@ -286,6 +286,7 @@
   "error_incompatible_storage": "このストレージはWorkspace Controlなしで作成されています。空の場所を使用してください。",
   "error_secret_conflict": "同じシークレットが同時に別々の値へ変更されました。失われた値はありません。続けるには値を選んでください。",
   "error_control_forked": "2人の管理者が同時にメンバーを変更しました。両方の変更の管理者がenbuを開くと統合され、それまで他の操作は続けられません。",
+  "error_removal_write_race": "メンバーは削除されました。並行して書き込まれたリビジョンを確認してから再暗号化してください。",
   "error_reencrypt_incomplete": "メンバーは変更されましたが、一部のシークレットが再暗号化されていません。sync を実行して完了してください。",
   "error_identity_unavailable": "このデバイスで使える Identity バックエンドがありません。詳細は enbu doctor で確認してください。",
   "error_auth_tpm_access_denied": "GitHub 認証情報の保存に使う TPM にアクセスできません。enbu doctor で TPM のアクセス権限を確認してください。",

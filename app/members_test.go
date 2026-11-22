@@ -53,6 +53,51 @@ func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
 	}
 }
 
+func TestRemoveMemberDoesNotRepublishAncestorAfterConcurrentWrite(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	var latest digest.Digest
+	var statePublishes int
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			switch object.Kind {
+			case storage.KindControl:
+				if err := bob.AddSecret(ctx, "default", "LATEST", "bob"); err != nil {
+					return err
+				}
+				history, err := bob.ListHistory(ctx, "default")
+				if err != nil {
+					return err
+				}
+				latest = digest.NewDigestFromEncoded(digest.SHA256, history[len(history)-1].Tag)
+			case storage.KindState:
+				statePublishes++
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", err)
+	}
+	if latest == "" || statePublishes != 0 {
+		t.Fatalf("concurrent revision = %v, re-encryption writes = %d", latest, statePublishes)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 || !members[0].Self {
+		t.Fatalf("Control was not published: %+v %v", members, err)
+	}
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
+	if _, err := base.FetchHead(bg, storage.KindState, scope, latest); err != nil {
+		t.Fatalf("concurrent revision was lost: %v", err)
+	}
+}
+
 func TestRemoveMemberRejectsUnavailableRevisionMetadata(t *testing.T) {
 	alice := newAlice(t)
 	bob := approved(t, alice)
