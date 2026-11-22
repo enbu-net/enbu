@@ -14,7 +14,7 @@ var definitions = map[Code]definition{
 	CodeAuthExpired:             {message: "The authentication session expired. Try again.", params: []string{}},
 	CodeNotInitialized:          {message: "Set up enbu for this repository first.", params: []string{}},
 	CodeConfigNotFound:          {message: "enbu.toml was not found.", params: []string{}},
-	CodeConfigResourceCollision: {message: "Environments {first} and {second} share stored history. Remove the duplicate environment from enbu.toml.", params: []string{"first", "second"}},
+	CodeConfigResourceCollision: {message: "Environments {first} and {second} share stored history. Remove the duplicate environment from enbu.toml. If you remove the team default, assign default_env to a remaining environment.", params: []string{"first", "second"}},
 	CodeConfigChanged:           {message: "enbu.toml changed while you were editing. Reload it before saving."},
 	CodeConfigProtected:         {message: "\"{key}\" in enbu.toml cannot be changed here: it decides which members the workspace trusts or where secrets are stored.", params: []string{"key"}},
 	CodeEnvironmentMissing:      {message: "Environment \"{name}\" does not exist.", params: []string{"name"}},
