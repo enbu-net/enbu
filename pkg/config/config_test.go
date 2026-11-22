@@ -505,3 +505,17 @@ func TestProjectWithoutControlGenesisOmitsTheKey(t *testing.T) {
 		t.Fatalf("empty genesis was written:\n%s", b)
 	}
 }
+func TestRemovingTeamDefaultKeepsFreshDevicesOnAnExistingEnvironment(t *testing.T) {
+	cfg := NewProjectWithEnvironment("dev")
+	if err := cfg.AddEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Current = "staging"
+	if err := cfg.RemoveEnvironment("dev"); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Current = ""
+	if got := cfg.CurrentEnvironment(); got != "staging" || cfg.DefaultEnv != got {
+		t.Fatalf("fresh device chose %q, configured default %q", got, cfg.DefaultEnv)
+	}
+}
