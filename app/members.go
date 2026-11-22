@@ -72,9 +72,6 @@ func (a *App) ApproveMember(ctx context.Context, deviceID string) (err error) {
 func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 	defer apperr.NormalizeInto(&err)
 	device := signing.DeviceID(deviceID)
-	// Accept the current states first, while the member is still one. After the
-	// removal an admin can only take over a state it has already accepted.
-	a.acceptCurrentStates(ctx)
 	return a.changeMembers(ctx, true, func(s *session, c *wsp.Control) error {
 		kept := c.Principals[:0:0]
 		for _, p := range c.Principals {
@@ -86,7 +83,12 @@ func (a *App) RemoveMember(ctx context.Context, deviceID string) (err error) {
 			return apperr.New(apperr.CodeInvalidArgument, "device is not a member", nil)
 		}
 		c.Principals = kept
-		return requireAdmin(c)
+		if err := requireAdmin(c); err != nil {
+			return err
+		}
+		// The current Control still authorizes the member's last writes.
+		// After publishing the new Control, those writes need a checkpoint.
+		return s.acceptCurrentStates(ctx)
 	})
 }
 
@@ -167,20 +169,27 @@ func (a *App) acceptControlHead(ctx context.Context, v *wsp.Verified) error {
 	return nil
 }
 
-// acceptCurrentStates reads every environment's current state, which records it
-// in this device's checkpoint. It is best effort: an environment that cannot be
-// read now will fail to re-encrypt later with its own error.
-func (a *App) acceptCurrentStates(ctx context.Context) {
-	s, err := a.openSession(ctx)
+// acceptCurrentStates records each environment in this device's checkpoint
+// before removing an author whose writes it may not have seen yet.
+func (s *session) acceptCurrentStates(ctx context.Context) error {
+	targets, unexamined, err := s.environmentResources(ctx)
 	if err != nil {
-		return
+		return err
 	}
-	defer s.Close()
-	targets, _, err := s.environmentResources(ctx)
-	if err != nil {
-		return
+	if unexamined > 0 {
+		return fmt.Errorf("membership unchanged: unable to examine %d storage scopes", unexamined)
 	}
 	for _, t := range targets {
-		_, _ = s.readResource(ctx, t.resource, nil, true)
+		state, err := s.readResource(ctx, t.resource, nil, true)
+		if IsNotFoundError(err) {
+			continue // An environment without revisions has nothing to preserve.
+		}
+		if err == nil {
+			err = conflictError(state.conflicts)
+		}
+		if err != nil {
+			return fmt.Errorf("reading %s before removing a member: %w", t.name, err)
+		}
 	}
+	return nil
 }

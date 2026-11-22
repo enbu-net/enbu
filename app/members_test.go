@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,41 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
+
+func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	base := alice.Storage
+	readErr := errors.New("temporary payload failure")
+	failed := false
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !failed {
+				failed = true
+				return nil, readErr
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, target); !errors.Is(err, readErr) {
+		t.Fatalf("removing a member after a failed read: %v", err)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 2 {
+		t.Fatalf("membership changed: %+v %v", members, err)
+	}
+	alice.Storage = base
+	if err := alice.RemoveMember(bg, target); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "bob" {
+		t.Fatalf("latest value = %q", got)
+	}
+}
 
 // approved returns a device that asked to join and has been approved by alice.
 func approved(t *testing.T, alice *App) *App {
