@@ -39,7 +39,7 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		if err := alice.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeConfigResourceCollision) {
 			t.Fatalf("saving aliased configuration: %v", err)
 		}
 		// An older enbu or a text editor could already have written the file.
@@ -53,6 +53,41 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 		if left, err := alice.Storage.Discover(bg, storage.KindState, scope); err != nil || len(left) == 0 {
 			t.Fatalf("original revisions missing for %s: %v %v", scope, left, err)
 		}
+	}
+}
+
+func TestRepairAliasedConfigRequiresAnExistingDefault(t *testing.T) {
+	a := newAlice(t)
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultEnv = "scratch"
+	cfg.Environments["scratch"] = config.EnvironmentConfig{
+		Output: "scratch.env", Incarnation: cfg.Environments["default"].Incarnation,
+	}
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg.Environments, "scratch")
+	content, err := config.MarshalProject(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("repair with a missing default: %v", err)
+	}
+	cfg.DefaultEnv = "default"
+	content, err = config.MarshalProject(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(string(content), previous); err != nil {
+		t.Fatalf("repair with an existing default: %v", err)
 	}
 }
 

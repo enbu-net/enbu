@@ -43,6 +43,7 @@ describe("HomePage", () => {
         storage_configured: false,
         config_error: {
           code: "config_resource_collision",
+          message: "",
           params: { first: "dev", second: "scratch" },
         },
       }),

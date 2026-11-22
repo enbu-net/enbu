@@ -10,7 +10,10 @@ import { Dashboard } from "../features/dashboard/dashboard";
 import { RepositorySetup, setupStep } from "../features/repository/repository-setup";
 import { Welcome } from "../features/repository/welcome";
 import { useSession } from "../lib/session";
+import type { EnvInfo } from "../lib/types";
 import { m } from "../paraglide/messages";
+
+const repairEnvironments: EnvInfo[] = [];
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -42,7 +45,7 @@ export function HomePage() {
           <ErrorAlert error={toDisplayError(repo.config_error)} />
           <ConfigPanel
             key={repo.path}
-            environments={[]}
+            environments={repairEnvironments}
             onSaved={async () => {
               await refresh({ force: true, invalidate: true });
               await reloadRepo();
