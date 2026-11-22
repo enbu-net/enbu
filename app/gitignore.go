@@ -76,7 +76,7 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 	existing, bom := strings.CutPrefix(string(data), "\uFEFF")
 	listed := make(map[string]bool)
 	for _, line := range strings.Split(existing, "\n") {
-		listed[strings.TrimSpace(line)] = true
+		listed[strings.TrimSuffix(line, "\r")] = true
 	}
 	var defaults []string
 	for _, rule := range baseGitignoreEntries {
@@ -91,7 +91,7 @@ func (a *App) ensureGitignore(cfg *config.ProjectConfig) error {
 
 	clear(listed)
 	for _, line := range strings.Split(content, "\n") {
-		rule := strings.TrimSpace(line)
+		rule := strings.TrimSuffix(line, "\r")
 		if rule == "!.env.example" {
 			for path := range listed {
 				if filepath.Base(path) == ".env.example" {
