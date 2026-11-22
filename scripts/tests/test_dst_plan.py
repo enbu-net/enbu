@@ -234,7 +234,15 @@ def test_later_push_keeps_tests_from_the_cancelled_push(monkeypatch):
         if kwargs.get("text"):
             assert command == ["git", "merge-base", "new", "refs/remotes/origin/main"]
             return "base\n"
-        assert command == ["git", "diff", "--name-only", "-z", "base", "new"]
+        assert command == [
+            "git",
+            "diff",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            "base",
+            "new",
+        ]
         return b"app/secrets.go\0pkg/auth/token.go\0path with spaces\0"
 
     monkeypatch.setattr(dst_plan.subprocess, "check_output", output)
@@ -578,3 +586,28 @@ def test_main_hands_the_matrix_a_json_platform_list(tmp_path, monkeypatch):
 )
 def test_split_app_files_select_like_their_origin(split, original):
     assert dst_plan.select([split]) == dst_plan.select([original])
+
+
+def test_diff_failure_selects_broad_coverage(monkeypatch):
+    def output(command, **kwargs):
+        if kwargs.get("text"):
+            return "base\n"
+        assert command[:2] == ["git", "diff"]
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(dst_plan.subprocess, "check_output", output)
+    paths = dst_plan.changed(
+        {"after": "head", "repository": {"default_branch": "main"}}
+    )
+    assert dst_plan.select(paths)["mutation"]
+    assert selected(dst_plan.select(paths), "TestConcurrentOperationMatrix")
+
+
+def test_missing_mapped_test_broadens_selection(monkeypatch, tmp_path):
+    (tmp_path / "renamed_test.go").write_text(
+        "package simulation\nfunc TestRenamed(t *testing.T) {}"
+    )
+    monkeypatch.setattr(dst_plan, "SIM", tmp_path)
+    plan = dst_plan.select(["app/secrets.go", "test/simulation/renamed_test.go"])
+    assert selected(plan, "TestRenamed")
+    assert plan["mutation"]

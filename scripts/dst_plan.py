@@ -224,7 +224,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                 }
                 scenarios = True
                 files |= {SIM / (name + "_test.go") for name in DOMAINS[domain]}
-    if broad:
+    if broad or any(not path.is_file() for path in files):
         mutation = True
         files = set(SIM.glob("*_test.go"))
     tests = set().union(*(names(path) for path in files))
@@ -260,7 +260,7 @@ def changed(event: dict) -> list[str]:
             text=True,
         ).strip()
         data = subprocess.check_output(
-            ["git", "diff", "--name-only", "-z", before, head], cwd=ROOT
+            ["git", "diff", "--no-renames", "--name-only", "-z", before, head], cwd=ROOT
         )
     except subprocess.CalledProcessError:
         # An unavailable base or head must broaden coverage.
