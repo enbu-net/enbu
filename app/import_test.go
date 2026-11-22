@@ -80,7 +80,7 @@ func TestImportConflictPublicPayloadListsAllKeys(t *testing.T) {
 
 func TestImportDotenvParsesTheFile(t *testing.T) {
 	alice := newAlice(t)
-	if _, err := alice.ImportDotenv(bg, ImportTarget{}, []byte("UNSCOPED=value\n"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if _, err := alice.ImportDotenv(bg, EnvironmentTarget{}, []byte("UNSCOPED=value\n"), false); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("unscoped import: %v", err)
 	}
 	target := importTestTarget(t, alice)
@@ -96,13 +96,13 @@ func TestImportDotenvParsesTheFile(t *testing.T) {
 	}
 }
 
-func importTestTarget(t *testing.T, a *App) ImportTarget {
+func importTestTarget(t *testing.T, a *App) EnvironmentTarget {
 	t.Helper()
 	cfg, err := a.loadProject()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ImportTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default", Incarnation: cfg.Environments["default"].Incarnation}
+	return EnvironmentTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default", Incarnation: cfg.Environments["default"].Incarnation}
 }
 
 func TestImportRetryKeepsTheCapturedIncarnation(t *testing.T) {
@@ -116,7 +116,7 @@ func TestImportRetryKeepsTheCapturedIncarnation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := ImportTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default",
+	target := EnvironmentTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default",
 		Incarnation: cfg.Environments["default"].Incarnation}
 	scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
 	writes := 0

@@ -20,7 +20,7 @@ export type {
   EnvironmentDeletion,
   HistoryEntry,
   ImportResult,
-  ImportTarget,
+  EnvironmentTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,

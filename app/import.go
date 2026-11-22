@@ -18,16 +18,15 @@ type ImportResult struct {
 	Unchanged   []string `json:"unchanged"`
 }
 
-// ImportTarget pins a file chosen asynchronously to the lineage shown when
-// the user picked it.
-type ImportTarget struct {
+// EnvironmentTarget identifies an environment lineage in a workspace.
+type EnvironmentTarget struct {
 	WorkspaceID string `json:"workspace_id"`
 	Environment string `json:"environment"`
 	Incarnation string `json:"incarnation"`
 }
 
 // ImportDotenv adds every variable of a dotenv file to the captured target.
-func (a *App) ImportDotenv(ctx context.Context, target ImportTarget, content []byte, overwrite bool) (result *ImportResult, err error) {
+func (a *App) ImportDotenv(ctx context.Context, target EnvironmentTarget, content []byte, overwrite bool) (result *ImportResult, err error) {
 	defer apperr.NormalizeInto(&err)
 	if target.WorkspaceID == "" || target.Environment == "" {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "an import target is required", nil)
@@ -48,7 +47,7 @@ func (a *App) ImportSecrets(ctx context.Context, env string, secrets map[string]
 	return a.importSecrets(ctx, env, secrets, overwrite, nil)
 }
 
-func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]string, overwrite bool, expected *ImportTarget) (*ImportResult, error) {
+func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]string, overwrite bool, expected *EnvironmentTarget) (*ImportResult, error) {
 	if len(secrets) == 0 {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "nothing to import", nil)
 	}
@@ -56,8 +55,7 @@ func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]
 	if err != nil {
 		return nil, err
 	}
-	if expected != nil && (expected.WorkspaceID != s.workspace ||
-		expected.Incarnation != s.cfg.Environments[resolved.Name].Incarnation) {
+	if expected != nil && (!s.matchesEnvironment(*expected)) {
 		s.Close()
 		return nil, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
 	}

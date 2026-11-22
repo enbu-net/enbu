@@ -4,7 +4,7 @@ import { Button } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ImportResult, ImportTarget } from "../../lib/types";
+import type { ImportResult, EnvironmentTarget } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -30,7 +30,7 @@ export async function readDotenvFile(file: Blob): Promise<string> {
  */
 type ImportButtonProps = {
   repoPath: string;
-  target: ImportTarget;
+  target: EnvironmentTarget;
   onImported: (result: ImportResult) => void | Promise<void>;
   onError: (error: DisplayError) => void;
 };

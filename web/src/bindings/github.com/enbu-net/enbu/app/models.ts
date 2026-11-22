@@ -184,6 +184,38 @@ export class EnvironmentDeletion {
     }
 }
 
+/**
+ * EnvironmentTarget identifies an environment lineage in a workspace.
+ */
+export class EnvironmentTarget {
+    "workspace_id": string;
+    "environment": string;
+    "incarnation": string;
+
+    /** Creates a new EnvironmentTarget instance. */
+    constructor($$source: Partial<EnvironmentTarget> = {}) {
+        if (!("workspace_id" in $$source)) {
+            this["workspace_id"] = "";
+        }
+        if (!("environment" in $$source)) {
+            this["environment"] = "";
+        }
+        if (!("incarnation" in $$source)) {
+            this["incarnation"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EnvironmentTarget instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EnvironmentTarget {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new EnvironmentTarget($$parsedSource as Partial<EnvironmentTarget>);
+    }
+}
+
 export class HistoryEntry {
     "index": number;
     "timestamp": string;
@@ -258,39 +290,6 @@ export class ImportResult {
             $$parsedSource["unchanged"] = $$createField3_0($$parsedSource["unchanged"]);
         }
         return new ImportResult($$parsedSource as Partial<ImportResult>);
-    }
-}
-
-/**
- * ImportTarget pins a file chosen asynchronously to the lineage shown when
- * the user picked it.
- */
-export class ImportTarget {
-    "workspace_id": string;
-    "environment": string;
-    "incarnation": string;
-
-    /** Creates a new ImportTarget instance. */
-    constructor($$source: Partial<ImportTarget> = {}) {
-        if (!("workspace_id" in $$source)) {
-            this["workspace_id"] = "";
-        }
-        if (!("environment" in $$source)) {
-            this["environment"] = "";
-        }
-        if (!("incarnation" in $$source)) {
-            this["incarnation"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new ImportTarget instance from a string or object.
-     */
-    static createFrom($$source: any = {}): ImportTarget {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new ImportTarget($$parsedSource as Partial<ImportTarget>);
     }
 }
 

@@ -25,7 +25,9 @@ const entries = [1, 2, 3].map((index) => ({
 describe("HistoryTab", () => {
   it("lists the current environment's revisions newest first", async () => {
     mocked.ListHistory.mockResolvedValue(entries);
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
 
     expect(mocked.ListHistory).toHaveBeenCalledWith("default");
     const text = container.textContent ?? "";
@@ -38,7 +40,9 @@ describe("HistoryTab", () => {
   it("compares the two latest revisions by default", async () => {
     mocked.ListHistory.mockResolvedValue(entries);
     mocked.DiffHistory.mockResolvedValueOnce({ added: ["NEW"], removed: ["OLD"], modified: [] });
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
 
     await act(async () => queryButton("Compare")?.click());
     await settle();
@@ -51,13 +55,17 @@ describe("HistoryTab", () => {
   it("restores a revision and reloads history and secrets", async () => {
     mocked.ListHistory.mockResolvedValue(entries);
     const workspace = testWorkspace(environments);
-    await renderAndSettle(<HistoryTab workspace={workspace} />);
+    await renderAndSettle(<HistoryTab repoPath="/workspace" workspace={workspace} />);
     mocked.ListHistory.mockClear();
 
     await act(async () => queryButton("Restore: Revision 1")?.click());
     await settle();
 
-    expect(mocked.RestoreHistory).toHaveBeenCalledWith("default", 1);
+    expect(mocked.RestoreHistory).toHaveBeenCalledWith(
+      "/workspace",
+      { workspace_id: workspace.workspaceID, environment: "default", incarnation: "" },
+      "tag-1",
+    );
     expect(mocked.ListHistory).toHaveBeenCalledWith("default");
     expect(workspace.refresh).toHaveBeenCalled();
     expect(container.textContent).toContain("Restored revision 1");
@@ -65,7 +73,9 @@ describe("HistoryTab", () => {
 
   it("loads another environment's history when picked", async () => {
     mocked.ListHistory.mockResolvedValue([]);
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
     const select = container.querySelector("select")!;
 
     await act(async () => {
@@ -80,7 +90,9 @@ describe("HistoryTab", () => {
 
   it("drops the previous environment's revisions while the next one loads", async () => {
     mocked.ListHistory.mockResolvedValueOnce(entries);
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
     mocked.ListHistory.mockReturnValueOnce(new Promise(() => {}));
     const select = container.querySelector("select")!;
 
@@ -102,7 +114,9 @@ describe("HistoryTab", () => {
         finishRestore = resolve;
       }),
     );
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
     await act(async () => queryButton("Restore: Revision 1")?.click());
     const select = container.querySelector("select")!;
     await act(async () => {

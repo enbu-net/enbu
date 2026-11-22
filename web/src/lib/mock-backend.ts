@@ -10,7 +10,7 @@ import type {
   HistoryEntry,
   IdentityDiagnosis,
   ImportResult,
-  ImportTarget,
+  EnvironmentTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,
@@ -381,11 +381,21 @@ export const mockBackend: Backend = {
     };
     return diffSecrets(at(from), at(to));
   },
-  async RestoreHistory(env: string, index: number): Promise<void> {
-    const name = env || currentEnvName();
-    const history = (mockHistoryByEnv[name] ??= []);
-    const entry = history[index - 1];
-    if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+  async RestoreHistory(repoPath: string, target: EnvironmentTarget, tag: string): Promise<void> {
+    const repo = mockRepoHistory.find((entry) => entry.path === mockSelectedRepoPath);
+    const name = target.environment;
+    const env = mockEnvs.find((entry) => entry.name === name);
+    if (
+      repo?.path !== repoPath ||
+      repo.workspace_id !== target.workspace_id ||
+      !env ||
+      (env.incarnation ?? "") !== target.incarnation
+    ) {
+      throw createAppError("conflict");
+    }
+    const history = mockHistoryByEnv[name] ?? [];
+    const entry = history.find((_, index) => `mock-revision-${index + 1}` === tag);
+    if (!entry) throw createAppError("conflict");
     history.push({ timestamp: new Date().toISOString(), secrets: { ...entry.secrets } });
     mockSecretsByEnv[name] = Object.entries(entry.secrets)
       .map(([key, value]) => ({ key, value }))
@@ -393,7 +403,7 @@ export const mockBackend: Backend = {
   },
   async ImportSecrets(
     repoPath: string,
-    target: ImportTarget,
+    target: EnvironmentTarget,
     dotenv: string,
     overwrite: boolean,
   ): Promise<ImportResult> {

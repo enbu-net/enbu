@@ -7,7 +7,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Diff, HistoryEntry } from "../../lib/types";
+import type { Diff, EnvironmentTarget, HistoryEntry } from "../../lib/types";
 import type { Workspace } from "../dashboard/use-workspace";
 import { m } from "../../paraglide/messages";
 import { getLocale } from "../../paraglide/runtime";
@@ -16,7 +16,7 @@ import { getLocale } from "../../paraglide/runtime";
  * The revisions that changed an environment's secrets, with the comparison
  * and restore of `enbu history diff` and `enbu history restore`.
  */
-export function HistoryTab({ workspace }: { workspace: Workspace }) {
+export function HistoryTab({ repoPath, workspace }: { repoPath: string; workspace: Workspace }) {
   const envId = useId();
   const [picked, setPicked] = useState("");
   const selected = workspace.environments.find(({ name }) => name === picked);
@@ -49,8 +49,9 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
       </SectionHeader>
       {env && (
         <HistoryContent
-          key={JSON.stringify([env, incarnation])}
-          env={env}
+          key={JSON.stringify([repoPath, workspace.workspaceID, env, incarnation])}
+          repoPath={repoPath}
+          target={{ workspace_id: workspace.workspaceID, environment: env, incarnation }}
           refresh={workspace.refresh}
         />
       )}
@@ -58,7 +59,16 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   );
 }
 
-function HistoryContent({ env, refresh }: { env: string; refresh: Workspace["refresh"] }) {
+function HistoryContent({
+  repoPath,
+  target,
+  refresh,
+}: {
+  repoPath: string;
+  target: EnvironmentTarget;
+  refresh: Workspace["refresh"];
+}) {
+  const env = target.environment;
   const fromId = useId();
   const toId = useId();
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
@@ -76,7 +86,7 @@ function HistoryContent({ env, refresh }: { env: string; refresh: Workspace["ref
     const id = ++request.current;
     setError(null);
     setDiff(null);
-    // Drop the previous list, so its indexes cannot be restored in another environment.
+    // Drop the previous list, so its entries cannot be acted on in another environment.
     setEntries(null);
     try {
       const list = await backend.ListHistory(name);
@@ -170,7 +180,7 @@ function HistoryContent({ env, refresh }: { env: string; refresh: Workspace["ref
                       aria-label={`${m.history_restore()}: ${m.history_revision({ index: String(entry.index) })}`}
                       onClick={() =>
                         void run(async () => {
-                          await backend.RestoreHistory(env, entry.index);
+                          await backend.RestoreHistory(repoPath, target, entry.tag);
                           if (mounted.current) {
                             setRestored(entry.index);
                             await Promise.all([load(env), refresh()]);

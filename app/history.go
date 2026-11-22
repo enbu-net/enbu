@@ -48,10 +48,11 @@ func (a *App) ListHistory(ctx context.Context, env string) (history []HistoryEnt
 // historyView is the history of one environment with its session still open,
 // so the content of an entry is decrypted only when it is asked for.
 type historyView struct {
-	s       *session
-	entries []HistoryEntry
-	states  map[digest.Digest]*wsp.VerifiedState
-	plain   map[digest.Digest]map[string]string // decrypted during this call only
+	s        *session
+	resource string
+	entries  []HistoryEntry
+	states   map[digest.Digest]*wsp.VerifiedState
+	plain    map[digest.Digest]map[string]string // decrypted during this call only
 }
 
 func (h *historyView) Close() {
@@ -82,16 +83,16 @@ func (h *historyView) secrets(ctx context.Context, d digest.Digest) (map[string]
 }
 
 func (a *App) openHistory(ctx context.Context, env string) (*historyView, error) {
-	resolved, err := a.resolveEnvironment(env)
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
-	s, err := a.openSession(ctx)
-	if err != nil {
-		return nil, err
-	}
-	h := &historyView{s: s, plain: map[digest.Digest]map[string]string{}}
-	if err := h.load(ctx, s.resource(resolved.Name)); err != nil {
+	return openHistoryView(ctx, s, resolved.Name)
+}
+
+func openHistoryView(ctx context.Context, s *session, env string) (*historyView, error) {
+	h := &historyView{s: s, resource: s.resource(env), plain: map[digest.Digest]map[string]string{}}
+	if err := h.load(ctx, h.resource); err != nil {
 		h.Close()
 		return nil, err
 	}
@@ -297,12 +298,52 @@ func (a *App) RestoreHistory(ctx context.Context, env string, idx int) (err erro
 	if err != nil {
 		return err
 	}
+	defer h.Close()
 	snapshot, err := h.at(ctx, idx)
-	h.Close()
 	if err != nil {
 		return err
 	}
-	return a.changeSecret(ctx, env, "restore", func(current map[string]string) error {
+	return a.restoreHistory(ctx, h, snapshot)
+}
+
+// RestoreHistoryRevision publishes exactly the retained revision shown by the GUI.
+func (a *App) RestoreHistoryRevision(ctx context.Context, target EnvironmentTarget, tag string) (err error) {
+	defer apperr.NormalizeInto(&err)
+	d := digest.NewDigestFromEncoded(digest.SHA256, tag)
+	if err := d.Validate(); err != nil || target.WorkspaceID == "" || target.Environment == "" {
+		return apperr.New(apperr.CodeInvalidArgument, "a history revision and its environment are required", nil)
+	}
+	s, resolved, err := a.openEnvironment(ctx, target.Environment)
+	if err != nil {
+		return err
+	}
+	if !s.matchesEnvironment(target) {
+		s.Close()
+		return apperr.New(apperr.CodeConflict, "the history target changed; look at the history again", nil)
+	}
+	h, err := openHistoryView(ctx, s, resolved.Name)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	for _, entry := range h.entries {
+		if entry.Tag == tag {
+			snapshot, err := h.secrets(ctx, d)
+			if err != nil {
+				return err
+			}
+			return a.restoreHistory(ctx, h, snapshot)
+		}
+	}
+	return apperr.New(apperr.CodeConflict, "the selected revision is no longer in history; look at the history again", nil)
+}
+
+func (a *App) restoreHistory(ctx context.Context, h *historyView, snapshot map[string]string) error {
+	s := h.s
+	h.s = nil // changeResource closes the session when it finishes.
+	cfg := s.cfg
+	reopen := func(ctx context.Context) (*session, error) { return a.openSessionWith(ctx, cfg) }
+	return a.changeResource(ctx, s, reopen, h.resource, "restore", nil, nil, func(current map[string]string) error {
 		clear(current)
 		for k, v := range snapshot {
 			current[k] = v

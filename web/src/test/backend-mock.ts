@@ -24,7 +24,12 @@ export function createBackendMock() {
     RemoveRepository: vi.fn(async () => {}),
     Initialize: vi.fn(),
     SuggestStorage: vi.fn(async () => ""),
-    GetWorkspace: vi.fn(),
+    GetWorkspace: vi.fn(async () => ({
+      workspace_id: "test-workspace",
+      environments: [],
+      secrets: { environment: "", secrets: [] },
+      conflicts: null,
+    })),
     ListEnvironments: vi.fn(async () => []),
     CreateEnvironment: vi.fn(async () => {}),
     SwitchEnvironment: vi.fn(async () => {}),

@@ -13,14 +13,14 @@ func TestImportSecretsFromDotenvContent(t *testing.T) {
 	if err != nil || len(envs) != 1 {
 		t.Fatalf("listing environments: %v %v", envs, err)
 	}
-	target := app.ImportTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: envs[0].Incarnation}
+	target := app.EnvironmentTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: envs[0].Incarnation}
 	for _, stale := range []struct {
 		path   string
-		target app.ImportTarget
+		target app.EnvironmentTarget
 	}{
 		{f.bob.repoPath, target},
-		{f.alice.repoPath, app.ImportTarget{WorkspaceID: "different", Environment: "default", Incarnation: target.Incarnation}},
-		{f.alice.repoPath, app.ImportTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: "replaced"}},
+		{f.alice.repoPath, app.EnvironmentTarget{WorkspaceID: "different", Environment: "default", Incarnation: target.Incarnation}},
+		{f.alice.repoPath, app.EnvironmentTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: "replaced"}},
 	} {
 		if _, err := f.alice.ImportSecrets(stale.path, stale.target, "LEAK=value\n", false); !apperr.Is(err, apperr.CodeConflict) {
 			t.Fatalf("stale import: %v", err)

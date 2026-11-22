@@ -45,7 +45,7 @@ func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 
 // ImportSecrets saves to the workspace and environment that the frontend
 // showed when the person selected the file.
-func (s *Service) ImportSecrets(repoPath string, target app.ImportTarget, content string, overwrite bool) (app.ImportResult, error) {
+func (s *Service) ImportSecrets(repoPath string, target app.EnvironmentTarget, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
 		if !s.matchesSelectedRepository(repoPath) {
 			return app.ImportResult{}, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)

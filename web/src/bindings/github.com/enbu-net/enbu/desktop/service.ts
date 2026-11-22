@@ -150,7 +150,7 @@ export function GetWorkspace(repoPath: string): $CancellablePromise<$models.Work
  * ImportSecrets saves to the workspace and environment that the frontend
  * showed when the person selected the file.
  */
-export function ImportSecrets(repoPath: string, target: app$0.ImportTarget, content: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
+export function ImportSecrets(repoPath: string, target: app$0.EnvironmentTarget, content: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ImportSecrets", repoPath, target, content, overwrite).then(($result: any) => {
         return $$createType9($result);
     });
@@ -282,8 +282,8 @@ export function RestartApp(): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestartApp");
 }
 
-export function RestoreHistory(env: string, index: number): $CancellablePromise<void> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", env, index);
+export function RestoreHistory(repoPath: string, target: app$0.EnvironmentTarget, tag: string): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", repoPath, target, tag);
 }
 
 export function SelectRepository(path: string): $CancellablePromise<$models.RepoInfo> {

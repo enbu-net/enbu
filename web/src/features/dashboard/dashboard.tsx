@@ -46,7 +46,9 @@ const tabs: DashboardTabDefinition[] = [
     value: "history",
     label: m.history_title,
     icon: <History size={16} />,
-    render: ({ workspace }) => <HistoryTab workspace={workspace} />,
+    render: ({ repo, workspace }) => (
+      <HistoryTab repoPath={repo.path ?? ""} workspace={workspace} />
+    ),
   },
   {
     value: "members",

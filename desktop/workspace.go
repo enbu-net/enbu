@@ -234,6 +234,11 @@ func (s *Service) DiffHistory(env string, from, to int) (app.Diff, error) {
 	})
 }
 
-func (s *Service) RestoreHistory(env string, index int) error {
-	return s.withRepo(func() error { return s.app.RestoreHistory(s.context(), env, index) })
+func (s *Service) RestoreHistory(repoPath string, target app.EnvironmentTarget, tag string) error {
+	return s.withRepo(func() error {
+		if !s.matchesSelectedRepository(repoPath) {
+			return apperr.New(apperr.CodeConflict, "the selected repository changed", nil)
+		}
+		return s.app.RestoreHistoryRevision(s.context(), target, tag)
+	})
 }
