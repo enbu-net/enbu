@@ -84,6 +84,19 @@ func TestRemoveMemberRejectsUnavailableRevisionMetadata(t *testing.T) {
 			if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeUntrusted) {
 				t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
 			}
+			alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+				Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+					if kind == storage.KindCompaction {
+						t.Error("ordinary secret read looked up compactions for unverified metadata")
+						return nil, errors.New("compaction lookup unavailable")
+					}
+					return next.Discover(ctx, kind, scope)
+				},
+			})
+			if _, err := alice.ListSecrets(bg, "default"); err != nil {
+				t.Fatalf("ordinary read failed with a verified history: %v", err)
+			}
+
 			_ = mustMember(t, alice, bob)
 		})
 	}
