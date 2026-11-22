@@ -96,7 +96,6 @@ func newAuthLogoutCommand() *cobra.Command {
 	if winbridge.InWSL() {
 		cmd.Short = "Sign out of the GitHub account named by --user"
 		cmd.Flags().Lookup("user").Usage = "GitHub login to sign out of (required on WSL)"
-		_ = cmd.MarkFlagRequired("user")
 	}
 	return cmd
 }

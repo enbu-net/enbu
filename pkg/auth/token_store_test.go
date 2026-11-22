@@ -72,7 +72,7 @@ func TestTokenStoreReportsALockedKeyring(t *testing.T) {
 	if err := SaveToken(&StoredToken{AccessToken: "t", Username: "u", UserID: 1}); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("SaveToken = %v", err)
 	}
-	if err := DeleteToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
+	if err := DeleteAccount(""); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("DeleteToken = %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 		t.Fatalf("LoadToken after rename = %#v, %v", got, err)
 	}
 
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if _, err := LoadToken(); err == nil {
@@ -138,13 +138,13 @@ func TestDeleteTokenRemovesStoredToken(t *testing.T) {
 	if err := SaveToken(&StoredToken{AccessToken: "token", Username: "octo", UserID: 123}); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("token still stored: %v", err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken without a token: %v", err)
 	}
 }
@@ -209,7 +209,7 @@ func TestSigningOutFallsBackToTheLatestAccount(t *testing.T) {
 	if logins, current, _ := Accounts(); !reflect.DeepEqual(logins, []string{"a", "c"}) || current != "a" {
 		t.Fatalf("Accounts after signing out of another account = %v, %q", logins, current)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if logins, current, _ := Accounts(); !reflect.DeepEqual(logins, []string{"c"}) || current != "c" {
@@ -330,7 +330,7 @@ func TestBridgeLogoutRequiresAnExplicitAccount(t *testing.T) {
 	previous := winbridge.InWSL
 	t.Cleanup(func() { winbridge.InWSL = previous })
 	winbridge.InWSL = func() bool { return true }
-	if err := DeleteToken(); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if err := DeleteAccount(""); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("unqualified bridge logout: %v", err)
 	}
 }

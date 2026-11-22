@@ -135,9 +135,6 @@ func selectAccount(result accountResult, err error) (*StoredToken, error) {
 	return result.Token, nil
 }
 
-// DeleteToken signs out of the account in use.
-func DeleteToken() error { return DeleteAccount("") }
-
 // DeleteAccount signs out of the matching account. Local stores also allow the
 // account in use, since their result is not subject to bridge timeouts.
 func DeleteAccount(login string) error {
