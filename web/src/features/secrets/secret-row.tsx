@@ -6,6 +6,25 @@ import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { copySecret } from "../../lib/clipboard";
 import { m } from "../../paraglide/messages";
 
+function applyTextareaEdit(previous: string, next: string): string {
+  if (!previous.includes("\r")) return next;
+  // Textareas expose CRLF and CR as LF. Keep the original bytes on both
+  // sides of the edited span and take the new text only for that span.
+  const original = previous.match(/\r\n|[^]/g) ?? [];
+  const normalized = previous.replace(/\r\n?/g, "\n");
+  let start = 0;
+  while (start < next.length && normalized[start] === next[start]) start++;
+  let end = normalized.length;
+  let nextEnd = next.length;
+  while (end > start && nextEnd > start && normalized[end - 1] === next[nextEnd - 1]) {
+    end--;
+    nextEnd--;
+  }
+  return (
+    original.slice(0, start).join("") + next.slice(start, nextEnd) + original.slice(end).join("")
+  );
+}
+
 export function SecretRow({
   secretKey,
   secretValue,
@@ -26,6 +45,8 @@ export function SecretRow({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [editValue, setEditValue] = useState(secretValue);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+  const multiline = /[\r\n]/.test(editValue);
+  const valueLabel = `${m.dashboard_value()}: ${secretKey}`;
 
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -112,25 +133,48 @@ export function SecretRow({
         gridColumn={{ base: "1 / -1", lg: "auto" }}
         gridRow={{ base: "2", lg: "auto" }}
       >
-        <Input
-          aria-label={`${m.dashboard_value()}: ${secretKey}`}
-          value={editValue}
-          disabled={saving}
-          type={visible ? "text" : "password"}
-          h="auto"
-          minH="38px"
-          pr="10"
-          borderColor="border.default"
-          borderRadius="md"
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => {
-            // WebKit may report isComposing=false on the Enter that commits an IME candidate.
-            if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
-              e.preventDefault();
-            }
-          }}
-        />
+        {visible ? (
+          <styled.textarea
+            aria-label={valueLabel}
+            value={editValue}
+            disabled={saving}
+            rows={multiline ? 4 : 1}
+            w="full"
+            minH="38px"
+            px="3"
+            py="2"
+            pr="10"
+            resize="vertical"
+            fontSize="sm"
+            bg="bg.surface"
+            borderWidth="1px"
+            borderColor="border.default"
+            borderRadius="md"
+            onChange={(event) => setEditValue(applyTextareaEdit(editValue, event.target.value))}
+          />
+        ) : (
+          <Input
+            aria-label={valueLabel}
+            value={multiline ? "********" : editValue}
+            disabled={saving}
+            type="password"
+            readOnly={multiline}
+            h="auto"
+            minH="38px"
+            pr="10"
+            borderColor="border.default"
+            borderRadius="md"
+            onChange={(event) => setEditValue(event.target.value)}
+            onKeyDown={(e) => {
+              // WebKit may report isComposing=false on the Enter that commits an IME candidate.
+              if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
+                e.preventDefault();
+              }
+            }}
+          />
+        )}
         <Button
+          type="button"
           variant="ghost"
           position="absolute"
           right="1"
@@ -157,6 +201,7 @@ export function SecretRow({
       <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
         {editValue !== secretValue && (
           <Button
+            type="submit"
             variant="ghost"
             w="34px"
             h="34px"
@@ -164,7 +209,6 @@ export function SecretRow({
             color="accent.text"
             aria-label={m.dashboard_save()}
             title={m.dashboard_save()}
-            type="submit"
             loading={saving}
           >
             <Save size={16} />
