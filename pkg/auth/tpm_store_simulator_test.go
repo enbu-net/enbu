@@ -149,7 +149,7 @@ func TestTPMCredentialsLifecycleAndIntegrity(t *testing.T) {
 	if err := SaveToken(first); err != nil {
 		t.Fatal(err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatal(err)
 	}
 	if d := DiagnoseCredentials(); d.State != "available" || d.SignedIn || d.Migration != migrationComplete {

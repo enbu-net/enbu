@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Eye, EyeOff, Save, Trash2 } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
 import { Button, Input } from "../../components/ui";
@@ -45,7 +45,6 @@ export function SecretRow({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [editValue, setEditValue] = useState(secretValue);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
-  const editForm = useId();
   const multiline = /[\r\n]/.test(editValue);
   const valueLabel = `${m.dashboard_value()}: ${secretKey}`;
 
@@ -75,8 +74,15 @@ export function SecretRow({
     }
   }
 
+  const copyStatus = copied === "key" ? m.dashboard_keyCopied() : m.dashboard_valueCopied();
+
   return (
-    <Box
+    <styled.form
+      data-secret-value-row=""
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveValue();
+      }}
       minH="62px"
       display="grid"
       gridTemplateColumns={{
@@ -122,15 +128,10 @@ export function SecretRow({
           {secretKey}
         </styled.button>
       </HStack>
-      <styled.form
-        id={editForm}
+      <Box
         position="relative"
         gridColumn={{ base: "1 / -1", lg: "auto" }}
         gridRow={{ base: "2", lg: "auto" }}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void saveValue();
-        }}
       >
         {visible ? (
           <styled.textarea
@@ -164,6 +165,12 @@ export function SecretRow({
             borderColor="border.default"
             borderRadius="md"
             onChange={(event) => setEditValue(event.target.value)}
+            onKeyDown={(e) => {
+              // WebKit may report isComposing=false on the Enter that commits an IME candidate.
+              if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
+                e.preventDefault();
+              }
+            }}
           />
         )}
         <Button
@@ -190,12 +197,11 @@ export function SecretRow({
             <Copy size={16} aria-hidden="true" />
           )}
         </Button>
-      </styled.form>
+      </Box>
       <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
         {editValue !== secretValue && (
           <Button
             type="submit"
-            form={editForm}
             variant="ghost"
             w="34px"
             h="34px"
@@ -234,10 +240,13 @@ export function SecretRow({
           <Trash2 size={15} />
         </Button>
       </HStack>
+      <styled.span srOnly role="status">
+        {copied ? copyStatus : ""}
+      </styled.span>
       {copied && (
         <styled.div
           data-toast=""
-          role="status"
+          aria-hidden="true"
           position="fixed"
           right="4"
           bottom="4"
@@ -252,7 +261,7 @@ export function SecretRow({
           boxShadow="dropdown"
           pointerEvents="none"
         >
-          {copied === "key" ? m.dashboard_keyCopied() : m.dashboard_valueCopied()}
+          {copyStatus}
         </styled.div>
       )}
       <ConfirmDeleteDialog
@@ -273,6 +282,6 @@ export function SecretRow({
           }
         }}
       />
-    </Box>
+    </styled.form>
   );
 }

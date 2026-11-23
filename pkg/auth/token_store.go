@@ -135,12 +135,13 @@ func selectAccount(result accountResult, err error) (*StoredToken, error) {
 	return result.Token, nil
 }
 
-// DeleteToken signs out of the account in use.
-func DeleteToken() error { return DeleteAccount("") }
-
-// DeleteAccount signs out of the matching account or the account in use if login is empty.
+// DeleteAccount signs out of the matching account. Local stores also allow the
+// account in use, since their result is not subject to bridge timeouts.
 func DeleteAccount(login string) error {
 	if winbridge.InWSL() {
+		if strings.TrimSpace(login) == "" {
+			return apperr.New(apperr.CodeInvalidArgument, "on WSL, use enbu auth logout --user LOGIN", nil)
+		}
 		_, err := accountOperation("delete", accountRequest{Login: login, Active: loadActive()})
 		return err
 	}

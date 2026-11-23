@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -268,7 +269,7 @@ func pipeAuthBridge(t *testing.T) *winbridge.Client {
 		s := winbridge.Server{Version: "test", GitHubAuth: ServeGitHubAuth}
 		stopped <- s.Serve(t.Context(), server, server)
 	}()
-	c := &winbridge.Client{Dial: func() (*winbridge.Conn, error) {
+	c := &winbridge.Client{Dial: func(context.Context) (*winbridge.Conn, error) {
 		return &winbridge.Conn{R: client, W: client, Close: func() error { _ = client.Close(); return <-stopped }}, nil
 	}}
 	t.Cleanup(func() { _ = c.Close(); _ = client.Close() })

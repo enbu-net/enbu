@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/auth"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 func deviceLogin(t *testing.T) func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
@@ -80,6 +82,17 @@ func TestAuthSwitchUsesTheNamedAccount(t *testing.T) {
 	cmd.SetArgs(nil)
 	if err := cmd.ExecuteContext(context.Background()); err == nil {
 		t.Fatal("switch without a login succeeded")
+	}
+}
+
+func TestWSLLogoutRequiresAnAccountAsInvalidArgument(t *testing.T) {
+	original := winbridge.InWSL
+	t.Cleanup(func() { winbridge.InWSL = original })
+	winbridge.InWSL = func() bool { return true }
+	cmd := newAuthLogoutCommand()
+	cmd.SetArgs([]string{})
+	if err := cmd.Execute(); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("logout without --user: %v", err)
 	}
 }
 
