@@ -19,7 +19,7 @@ import (
 
 const currentVersion = "v1alpha2"
 
-// ProjectLockName is reserved for the checkout lock, beside enbu.toml in a folder without Git.
+// ProjectLockName is reserved for the checkout lock, beside enbu.toml.
 const ProjectLockName = ".enbu.toml.lock"
 
 type StorageConfig struct {

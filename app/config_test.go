@@ -406,6 +406,9 @@ func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
 	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s: %v", out, err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("/"+config.ProjectLockName+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	fake := clockwork.NewFakeClock()
 	a := &App{RepositoryDir: dir, Runtime: &Runtime{Clock: fake}}
 	lock, err := a.lockProject(t.Context())
@@ -435,5 +438,45 @@ func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
 	fake.Advance(time.Second)
 	if err := <-result; err != nil {
 		t.Fatalf("second lock did not retry successfully: %v", err)
+	}
+}
+
+func TestProjectLockDoesNotDependOnGitMetadata(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	metadata := t.TempDir()
+	if err := os.WriteFile(filepath.Join(metadata, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{first, second} {
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+metadata+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lock, err := (&App{RepositoryDir: first}).lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if lock.Name() != filepath.Join(fsutil.Canonical(first), config.ProjectLockName) {
+		t.Fatalf("lock outside checkout: %s", lock.Name())
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	alsoLocked, err := (&App{RepositoryDir: second}).lockProject(ctx)
+	if err != nil {
+		t.Fatalf("another checkout could not lock independently: %v", err)
+	}
+	_ = alsoLocked.Close()
+
+	// The same checkout must still contend when the external metadata is hidden.
+	if err := os.Remove(filepath.Join(first, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if other, err := fsutil.LockFile(filepath.Join(first, config.ProjectLockName), false); err == nil {
+		_ = other.Close()
+		t.Fatal("lost the project lock when the Git metadata became unavailable")
 	}
 }
