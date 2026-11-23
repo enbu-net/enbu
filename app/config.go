@@ -90,19 +90,38 @@ func openProjectLockDir(root *os.Root) (*os.Root, error) {
 	if err != nil {
 		return nil, err
 	}
-	info, err = lockDir.Lstat(ignoreName)
-	if err == nil && info.Mode().IsRegular() && info.Size() == int64(len(ignoreRule)) {
-		file, err := lockDir.Open(ignoreName)
-		if err == nil {
-			data, readErr := io.ReadAll(io.LimitReader(file, int64(len(ignoreRule)+1)))
-			_ = file.Close()
-			if readErr == nil && bytes.Equal(data, []byte(ignoreRule)) {
-				return lockDir, nil
-			}
-		}
+	if err := checkProjectLockIgnore(lockDir, ignoreName, ignoreRule); err != nil {
+		_ = lockDir.Close()
+		return nil, err
 	}
-	_ = lockDir.Close()
-	return nil, apperr.New(apperr.CodeInvalidArgument, "project lock directory has an unexpected Git exclusion file", nil)
+	return lockDir, nil
+}
+
+func checkProjectLockIgnore(dir *os.Root, name, rule string) error {
+	invalid := apperr.New(apperr.CodeInvalidArgument, "project lock directory has an unexpected Git exclusion file", nil)
+	info, err := dir.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return invalid
+	}
+	if err != nil {
+		return fmt.Errorf("checking project lock exclusion: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() != int64(len(rule)) {
+		return invalid
+	}
+	file, err := dir.Open(name)
+	if err != nil {
+		return fmt.Errorf("opening project lock exclusion: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, int64(len(rule)+1)))
+	if err != nil {
+		return fmt.Errorf("reading project lock exclusion: %w", err)
+	}
+	if !bytes.Equal(data, []byte(rule)) {
+		return invalid
+	}
+	return nil
 }
 
 func (a *App) ReadConfig() (content string, err error) {
