@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -22,6 +23,9 @@ func (a *App) projectPath() string {
 }
 
 func (a *App) lockProject(ctx context.Context) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	dir, err := filepath.EvalSymlinks(filepath.Dir(a.projectPath()))
 	if err != nil {
 		return nil, fmt.Errorf("resolving project directory: %w", err)
@@ -33,32 +37,72 @@ func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	if err == nil && !info.Mode().IsRegular() {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml must be a regular file to change it", nil)
 	}
-	lockDir := filepath.Join(dir, config.ProjectLockDir)
-	if err := os.Mkdir(lockDir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
-		return nil, fmt.Errorf("creating project lock directory: %w", err)
-	}
-	lockInfo, err := os.Lstat(lockDir)
+	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err
 	}
-	if !lockInfo.IsDir() {
+	defer func() { _ = root.Close() }()
+	lockDir, err := openProjectLockDir(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = lockDir.Close() }()
+
+	info, err = lockDir.Lstat("project.lock")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if info != nil && !info.Mode().IsRegular() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "project lock must be a regular file", nil)
+	}
+	return fsutil.LockFileContext(ctx, a.clock(), lockDir, "project.lock")
+}
+
+func openProjectLockDir(root *os.Root) (*os.Root, error) {
+	const ignoreName = ".gitignore"
+	const ignoreRule = "*\n"
+	name := config.ProjectLockDir
+	info, err := root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Publish the directory with its ignore rule already in place.
+		// A concurrent caller may have installed the same directory.
+		temp, createErr := os.MkdirTemp(root.Name(), name+"-")
+		if createErr != nil {
+			return nil, createErr
+		}
+		defer func() { _ = os.RemoveAll(temp) }()
+		if err := os.WriteFile(filepath.Join(temp, ignoreName), []byte(ignoreRule), 0o644); err != nil {
+			return nil, err
+		}
+		renameErr := root.Rename(filepath.Base(temp), name)
+		info, err = root.Lstat(name)
+		if err != nil && renameErr != nil {
+			return nil, renameErr
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "project lock path must be a directory", nil)
 	}
-
-	// The directory's own ignore rule protects the lock and the rule itself
-	// from git clean, including worktrees whose Git metadata is unavailable.
-	ignore := filepath.Join(lockDir, ".gitignore")
-	rule := []byte("*\n")
-	data, err := os.ReadFile(ignore)
-	if !bytes.Equal(data, rule) {
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
-		if err := fsutil.WriteFileAtomic(ignore, rule, 0o644); err != nil {
-			return nil, err
+	lockDir, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err = lockDir.Lstat(ignoreName)
+	if err == nil && info.Mode().IsRegular() && info.Size() == int64(len(ignoreRule)) {
+		file, err := lockDir.Open(ignoreName)
+		if err == nil {
+			data, readErr := io.ReadAll(io.LimitReader(file, int64(len(ignoreRule)+1)))
+			_ = file.Close()
+			if readErr == nil && bytes.Equal(data, []byte(ignoreRule)) {
+				return lockDir, nil
+			}
 		}
 	}
-	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(lockDir, "project.lock"))
+	_ = lockDir.Close()
+	return nil, apperr.New(apperr.CodeInvalidArgument, "project lock directory has an unexpected Git exclusion file", nil)
 }
 
 func (a *App) ReadConfig() (content string, err error) {

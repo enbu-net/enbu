@@ -544,3 +544,52 @@ func TestConfigWriteKeepsExclusionsWhenFileReplacementFails(t *testing.T) {
 		t.Fatalf("output exclusion not retained: %v", err)
 	}
 }
+
+func TestProjectLockLeavesExistingIgnoreRulesAlone(t *testing.T) {
+	dir := t.TempDir()
+	lockDir := filepath.Join(dir, config.ProjectLockDir)
+	if err := os.Mkdir(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ignore := filepath.Join(lockDir, ".gitignore")
+	const original = "local.env\n"
+	if err := os.WriteFile(ignore, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := &App{RepositoryDir: dir}
+	if err := a.CreateEnvironment("staging"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("unexpected lock directory: %v", err)
+	}
+	got, err := os.ReadFile(ignore)
+	if err != nil || string(got) != original {
+		t.Fatalf("ignore rules changed: %q, %v", got, err)
+	}
+}
+
+func TestProjectLockRejectsSymlinks(t *testing.T) {
+	for _, name := range []string{".gitignore", "project.lock"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			lockDir := filepath.Join(dir, config.ProjectLockDir)
+			if err := os.Mkdir(lockDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if name != ".gitignore" {
+				if err := os.WriteFile(filepath.Join(lockDir, ".gitignore"), []byte("*\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			outside := filepath.Join(t.TempDir(), "outside")
+			if err := os.Symlink(outside, filepath.Join(lockDir, name)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			a := &App{RepositoryDir: dir}
+			if err := a.CreateEnvironment("staging"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+				t.Fatalf("lock symlink: %v", err)
+			}
+			if _, err := os.Stat(outside); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("unexpected file outside the checkout: %v", err)
+			}
+		})
+	}
+}
