@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -99,8 +100,8 @@ func TestInstallLinuxReplacesTheBinary(t *testing.T) {
 	if err != nil || info.Mode().Perm()&0o100 == 0 {
 		t.Errorf("target is not executable: %v %v", info, err)
 	}
-	if _, err := os.Lstat(stagingDir(target)); !os.IsNotExist(err) {
-		t.Fatalf("staging still exists: %v", err)
+	if paths := stagingPaths(target); len(paths) != 0 {
+		t.Fatalf("staging still exists: %v", paths)
 	}
 }
 
@@ -119,8 +120,8 @@ func TestInstallKeepsTheAppWhenTheArchiveLacksTheBinary(t *testing.T) {
 	if got := readFile(t, target); got != "old" {
 		t.Errorf("target = %q, want old", got)
 	}
-	if _, err := os.Lstat(stagingDir(target)); !os.IsNotExist(err) {
-		t.Fatalf("staging still exists: %v", err)
+	if paths := stagingPaths(target); len(paths) != 0 {
+		t.Fatalf("staging still exists: %v", paths)
 	}
 }
 
@@ -257,7 +258,7 @@ func TestCleanupLeavesUnrelatedSiblings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sibling := stagingDir(target) + "-notes"
+	sibling := filepath.Join(dir, stagingPrefix(target)+"notes-stage")
 	if err := os.Mkdir(sibling, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +276,10 @@ func TestAbandonedStagingIsRemoved(t *testing.T) {
 	for _, operation := range []string{"cleanup", "install"} {
 		t.Run(operation, func(t *testing.T) {
 			target := filepath.Join(t.TempDir(), "enbu-desktop")
-			staging := stagingDir(target)
+			staging, err := os.MkdirTemp(filepath.Dir(target), stagingPrefix(target)+"*-stage")
+			if err != nil {
+				t.Fatal(err)
+			}
 			bundle := filepath.Join(staging, "unfinished.app", "Contents")
 			if err := os.MkdirAll(bundle, 0700); err != nil {
 				t.Fatal(err)
@@ -301,5 +305,32 @@ func TestAbandonedStagingIsRemoved(t *testing.T) {
 				t.Fatalf("staging still exists: %v", err)
 			}
 		})
+	}
+}
+
+func TestRetryCanStageBesideAnUnremovableDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires Unix directory permissions for an unprivileged user")
+	}
+	target := filepath.Join(t.TempDir(), "enbu-desktop")
+	staging, err := os.MkdirTemp(filepath.Dir(target), stagingPrefix(target)+"*-stage")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staging, "partial"), []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(staging, 0700) })
+	if err := os.Chmod(staging, 0000); err != nil {
+		t.Fatal(err)
+	}
+	if err := installBinary(target, func(w io.Writer) error {
+		_, err := io.WriteString(w, "complete")
+		return err
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, target); got != "complete" {
+		t.Fatalf("installed %q", got)
 	}
 }

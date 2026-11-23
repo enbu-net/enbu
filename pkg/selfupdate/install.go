@@ -123,26 +123,46 @@ func lockTarget(target string) (string, *os.File, error) {
 	return target, lock, nil
 }
 
-func stagingDir(target string) string {
-	return filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".update-stage")
+func stagingPrefix(target string) string { return "." + filepath.Base(target) + ".update-" }
+
+// prepareStaging must run under the installation lock. Cleanup is best effort:
+// a shared Unix install may hold private staging owned by another user.
+func prepareStaging(target string) (string, error) {
+	cleanStaging(target)
+	return os.MkdirTemp(filepath.Dir(target), stagingPrefix(target)+"*-stage")
 }
 
-// prepareStaging must run under the installation lock. Reusing one reserved
-// directory also recovers a download interrupted before its deferred cleanup.
-func prepareStaging(target string) (string, error) {
-	staging := stagingDir(target)
-	if err := os.RemoveAll(staging); err != nil {
-		return "", err
+func stagingPaths(target string) []string {
+	dir := filepath.Dir(target)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
 	}
-	return staging, os.Mkdir(staging, 0o700)
+	var paths []string
+	for _, entry := range entries {
+		id, ok := strings.CutPrefix(entry.Name(), stagingPrefix(target))
+		id, stage := strings.CutSuffix(id, "-stage")
+		if !entry.IsDir() || !ok || !stage || id == "" {
+			continue
+		}
+		if strings.Trim(id, "0123456789") == "" {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return paths
+}
+
+func cleanStaging(target string) {
+	for _, staging := range stagingPaths(target) {
+		_ = os.RemoveAll(staging)
+	}
 }
 
 // CleanUp removes abandoned staging and a Windows backup once it has stopped
 // running. The installation lock also protects an update currently staging.
 func CleanUp(target string) {
-	_, stageErr := os.Lstat(stagingDir(target))
 	_, oldErr := os.Lstat(target + ".old")
-	if os.IsNotExist(stageErr) && os.IsNotExist(oldErr) {
+	if os.IsNotExist(oldErr) && len(stagingPaths(target)) == 0 {
 		return
 	}
 	target, lock, err := lockTarget(target)
@@ -150,7 +170,7 @@ func CleanUp(target string) {
 		return
 	}
 	defer func() { _ = lock.Close() }()
-	_ = os.RemoveAll(stagingDir(target))
+	cleanStaging(target)
 	if info, err := os.Lstat(target + ".old"); err != nil || !info.Mode().IsRegular() {
 		return
 	}

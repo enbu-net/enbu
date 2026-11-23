@@ -37,7 +37,7 @@ func Here(goos, version string) Installation {
 }
 
 // writable checks whether this user can open the install directory for
-// locking and create a file in it.
+// locking and create the staging directory and lock file.
 func writable(dir string) bool {
 	if runtime.GOOS != "windows" {
 		directory, err := os.Open(dir)
@@ -45,6 +45,10 @@ func writable(dir string) bool {
 			return false
 		}
 		_ = directory.Close()
+	}
+	staging, err := os.MkdirTemp(dir, ".enbu-update-check-*")
+	if err != nil || os.Remove(staging) != nil {
+		return false
 	}
 	f, err := os.CreateTemp(dir, ".enbu-update-check-*")
 	if err != nil {
