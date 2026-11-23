@@ -199,6 +199,7 @@ export class OAuthStatus {
 }
 
 export class RepoInfo {
+    "config_error"?: apperr$0.Payload | null;
     "path"?: string;
     "owner"?: string;
     "repo"?: string;
@@ -226,10 +227,14 @@ export class RepoInfo {
      * Creates a new RepoInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): RepoInfo {
-        const $$createField6_0 = $$createType6;
+        const $$createField0_0 = $$createType4;
+        const $$createField7_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("config_error" in $$parsedSource) {
+            $$parsedSource["config_error"] = $$createField0_0($$parsedSource["config_error"]);
+        }
         if ("storage_draft" in $$parsedSource) {
-            $$parsedSource["storage_draft"] = $$createField6_0($$parsedSource["storage_draft"]);
+            $$parsedSource["storage_draft"] = $$createField7_0($$parsedSource["storage_draft"]);
         }
         return new RepoInfo($$parsedSource as Partial<RepoInfo>);
     }

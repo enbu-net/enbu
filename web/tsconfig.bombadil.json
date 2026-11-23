@@ -9,6 +9,7 @@
     /* Bundler mode: Bombadil bundles the specification itself. */
     "module": "esnext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
