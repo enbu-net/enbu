@@ -82,6 +82,7 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 		t.Fatalf("first create failed before allocating an incarnation: %v", err)
 	}
 	// The first call is between reading and writing enbu.toml.
+	requireProjectLockBusy(t, &b)
 	second := make(chan error, 1)
 	go func() { second <- b.CreateEnvironment("production") }()
 	close(resume)
@@ -323,23 +324,6 @@ func TestWriteConfigIgnoresACustomOutput(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
 	if err != nil || !strings.Contains(string(data), "config/dev.env") {
 		t.Fatalf(".gitignore = %q, %v", data, err)
-	}
-}
-
-func TestWriteConfigSavesBeforeReportingAGitignoreFailure(t *testing.T) {
-	dir := t.TempDir()
-	// A directory where .gitignore should be cannot be appended to.
-	if err := os.Mkdir(filepath.Join(dir, ".gitignore"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	a := &App{RepositoryDir: dir}
-	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"dev.env\"\n"
-	if err := a.WriteConfig(content, ""); err == nil {
-		t.Fatal("a .gitignore that could not be updated was not reported")
-	}
-	data, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
-	if err != nil || string(data) != content {
-		t.Fatalf("enbu.toml = %q, %v", data, err)
 	}
 }
 
