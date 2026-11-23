@@ -33,11 +33,11 @@ func openLock(path string, flags int, wait bool) (*os.File, error) {
 }
 
 // LockFileContext waits for an exclusive lock without blocking cancellation.
-func LockFileContext(ctx context.Context, c clock.Clock, path string) (*os.File, error) {
+func LockFileContext(ctx context.Context, c clock.Clock, root *os.Root, path string) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := root.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
