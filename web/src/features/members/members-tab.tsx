@@ -67,6 +67,7 @@ export function MembersTab({
         requests={requests}
         loading={loading}
         error={error}
+        hasRecoveryTargets={Boolean(recoveryTargets)}
         onSync={async () => {
           try {
             await transfer("sync", async () => {

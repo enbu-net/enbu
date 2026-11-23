@@ -288,6 +288,8 @@
   "error_secret_conflict": "同じシークレットが同時に別々の値へ変更されました。失われた値はありません。続けるには値を選んでください。",
   "error_control_forked": "2人の管理者が同時にメンバーを変更しました。両方の変更の管理者がenbuを開くと統合され、それまで他の操作は続けられません。",
   "error_removal_write_race": "メンバーを削除しました。同時に作られたリビジョンを確認し、ほかに再暗号化できなかった環境は同期してください。",
+  "error_recovery_preview_changed": "復旧内容の確認後にワークスペースが変更されました。リビジョンをもう一度確認してください。",
+  "members_recoveryComplete": "確認した変更を適用しました。ほかに再暗号化できなかった環境は同期してください。",
   "members_recoveryChanges": "適用した場合の現在値への変更",
   "members_recoveryKept": "競合した以下のキーは現在値を維持します",
   "members_recoveryReview": "リビジョンを確認",

@@ -4,6 +4,7 @@ import { Box, HStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { FingerprintConfirmDialog } from "../../components/fingerprint-confirm-dialog";
+import { Notice } from "../../components/notice";
 import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
@@ -15,6 +16,7 @@ export function MembersPanel({
   requests,
   loading,
   error,
+  hasRecoveryTargets = true,
   onSync,
   onApprove,
   onRemove,
@@ -25,6 +27,7 @@ export function MembersPanel({
   requests: JoinRequestInfo[];
   loading: boolean;
   error: DisplayError | null;
+  hasRecoveryTargets?: boolean;
   onSync: () => void | Promise<void>;
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
@@ -59,6 +62,11 @@ export function MembersPanel({
   }
 
   const shownError = actionError ?? error;
+  const recoveryComplete = shownError?.code === "removal_write_race" && !hasRecoveryTargets;
+  function dismissError() {
+    setActionError(null);
+    onErrorDismiss();
+  }
   return (
     <>
       <SectionHeader title={m.members_title()}>
@@ -75,13 +83,11 @@ export function MembersPanel({
       </SectionHeader>
       {shownError && (
         <Box mb="4">
-          <ErrorAlert
-            error={shownError}
-            onDismiss={() => {
-              setActionError(null);
-              onErrorDismiss();
-            }}
-          />
+          {recoveryComplete ? (
+            <Notice onDismiss={dismissError}>{m.members_recoveryComplete()}</Notice>
+          ) : (
+            <ErrorAlert error={shownError} onDismiss={dismissError} />
+          )}
         </Box>
       )}
       {loading ? (

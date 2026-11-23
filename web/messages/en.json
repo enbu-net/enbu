@@ -288,6 +288,8 @@
   "error_secret_conflict": "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.",
   "error_control_forked": "Two admins changed the members at the same time. Nothing else can proceed until an admin of both changes opens enbu, which joins them.",
   "error_removal_write_race": "The member was removed. Review the concurrent revisions and sync any other environment that could not be re-encrypted.",
+  "error_recovery_preview_changed": "The workspace changed since the recovery preview. Review the revision again.",
+  "members_recoveryComplete": "Reviewed changes were applied. Sync any other environment that could not be re-encrypted.",
   "members_recoveryChanges": "Changes to current values if applied",
   "members_recoveryKept": "These conflicting keys keep their current values",
   "members_recoveryReview": "Review revision",

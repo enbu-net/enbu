@@ -137,6 +137,9 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 		Short: "Review a set-aside revision after a member was removed (admin only)",
 		Args:  appArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.Flags().Changed("accept") && reviewBaseline == "" {
+				return invalidArgument("--accept requires the baseline from a recovery preview", nil)
+			}
 			review, err := a.ReviewRemovedRevision(cmd.Context(), env, args[0], reviewBaseline)
 			if err != nil {
 				return err

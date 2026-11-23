@@ -51,7 +51,7 @@ func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision, baseline
 	}
 	version := digest.FromString(strings.Join(append([]string{s.head.Digest.String(), d.String()}, headNames((&resourceRead{heads: heads}).parents())...), "\n")).String()
 	if baseline != "" && baseline != version {
-		return nil, apperr.New(apperr.CodeConflict, "the revision's recovery preview is out of date", nil)
+		return nil, apperr.New(apperr.CodeRecoveryPreviewChanged, "the revision's recovery preview is out of date", nil)
 	}
 	var current map[string]string
 	if len(heads) != 0 {
@@ -94,13 +94,13 @@ func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision, baseline
 		}
 		if !sameHeads(heads, s.trustedHeads(latest, accepted)) ||
 			!slices.ContainsFunc(latest.Heads, func(head *wsp.VerifiedState) bool { return head.Digest == d }) {
-			return nil, apperr.New(apperr.CodeConflict, "the revision's recovery preview is out of date", nil)
+			return nil, apperr.New(apperr.CodeRecoveryPreviewChanged, "the revision's recovery preview is out of date", nil)
 		}
 		// The normal write fence checks Control again before publishing. A
 		// role change during the review requires reopening with the new Control.
 		st, err := s.writeState(ctx, resource, merged.secrets, merged.parents())
 		if errors.Is(err, errControlMoved) {
-			return nil, apperr.Wrap(apperr.CodeConflict, "workspace members changed during recovery", err, nil)
+			return nil, apperr.Wrap(apperr.CodeRecoveryPreviewChanged, "workspace members changed during recovery", err, nil)
 		}
 		if err != nil {
 			return nil, err

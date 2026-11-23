@@ -135,7 +135,7 @@ func checkConcurrentRemovalWrite(t *testing.T, late bool) {
 	if err := alice.AddSecret(bg, "default", "AFTER_PREVIEW", "keep"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); !apperr.Is(err, apperr.CodeConflict) {
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); !apperr.Is(err, apperr.CodeRecoveryPreviewChanged) {
 		t.Fatalf("stale recovery preview: %v", err)
 	}
 	preview, err = alice.ReviewRemovedRevision(bg, "default", latest.String(), "")
@@ -192,7 +192,7 @@ func TestReviewRemovedRevisionRefusesRecoveryIfAdministratorIsDemoted(t *testing
 			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 	})
-	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeRecoveryPreviewChanged) || !errors.Is(err, errControlMoved) {
 		t.Fatalf("recovery after demotion: %v", err)
 	}
 	if !demoted || listOK(t, carol)["LATEST"] != "" {
