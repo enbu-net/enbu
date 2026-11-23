@@ -4,7 +4,7 @@
 // every state it reaches. https://antithesishq.github.io/bombadil/
 import { always, eventually, now } from "@antithesishq/bombadil";
 import { extract, type State } from "@antithesishq/bombadil/browser";
-import * as defaults from "@antithesishq/bombadil/browser/defaults/actions";
+import { defaultActions } from "@antithesishq/bombadil/browser/defaults";
 import en from "../messages/en.json" with { type: "json" };
 import ja from "../messages/ja.json" with { type: "json" };
 import { historyRestores, initialIsolationDone, secretRoundTrips } from "./workspace.ts";
@@ -13,14 +13,7 @@ import { historyRestores, initialIsolationDone, secretRoundTrips } from "./works
 // console errors or HTTP error responses).
 export * from "@antithesishq/bombadil/browser/defaults/properties";
 
-export const waitOnce = defaults.waitOnce.when(initialIsolationDone);
-export const scroll = defaults.scroll.when(initialIsolationDone);
-export const clicks = defaults.clicks.when(initialIsolationDone);
-export const inputs = defaults.inputs.when(initialIsolationDone);
-export const back = defaults.back.when(initialIsolationDone);
-export const forward = defaults.forward.when(initialIsolationDone);
-export const reload = defaults.reload.when(initialIsolationDone);
-export const navigation = defaults.navigation.when(initialIsolationDone);
+export const explore = defaultActions.when(initialIsolationDone);
 export const exploreHistory = historyRestores.when(initialIsolationDone);
 export const exploreImports = secretRoundTrips.when(initialIsolationDone);
 

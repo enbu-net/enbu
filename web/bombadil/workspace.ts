@@ -166,10 +166,10 @@ function pick(select: HTMLSelectElement, value: string) {
 
 const secretOutcome = "data-bombadil-secret-round-trip";
 const secretCounter = "data-bombadil-secret-counter";
-const initialIsolation = "data-bombadil-initial-isolation";
+const initialIsolation = "enbu-bombadil-initial-isolation";
 const historyOutcome = "data-bombadil-history-restore";
-export const initialIsolationDone = extract(({ document }) =>
-  document.documentElement.hasAttribute(initialIsolation),
+export const initialIsolationDone = extract(
+  ({ window }) => window.sessionStorage.getItem(initialIsolation) === "ok",
 );
 export const initialIsolationCompletes = eventually(() => initialIsolationDone.current).within(
   8,
@@ -279,7 +279,7 @@ const secretRoundTrip = registerCustomAction(
         if (initial) throw new Error("initial isolation needs a readable alternate environment");
         return sourceOnly;
       }
-      if (initial) document.documentElement.setAttribute(initialIsolation, "");
+      if (initial) window.sessionStorage.setItem(initialIsolation, "ok");
     });
   },
 );
