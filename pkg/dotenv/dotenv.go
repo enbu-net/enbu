@@ -20,9 +20,14 @@ const (
 
 var (
 	ErrInvalid  = errors.New("invalid dotenv")
-	namePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	namePattern = regexp.MustCompile(`^[\p{L}_][\p{L}\p{N}\p{M}_]*$`)
 	escaper     = strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\r", "\\r", "\t", "\\t", "$", "\\$")
 )
+
+// ValidName reports whether name can be written as a dotenv variable name.
+func ValidName(name string) bool {
+	return len(name) <= MaxKeyBytes && namePattern.MatchString(name)
+}
 
 // Parse accepts assignments, optional export, comments, and single/double
 // quoted values (including multiline values). Double quotes support \\, \" and
@@ -63,7 +68,7 @@ func Parse(data []byte) (map[string]string, error) {
 			return nil, fmt.Errorf("%w: expected assignment", ErrInvalid)
 		}
 		key := strings.TrimSpace(rest[:equals])
-		if len(key) > MaxKeyBytes || !namePattern.MatchString(key) {
+		if !ValidName(key) {
 			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalid)
 		}
 		if _, exists := secrets[key]; exists {
@@ -141,7 +146,7 @@ func Format(secrets map[string]string) ([]byte, error) {
 	}
 	keys := make([]string, 0, len(secrets))
 	for key, value := range secrets {
-		if len(key) > MaxKeyBytes || !namePattern.MatchString(key) {
+		if !ValidName(key) {
 			return nil, fmt.Errorf("%w: invalid variable name", ErrInvalid)
 		}
 		if !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
