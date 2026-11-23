@@ -172,7 +172,14 @@ export function SecretsTab({
           }}
         />
       ) : (
-        <Box overflow="hidden" borderWidth="1px" borderColor="border.default" borderRadius="xl">
+        <Box
+          data-testid="secret-list"
+          data-environment={secrets?.environment}
+          overflow="hidden"
+          borderWidth="1px"
+          borderColor="border.default"
+          borderRadius="xl"
+        >
           {secrets?.secrets.map((secret) => (
             <SecretRow
               key={secret.key}

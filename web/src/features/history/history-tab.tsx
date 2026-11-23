@@ -123,6 +123,7 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
               return (
                 <HStack
                   key={entry.tag}
+                  data-testid="history-revision"
                   justify="space-between"
                   gap="3"
                   px="4"

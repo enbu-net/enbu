@@ -252,10 +252,11 @@ export const mockBackend: Backend = {
 
   async CreateEnvironment(name: string): Promise<void> {
     if (!validEnvironmentName(name)) throw createAppError("invalid_argument", { name });
-    if (!mockEnvs.find((e) => e.name === name)) {
-      mockEnvs.push({ name, current: false });
-      mockSecretsByEnv[name] = [];
+    if (mockEnvs.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+      throw createAppError("environment_already_exists", { name });
     }
+    mockEnvs.push({ name, current: false });
+    mockSecretsByEnv[name] = [];
   },
 
   async SwitchEnvironment(name: string): Promise<void> {
