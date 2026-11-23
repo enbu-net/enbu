@@ -363,6 +363,9 @@ export const mockBackend: Backend = {
     };
     return diffSecrets(at(from), at(to));
   },
+  async ReviewRemovedRevision(): Promise<Diff> {
+    throw createAppError("conflict");
+  },
   async RestoreHistory(env: string, index: number): Promise<void> {
     const name = env || currentEnvName();
     const history = (mockHistoryByEnv[name] ??= []);

@@ -61,12 +61,12 @@ type memberRemoval struct {
 }
 
 type removalWriteRace struct {
-	environment string
-	revision    digest.Digest
+	resource string
+	revision digest.Digest
 }
 
 func (e *removalWriteRace) Error() string {
-	return fmt.Sprintf("unaccepted revision %s in %s", e.revision, e.environment)
+	return fmt.Sprintf("unaccepted revision %s in %s", e.revision, e.resource)
 }
 
 // checkRemovalRace handles revisions observed after the Control publish. A
@@ -81,15 +81,16 @@ func (s *session) checkRemovalRace(target environmentResource, view *wsp.StateVi
 	if err != nil {
 		return err
 	}
+	var races []error
 	for _, head := range view.Heads {
 		if head.Author == removal.device &&
 			!slices.Contains(removal.observed[target.resource], head.Digest) &&
 			!slices.Contains(accepted.Heads, head.Digest) &&
 			view.Compacted.AboveFloors(view.Graph, head.Digest) {
-			return &removalWriteRace{environment: target.name, revision: head.Digest}
+			races = append(races, &removalWriteRace{resource: target.resource, revision: head.Digest})
 		}
 	}
-	return nil
+	return errors.Join(races...)
 }
 
 // maxExaminedScopes bounds how many scopes missing from enbu.toml are examined

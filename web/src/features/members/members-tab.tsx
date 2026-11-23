@@ -74,8 +74,11 @@ export function MembersTab({
           await refresh();
         }}
         onRemove={async (deviceID) => {
-          await backend.RemoveMember(deviceID);
-          await refresh();
+          try {
+            await backend.RemoveMember(deviceID);
+          } finally {
+            await refresh();
+          }
         }}
         onSetAdmin={async (deviceID, admin) => {
           await backend.SetAdmin(deviceID, admin);

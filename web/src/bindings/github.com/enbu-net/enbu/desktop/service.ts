@@ -280,6 +280,12 @@ export function RestoreHistory(env: string, index: number): $CancellablePromise<
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", env, index);
 }
 
+export function ReviewRemovedRevision(resource: string, revision: string, apply: boolean): $CancellablePromise<app$0.Diff> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ReviewRemovedRevision", resource, revision, apply).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
 export function SelectRepository(path: string): $CancellablePromise<$models.RepoInfo> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SelectRepository", path).then(($result: any) => {
         return $$createType0($result);

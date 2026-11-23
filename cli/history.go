@@ -143,11 +143,16 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 			}
 			if jsonEnabled(cmd) {
 				return writeJSON(cmd, map[string]any{
-					"accepted": acceptReview,
+					"applied":  acceptReview,
 					"added":    nonNilStrings(diff.Added),
 					"removed":  nonNilStrings(diff.Removed),
 					"modified": nonNilStrings(diff.Modified),
 				})
+			}
+			if acceptReview {
+				cmd.Println("Published the reviewed change for the current members.")
+			} else {
+				cmd.Println("Changes to current values if this revision is applied:")
 			}
 			for _, k := range diff.Added {
 				cmd.Printf("+ %q\n", k)
@@ -158,13 +163,10 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 			for _, k := range diff.Modified {
 				cmd.Printf("~ %q\n", k)
 			}
-			if acceptReview {
-				cmd.Println("Revision accepted. Run enbu sync for this environment to re-encrypt it.")
-			}
 			return nil
 		},
 	}
-	reviewCmd.Flags().BoolVar(&acceptReview, "accept", false, "Accept the reviewed revision for the next merge")
+	reviewCmd.Flags().BoolVar(&acceptReview, "accept", false, "Merge and publish the reviewed revision for current members")
 
 	var keep int
 	compactCmd := &cobra.Command{

@@ -29,15 +29,16 @@ const (
 	CodeUnavailable             Code = "unavailable"
 
 	// Workspace security protocol.
-	CodeNotMember           Code = "not_member"           // device is not (yet) in the verified Control
-	CodeUntrusted           Code = "untrusted_state"      // signature, author or encoding failed verification
-	CodeRollback            Code = "rollback_detected"    // storage returned something older than accepted
-	CodeIncompatibleStorage Code = "incompatible_storage" // storage lacks a workspace control
-	CodeSecretConflict      Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
-	CodeControlForked       Code = "control_forked"       // two admins changed the members at once; an admin's next operation resolves it
-	CodeRemovalWriteRace    Code = "removal_write_race"
-	CodeReencryptIncomplete Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
-	CodeTrustRootChanged    Code = "trust_root_changed"   // enbu.toml names a genesis other than the one this device pinned
+	CodeNotMember             Code = "not_member"           // device is not (yet) in the verified Control
+	CodeUntrusted             Code = "untrusted_state"      // signature, author or encoding failed verification
+	CodeRollback              Code = "rollback_detected"    // storage returned something older than accepted
+	CodeIncompatibleStorage   Code = "incompatible_storage" // storage lacks a workspace control
+	CodeSecretConflict        Code = "secret_conflict"      // concurrent edits changed a secret differently; a person must choose
+	CodeControlForked         Code = "control_forked"       // two admins changed the members at once; an admin's next operation resolves it
+	CodeRemovalWriteRace      Code = "removal_write_race"
+	CodeRemovalReviewConflict Code = "removal_review_conflict"
+	CodeReencryptIncomplete   Code = "reencrypt_incomplete" // membership changed but secrets are not re-encrypted yet
+	CodeTrustRootChanged      Code = "trust_root_changed"   // enbu.toml names a genesis other than the one this device pinned
 
 	// Local device.
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here

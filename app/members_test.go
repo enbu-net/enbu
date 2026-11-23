@@ -103,7 +103,7 @@ func checkConcurrentRemovalWrite(t *testing.T, late bool) {
 	if !apperr.Is(err, apperr.CodeRemovalWriteRace) {
 		t.Fatalf("removal result: %v", err)
 	}
-	if params := apperr.PayloadOf(err).Params; params["revision"] != latest.String() || params["environment"] != "default" {
+	if params := apperr.PayloadOf(err).Params; params["targets"] == "" || !strings.HasSuffix(params["targets"], " "+latest.String()) {
 		t.Fatalf("recovery target: %+v", params)
 	}
 	if latest == "" || statePublishes != 0 {
@@ -132,14 +132,127 @@ func checkConcurrentRemovalWrite(t *testing.T, late bool) {
 	if got := listOK(t, alice)["LATEST"]; got != "" {
 		t.Fatalf("inspection accepted the revision: %q", got)
 	}
-	if _, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), true); err != nil {
-		t.Fatal(err)
-	}
-	if err := alice.SyncSecrets(bg, "default"); err != nil {
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), true); err != nil {
 		t.Fatal(err)
 	}
 	if got := listOK(t, alice); got["LATEST"] != "bob" || got["CONTINUING"] != "alice" {
 		t.Fatalf("acceptance lost a write: %+v", got)
+	}
+}
+
+func TestReviewRemovedRevisionRefusesRecoveryIfAdministratorIsDemoted(t *testing.T) {
+	alice := newAlice(t)
+	carol := approved(t, alice)
+	bob := approved(t, alice)
+	if err := alice.SetAdmin(bg, mustMember(t, alice, carol).DeviceID, true); err != nil {
+		t.Fatal(err)
+	}
+	aliceID := mustMember(t, carol, alice).DeviceID
+	bobID := mustMember(t, alice, bob).DeviceID
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			if object.Kind == storage.KindControl {
+				if err := bob.AddSecret(ctx, "default", "LATEST", "bob"); err != nil {
+					return err
+				}
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	removal := alice.RemoveMember(bg, bobID)
+	if !apperr.Is(removal, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", removal)
+	}
+	resource, revision, _ := strings.Cut(apperr.PayloadOf(removal).Params["targets"], " ")
+
+	demoted := false
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !demoted {
+				demoted = true
+				if err := carol.SetAdmin(ctx, aliceID, false); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, true); !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("recovery after demotion: %v", err)
+	}
+	if !demoted || listOK(t, carol)["LATEST"] != "" {
+		t.Fatal("the demoted administrator published a recovery")
+	}
+	alice.Storage = base
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, true); !apperr.Is(err, apperr.CodeAccessDenied) {
+		t.Fatalf("recovery by a member: %v", err)
+	}
+	if _, err := carol.ReviewRemovedRevision(bg, resource, revision, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "bob" {
+		t.Fatalf("recovery was not published to other devices: %q", got)
+	}
+}
+
+func TestReviewRemovedRevisionRecoversAllReportedResources(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	if err := bob.CreateEnvironment("qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := bob.AddSecret(bg, "qa", "BASE", "qa"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bob.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobID := mustMember(t, alice, bob).DeviceID
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			if object.Kind == storage.KindControl {
+				for _, env := range []string{"default", "qa"} {
+					if err := bob.AddSecret(ctx, env, "LATEST", "bob"); err != nil {
+						return err
+					}
+				}
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	removal := alice.RemoveMember(bg, bobID)
+	if !apperr.Is(removal, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", removal)
+	}
+	lines := strings.Split(apperr.PayloadOf(removal).Params["targets"], "\n")
+	if len(lines) != 2 {
+		t.Fatalf("recovery targets: %v", lines)
+	}
+	alice.Storage = base
+	if err := alice.AddSecret(bg, "default", "LATEST", "different"); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		resource, revision, _ := strings.Cut(line, " ")
+		if resource == cfg.Resource("default") {
+			if _, err := alice.ReviewRemovedRevision(bg, resource, revision, false); !apperr.Is(err, apperr.CodeRemovalReviewConflict) {
+				t.Fatalf("conflicting revision preview: %v", err)
+			}
+			if got := listOK(t, alice)["LATEST"]; got != "different" {
+				t.Fatalf("preview changed the current value: %q", got)
+			}
+			continue
+		}
+		if resource != cfg.Resource("qa") {
+			t.Fatalf("unexpected resource: %q", resource)
+		}
+		diff, err := alice.ReviewRemovedRevision(bg, resource, revision, true)
+		if err != nil || !slices.Equal(diff.Added, []string{"LATEST"}) {
+			t.Fatalf("recovery in unlisted environment: %+v, %v", diff, err)
+		}
 	}
 }
 

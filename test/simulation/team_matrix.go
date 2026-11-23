@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/apperr"
@@ -133,11 +134,9 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		}
 		if removalRace && results[1] == nil && !reflect.DeepEqual(got, after) {
 			params := apperr.PayloadOf(results[0]).Params
-			if _, err := a.ReviewRemovedRevision(ctx, "default", params["revision"], true); err != nil {
-				return fmt.Errorf("acknowledged change could not be accepted: %w", err)
-			}
-			if err := a.SyncSecrets(ctx, "default"); err != nil {
-				return fmt.Errorf("re-encrypting reviewed change: %w", err)
+			env, revision, _ := strings.Cut(params["targets"], " ")
+			if _, err := a.ReviewRemovedRevision(ctx, env, revision, true); err != nil {
+				return fmt.Errorf("acknowledged change could not be recovered: %w", err)
 			}
 			recovered, err := a.ListSecrets(ctx, "default")
 			if err != nil || !reflect.DeepEqual(recovered, after) {

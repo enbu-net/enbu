@@ -46,6 +46,7 @@ export function createBackendMock() {
     })),
     ListHistory: vi.fn(async () => []),
     DiffHistory: vi.fn(async () => ({ added: [], removed: [], modified: [] })),
+    ReviewRemovedRevision: vi.fn(async () => ({ added: [], removed: [], modified: [] })),
     RestoreHistory: vi.fn(async () => {}),
     ListMembers: vi.fn(async () => []),
     ListJoinRequests: vi.fn(async () => []),

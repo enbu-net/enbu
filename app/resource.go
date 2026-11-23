@@ -145,16 +145,21 @@ func (s *session) mergeResource(ctx context.Context, resource string, sv *wsp.St
 	if err != nil {
 		return nil, err
 	}
-	heads := s.trustedHeads(sv, accepted)
+	return s.mergeResourceHeads(ctx, resource, sv, s.trustedHeads(sv, accepted), choices)
+}
+
+func (s *session) mergeResourceHeads(ctx context.Context, resource string, sv *wsp.StateView, heads []*wsp.VerifiedState, choices map[string]merge.Choice) (*resourceRead, error) {
 	if len(heads) == 0 {
 		return nil, wspError(fmt.Errorf("%w: no revision of %s was written by a current member", wsp.ErrInvalid, resource))
 	}
 	r := &resourceRead{view: sv, heads: heads}
 	maps := make([]map[string]string, len(r.heads))
 	for i, h := range r.heads {
-		if maps[i], err = s.decrypt(ctx, h); err != nil {
+		secrets, err := s.decrypt(ctx, h)
+		if err != nil {
 			return nil, err
 		}
+		maps[i] = secrets
 	}
 	if len(maps) == 1 {
 		r.secrets = maps[0]

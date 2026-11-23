@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/signing"
@@ -167,15 +168,32 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, removal *member
 	// changed but some environments still encrypted for the old recipient set.
 	// Say so explicitly: retrying approve/remove would fail on the new state.
 	if err := a.reencryptAll(ctx, removal); err != nil {
-		var race *removalWriteRace
-		if errors.As(err, &race) {
-			return apperr.Wrap(apperr.CodeRemovalWriteRace, "member removed but a concurrent revision needs review before re-encryption", err, apperr.Params{
-				"environment": race.environment, "revision": race.revision.String(),
+		if targets := removalReviewTargets(err); len(targets) != 0 {
+			return apperr.Wrap(apperr.CodeRemovalWriteRace, "member removed but concurrent revisions need review before re-encryption", err, apperr.Params{
+				"targets": strings.Join(targets, "\n"),
 			})
 		}
 		return apperr.Wrap(apperr.CodeReencryptIncomplete, "membership changed but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return nil
+}
+
+func removalReviewTargets(err error) []string {
+	switch e := err.(type) {
+	case *removalWriteRace:
+		return []string{e.resource + " " + e.revision.String()}
+	case interface{ Unwrap() []error }:
+		var targets []string
+		for _, cause := range e.Unwrap() {
+			targets = append(targets, removalReviewTargets(cause)...)
+		}
+		return targets
+	default:
+		if cause := errors.Unwrap(err); cause != nil {
+			return removalReviewTargets(cause)
+		}
+		return nil
+	}
 }
 
 // acceptControlHead reloads the Control DAG, which records the newest heads in
