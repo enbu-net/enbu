@@ -4,34 +4,55 @@ import { Button, Text } from "../../components/ui";
 import { ErrorAlert } from "../../components/error-alert";
 import { backend } from "../../lib/backend";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
-import type { Diff } from "../../lib/types";
+import type { RemovalReview } from "../../lib/types";
 import { m } from "../../paraglide/messages";
 
-export function RemovalRecovery({ targets }: { targets: string }) {
+export function RemovalRecovery({
+  targets,
+  onApplied,
+}: {
+  targets: string;
+  onApplied: (target: string) => void;
+}) {
   return targets
     .split("\n")
     .filter(Boolean)
     .map((target) => {
       const [resource, revision] = target.split(" ");
-      return <RecoveryRevision key={target} resource={resource} revision={revision} />;
+      return (
+        <RecoveryRevision
+          key={target}
+          resource={resource}
+          revision={revision}
+          onApplied={() => onApplied(target)}
+        />
+      );
     });
 }
 
-function RecoveryRevision({ resource, revision }: { resource: string; revision: string }) {
-  const [diff, setDiff] = useState<Diff | null>(null);
-  const [applied, setApplied] = useState(false);
+function RecoveryRevision({
+  resource,
+  revision,
+  onApplied,
+}: {
+  resource: string;
+  revision: string;
+  onApplied: () => void;
+}) {
+  const [preview, setPreview] = useState<RemovalReview | null>(null);
+  const diff = preview?.diff;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
 
-  async function review(apply: boolean) {
+  async function review(baseline: string) {
     setBusy(true);
     setError(null);
     try {
-      setDiff(await backend.ReviewRemovedRevision(resource, revision, apply));
-      setApplied(apply);
+      setPreview(await backend.ReviewRemovedRevision(resource, revision, baseline));
+      if (baseline) onApplied();
     } catch (err) {
       setError(toDisplayError(err));
-      setDiff(null);
+      setPreview(null);
     } finally {
       setBusy(false);
     }
@@ -43,38 +64,44 @@ function RecoveryRevision({ resource, revision }: { resource: string; revision: 
         {resource} {revision}
       </Text>
       {error && <ErrorAlert error={error} onDismiss={() => setError(null)} />}
-      {applied ? (
-        <Text role="status">{m.members_recoveryApplied()}</Text>
-      ) : (
-        <>
-          {diff && (
-            <>
-              <Text>{m.members_recoveryChanges()}</Text>
-              <styled.ul>
-                {(diff.added ?? []).map((key) => (
-                  <li key={key}>+ {key}</li>
-                ))}
-                {(diff.removed ?? []).map((key) => (
-                  <li key={key}>- {key}</li>
-                ))}
-                {(diff.modified ?? []).map((key) => (
-                  <li key={key}>~ {key}</li>
-                ))}
-              </styled.ul>
-            </>
-          )}
-          <HStack>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void review(false)}>
-              {m.members_recoveryReview()}
+      <>
+        {diff && (
+          <>
+            <Text>{m.members_recoveryChanges()}</Text>
+            <styled.ul>
+              {(diff.added ?? []).map((key) => (
+                <li key={key}>+ {key}</li>
+              ))}
+              {(diff.removed ?? []).map((key) => (
+                <li key={key}>- {key}</li>
+              ))}
+              {(diff.modified ?? []).map((key) => (
+                <li key={key}>~ {key}</li>
+              ))}
+            </styled.ul>
+          </>
+        )}
+        {Boolean(preview?.kept?.length) && (
+          <>
+            <Text>{m.members_recoveryKept()}</Text>
+            <styled.ul>
+              {preview?.kept.map((key) => (
+                <li key={key}>{key}</li>
+              ))}
+            </styled.ul>
+          </>
+        )}
+        <HStack>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void review("")}>
+            {m.members_recoveryReview()}
+          </Button>
+          {preview && (
+            <Button size="sm" disabled={busy} onClick={() => void review(preview.baseline)}>
+              {m.members_recoveryApply()}
             </Button>
-            {diff && (
-              <Button size="sm" disabled={busy} onClick={() => void review(true)}>
-                {m.members_recoveryApply()}
-              </Button>
-            )}
-          </HStack>
-        </>
-      )}
+          )}
+        </HStack>
+      </>
     </Box>
   );
 }

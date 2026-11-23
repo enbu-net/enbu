@@ -13,18 +13,27 @@ setupDom();
 describe("RemovalRecovery", () => {
   it("previews a revision before publishing it, independently of other targets", async () => {
     const review = vi.mocked(backend.ReviewRemovedRevision);
-    review.mockResolvedValue({ added: ["LATEST"], removed: [], modified: [] });
+    review.mockResolvedValue({
+      diff: { added: ["LATEST"], removed: [], modified: [] },
+      baseline: "sha256:baseline",
+      kept: ["UNCHANGED"],
+    });
+    const onApplied = vi.fn();
     await renderAndSettle(
-      <RemovalRecovery targets={"secrets/default sha256:first\nsecrets/staging sha256:second"} />,
+      <RemovalRecovery
+        targets={"secrets/default sha256:first\nsecrets/staging sha256:second"}
+        onApplied={onApplied}
+      />,
     );
     expect(queryButton("Apply reviewed change")).toBeNull();
 
     await act(async () => queryButton("Review revision")?.click());
-    expect(review).toHaveBeenLastCalledWith("secrets/default", "sha256:first", false);
+    expect(review).toHaveBeenLastCalledWith("secrets/default", "sha256:first", "");
     expect(container.textContent).toContain("+ LATEST");
     await act(async () => queryButton("Apply reviewed change")?.click());
-    expect(review).toHaveBeenLastCalledWith("secrets/default", "sha256:first", true);
-    expect(container.textContent).toContain("Published the reviewed change");
+    expect(review).toHaveBeenLastCalledWith("secrets/default", "sha256:first", "sha256:baseline");
+    expect(container.textContent).toContain("UNCHANGED");
+    expect(onApplied).toHaveBeenCalledWith("secrets/default sha256:first");
     expect(queryButton("Review revision")).toBeTruthy();
   });
 });

@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   ConflictSet,
   Diff,
+  RemovalReview,
   EnvInfo,
   EnvironmentDeletion,
   HistoryEntry,
@@ -363,7 +364,7 @@ export const mockBackend: Backend = {
     };
     return diffSecrets(at(from), at(to));
   },
-  async ReviewRemovedRevision(): Promise<Diff> {
+  async ReviewRemovedRevision(): Promise<RemovalReview> {
     throw createAppError("conflict");
   },
   async RestoreHistory(env: string, index: number): Promise<void> {

@@ -12,10 +12,16 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+type RemovalReview struct {
+	Diff     Diff     `json:"diff"`
+	Baseline string   `json:"baseline"`
+	Kept     []string `json:"kept"`
+}
+
 // ReviewRemovedRevision previews the merge of a verified, set-aside revision
 // with current heads. An admin can publish the merge directly so the recovery
 // is independent of any readers updating their local checkpoints.
-func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision string, apply bool) (_ *Diff, err error) {
+func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision, baseline string) (_ *RemovalReview, err error) {
 	defer apperr.NormalizeInto(&err)
 	d, err := digest.Parse(revision)
 	if err != nil || d.Algorithm() != digest.SHA256 {
@@ -43,6 +49,10 @@ func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision string, a
 		wsp.AuthorIsCurrent(s.view, s.head, view.States[d]) == nil {
 		return nil, apperr.New(apperr.CodeConflict, "the revision is no longer awaiting review", nil)
 	}
+	version := digest.FromString(strings.Join(append([]string{s.head.Digest.String(), d.String()}, headNames((&resourceRead{heads: heads}).parents())...), "\n")).String()
+	if baseline != "" && baseline != version {
+		return nil, apperr.New(apperr.CodeConflict, "the revision's recovery preview is out of date", nil)
+	}
 	var current map[string]string
 	if len(heads) != 0 {
 		read, err := s.mergeResourceHeads(ctx, resource, view, heads, nil)
@@ -64,14 +74,28 @@ func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision string, a
 	if err != nil {
 		return nil, err
 	}
-	if len(merged.conflicts) != 0 {
-		keys := make([]string, len(merged.conflicts))
-		for i, c := range merged.conflicts {
-			keys[i] = c.Key
+	kept := make([]string, 0, len(merged.conflicts))
+	for _, conflict := range merged.conflicts {
+		kept = append(kept, conflict.Key)
+		if value, present := current[conflict.Key]; present {
+			merged.secrets[conflict.Key] = value
 		}
-		return nil, apperr.New(apperr.CodeRemovalReviewConflict, "the reviewed revision conflicts with current values", apperr.Params{"keys": strings.Join(keys, ", ")})
 	}
-	if apply {
+	if baseline != "" {
+		// A concurrent change after this point is merged as a separate write.
+		// Confirm the preview still names the current heads immediately before writing.
+		latest, err := s.loadResource(ctx, resource, d)
+		if err != nil {
+			return nil, err
+		}
+		accepted, err := s.cps.Accepted(resource)
+		if err != nil {
+			return nil, err
+		}
+		if !sameHeads(heads, s.trustedHeads(latest, accepted)) ||
+			!slices.ContainsFunc(latest.Heads, func(head *wsp.VerifiedState) bool { return head.Digest == d }) {
+			return nil, apperr.New(apperr.CodeConflict, "the revision's recovery preview is out of date", nil)
+		}
 		// The normal write fence checks Control again before publishing. A
 		// role change during the review requires reopening with the new Control.
 		st, err := s.writeState(ctx, resource, merged.secrets, merged.parents())
@@ -85,7 +109,7 @@ func (a *App) ReviewRemovedRevision(ctx context.Context, env, revision string, a
 			return nil, err
 		}
 	}
-	return diffSecrets(current, merged.secrets), nil
+	return &RemovalReview{Diff: *diffSecrets(current, merged.secrets), Baseline: version, Kept: kept}, nil
 }
 
 func (a *App) openReviewResource(ctx context.Context, env string) (*session, string, error) {

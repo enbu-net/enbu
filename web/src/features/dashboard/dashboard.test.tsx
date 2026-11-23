@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
-import { AppError } from "../../lib/app-error";
+import { AppError, createAppError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import { openURL } from "../../lib/platform";
 import type { RepoInfo } from "../../lib/types";
@@ -77,6 +77,45 @@ describe("Dashboard", () => {
     const list = container.querySelector('[data-testid="secret-list"]');
     expect(list?.getAttribute("data-environment")).toBe("default");
     expect(list?.textContent).toContain("No secrets yet.");
+  });
+
+  it("keeps pending recovery targets when switching dashboard tabs", async () => {
+    const member = {
+      device_id: "removed",
+      fingerprint: "removed-fingerprint",
+      algorithm: "p256",
+      recipient: "recipient",
+      self: false,
+      admin: false,
+    };
+    mocked.ListMembers.mockResolvedValue([
+      { ...member, device_id: "admin", self: true, admin: true },
+    ]).mockResolvedValueOnce([{ ...member, device_id: "admin", self: true, admin: true }, member]);
+    mocked.RemoveMember.mockRejectedValueOnce(
+      createAppError("removal_write_race", { targets: "secrets/default sha256:test" }),
+    );
+    await renderDashboard();
+    async function openTab(name: string) {
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${name}"]`)?.click();
+      });
+      await settle();
+    }
+
+    await openTab("Members");
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Remove: removed-fingerprint"]')
+        ?.click();
+    });
+    await act(async () => {
+      openDialog()?.querySelector<HTMLButtonElement>('button[aria-label^="Remove:"]')?.click();
+    });
+    expect(queryButton("Review revision")).toBeTruthy();
+    await openTab("Secrets");
+    expect(queryButton("Review revision")).toBeNull();
+    await openTab("Members");
+    expect(queryButton("Review revision")).toBeTruthy();
   });
 
   it("adds a secret on Enter and clears the form", async () => {

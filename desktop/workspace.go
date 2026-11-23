@@ -209,12 +209,12 @@ func (s *Service) RestoreHistory(env string, index int) error {
 	return s.withRepo(func() error { return s.app.RestoreHistory(s.context(), env, index) })
 }
 
-func (s *Service) ReviewRemovedRevision(resource, revision string, apply bool) (app.Diff, error) {
-	return withRepoResult(s, func() (app.Diff, error) {
-		diff, err := s.app.ReviewRemovedRevision(s.context(), resource, revision, apply)
+func (s *Service) ReviewRemovedRevision(resource, revision, baseline string) (app.RemovalReview, error) {
+	return withRepoResult(s, func() (app.RemovalReview, error) {
+		review, err := s.app.ReviewRemovedRevision(s.context(), resource, revision, baseline)
 		if err != nil {
-			return app.Diff{}, err
+			return app.RemovalReview{}, err
 		}
-		return *diff, nil
+		return *review, nil
 	})
 }

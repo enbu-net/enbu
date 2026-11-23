@@ -125,17 +125,27 @@ func checkConcurrentRemovalWrite(t *testing.T, late bool) {
 	if err := alice.AddSecret(bg, "default", "CONTINUING", "alice"); err != nil {
 		t.Fatal(err)
 	}
-	diff, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), false)
-	if err != nil || len(diff.Added) != 1 || diff.Added[0] != "LATEST" {
-		t.Fatalf("review: %+v, %v", diff, err)
+	preview, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), "")
+	if err != nil || len(preview.Diff.Added) != 1 || preview.Diff.Added[0] != "LATEST" {
+		t.Fatalf("review: %+v, %v", preview, err)
 	}
 	if got := listOK(t, alice)["LATEST"]; got != "" {
 		t.Fatalf("inspection accepted the revision: %q", got)
 	}
-	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), true); err != nil {
+	if err := alice.AddSecret(bg, "default", "AFTER_PREVIEW", "keep"); err != nil {
 		t.Fatal(err)
 	}
-	if got := listOK(t, alice); got["LATEST"] != "bob" || got["CONTINUING"] != "alice" {
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("stale recovery preview: %v", err)
+	}
+	preview, err = alice.ReviewRemovedRevision(bg, "default", latest.String(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice); got["LATEST"] != "bob" || got["CONTINUING"] != "alice" || got["AFTER_PREVIEW"] != "keep" {
 		t.Fatalf("acceptance lost a write: %+v", got)
 	}
 }
@@ -166,6 +176,10 @@ func TestReviewRemovedRevisionRefusesRecoveryIfAdministratorIsDemoted(t *testing
 	}
 	resource, revision, _ := strings.Cut(apperr.PayloadOf(removal).Params["targets"], " ")
 
+	preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	demoted := false
 	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
 		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
@@ -178,17 +192,21 @@ func TestReviewRemovedRevisionRefusesRecoveryIfAdministratorIsDemoted(t *testing
 			return next.OpenPayload(ctx, kind, scope, rev)
 		},
 	})
-	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, true); !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeConflict) || !errors.Is(err, errControlMoved) {
 		t.Fatalf("recovery after demotion: %v", err)
 	}
 	if !demoted || listOK(t, carol)["LATEST"] != "" {
 		t.Fatal("the demoted administrator published a recovery")
 	}
 	alice.Storage = base
-	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, true); !apperr.Is(err, apperr.CodeAccessDenied) {
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeAccessDenied) {
 		t.Fatalf("recovery by a member: %v", err)
 	}
-	if _, err := carol.ReviewRemovedRevision(bg, resource, revision, true); err != nil {
+	preview, err = carol.ReviewRemovedRevision(bg, resource, revision, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := carol.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
 		t.Fatal(err)
 	}
 	if got := listOK(t, alice)["LATEST"]; got != "bob" {
@@ -238,8 +256,12 @@ func TestReviewRemovedRevisionRecoversAllReportedResources(t *testing.T) {
 	for _, line := range lines {
 		resource, revision, _ := strings.Cut(line, " ")
 		if resource == cfg.Resource("default") {
-			if _, err := alice.ReviewRemovedRevision(bg, resource, revision, false); !apperr.Is(err, apperr.CodeRemovalReviewConflict) {
-				t.Fatalf("conflicting revision preview: %v", err)
+			preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+			if err != nil || !slices.Equal(preview.Kept, []string{"LATEST"}) || len(preview.Diff.Added) != 0 {
+				t.Fatalf("conflicting revision preview: %+v, %v", preview, err)
+			}
+			if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
+				t.Fatal(err)
 			}
 			if got := listOK(t, alice)["LATEST"]; got != "different" {
 				t.Fatalf("preview changed the current value: %q", got)
@@ -249,9 +271,12 @@ func TestReviewRemovedRevisionRecoversAllReportedResources(t *testing.T) {
 		if resource != cfg.Resource("qa") {
 			t.Fatalf("unexpected resource: %q", resource)
 		}
-		diff, err := alice.ReviewRemovedRevision(bg, resource, revision, true)
-		if err != nil || !slices.Equal(diff.Added, []string{"LATEST"}) {
-			t.Fatalf("recovery in unlisted environment: %+v, %v", diff, err)
+		preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+		if err != nil || !slices.Equal(preview.Diff.Added, []string{"LATEST"}) {
+			t.Fatalf("preview in unlisted environment: %+v, %v", preview, err)
+		}
+		if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
+			t.Fatalf("recovery in unlisted environment: %v", err)
 		}
 	}
 }

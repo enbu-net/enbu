@@ -135,7 +135,11 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 		if removalRace && results[1] == nil && !reflect.DeepEqual(got, after) {
 			params := apperr.PayloadOf(results[0]).Params
 			env, revision, _ := strings.Cut(params["targets"], " ")
-			if _, err := a.ReviewRemovedRevision(ctx, env, revision, true); err != nil {
+			preview, err := a.ReviewRemovedRevision(ctx, env, revision, "")
+			if err != nil {
+				return fmt.Errorf("previewing acknowledged change: %w", err)
+			}
+			if _, err := a.ReviewRemovedRevision(ctx, env, revision, preview.Baseline); err != nil {
 				return fmt.Errorf("acknowledged change could not be recovered: %w", err)
 			}
 			recovered, err := a.ListSecrets(ctx, "default")

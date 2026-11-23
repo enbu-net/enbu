@@ -131,42 +131,50 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 		},
 	}
 
-	var acceptReview bool
+	var reviewBaseline string
 	reviewCmd := &cobra.Command{
 		Use:   "review <revision>",
 		Short: "Review a set-aside revision after a member was removed (admin only)",
 		Args:  appArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			diff, err := a.ReviewRemovedRevision(cmd.Context(), env, args[0], acceptReview)
+			review, err := a.ReviewRemovedRevision(cmd.Context(), env, args[0], reviewBaseline)
 			if err != nil {
 				return err
 			}
 			if jsonEnabled(cmd) {
 				return writeJSON(cmd, map[string]any{
-					"applied":  acceptReview,
-					"added":    nonNilStrings(diff.Added),
-					"removed":  nonNilStrings(diff.Removed),
-					"modified": nonNilStrings(diff.Modified),
+					"applied":  reviewBaseline != "",
+					"baseline": review.Baseline,
+					"kept":     nonNilStrings(review.Kept),
+					"added":    nonNilStrings(review.Diff.Added),
+					"removed":  nonNilStrings(review.Diff.Removed),
+					"modified": nonNilStrings(review.Diff.Modified),
 				})
 			}
-			if acceptReview {
+			if reviewBaseline != "" {
 				cmd.Println("Published the reviewed change for the current members.")
 			} else {
 				cmd.Println("Changes to current values if this revision is applied:")
 			}
-			for _, k := range diff.Added {
+			for _, k := range review.Diff.Added {
 				cmd.Printf("+ %q\n", k)
 			}
-			for _, k := range diff.Removed {
+			for _, k := range review.Diff.Removed {
 				cmd.Printf("- %q\n", k)
 			}
-			for _, k := range diff.Modified {
+			for _, k := range review.Diff.Modified {
 				cmd.Printf("~ %q\n", k)
+			}
+			for _, k := range review.Kept {
+				cmd.Printf("= %q (keep current value)\n", k)
+			}
+			if reviewBaseline == "" {
+				cmd.Printf("Apply this preview with --accept %s\n", review.Baseline)
 			}
 			return nil
 		},
 	}
-	reviewCmd.Flags().BoolVar(&acceptReview, "accept", false, "Merge and publish the reviewed revision for current members")
+	reviewCmd.Flags().StringVar(&reviewBaseline, "accept", "", "Apply the revision using the baseline from its preview")
 
 	var keep int
 	compactCmd := &cobra.Command{

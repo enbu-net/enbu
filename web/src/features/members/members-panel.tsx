@@ -8,7 +8,6 @@ import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
-import { RemovalRecovery } from "./removal-recovery";
 import { m } from "../../paraglide/messages";
 
 export function MembersPanel({
@@ -84,9 +83,6 @@ export function MembersPanel({
             }}
           />
         </Box>
-      )}
-      {shownError?.code === "removal_write_race" && (
-        <RemovalRecovery targets={shownError.params.targets ?? ""} />
       )}
       {loading ? (
         <HStack role="status" py="8" justify="center">

@@ -64,7 +64,6 @@ export enum Code {
      */
     CodeControlForked = "control_forked",
     CodeRemovalWriteRace = "removal_write_race",
-    CodeRemovalReviewConflict = "removal_review_conflict",
 
     /**
      * membership changed but secrets are not re-encrypted yet

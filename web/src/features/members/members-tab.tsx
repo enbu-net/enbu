@@ -4,6 +4,7 @@ import { backend } from "../../lib/backend";
 import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import { DevicePanel } from "./device-panel";
+import { RemovalRecovery } from "./removal-recovery";
 import { MembersPanel } from "./members-panel";
 
 /** The members and pending join requests of the selected repository. */
@@ -45,15 +46,22 @@ export function MembersTab({
   repoPath,
   environment,
   transfer,
+  recoveryTargets,
+  rememberRecovery,
+  clearRecovery,
 }: {
   repoPath: string;
   /** The environment a sync re-encrypts and merges. */
   environment: string;
   transfer: RunTransfer;
+  recoveryTargets: string;
+  rememberRecovery: (targets: string) => void;
+  clearRecovery: (target: string) => void;
 }) {
   const { members, requests, loading, error, setError, refresh } = useMembers(repoPath);
   return (
     <>
+      {recoveryTargets && <RemovalRecovery targets={recoveryTargets} onApplied={clearRecovery} />}
       <MembersPanel
         members={members}
         requests={requests}
@@ -76,6 +84,12 @@ export function MembersTab({
         onRemove={async (deviceID) => {
           try {
             await backend.RemoveMember(deviceID);
+          } catch (err) {
+            const error = toDisplayError(err);
+            if (error.code === "removal_write_race" && error.params.targets) {
+              rememberRecovery(error.params.targets);
+            }
+            throw err;
           } finally {
             await refresh();
           }
