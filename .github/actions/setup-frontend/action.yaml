@@ -14,3 +14,6 @@ runs:
         package-manager: false
         node-manager: false
         cache: ${{ inputs.cache == 'true' }}
+    - name: Record frontend environment setup
+      shell: bash
+      run: echo "ENBU_VP_SYSTEM_FIRST=1" >> "$GITHUB_ENV"
