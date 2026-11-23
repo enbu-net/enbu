@@ -1,6 +1,10 @@
 package selfupdate
 
-import "testing"
+import (
+	"os"
+	"runtime"
+	"testing"
+)
 
 func TestDetect(t *testing.T) {
 	writable := func(dirs ...string) func(string) bool {
@@ -101,5 +105,23 @@ func TestAssetName(t *testing.T) {
 	}
 	if _, ok := AssetName("v0.9.0", "linux", "386"); ok {
 		t.Error("386 has no desktop release")
+	}
+}
+
+func TestSelfUpdateRequiresAnOpenableInstallDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows locks a file")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0300); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	if f, err := os.Open(dir); err == nil {
+		_ = f.Close()
+		t.Skip("the current user bypasses directory permissions")
+	}
+	if writable(dir) {
+		t.Fatal("self-update should be unavailable when its lock cannot be opened")
 	}
 }
