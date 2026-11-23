@@ -46,6 +46,11 @@ function valueField(root: HTMLElement | null, key: string) {
   );
 }
 
+function secretList(root: HTMLElement | null, environment: string) {
+  const list = root?.querySelector<HTMLElement>('[data-testid="secret-list"]');
+  return list?.dataset.environment === environment ? list : null;
+}
+
 const consistentMaskControls = extract(({ document }) =>
   [
     ...(panel(document)?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
@@ -70,19 +75,21 @@ const environmentRowsValid = extract(({ document }) => {
   if (!locales.some((m) => activeTab?.textContent?.trim() === m.dashboard_environments))
     return true;
   const rows = [
-    ...(panel(document)?.querySelectorAll<HTMLButtonElement>("button[aria-label]") ?? []),
-  ].flatMap((item) => {
-    const label = item.getAttribute("aria-label") ?? "";
-    const prefix = locales
-      .map((m) => m.environments_delete + ": ")
-      .find((p) => label.startsWith(p));
-    return prefix ? [{ name: label.slice(prefix.length), disabled: item.disabled }] : [];
+    ...(panel(document)?.querySelectorAll<HTMLElement>('[data-testid="environment-row"]') ?? []),
+  ];
+  const current = rows.filter((row) => row.getAttribute("aria-current") === "true");
+  if (rows.length === 0) return true;
+  const names = new Set(rows.map((row) => row.dataset.environment?.toLowerCase()));
+  const controlsMatchRows = rows.every((row) => {
+    const name = row.dataset.environment;
+    if (!name) return false;
+    const deletion = button(
+      row,
+      locales.map((m) => m.environments_delete + ": " + name),
+    );
+    return deletion?.disabled === (row === current[0]);
   });
-  return (
-    rows.length === 0 ||
-    (new Set(rows.map((row) => row.name.toLowerCase())).size === rows.length &&
-      rows.filter((row) => row.disabled).length === 1)
-  );
+  return current.length === 1 && controlsMatchRows && names.size === rows.length;
 });
 export const environmentNamesAndDeletionControlsAreConsistent = always(
   () => environmentRowsValid.current,
@@ -98,9 +105,7 @@ const historyListsValid = extract(({ document }) => {
     root,
     locales.map((m) => m.history_to),
   );
-  if (!from || !to) return true;
-  const revisions = [...from.options].map((option) => Number(option.value));
-  const olderRevisions = [...from.options].slice(1).map((option) => option.textContent.trim());
+  const rowCount = root?.querySelectorAll('[data-testid="history-revision"]').length ?? 0;
   const restoreLabels = [...(root?.querySelectorAll("button[aria-label]") ?? [])].flatMap(
     (item) => {
       const label = item.getAttribute("aria-label") ?? "";
@@ -108,8 +113,13 @@ const historyListsValid = extract(({ document }) => {
       return prefix ? [label.slice(prefix.length)] : [];
     },
   );
+  if (rowCount < 2) return !from && !to && restoreLabels.length === 0;
+  if (!from || !to) return false;
+  const revisions = [...from.options].map((option) => Number(option.value));
+  const olderRevisions = [...from.options].slice(1).map((option) => option.textContent.trim());
   return (
-    revisions.length === to.options.length &&
+    revisions.length === rowCount &&
+    to.options.length === rowCount &&
     revisions.every(
       (revision, index) =>
         Number.isInteger(revision) &&
@@ -133,10 +143,16 @@ async function until(window: Window, ready: () => boolean, description: string) 
 
 // Bombadil samples the page between actions. Leave the result where its
 // extractors can report it as a named property violation in the trace.
-async function observe(document: Document, property: string, run: () => Promise<void>) {
+const sourceOnly = "no readable alternate environment";
+
+async function observe(
+  document: Document,
+  property: string,
+  run: () => Promise<typeof sourceOnly | void>,
+) {
   try {
-    await run();
-    document.documentElement.setAttribute(property, "ok");
+    const result = await run();
+    document.documentElement.setAttribute(property, result ?? "ok");
   } catch (error) {
     // oxlint-disable-next-line enbu/no-raw-error-display -- This test diagnostic is read by Bombadil's trace, never rendered.
     document.documentElement.setAttribute(property, String(error));
@@ -158,7 +174,10 @@ const historyResult = extract(({ document }) =>
   document.documentElement.getAttribute(historyOutcome),
 );
 export const secretWritesStayInTheirEnvironment = always(
-  () => secretResult.current === null || secretResult.current === "ok",
+  () =>
+    secretResult.current === null ||
+    secretResult.current === "ok" ||
+    secretResult.current === sourceOnly,
 );
 export const restoredRevisionMatchesItsSource = always(
   () => historyResult.current === null || historyResult.current === "ok",
@@ -173,16 +192,41 @@ const secretRoundTrip = registerCustomAction(
     const next = Number(document.documentElement.getAttribute(secretCounter) ?? "0") + 1;
     document.documentElement.setAttribute(secretCounter, String(next));
     const key = `PBT_${next}`;
-    const option = (picker: HTMLButtonElement, name: string) =>
-      button(document.getElementById(picker.getAttribute("aria-controls") ?? ""), [name]);
+    const menu = (picker: HTMLButtonElement) =>
+      document.getElementById(picker.getAttribute("aria-controls") ?? "");
+    const option = (picker: HTMLButtonElement, name: string) => button(menu(picker), [name]);
+    const openPicker = async () => {
+      const picker = environmentButton(panel(document));
+      if (!picker) throw new Error("environment picker disappeared");
+      picker.click();
+      await until(
+        window,
+        () => picker.getAttribute("aria-expanded") === "true",
+        "environment picker did not open",
+      );
+      return picker;
+    };
     const choose = async (picker: HTMLButtonElement, name: string) => {
       await until(window, () => Boolean(option(picker, name)), "environment option did not appear");
       option(picker, name)?.click();
       await until(
         window,
-        () => currentEnvironment(panel(document)) === name,
+        () => {
+          const root = panel(document);
+          return (
+            currentEnvironment(root) === name &&
+            Boolean(secretList(root, name) || root?.querySelector("[data-conflict-key]"))
+          );
+        },
         "environment switch did not finish",
       );
+    };
+    const importedField = () => valueField(secretList(panel(document), source), key);
+    const checkImported = () => {
+      const field = importedField();
+      if (field?.type !== "password" || field.value !== value) {
+        throw new Error("imported value or masking changed");
+      }
     };
 
     await observe(document, secretOutcome, async () => {
@@ -190,40 +234,39 @@ const secretRoundTrip = registerCustomAction(
       transfer.items.add(new File([key + '="' + value + '"\n'], "probe.env"));
       file.files = transfer.files;
       file.dispatchEvent(new Event("change", { bubbles: true }));
-      await until(
-        window,
-        () => valueField(panel(document), key) !== undefined,
-        "imported secret did not appear",
-      );
-      const picker = environmentButton(panel(document));
-      if (!picker) throw new Error("environment picker disappeared");
-      picker.click();
+      await until(window, () => importedField() !== undefined, "imported secret did not appear");
+      checkImported();
+      let picker = await openPicker();
       await until(window, () => Boolean(option(picker, source)), "environment picker did not open");
-      const menu = document.getElementById(picker.getAttribute("aria-controls") ?? "");
       const alternatives = [
-        ...(menu?.querySelectorAll<HTMLButtonElement>("button[aria-label]") ?? []),
+        ...(menu(picker)?.querySelectorAll<HTMLButtonElement>("button[aria-label]") ?? []),
       ]
         .map((item) => item.getAttribute("aria-label") ?? "")
         .filter(
           (name) =>
             name && name !== source && !locales.some((m) => name === m.dashboard_addEnvironment),
         );
-      const other = alternatives[slot % alternatives.length];
-      if (!other) {
+      if (alternatives.length === 0) {
         picker.click();
-        return;
+        return sourceOnly;
       }
-      await choose(picker, other);
-      if (valueField(panel(document), key))
-        throw new Error("new secret appeared in another environment");
-      const returnPicker = environmentButton(panel(document));
-      if (!returnPicker) throw new Error("environment picker disappeared after switching");
-      returnPicker.click();
-      await choose(returnPicker, source);
-      const field = valueField(panel(document), key);
-      if (field?.type !== "password" || field.value !== value) {
-        throw new Error("saved value or masking changed after switching back");
+      let checkedIsolation = false;
+      for (let index = 0; index < alternatives.length; index++) {
+        const other = alternatives[(slot + index) % alternatives.length];
+        await choose(picker, other);
+        const destination = secretList(panel(document), other);
+        if (destination) {
+          if (valueField(destination, key))
+            throw new Error("new secret appeared in another environment");
+          checkedIsolation = true;
+          break;
+        }
+        // A conflict panel contains no secret rows and cannot prove absence.
+        if (index + 1 < alternatives.length) picker = await openPicker();
       }
+      await choose(await openPicker(), source);
+      checkImported();
+      if (!checkedIsolation) return sourceOnly;
     });
   },
 );
@@ -232,7 +275,7 @@ const secretRoundTrip = registerCustomAction(
 const importReady = extract(({ document }) => {
   const root = panel(document);
   return Boolean(
-    currentEnvironment(root) &&
+    secretList(root, currentEnvironment(root)) &&
     root?.querySelector('[data-testid="import-file"]') &&
     !root.querySelector("[data-loading], [data-conflict-key]") &&
     !document.querySelector(
