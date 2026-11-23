@@ -458,7 +458,7 @@ func TestProjectLockDoesNotDependOnGitMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Close()
+	defer func() { _ = lock.Close() }()
 	if lock.Name() != filepath.Join(fsutil.Canonical(first), config.ProjectLockName) {
 		t.Fatalf("lock outside checkout: %s", lock.Name())
 	}
