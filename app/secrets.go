@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/dotenv"
 )
 
 var errNoChange = fmt.Errorf("secret unchanged")
@@ -75,6 +77,9 @@ func (a *App) ListSecrets(ctx context.Context, env string) (result map[string]st
 
 func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error) {
 	defer apperr.NormalizeInto(&err)
+	if err := validateSecretName(key); err != nil {
+		return err
+	}
 	return a.changeSecret(ctx, env, "add", func(secrets map[string]string) error {
 		if _, ok := secrets[key]; ok {
 			return apperr.New(apperr.CodeSecretExists, fmt.Sprintf("secret %s already exists", key), apperr.Params{"key": key})
@@ -85,6 +90,9 @@ func (a *App) AddSecret(ctx context.Context, env, key, value string) (err error)
 }
 func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error) {
 	defer apperr.NormalizeInto(&err)
+	if err := validateSecretName(key); err != nil {
+		return err
+	}
 	return a.changeSecret(ctx, env, "edit", func(secrets map[string]string) error {
 		if _, ok := secrets[key]; !ok {
 			return apperr.New(apperr.CodeSecretMissing, fmt.Sprintf("secret %s does not exist", key), apperr.Params{"key": key})
@@ -92,6 +100,13 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error
 		secrets[key] = value
 		return nil
 	})
+}
+
+func validateSecretName(key string) error {
+	if !dotenv.ValidName(key) {
+		return apperr.New(apperr.CodeSecretNameInvalid, "secret name is not a dotenv variable name", apperr.Params{"key": strconv.QuoteToASCII(key)})
+	}
+	return nil
 }
 func (a *App) DeleteSecret(ctx context.Context, env, key string) (err error) {
 	defer apperr.NormalizeInto(&err)

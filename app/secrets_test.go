@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"io"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
@@ -190,6 +192,30 @@ func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	}
 	if secrets["FOO"] != "bar" || secrets["BAZ"] != "qux" {
 		t.Fatalf("unexpected secrets: %v", secrets)
+	}
+}
+
+func TestSecretNamesSupportUnicodeLetters(t *testing.T) {
+	alice := newAlice(t)
+	for _, name := range []string{"", "BAD-NAME", "1START", "BAD\nKEY"} {
+		if err := alice.AddSecret(context.Background(), "default", name, "value"); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+			t.Errorf("AddSecret(%q) = %v", name, err)
+		} else if payload := apperr.PayloadOf(err); payload.Params["key"] != strconv.QuoteToASCII(name) || !strings.Contains(payload.Message, payload.Params["key"]) {
+			t.Errorf("AddSecret(%q) payload = %+v", name, payload)
+		}
+	}
+	if err := alice.AddSecret(context.Background(), "default", "こんにちは", "Hello"); err != nil {
+		t.Fatalf("AddSecret(Japanese) = %v", err)
+	}
+	if err := alice.EditSecret(context.Background(), "default", "こんにちは", "こんにちは"); err != nil {
+		t.Fatalf("EditSecret(Japanese) = %v", err)
+	}
+	if _, err := alice.ImportSecrets(context.Background(), "default", map[string]string{"GOOD": "value", "日本語_2": "value"}, false); err != nil {
+		t.Fatalf("ImportSecrets(Japanese) = %v", err)
+	}
+	secrets, err := alice.ListSecrets(context.Background(), "default")
+	if err != nil || len(secrets) != 4 || secrets["KEY"] != "v1" || secrets["こんにちは"] != "こんにちは" || secrets["日本語_2"] != "value" {
+		t.Fatalf("unicode names did not persist: %v, %v", secrets, err)
 	}
 }
 

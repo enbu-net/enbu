@@ -111,7 +111,7 @@ func (s *Service) StartOAuthLogin() (_ OAuthStart, err error) {
 			slog.Error("OAuth login failed", "session_id", sessionID, "err", err)
 			state := "error"
 			payload := apperr.PayloadOf(err)
-			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			if (errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)) && !apperr.Is(err, apperr.CodeIdentityUnavailable) {
 				state = "expired"
 				payload = apperr.PayloadOf(apperr.New(apperr.CodeAuthExpired, "login session expired", nil))
 			} else if apperr.Is(err, apperr.CodeAccessDenied) {
@@ -181,9 +181,9 @@ func (s *Service) setOAuthStatus(sessionID string, status OAuthStatus) {
 	}
 }
 
-// Logout signs out of the GitHub account login, or of the one in use when
-// login is "". Signing out of the one in use moves to the most recent
-// remaining sign-in.
+// Logout signs out of the GitHub account named by login. WSL requires the
+// name so a retry after an interrupted bridge call cannot delete another
+// account. Other platforms accept an empty login for the account in use.
 func (s *Service) Logout(login string) error {
 	return publicError(s.accounts.Delete(login))
 }

@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -50,6 +52,11 @@ func (a *App) ImportSecrets(ctx context.Context, env string, secrets map[string]
 func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]string, overwrite bool, expected *EnvironmentTarget) (*ImportResult, error) {
 	if len(secrets) == 0 {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "nothing to import", nil)
+	}
+	for _, key := range slices.Sorted(maps.Keys(secrets)) {
+		if err := validateSecretName(key); err != nil {
+			return nil, err
+		}
 	}
 	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
