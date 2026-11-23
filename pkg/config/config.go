@@ -19,6 +19,9 @@ import (
 
 const currentVersion = "v1alpha2"
 
+// ProjectLockDir is reserved for the checkout lock beside enbu.toml.
+const ProjectLockDir = ".enbu-lock"
+
 type StorageConfig struct {
 	URL       string `toml:"url" json:"url"`
 	Region    string `toml:"region,omitempty" json:"region"`
@@ -125,6 +128,10 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 			output = DefaultOutput(name)
 		}
 		clean := filepath.Clean(output)
+		root, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
+		if strings.EqualFold(root, ProjectLockDir) {
+			return fmt.Errorf("environment %q output uses the project lock path", name)
+		}
 		// A leading slash is rooted on Windows even without a drive letter,
 		// where filepath.IsAbs alone would accept a nonportable configuration.
 		if strings.HasPrefix(output, "/") || filepath.IsAbs(output) || clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
@@ -156,6 +163,12 @@ func SaveProjectTo(dir string, cfg *ProjectConfig) error {
 	if err != nil {
 		return fmt.Errorf("encoding enbu.toml: %w", err)
 	}
+	return WriteProjectFile(path, content)
+}
+
+// WriteProjectFile atomically replaces a project file while preserving its
+// permissions and ownership. The caller holds the project transaction lock.
+func WriteProjectFile(path string, content []byte) error {
 	// A failed write must leave the shared workspace definition intact. Keep
 	// existing regular-file permissions; new configurations remain private.
 	mode := os.FileMode(0o600)
@@ -233,7 +246,12 @@ func ProjectConfigPathFrom(dir string) (string, error) {
 }
 
 func findProjectConfigFrom(dir string) (string, error) {
-	dir = baseDir(dir)
+	if dir != "" {
+		path := filepath.Join(dir, "enbu.toml")
+		_, err := os.Stat(path)
+		return path, err
+	}
+	dir = baseDir("")
 
 	for {
 		path := filepath.Join(dir, "enbu.toml")

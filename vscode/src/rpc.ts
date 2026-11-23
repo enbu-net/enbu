@@ -204,4 +204,4 @@ export async function initialize(client: RpcClient): Promise<InitializeResult> {
 }
 
 /** The protocol version of desktop/rpc this extension speaks. */
-export const protocolVersion = 1;
+export const protocolVersion = 2;

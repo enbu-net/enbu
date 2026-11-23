@@ -180,6 +180,11 @@ func (a *App) migrateStorage(ctx context.Context, s *session, target storage.Sto
 			}
 		}
 	}
+	lock, err := a.lockProject(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	fresh, err := a.openSession(ctx)
 	if err != nil {
 		return err

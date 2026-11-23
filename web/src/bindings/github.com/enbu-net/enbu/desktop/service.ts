@@ -323,8 +323,8 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SyncSecrets", env);
 }
 
-export function WriteConfig(content: string): $CancellablePromise<void> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content);
+export function WriteConfig(content: string, previous: string): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content, previous);
 }
 
 // Private type creation functions

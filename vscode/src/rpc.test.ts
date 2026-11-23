@@ -172,7 +172,7 @@ describe("initialize", () => {
     const result = initialize(client);
     expect(await next()).toMatchObject({ method: "initialize" });
     const info = {
-      protocol_version: 1,
+      protocol_version: 2,
       app_version: "1.0.0",
       methods: ["GetAppVersion"],
       events: [],
@@ -185,7 +185,7 @@ describe("initialize", () => {
     const { client, send, next } = setup();
     const result = initialize(client);
     await next();
-    send({ jsonrpc: "2.0", id: 1, result: { protocol_version: 2 } });
-    await expect(result).rejects.toThrow("unsupported enbu protocol version 2");
+    send({ jsonrpc: "2.0", id: 1, result: { protocol_version: 1 } });
+    await expect(result).rejects.toThrow("unsupported enbu protocol version 1");
   });
 });

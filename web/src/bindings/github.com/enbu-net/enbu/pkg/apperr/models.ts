@@ -24,6 +24,7 @@ export enum Code {
      * an edit would change the trust root or where secrets are stored
      */
     CodeConfigProtected = "config_protected",
+    CodeConfigChanged = "config_changed",
     CodeEnvironmentMissing = "environment_not_found",
     CodeEnvironmentExists = "environment_already_exists",
     CodeSecretMissing = "secret_not_found",

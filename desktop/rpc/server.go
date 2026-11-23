@@ -34,7 +34,7 @@ import (
 
 // ProtocolVersion changes when a client built for an older server can no
 // longer talk to this one.
-const ProtocolVersion = 1
+const ProtocolVersion = 2
 
 // Methods are the methods a client may call: every exported method of
 // desktop.Service, by its Go name, as the desktop app binds them.

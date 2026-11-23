@@ -406,7 +406,11 @@ func TestWriteConfigAddsCustomOutputToGitignore(t *testing.T) {
 	}
 
 	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"secrets.local\"\n"
-	if err := s.WriteConfig(content); err != nil {
+	previous, err := s.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WriteConfig(content, previous); err != nil {
 		t.Fatal(err)
 	}
 	gitignore, err := os.ReadFile(filepath.Join(repoDir, ".gitignore"))
@@ -435,7 +439,7 @@ func TestWriteConfigClassifiesUserContentErrors(t *testing.T) {
 		"not valid toml =",
 		"version = \"v1alpha2\"\n[env.dev]\noutput = \"../outside\"\n",
 	} {
-		err := s.WriteConfig(content)
+		err := s.WriteConfig(content, "")
 		if !apperr.Is(err, apperr.CodeInvalidArgument) {
 			t.Fatalf("WriteConfig(%q) error = %v, want invalid_argument", content, err)
 		}

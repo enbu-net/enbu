@@ -46,7 +46,7 @@ func (w *World) RejectedEdits(ctx context.Context) error {
 				return fmt.Errorf("protected fixture %s missing", change.key)
 			}
 			edited := strings.Replace(original, change.old, change.replacement, 1)
-			err := d.App.WriteConfig(edited)
+			err := d.App.WriteConfig(edited, original)
 			if check := requireCode(err, apperr.CodeConfigProtected); check != nil {
 				return fmt.Errorf("%s: %w", change.key, check)
 			}

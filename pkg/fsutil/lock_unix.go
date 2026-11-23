@@ -3,6 +3,7 @@
 package fsutil
 
 import (
+	"errors"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -20,3 +21,5 @@ func lockFile(f *os.File, wait bool) error {
 		}
 	}
 }
+
+func lockBusy(err error) bool { return errors.Is(err, unix.EWOULDBLOCK) }
