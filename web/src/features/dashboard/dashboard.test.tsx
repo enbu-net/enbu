@@ -68,6 +68,67 @@ describe("Dashboard", () => {
     expect(openURL).toHaveBeenCalledWith("https://github.com/acme/a");
   });
 
+  it("hides a revealed value when switching to another environment with the same key", async () => {
+    let current = "development";
+    mocked.GetWorkspace.mockImplementation(async () => ({
+      ...snapshot,
+      environments: [
+        { name: "development", current: current === "development" },
+        { name: "staging", current: current === "staging" },
+      ],
+      secrets: {
+        environment: current,
+        secrets: [{ key: "KEY", value: `${current}-value` }],
+      },
+    }));
+    mocked.SwitchEnvironment.mockImplementation(async (env) => {
+      current = env;
+    });
+    await renderDashboard();
+
+    act(() => queryButton("Show value")?.click());
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Value: KEY"]')?.type).toBe(
+      "text",
+    );
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label^="Current environment"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="staging"]')?.click();
+      await Promise.resolve();
+    });
+    await settle();
+
+    expect(mocked.SwitchEnvironment).toHaveBeenCalledWith("staging");
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Value: KEY"]')?.value).toBe(
+      "staging-value",
+    );
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Value: KEY"]')?.type).toBe(
+      "password",
+    );
+
+    act(() => queryButton("Show value")?.click());
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('button[aria-label^="Current environment"]')
+        ?.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('button[aria-label="development"]')?.click();
+      await Promise.resolve();
+    });
+    await settle();
+
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Value: KEY"]')?.type).toBe(
+      "password",
+    );
+  });
+
   it("names a repository without a GitHub remote by its folder", async () => {
     await renderDashboard(repo({ path: "/work/s3-team", owner: "", repo: "" }));
     expect(container.querySelector("h1")?.textContent).toBe("s3-team");

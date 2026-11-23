@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Eye, EyeOff, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Save, Trash2 } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
-import { Button, Input, Text } from "../../components/ui";
+import { Button, Input } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { copySecret } from "../../lib/clipboard";
 import { m } from "../../paraglide/messages";
@@ -22,6 +22,7 @@ export function SecretRow({
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState<"key" | "value" | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [editValue, setEditValue] = useState(secretValue);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
@@ -42,8 +43,25 @@ export function SecretRow({
     copiedTimer.current = setTimeout(() => setCopied(null), 2000);
   }
 
+  async function saveValue() {
+    if (saving || editValue === secretValue) return;
+    setSaving(true);
+    try {
+      await onEdit(editValue);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const copyStatus = copied === "key" ? m.dashboard_keyCopied() : m.dashboard_valueCopied();
+
   return (
-    <Box
+    <styled.form
+      data-secret-value-row=""
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveValue();
+      }}
       minH="62px"
       display="grid"
       gridTemplateColumns={{
@@ -65,50 +83,61 @@ export function SecretRow({
         gridColumn={{ base: "1", lg: "auto" }}
         gridRow={{ base: "1", lg: "auto" }}
       >
-        <Text flex="1" minW="0" fontFamily="mono" fontSize="sm" fontWeight="bold" truncate>
-          {secretKey}
-        </Text>
-        <Button
-          variant="ghost"
-          w="30px"
-          h="30px"
-          p={0}
-          flexShrink="0"
-          color={copied === "key" ? "status.success" : "fg.muted"}
-          aria-label={m.dashboard_copyKey()}
+        <styled.button
+          type="button"
+          minW="0"
+          maxW="full"
+          overflow="hidden"
+          textOverflow="ellipsis"
+          whiteSpace="nowrap"
+          textAlign="left"
+          fontFamily="mono"
+          fontSize="sm"
+          fontWeight="bold"
+          color={copied === "key" ? "status.success" : "fg.default"}
+          cursor="pointer"
+          _hover={{ textDecoration: "underline" }}
+          aria-label={`${m.dashboard_copyKey()}: ${secretKey}`}
           title={copied === "key" ? m.dashboard_keyCopied() : m.dashboard_copyKey()}
           onClick={async () => {
             await navigator.clipboard.writeText(secretKey);
             showCopied("key");
           }}
         >
-          {copied === "key" ? (
-            <Check size={15} aria-hidden="true" />
-          ) : (
-            <Copy size={15} aria-hidden="true" />
-          )}
-        </Button>
+          {secretKey}
+        </styled.button>
       </HStack>
-      <Input
-        aria-label={`${m.dashboard_value()}: ${secretKey}`}
-        value={editValue}
-        type={visible ? "text" : "password"}
-        h="auto"
-        minH="38px"
+      <Box
+        position="relative"
         gridColumn={{ base: "1 / -1", lg: "auto" }}
         gridRow={{ base: "2", lg: "auto" }}
-        borderColor="border.default"
-        borderRadius="md"
-        onChange={(e) => setEditValue(e.target.value)}
-        onBlur={async (e) => {
-          if (e.target.value !== secretValue) await onEdit(e.target.value);
-        }}
-      />
-      <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
+      >
+        <Input
+          aria-label={`${m.dashboard_value()}: ${secretKey}`}
+          value={editValue}
+          disabled={saving}
+          type={visible ? "text" : "password"}
+          h="auto"
+          minH="38px"
+          pr="10"
+          borderColor="border.default"
+          borderRadius="md"
+          onChange={(e) => setEditValue(e.target.value)}
+          onKeyDown={(e) => {
+            // WebKit may report isComposing=false on the Enter that commits an IME candidate.
+            if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
+              e.preventDefault();
+            }
+          }}
+        />
         <Button
           variant="ghost"
-          w="34px"
-          h="34px"
+          position="absolute"
+          right="1"
+          top="50%"
+          transform="translateY(-50%)"
+          w="30px"
+          h="30px"
           p={0}
           color={copied === "value" ? "status.success" : "fg.muted"}
           aria-label={m.dashboard_copyValue()}
@@ -124,6 +153,23 @@ export function SecretRow({
             <Copy size={16} aria-hidden="true" />
           )}
         </Button>
+      </Box>
+      <HStack gap="1" gridColumn={{ base: "2", lg: "auto" }} gridRow={{ base: "1", lg: "auto" }}>
+        {editValue !== secretValue && (
+          <Button
+            variant="ghost"
+            w="34px"
+            h="34px"
+            p={0}
+            color="accent.text"
+            aria-label={m.dashboard_save()}
+            title={m.dashboard_save()}
+            type="submit"
+            loading={saving}
+          >
+            <Save size={16} />
+          </Button>
+        )}
         <Button
           variant="ghost"
           w="34px"
@@ -150,14 +196,30 @@ export function SecretRow({
           <Trash2 size={15} />
         </Button>
       </HStack>
-      {/* Announces a copy; the button keeps its name, so it is read once. */}
-      <styled.span role="status" srOnly>
-        {copied === "key"
-          ? m.dashboard_keyCopied()
-          : copied === "value"
-            ? m.dashboard_valueCopied()
-            : ""}
+      <styled.span srOnly role="status">
+        {copied ? copyStatus : ""}
       </styled.span>
+      {copied && (
+        <styled.div
+          data-toast=""
+          aria-hidden="true"
+          position="fixed"
+          right="4"
+          bottom="4"
+          zIndex="2001"
+          px="4"
+          py="3"
+          bg="bg.surface"
+          color="fg.default"
+          borderWidth="1px"
+          borderColor="border.default"
+          borderRadius="md"
+          boxShadow="dropdown"
+          pointerEvents="none"
+        >
+          {copyStatus}
+        </styled.div>
+      )}
       <ConfirmDeleteDialog
         open={deleteConfirmationOpen}
         title={m.dashboard_deleteSecretConfirm({ key: secretKey })}
@@ -176,6 +238,6 @@ export function SecretRow({
           }
         }}
       />
-    </Box>
+    </styled.form>
   );
 }

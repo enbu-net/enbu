@@ -12,7 +12,10 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
 
 // maxBinarySize bounds what an archive may unpack, so a broken or hostile
@@ -49,58 +52,131 @@ func Install(ctx context.Context, goos string, archive *os.File, target string) 
 	}
 }
 
-// installBinary writes the new binary to target.new and renames it over
+// installBinary stages a new binary beside target and renames it over
 // target. Windows cannot replace a running executable, but it can rename
 // one, so there the old binary moves to target.old first (see CleanUp).
 func installBinary(target string, extract func(io.Writer) error, moveAside bool) error {
-	next := target + ".new"
-	// O_EXCL never follows a symlink or reuses a file someone left there.
-	_ = os.Remove(next)
+	target, lock, err := lockTarget(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
+	staging, err := prepareStaging(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	next := filepath.Join(staging, filepath.Base(target))
 	f, err := os.OpenFile(next, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
 	if err != nil {
 		return err
 	}
+	if err := f.Chmod(0o755); err != nil {
+		_ = f.Close()
+		return err
+	}
 	if err := extract(f); err != nil {
 		_ = f.Close()
-		_ = os.Remove(next)
 		return err
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()
-		_ = os.Remove(next)
 		return err
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(next)
 		return err
 	}
 	if moveAside {
 		old := target + ".old"
 		_ = os.Remove(old)
 		if err := os.Rename(target, old); err != nil {
-			_ = os.Remove(next)
 			return err
 		}
 		if err := os.Rename(next, target); err != nil {
 			_ = os.Rename(old, target)
-			_ = os.Remove(next)
 			return err
 		}
 		return nil
 	}
-	if err := os.Rename(next, target); err != nil {
-		_ = os.Remove(next)
-		return err
-	}
-	return nil
+	return os.Rename(next, target)
 }
 
-// CleanUp removes what an earlier update left beside target: the old
-// Windows binary, which could not be deleted while it ran, and a new copy an
-// interrupted update did not rename into place.
+func lockTarget(target string) (string, *os.File, error) {
+	// Resolve the parent so an alias to the install directory uses the same
+	// lock. The target itself can be absent halfway through a Windows update.
+	dir, err := filepath.EvalSymlinks(filepath.Dir(target))
+	if err != nil {
+		return "", nil, err
+	}
+	target = filepath.Join(dir, filepath.Base(target))
+	var lock *os.File
+	if runtime.GOOS == "windows" {
+		lock, err = fsutil.LockFile(target+".update.lock", false)
+	} else {
+		// Lock the directory inode so shared Unix installs need no private
+		// marker file, and replacing the target keeps the lock in force.
+		lock, err = fsutil.LockExisting(dir, false)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("locking the installation: %w", err)
+	}
+	return target, lock, nil
+}
+
+func stagingPrefix(target string) string { return "." + filepath.Base(target) + ".update-" }
+
+// prepareStaging must run under the installation lock. Cleanup is best effort:
+// a shared Unix install may hold private staging owned by another user.
+func prepareStaging(target string) (string, error) {
+	cleanStaging(target)
+	return os.MkdirTemp(filepath.Dir(target), stagingPrefix(target)+"*-stage")
+}
+
+func stagingPaths(target string) []string {
+	dir := filepath.Dir(target)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, entry := range entries {
+		id, ok := strings.CutPrefix(entry.Name(), stagingPrefix(target))
+		id, stage := strings.CutSuffix(id, "-stage")
+		if !entry.IsDir() || !ok || !stage || id == "" {
+			continue
+		}
+		if strings.Trim(id, "0123456789") == "" {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
+	}
+	return paths
+}
+
+func cleanStaging(target string) {
+	for _, staging := range stagingPaths(target) {
+		_ = os.RemoveAll(staging)
+	}
+}
+
+// CleanUp removes abandoned staging and a Windows backup once it has stopped
+// running. The installation lock also protects an update currently staging.
 func CleanUp(target string) {
-	_ = os.RemoveAll(target + ".old")
-	_ = os.RemoveAll(target + ".new")
+	_, oldErr := os.Lstat(target + ".old")
+	if os.IsNotExist(oldErr) && len(stagingPaths(target)) == 0 {
+		return
+	}
+	target, lock, err := lockTarget(target)
+	if err != nil {
+		return
+	}
+	defer func() { _ = lock.Close() }()
+	cleanStaging(target)
+	if info, err := os.Lstat(target + ".old"); err != nil || !info.Mode().IsRegular() {
+		return
+	}
+	if _, err := os.Stat(target); err == nil {
+		_ = os.Remove(target + ".old")
+	}
 }
 
 func copyLimited(w io.Writer, r io.Reader) error {
@@ -162,6 +238,11 @@ func extractZip(archive *os.File, name string, w io.Writer) error {
 // target with ditto (which keeps the bundle's signature and attributes), and
 // swaps the two bundles by renaming.
 func installApp(ctx context.Context, dmg, target string) error {
+	target, lock, err := lockTarget(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	mount, err := os.MkdirTemp("", "enbu-update-")
 	if err != nil {
 		return err
@@ -177,8 +258,12 @@ func installApp(ctx context.Context, dmg, target string) error {
 	if err != nil || len(apps) != 1 {
 		return fmt.Errorf("the update holds %d app bundles, want 1", len(apps))
 	}
-	next := target + ".new"
-	_ = os.RemoveAll(next)
+	staging, err := prepareStaging(target)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	next := filepath.Join(staging, filepath.Base(target))
 	if out, err := exec.CommandContext(ctx, "ditto", apps[0], next).CombinedOutput(); err != nil {
 		_ = os.RemoveAll(next)
 		return fmt.Errorf("copy the update: %w: %s", err, strings.TrimSpace(string(out)))
