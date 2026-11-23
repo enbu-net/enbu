@@ -186,7 +186,7 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 	// encrypted for, so it re-encrypts exactly as a removal does. A failure
 	// fails the operation that joined, even a read: the join is published and
 	// is not retried, so this is the only moment that tells the admin to sync.
-	if err := a.reencryptAll(ctx); err != nil {
+	if err := a.reencryptAll(ctx, nil); err != nil {
 		return false, apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return true, nil

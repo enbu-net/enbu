@@ -72,7 +72,7 @@ func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]
 		cfg := s.cfg
 		reopen = func(ctx context.Context) (*session, error) { return a.openSessionWith(ctx, cfg) }
 	}
-	err = a.changeResource(ctx, s, reopen, s.resource(resolved.Name), "import", nil, nil, func(current map[string]string) error {
+	err = a.changeResource(ctx, s, reopen, s.resource(resolved.Name), "import", nil, nil, nil, func(current map[string]string) error {
 		result.Added, result.Updated, result.Unchanged = result.Added[:0], result.Updated[:0], result.Unchanged[:0]
 		var conflicts []string
 		for key, value := range secrets {

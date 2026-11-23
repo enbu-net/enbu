@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   ConflictSet,
   Diff,
+  RemovalReview,
   EnvInfo,
   EnvironmentDeletion,
   HistoryEntry,
@@ -381,6 +382,9 @@ export const mockBackend: Backend = {
       return entry.secrets;
     };
     return diffSecrets(at(from), at(to));
+  },
+  async ReviewRemovedRevision(): Promise<RemovalReview> {
+    throw createAppError("conflict");
   },
   async RestoreHistory(repoPath: string, target: EnvironmentTarget, tag: string): Promise<void> {
     const repo = mockRepoHistory.find((entry) => entry.path === mockSelectedRepoPath);

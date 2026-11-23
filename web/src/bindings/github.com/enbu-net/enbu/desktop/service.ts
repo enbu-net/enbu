@@ -286,6 +286,12 @@ export function RestoreHistory(repoPath: string, target: app$0.EnvironmentTarget
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", repoPath, target, tag);
 }
 
+export function ReviewRemovedRevision(resource: string, revision: string, baseline: string): $CancellablePromise<app$0.RemovalReview> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ReviewRemovedRevision", resource, revision, baseline).then(($result: any) => {
+        return $$createType23($result);
+    });
+}
+
 export function SelectRepository(path: string): $CancellablePromise<$models.RepoInfo> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SelectRepository", path).then(($result: any) => {
         return $$createType0($result);
@@ -302,7 +308,7 @@ export function SetAdmin(deviceID: string, admin: boolean): $CancellablePromise<
 
 export function StartOAuthLogin(): $CancellablePromise<$models.OAuthStart> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.StartOAuthLogin").then(($result: any) => {
-        return $$createType23($result);
+        return $$createType24($result);
     });
 }
 
@@ -357,4 +363,5 @@ const $$createType19 = $Create.Array($$createType18);
 const $$createType20 = $Create.Array($$createType0);
 const $$createType21 = $models.SecretsResponse.createFrom;
 const $$createType22 = app$0.WrittenFile.createFrom;
-const $$createType23 = $models.OAuthStart.createFrom;
+const $$createType23 = app$0.RemovalReview.createFrom;
+const $$createType24 = $models.OAuthStart.createFrom;

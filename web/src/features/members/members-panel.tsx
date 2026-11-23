@@ -15,6 +15,7 @@ export function MembersPanel({
   requests,
   loading,
   error,
+  hasRecoveryTargets = true,
   onSync,
   onApprove,
   onRemove,
@@ -25,6 +26,7 @@ export function MembersPanel({
   requests: JoinRequestInfo[];
   loading: boolean;
   error: DisplayError | null;
+  hasRecoveryTargets?: boolean;
   onSync: () => void | Promise<void>;
   onApprove: (deviceID: string) => Promise<void>;
   onRemove: (deviceID: string) => Promise<void>;
@@ -59,6 +61,11 @@ export function MembersPanel({
   }
 
   const shownError = actionError ?? error;
+  const recoveryComplete = shownError?.code === "removal_write_race" && !hasRecoveryTargets;
+  function dismissError() {
+    setActionError(null);
+    onErrorDismiss();
+  }
   return (
     <>
       <SectionHeader title={m.members_title()}>
@@ -73,15 +80,9 @@ export function MembersPanel({
           {m.dashboard_sync()}
         </Button>
       </SectionHeader>
-      {shownError && (
+      {shownError && !recoveryComplete && (
         <Box mb="4">
-          <ErrorAlert
-            error={shownError}
-            onDismiss={() => {
-              setActionError(null);
-              onErrorDismiss();
-            }}
-          />
+          <ErrorAlert error={shownError} onDismiss={dismissError} />
         </Box>
       )}
       {loading ? (

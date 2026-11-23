@@ -242,3 +242,13 @@ func (s *Service) RestoreHistory(repoPath string, target app.EnvironmentTarget, 
 		return s.app.RestoreHistoryRevision(s.context(), target, tag)
 	})
 }
+
+func (s *Service) ReviewRemovedRevision(resource, revision, baseline string) (app.RemovalReview, error) {
+	return withRepoResult(s, func() (app.RemovalReview, error) {
+		review, err := s.app.ReviewRemovedRevision(s.context(), resource, revision, baseline)
+		if err != nil {
+			return app.RemovalReview{}, err
+		}
+		return *review, nil
+	})
+}

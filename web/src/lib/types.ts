@@ -16,6 +16,7 @@ export type {
   ConflictCandidate,
   ConflictSet,
   Diff,
+  RemovalReview,
   EnvInfo,
   EnvironmentDeletion,
   HistoryEntry,

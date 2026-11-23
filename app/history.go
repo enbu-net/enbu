@@ -343,7 +343,7 @@ func (a *App) restoreHistory(ctx context.Context, h *historyView, snapshot map[s
 	h.s = nil // changeResource closes the session when it finishes.
 	cfg := s.cfg
 	reopen := func(ctx context.Context) (*session, error) { return a.openSessionWith(ctx, cfg) }
-	return a.changeResource(ctx, s, reopen, h.resource, "restore", nil, nil, func(current map[string]string) error {
+	return a.changeResource(ctx, s, reopen, h.resource, "restore", nil, nil, nil, func(current map[string]string) error {
 		clear(current)
 		for k, v := range snapshot {
 			current[k] = v

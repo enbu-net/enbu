@@ -103,6 +103,9 @@ export function SecretRow({
         editHistory.current = { values: [secretValue], index: 0 };
         return;
       }
+      // The browser may retain more undo steps than the raw-value history.
+      // Keep the current draft if a mixed-newline snapshot cannot be restored.
+      if (editValue.includes("\r") || history.values.length > 1) return;
     }
 
     const updated = applyTextareaEdit(editValue, value, step === 0 ? selectionStart : value.length);
