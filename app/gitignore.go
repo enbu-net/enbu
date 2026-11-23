@@ -12,7 +12,6 @@ import (
 
 // baseGitignoreEntries keep every dotenv file but the example out of Git.
 var baseGitignoreEntries = []string{
-	"/" + config.ProjectLockName,
 	".env",
 	".env.*",
 	"!.env.example",

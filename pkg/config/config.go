@@ -19,8 +19,8 @@ import (
 
 const currentVersion = "v1alpha2"
 
-// ProjectLockName is reserved for the checkout lock, beside enbu.toml.
-const ProjectLockName = ".enbu.toml.lock"
+// ProjectLockDir is reserved for the checkout lock beside enbu.toml.
+const ProjectLockDir = ".enbu-lock"
 
 type StorageConfig struct {
 	URL       string `toml:"url" json:"url"`
@@ -129,7 +129,7 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 		}
 		clean := filepath.Clean(output)
 		root, _, _ := strings.Cut(filepath.ToSlash(clean), "/")
-		if strings.EqualFold(root, ProjectLockName) {
+		if strings.EqualFold(root, ProjectLockDir) {
 			return fmt.Errorf("environment %q output uses the project lock path", name)
 		}
 		// A leading slash is rooted on Windows even without a drive letter,

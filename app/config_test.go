@@ -144,7 +144,7 @@ func TestConfigReservesOnlyTheNewProjectLockPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{config.ProjectLockName, config.ProjectLockName + "/vars.env"} {
+	for _, path := range []string{config.ProjectLockDir, config.ProjectLockDir + "/vars.env"} {
 		content := strings.Replace(original, `".env.enbu-lock"`, `"`+path+`"`, 1)
 		if original == content {
 			t.Fatal("fixture did not contain the default output")
@@ -502,5 +502,36 @@ func TestConfigWriteKeepsPreviousContentsWhenGitignoreCannotBeUpdated(t *testing
 	after, err := a.ReadConfig()
 	if err != nil || after != before {
 		t.Fatalf("configuration was changed: %v", err)
+	}
+}
+
+func TestConfigWriteKeepsExclusionsWhenFileReplacementFails(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows file replacement rejects a read-only destination")
+	}
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := a.projectPath()
+	if err := os.Chmod(path, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(path, 0o600) }()
+	content := strings.Replace(before, ".env.staging", "sensitive.generated", 1)
+	if err := a.WriteConfig(content, before); err == nil {
+		t.Fatal("expected replacement of read-only config to fail")
+	}
+	actual, err := a.ReadConfig()
+	if err != nil || actual != before {
+		t.Fatalf("configuration changed: %v", err)
+	}
+	rules, err := os.ReadFile(filepath.Join(a.RepositoryDir, ".gitignore"))
+	if err != nil || !strings.Contains(string(rules), "/sensitive.generated") {
+		t.Fatalf("output exclusion not retained: %v", err)
 	}
 }
