@@ -4,7 +4,6 @@ import { Box, HStack } from "styled-system/jsx";
 import { Button, Heading, Spinner, Text } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { FingerprintConfirmDialog } from "../../components/fingerprint-confirm-dialog";
-import { Notice } from "../../components/notice";
 import { ErrorAlert } from "../../components/error-alert";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
@@ -81,13 +80,9 @@ export function MembersPanel({
           {m.dashboard_sync()}
         </Button>
       </SectionHeader>
-      {shownError && (
+      {shownError && !recoveryComplete && (
         <Box mb="4">
-          {recoveryComplete ? (
-            <Notice onDismiss={dismissError}>{m.members_recoveryComplete()}</Notice>
-          ) : (
-            <ErrorAlert error={shownError} onDismiss={dismissError} />
-          )}
+          <ErrorAlert error={shownError} onDismiss={dismissError} />
         </Box>
       )}
       {loading ? (

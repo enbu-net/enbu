@@ -94,6 +94,11 @@ describe("Dashboard", () => {
     mocked.RemoveMember.mockRejectedValueOnce(
       createAppError("removal_write_race", { targets: "secrets/default sha256:test" }),
     );
+    mocked.ReviewRemovedRevision.mockResolvedValue({
+      baseline: "sha256:baseline",
+      diff: { added: [], modified: [], removed: [] },
+      kept: [],
+    });
     await renderDashboard();
     async function openTab(name: string) {
       await act(async () => {
@@ -113,9 +118,13 @@ describe("Dashboard", () => {
     });
     expect(queryButton("Review revision")).toBeTruthy();
     await openTab("Secrets");
-    expect(queryButton("Review revision")).toBeNull();
+    await vi.waitFor(() => expect(queryButton("Review revision")).toBeNull());
     await openTab("Members");
     expect(queryButton("Review revision")).toBeTruthy();
+    await act(async () => queryButton("Review revision")?.click());
+    await act(async () => queryButton("Apply reviewed change")?.click());
+    expect(queryButton("Review revision")).toBeNull();
+    expect(container.textContent).toContain("Reviewed changes were applied.");
   });
 
   it("adds a secret on Enter and clears the form", async () => {

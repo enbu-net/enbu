@@ -1,3 +1,5 @@
+import { Notice } from "../../components/notice";
+import { m } from "../../paraglide/messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
@@ -59,9 +61,20 @@ export function MembersTab({
   clearRecovery: (target: string) => void;
 }) {
   const { members, requests, loading, error, setError, refresh } = useMembers(repoPath);
+  const [recoveryApplied, setRecoveryApplied] = useState(false);
   return (
     <>
-      {recoveryTargets && <RemovalRecovery targets={recoveryTargets} onApplied={clearRecovery} />}
+      {recoveryTargets ? (
+        <RemovalRecovery
+          targets={recoveryTargets}
+          onApplied={(target) => {
+            clearRecovery(target);
+            setRecoveryApplied(true);
+          }}
+        />
+      ) : recoveryApplied ? (
+        <Notice onDismiss={() => setRecoveryApplied(false)}>{m.members_recoveryComplete()}</Notice>
+      ) : null}
       <MembersPanel
         members={members}
         requests={requests}

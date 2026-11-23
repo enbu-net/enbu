@@ -184,7 +184,7 @@ func ExitCode(err error) int {
 		return 2
 	case CodeNotAuthenticated, CodeAccessDenied:
 		return 3
-	case CodeConflict:
+	case CodeConflict, CodeRecoveryPreviewChanged:
 		return 4
 	case CodeNotMember:
 		return 3
