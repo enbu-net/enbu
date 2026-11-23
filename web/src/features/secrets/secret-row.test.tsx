@@ -120,6 +120,20 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith("new-secret");
   });
 
+  it("pauses editing until the submitted value has saved", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const onEdit = vi.fn(() => promise);
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("new-secret");
+    expect(queryInput("new-secret")?.disabled).toBe(true);
+
+    await act(async () => resolve());
+    expect(queryInput("new-secret")?.disabled).toBe(false);
+  });
+
   it("renders the secret key as a monospace label", () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     expect(container.textContent).toContain("API_KEY");

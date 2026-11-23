@@ -108,6 +108,7 @@ export function SecretRow({
         <Input
           aria-label={`${m.dashboard_value()}: ${secretKey}`}
           value={editValue}
+          disabled={saving}
           type={visible ? "text" : "password"}
           h="auto"
           minH="38px"
