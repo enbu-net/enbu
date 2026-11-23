@@ -22,6 +22,29 @@ vi.mock("../features/auth/add-account", () => ({
   ),
 }));
 
+vi.mock("../components/toml-code-editor", () => ({
+  TomlCodeEditor: ({
+    value,
+    onChange,
+    onSave,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    onSave: () => void;
+  }) => (
+    <>
+      <textarea
+        aria-label="Configuration TOML"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <button type="button" onClick={onSave}>
+        Save TOML
+      </button>
+    </>
+  ),
+}));
+
 setupDom();
 
 function repoInfo(overrides: Partial<RepoInfo> = {}): RepoInfo {
@@ -44,22 +67,80 @@ async function renderHome(session: Partial<Session>) {
 }
 
 describe("HomePage", () => {
-  it("opens the configuration editor for aliased history while signed out", async () => {
+  it("returns to S3 setup after repairing aliased history while signed out", async () => {
+    const status = { authenticated: false, workspace_configured: false };
+    const storage = {
+      url: "s3://bucket/team",
+      region: "test-region",
+      endpoint: "",
+      path_style: false,
+      plain_http: false,
+    };
+    const draftRepo = repoInfo({ initialized: false, storage_configured: false });
+    const repaired = `version = "v1alpha2"
+workspace_id = "11111111-1111-4111-8111-111111111111"
+default_env = "dev"
+
+[storage]
+url = "${storage.url}"
+region = "${storage.region}"
+
+[env.dev]
+output = ".env.dev"
+incarnation = "22222222-2222-4222-8222-222222222222"
+`;
+    const alias = `
+[env.scratch]
+output = ".env.scratch"
+incarnation = "22222222-2222-4222-8222-222222222222"
+`;
+    vi.mocked(backend.ReadConfig).mockResolvedValueOnce(repaired + alias);
+    const refresh = vi.fn(async () => {});
+    const reloadRepo = vi.fn(async () => {
+      root.render(
+        <>
+          {withSession(<HomePage />, { status, repo: { ...draftRepo, storage_draft: storage } })}
+        </>,
+      );
+    });
     await renderHome({
-      status: { authenticated: false, workspace_configured: false },
-      repo: repoInfo({
-        initialized: false,
-        storage_configured: false,
+      status,
+      refresh,
+      reloadRepo,
+      repo: {
+        ...draftRepo,
         config_error: {
           code: "config_resource_collision" as NonNullable<RepoInfo["config_error"]>["code"],
           message: "",
           params: { first: "dev", second: "scratch" },
         },
-      }),
+      },
     });
     expect(container.textContent).toContain("Environments dev and scratch share stored history");
     expect(backend.ReadConfig).toHaveBeenCalled();
     expect(container.querySelector("#init-storage")).toBeNull();
+
+    const codeView = queryButton("Code");
+    expect(codeView).not.toBeNull();
+    await act(async () => codeView?.click());
+    const editor = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Configuration TOML"]',
+    );
+    expect(editor).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
+        editor,
+        repaired,
+      );
+      editor?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => queryButton("Save TOML")?.click());
+    await settle();
+
+    expect(backend.WriteConfig).toHaveBeenCalledWith(repaired);
+    expect(refresh).toHaveBeenCalledWith({ force: true, invalidate: true });
+    expect(reloadRepo).toHaveBeenCalled();
+    expect(container.querySelector("#init-storage")).toHaveProperty("value", storage.url);
     expect(queryButton("Connect with GitHub")).toBeNull();
   });
   it("waits for the session before choosing a screen", async () => {
