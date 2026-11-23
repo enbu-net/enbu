@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -86,7 +87,7 @@ func newServer(dir string) *Server {
 // pipeClient connects a client to s in this process.
 func pipeClient(t *testing.T, s *Server) *Client {
 	t.Helper()
-	c := &Client{Dial: func() (*Conn, error) {
+	c := &Client{Dial: func(context.Context) (*Conn, error) {
 		reqR, reqW := io.Pipe()
 		respR, respW := io.Pipe()
 		done := make(chan error, 1)
@@ -127,10 +128,10 @@ func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 		_ = respR.Close()
 	})
 	dials := 0
-	c.Dial = func() (*Conn, error) {
+	c.Dial = func(context.Context) (*Conn, error) {
 		dials++
 		if dials > 1 {
-			return dial()
+			return dial(context.Background())
 		}
 		return &Conn{R: respR, W: reqW, Close: func() error {
 			_ = reqW.Close()
@@ -190,6 +191,157 @@ func TestCheckProtocolCancelsHandshakeAndReconnects(t *testing.T) {
 	}
 	if dials != 2 {
 		t.Fatalf("dialed %d times, want one cancelled and one reused connection", dials)
+	}
+}
+
+func TestStalledDoctorCanBeCancelledAndClosed(t *testing.T) {
+	for _, shutdown := range []string{"context", "close", "timeout"} {
+		t.Run(shutdown, func(t *testing.T) {
+			reqR, reqW := io.Pipe()
+			respR, respW := io.Pipe()
+			t.Cleanup(func() {
+				_ = reqR.Close()
+				_ = respW.Close()
+			})
+			clock := clockwork.NewFakeClock()
+			c := &Client{Clock: clock, Dial: func(context.Context) (*Conn, error) {
+				return &Conn{R: respR, W: reqW}, nil
+			}}
+			requested := make(chan error, 1)
+			go func() {
+				dec := json.NewDecoder(reqR)
+				var req request
+				if err := dec.Decode(&req); err != nil {
+					requested <- err
+					return
+				}
+				result, err := json.Marshal(helloResult{Protocol: Protocol, Version: "test"})
+				if err == nil {
+					err = json.NewEncoder(respW).Encode(response{ID: req.ID, Result: result})
+				}
+				if err == nil {
+					err = dec.Decode(&req)
+				}
+				if err == nil && req.Method != methodDoctor {
+					err = fmt.Errorf("unexpected method %q", req.Method)
+				}
+				requested <- err
+			}()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan identity.Diagnosis, 1)
+			go func() { done <- c.Doctor(ctx) }()
+			select {
+			case err := <-requested:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("doctor did not send a request")
+			}
+			closed := make(chan struct{})
+			want := context.Canceled
+			if shutdown == "close" {
+				go func() { _ = c.Close(); close(closed) }()
+			} else {
+				if shutdown == "timeout" {
+					want = context.DeadlineExceeded
+					clock.Advance(rpcTimeout)
+				} else {
+					cancel()
+				}
+				close(closed)
+			}
+			select {
+			case diagnosis := <-done:
+				if diagnosis.WSL == nil || !strings.Contains(diagnosis.WSL.Error, want.Error()) {
+					t.Fatalf("diagnosis = %+v", diagnosis)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("doctor stayed blocked")
+			}
+			select {
+			case <-closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Close stayed blocked")
+			}
+		})
+	}
+}
+
+func TestCheckProtocolClassifiesHandshakeTimeout(t *testing.T) {
+	reqR, reqW := io.Pipe()
+	respR, respW := io.Pipe()
+	t.Cleanup(func() {
+		_ = reqR.Close()
+		_ = respW.Close()
+	})
+	clock := clockwork.NewFakeClock()
+	c := &Client{Clock: clock, Dial: func(context.Context) (*Conn, error) {
+		return &Conn{R: respR, W: reqW}, nil
+	}}
+	t.Cleanup(func() { _ = c.Close() })
+	done := make(chan error, 1)
+	go func() { done <- c.CheckProtocol(t.Context()) }()
+	requested := make(chan error, 1)
+	go func() {
+		var req request
+		requested <- json.NewDecoder(reqR).Decode(&req)
+	}()
+	select {
+	case err := <-requested:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case err := <-done:
+		t.Fatalf("handshake returned before sending a request: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("handshake did not send a request")
+	}
+	clock.Advance(rpcTimeout)
+	select {
+	case err := <-done:
+		var unavailable *identity.UnavailableError
+		if !errors.As(err, &unavailable) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("handshake timeout = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("handshake stayed blocked")
+	}
+}
+
+func TestBeginRejectsClosingBridge(t *testing.T) {
+	c := &Client{closing: true}
+	if ctx, done, err := c.begin(t.Context()); err == nil || ctx != nil || done != nil {
+		t.Fatal("closing bridge returned a usable operation")
+	}
+}
+
+func TestRequestDeadlineStartsAfterAcquiringStream(t *testing.T) {
+	fake := clockwork.NewFakeClock()
+	c := &Client{Clock: fake}
+	if err := c.mu.acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	parent := &observedDoneContext{Context: t.Context(), observed: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		ctx, done, err := c.begin(parent)
+		if err == nil {
+			err = ctx.Err()
+			done()
+		}
+		result <- err
+	}()
+	select {
+	case <-parent.observed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not queue")
+	}
+	fake.Advance(2 * rpcTimeout)
+	c.mu.Unlock()
+	if err := <-result; err != nil {
+		t.Fatalf("queued request already expired: %v", err)
 	}
 }
 
@@ -354,7 +506,9 @@ func TestDoctorNamesTheWindowsSide(t *testing.T) {
 }
 
 func TestNoBridgeIsUnavailable(t *testing.T) {
-	c := &Client{Dial: func() (*Conn, error) { return nil, errors.New("the Windows enbu.exe was not found on PATH") }}
+	c := &Client{Dial: func(context.Context) (*Conn, error) {
+		return nil, errors.New("the Windows enbu.exe was not found on PATH")
+	}}
 	_, err := c.Load("ws")
 	var unavailable *identity.UnavailableError
 	if !errors.As(err, &unavailable) || !strings.Contains(unavailable.Reason, "not found on PATH") {
@@ -408,7 +562,7 @@ func TestTheProcessBridge(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(serveEnv, t.TempDir())
-	c := &Client{Dial: func() (*Conn, error) { return Exec(exe) }}
+	c := &Client{Dial: func(context.Context) (*Conn, error) { return Exec(exe) }}
 	t.Cleanup(func() { _ = c.Close() })
 	device, info, _, err := c.Create("ws")
 	if err != nil {
@@ -506,7 +660,7 @@ func TestCloseKillsAStuckExe(t *testing.T) {
 
 func TestAnExeThatCannotStartNamesInterop(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "enbu.exe")
-	c := &Client{Dial: func() (*Conn, error) { return Exec(missing) }}
+	c := &Client{Dial: func(context.Context) (*Conn, error) { return Exec(missing) }}
 	_, err := c.Info("ws")
 	if !errors.Is(err, identity.ErrUnavailable) || !strings.Contains(err.Error(), "interop") || !strings.Contains(err.Error(), missing) {
 		t.Fatalf("Info = %v, want unavailable naming the path and interop", err)
@@ -515,7 +669,7 @@ func TestAnExeThatCannotStartNamesInterop(t *testing.T) {
 
 func TestAnOlderExeIsNamed(t *testing.T) {
 	// An enbu.exe without the bridge prints its usage error and exits.
-	c := &Client{Dial: func() (*Conn, error) {
+	c := &Client{Dial: func(context.Context) (*Conn, error) {
 		return &Conn{R: io.NopCloser(strings.NewReader("")), W: nopWriteCloser{io.Discard}, Close: func() error { return nil }}, nil
 	}}
 	_, err := c.Info("ws")
@@ -527,3 +681,169 @@ func TestAnOlderExeIsNamed(t *testing.T) {
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+
+func TestCloseDoesNotWaitForDial(t *testing.T) {
+	started := make(chan context.Context, 1)
+	release := make(chan struct{})
+	defer close(release)
+	client := &Client{Dial: func(ctx context.Context) (*Conn, error) {
+		started <- ctx
+		<-release
+		return nil, ctx.Err()
+	}}
+	check := make(chan error, 1)
+	go func() { check <- client.CheckProtocol(t.Context()) }()
+	var dial context.Context
+	select {
+	case dial = <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dial did not start")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- client.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil || !errors.Is(dial.Err(), context.Canceled) {
+			t.Fatalf("close = %v; dial context = %v", err, dial.Err())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("close stayed blocked in dial")
+	}
+	select {
+	case err := <-check:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("protocol check = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("check stayed blocked in dial")
+	}
+}
+
+func TestCanceledDialDiscardsLateConnection(t *testing.T) {
+	started, release, discarded := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	r, w := io.Pipe()
+	defer func() { _ = r.Close(); _ = w.Close() }()
+	client := &Client{Dial: func(context.Context) (*Conn, error) {
+		close(started)
+		<-release
+		return &Conn{R: r, W: w, Close: func() error { close(discarded); return nil }}, nil
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- client.CheckProtocol(ctx) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("dial did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			close(release)
+			t.Fatalf("protocol check = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("check stayed blocked in dial")
+	}
+	close(release)
+	select {
+	case <-discarded:
+	case <-time.After(5 * time.Second):
+		t.Fatal("late connection leaked")
+	}
+}
+
+func TestCanceledStartupDoesNotOverlapRetries(t *testing.T) {
+	attempts := make(chan struct{}, 8)
+	release := make(chan struct{})
+	client := &Client{Dial: func(ctx context.Context) (*Conn, error) {
+		attempts <- struct{}{}
+		<-release
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	first := make(chan error, 1)
+	go func() { first <- client.CheckProtocol(ctx) }()
+	select {
+	case <-attempts:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not begin")
+	}
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first request: %v", err)
+	}
+	pending := client.dialing
+	for range 3 {
+		retry, stop := context.WithTimeout(t.Context(), time.Second)
+		err := client.CheckProtocol(retry)
+		stop()
+		if !errors.Is(err, identity.ErrUnavailable) || errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("retry while startup is blocked: %v", err)
+		}
+	}
+	select {
+	case <-attempts:
+		t.Fatal("a retry started another worker")
+	default:
+	}
+	close(release)
+	select {
+	case <-pending:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup worker did not exit")
+	}
+	client.Dial = func(context.Context) (*Conn, error) {
+		attempts <- struct{}{}
+		return nil, errors.New("test startup failed")
+	}
+	if err := client.CheckProtocol(t.Context()); !errors.Is(err, identity.ErrUnavailable) {
+		t.Fatalf("retry after startup finished: %v", err)
+	}
+	select {
+	case <-attempts:
+	default:
+		t.Fatal("startup could not be retried")
+	}
+}
+
+func TestOpenClassifiesStartupDeadline(t *testing.T) {
+	fake := clockwork.NewFakeClock()
+	started := make(chan struct{})
+	client := &Client{Clock: fake, Dial: func(ctx context.Context) (*Conn, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Info("ws")
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not begin")
+	}
+	fake.Advance(rpcTimeout)
+	select {
+	case err := <-done:
+		if !errors.Is(err, identity.ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("startup deadline: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request stayed blocked")
+	}
+}

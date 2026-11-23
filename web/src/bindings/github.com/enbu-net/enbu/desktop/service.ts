@@ -217,9 +217,9 @@ export function ListSecrets(env: string): $CancellablePromise<$models.SecretsRes
 }
 
 /**
- * Logout signs out of the GitHub account login, or of the one in use when
- * login is "". Signing out of the one in use moves to the most recent
- * remaining sign-in.
+ * Logout signs out of the GitHub account named by login. WSL requires the
+ * name so a retry after an interrupted bridge call cannot delete another
+ * account. Other platforms accept an empty login for the account in use.
  */
 export function Logout(login: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.Logout", login);
