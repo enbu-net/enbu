@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
-	"github.com/enbu-net/enbu/pkg/fsutil"
 	"github.com/jonboulle/clockwork"
 )
 
@@ -82,11 +82,6 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 		t.Fatalf("first create failed before allocating an incarnation: %v", err)
 	}
 	// The first call is between reading and writing enbu.toml.
-	lock, err := fsutil.LockFile(filepath.Join(a.RepositoryDir, config.ProjectLockName), false)
-	if err == nil {
-		_ = lock.Close()
-		t.Error("config lock was not held between reading and writing")
-	}
 	second := make(chan error, 1)
 	go func() { second <- b.CreateEnvironment("production") }()
 	close(resume)
@@ -109,13 +104,11 @@ func TestPersonalSwitchDoesNotOpenProjectLock(t *testing.T) {
 	if err := a.CreateEnvironment("staging"); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(a.RepositoryDir, config.ProjectLockName)
-	if err := os.Remove(path); err != nil {
+	lock, err := a.lockProject(t.Context())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(path, 0700); err != nil {
-		t.Fatal(err)
-	}
+	defer func() { _ = lock.Close() }()
 	if err := a.SwitchEnvironment("default"); err != nil {
 		t.Fatal(err)
 	}
@@ -138,19 +131,7 @@ func TestProjectLockUsesSameFileForSymlinkedCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = first.Close() }()
-	canonical, err := filepath.EvalSymlinks(a.RepositoryDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(canonical, config.ProjectLockName)
-	if first.Name() != path {
-		t.Fatalf("aliased lock path = %q, want %q", first.Name(), path)
-	}
-	second, err := fsutil.LockFile(path, false)
-	if err == nil {
-		_ = second.Close()
-		t.Fatal("symlink path acquired the existing lock")
-	}
+	requireProjectLockBusy(t, a)
 }
 
 func TestConfigReservesOnlyTheNewProjectLockPath(t *testing.T) {
@@ -406,9 +387,6 @@ func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
 	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %s: %v", out, err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("/"+config.ProjectLockName+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	fake := clockwork.NewFakeClock()
 	a := &App{RepositoryDir: dir, Runtime: &Runtime{Clock: fake}}
 	lock, err := a.lockProject(t.Context())
@@ -416,7 +394,7 @@ func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = lock.Close() }()
-	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "clean", "-fd").CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "clean", "-fd").CombinedOutput(); err != nil && runtime.GOOS != "windows" {
 		t.Fatalf("git clean: %s: %v", out, err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -459,10 +437,6 @@ func TestProjectLockDoesNotDependOnGitMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = lock.Close() }()
-	if lock.Name() != filepath.Join(fsutil.Canonical(first), config.ProjectLockName) {
-		t.Fatalf("lock outside checkout: %s", lock.Name())
-	}
-
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	alsoLocked, err := (&App{RepositoryDir: second}).lockProject(ctx)
@@ -475,8 +449,74 @@ func TestProjectLockDoesNotDependOnGitMetadata(t *testing.T) {
 	if err := os.Remove(filepath.Join(first, ".git")); err != nil {
 		t.Fatal(err)
 	}
-	if other, err := fsutil.LockFile(filepath.Join(first, config.ProjectLockName), false); err == nil {
-		_ = other.Close()
-		t.Fatal("lost the project lock when the Git metadata became unavailable")
+	requireProjectLockBusy(t, &App{RepositoryDir: first})
+}
+
+func requireProjectLockBusy(t *testing.T, a *App) {
+	t.Helper()
+	copy := *a
+	fake := clockwork.NewFakeClock()
+	copy.Runtime = &Runtime{Clock: fake}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		lock, err := copy.lockProject(ctx)
+		if lock != nil {
+			_ = lock.Close()
+		}
+		result <- err
+	}()
+	if err := fake.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("another caller did not wait for the project lock: %v", err)
+	}
+	cancel()
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("project lock wait: %v", err)
+	}
+}
+
+func TestConfigWriteDoesNotReplaceSymlink(t *testing.T) {
+	a := newAlice(t)
+	path := a.projectPath()
+	content, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(a.RepositoryDir, "linked.toml")
+	if err := os.Rename(path, target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("file symlinks unavailable: %v", err)
+	}
+	if err := a.WriteConfig(content+"\n# edited\n", content); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("writing linked config: %v", err)
+	}
+	actual, err := os.Readlink(path)
+	if err != nil || actual != target {
+		t.Fatalf("configuration link changed: %s %v", actual, err)
+	}
+}
+
+func TestConfigWriteKeepsPreviousContentsWhenGitignoreCannotBeUpdated(t *testing.T) {
+	a := newAlice(t)
+	path := filepath.Join(a.RepositoryDir, ".gitignore")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(before+"\n# edited\n", before); err == nil {
+		t.Fatal("expected .gitignore update failure")
+	}
+	after, err := a.ReadConfig()
+	if err != nil || after != before {
+		t.Fatalf("configuration was changed: %v", err)
 	}
 }

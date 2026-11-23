@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/jonboulle/clockwork"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -123,6 +125,58 @@ func TestMigrateStorageRefusesSourceChanges(t *testing.T) {
 	cfg, err := a.loadProject()
 	if err != nil || cfg.Storage != s.cfg.Storage {
 		t.Fatalf("config changed: %+v %v", cfg, err)
+	}
+}
+
+func TestMigrateStorageRechecksSourceAfterWaitingForProjectLock(t *testing.T) {
+	a := migrationApp(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(t.Context(), "staging", "KEY", "copy"); err != nil {
+		t.Fatal(err)
+	}
+	fake := clockwork.NewFakeClock()
+	a.Runtime = &Runtime{Clock: fake}
+
+	s, err := a.openSession(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	next := *s.cfg
+	next.Storage.URL = "s3://new-bucket/team"
+	scope := storage.StateScope(s.workspace, s.resource("staging"))
+	revisions, err := s.store.Discover(t.Context(), storage.KindState, scope)
+	if err != nil || len(revisions) != 1 {
+		t.Fatalf("staging revisions: %v %v", revisions, err)
+	}
+	held, err := a.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Close() }()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- a.migrateStorage(ctx, s, newMemRegistry(), &next) }()
+	if err := fake.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("migration did not reach the project lock: %v", err)
+	}
+	if err := s.store.Delete(t.Context(), storage.KindState, scope, revisions[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fake.Advance(time.Second)
+	if err := <-result; err == nil {
+		t.Fatal("migration enabled the destination after a source revision was removed")
+	}
+	cfg, err := a.loadProject()
+	if err != nil || cfg.Storage != s.cfg.Storage {
+		t.Fatalf("source was switched: %+v %v", cfg, err)
 	}
 }
 
