@@ -280,6 +280,7 @@ tasks:
       - gui/build/frontend
     cmds:
       - go run ./tools/apperrlint .
+      - go run ./tools/boundarylint .
       - golangci-lint run --fix --build-tags fixture ./...
       - golangci-lint fmt ./...
       - git diff --exit-code -- '*.go'
