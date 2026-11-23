@@ -11,6 +11,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/fsutil"
+	"github.com/enbu-net/enbu/pkg/provider/git"
 )
 
 func (a *App) projectPath() string {
@@ -24,6 +25,14 @@ func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	dir, err := filepath.EvalSymlinks(filepath.Dir(a.projectPath()))
 	if err != nil {
 		return nil, fmt.Errorf("resolving project directory: %w", err)
+	}
+	repository, err := git.NewClient().Inspect(ctx, dir)
+	if err != nil {
+		return nil, err
+	}
+	if repository.MetadataDir != "" {
+		// The per-worktree metadata directory is outside Git's cleanup scope.
+		dir = repository.MetadataDir
 	}
 	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(dir, config.ProjectLockName))
 }

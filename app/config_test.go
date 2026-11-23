@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/fsutil"
+	"github.com/jonboulle/clockwork"
 )
 
 func TestExplicitNestedCheckoutDoesNotEditParent(t *testing.T) {
@@ -365,6 +367,8 @@ func TestCanceledDeleteReturnsWhileProjectLockIsHeld(t *testing.T) {
 	if err := a.CreateEnvironment("staging"); err != nil {
 		t.Fatal(err)
 	}
+	fake := clockwork.NewFakeClock()
+	a.Runtime = &Runtime{Clock: fake}
 	lock, err := a.lockProject(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -372,14 +376,16 @@ func TestCanceledDeleteReturnsWhileProjectLockIsHeld(t *testing.T) {
 	defer func() { _ = lock.Close() }()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	started := make(chan struct{})
 	result := make(chan error, 1)
 	go func() {
-		close(started)
-		_, err := a.DeleteEnvironment(ctx, "default", true)
+		_, err := a.DeleteEnvironment(ctx, "staging", true)
 		result <- err
 	}()
-	<-started
+	wait, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	if err := fake.BlockUntilContext(wait, 1); err != nil {
+		t.Fatalf("delete did not reach the lock retry timer: %v", err)
+	}
 	cancel()
 	select {
 	case err := <-result:
@@ -388,5 +394,46 @@ func TestCanceledDeleteReturnsWhileProjectLockIsHeld(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("delete waited for the project lock after cancellation")
+	}
+}
+
+func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	dir := t.TempDir()
+	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", out, err)
+	}
+	fake := clockwork.NewFakeClock()
+	a := &App{RepositoryDir: dir, Runtime: &Runtime{Clock: fake}}
+	lock, err := a.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "clean", "-fd").CombinedOutput(); err != nil {
+		t.Fatalf("git clean: %s: %v", out, err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		next, err := a.lockProject(ctx)
+		if next != nil {
+			_ = next.Close()
+		}
+		result <- err
+	}()
+	if err := fake.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("second lock did not wait after git clean: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fake.Advance(time.Second)
+	if err := <-result; err != nil {
+		t.Fatalf("second lock did not retry successfully: %v", err)
 	}
 }

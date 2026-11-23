@@ -15,10 +15,11 @@ import (
 )
 
 type Repository struct {
-	Root      string
-	OriginURL string
-	HasGit    bool
-	HasRemote bool
+	Root        string
+	MetadataDir string
+	OriginURL   string
+	HasGit      bool
+	HasRemote   bool
 }
 
 type Client interface {
@@ -51,6 +52,7 @@ func (FileClient) Inspect(ctx context.Context, path string) (Repository, error) 
 		}
 		if found {
 			repository.Root = fsutil.Canonical(dir)
+			repository.MetadataDir = fsutil.Canonical(gitDir)
 			repository.HasGit = true
 			url := originURL(gitDir)
 			repository.OriginURL = url
