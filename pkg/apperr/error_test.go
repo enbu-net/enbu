@@ -75,8 +75,10 @@ func TestPayloadAndExitCode(t *testing.T) {
 	if ExitCode(New(CodeAccessDenied, "denied", nil)) != 3 {
 		t.Fatal("access denied exit code is not 3")
 	}
-	if ExitCode(New(CodeConflict, "changed", nil)) != 4 {
-		t.Fatal("conflict exit code is not 4")
+	for _, code := range []Code{CodeConflict, CodeRecoveryPreviewChanged} {
+		if got := ExitCode(New(code, "changed", nil)); got != 4 {
+			t.Fatalf("%s exit code = %d, want 4", code, got)
+		}
 	}
 }
 

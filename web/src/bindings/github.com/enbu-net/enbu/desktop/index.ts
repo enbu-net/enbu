@@ -15,5 +15,6 @@ export {
     RepoInfo,
     SecretItem,
     SecretsResponse,
-    UpdateStatus
+    UpdateStatus,
+    WorkspaceResponse
 } from "./models.js";

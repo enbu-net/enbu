@@ -11,6 +11,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/keystore"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 // memoryBackend is an in-memory OS keyring.
@@ -39,6 +40,14 @@ func (m memoryBackend) Delete(service, key string) error {
 func stubBackend(t *testing.T) {
 	t.Helper()
 	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("ENBU_AUTH_BACKEND", "keyring")
+	originalRouting := winbridge.InWSL
+	winbridge.InWSL = func() bool { return false }
+	t.Cleanup(func() { winbridge.InWSL = originalRouting })
+	origDir := authStoreDir
+	dir := filepath.Join(t.TempDir(), "github-auth")
+	authStoreDir = func() string { return dir }
+	t.Cleanup(func() { authStoreDir = origDir })
 	orig := tokenBackend
 	tokenBackend = memoryBackend{}
 	t.Cleanup(func() { tokenBackend = orig })
@@ -55,17 +64,15 @@ func useDataDir(t *testing.T, dir string) {
 
 // A locked keyring is reported with its own code on every token operation.
 func TestTokenStoreReportsALockedKeyring(t *testing.T) {
-	t.Setenv("GITHUB_TOKEN", "")
-	orig := tokenBackend
+	stubBackend(t)
 	tokenBackend = &errorBackend{err: fmt.Errorf("%w: test", keystore.ErrLocked)}
-	t.Cleanup(func() { tokenBackend = orig })
 	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("LoadToken = %v", err)
 	}
 	if err := SaveToken(&StoredToken{AccessToken: "t", Username: "u", UserID: 1}); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("SaveToken = %v", err)
 	}
-	if err := DeleteToken(); !apperr.Is(err, apperr.CodeKeyringLocked) {
+	if err := DeleteAccount(""); !apperr.Is(err, apperr.CodeKeyringLocked) {
 		t.Fatalf("DeleteToken = %v", err)
 	}
 }
@@ -91,7 +98,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 		t.Fatalf("LoadToken after rename = %#v, %v", got, err)
 	}
 
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if _, err := LoadToken(); err == nil {
@@ -101,6 +108,7 @@ func TestTokenStoreRoundTrip(t *testing.T) {
 
 func TestTokenStoreSaveErrorPropagated(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	stubBackend(t)
 	orig := tokenBackend
 	tokenBackend = &errorBackend{err: errors.New("disk full")}
 	t.Cleanup(func() { tokenBackend = orig })
@@ -130,13 +138,13 @@ func TestDeleteTokenRemovesStoredToken(t *testing.T) {
 	if err := SaveToken(&StoredToken{AccessToken: "token", Username: "octo", UserID: 123}); err != nil {
 		t.Fatalf("SaveToken: %v", err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if _, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("token still stored: %v", err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken without a token: %v", err)
 	}
 }
@@ -201,7 +209,7 @@ func TestSigningOutFallsBackToTheLatestAccount(t *testing.T) {
 	if logins, current, _ := Accounts(); !reflect.DeepEqual(logins, []string{"a", "c"}) || current != "a" {
 		t.Fatalf("Accounts after signing out of another account = %v, %q", logins, current)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatalf("DeleteToken: %v", err)
 	}
 	if logins, current, _ := Accounts(); !reflect.DeepEqual(logins, []string{"c"}) || current != "c" {
@@ -246,33 +254,29 @@ func TestEachDataDirectoryChoosesItsAccount(t *testing.T) {
 	if _, err := SwitchAccount("alice"); err != nil {
 		t.Fatal(err)
 	}
-	if err := UseLatestAccount(); err != nil {
-		t.Fatalf("UseLatestAccount: %v", err)
-	}
-	if got, _ := LoadToken(); got.Username != "bob" {
-		t.Fatalf("LoadToken after UseLatestAccount = %q, want bob", got.Username)
-	}
+
 }
 
-// A token an earlier version saved reads as signed out, and signing in
-// replaces it.
-func TestAnOldTokenEntryIsReplacedBySigningIn(t *testing.T) {
+func TestInvalidKeyringEntryRequiresReset(t *testing.T) {
 	stubBackend(t)
-	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, []byte(`{"access_token":"old","username":"octo","user_id":1}`)); err != nil {
+	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, []byte(`{"unexpected":"data"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeNotAuthenticated) {
-		t.Fatalf("LoadToken with an old entry = %v, want not_authenticated", err)
+	if _, err := LoadToken(); err == nil {
+		t.Fatal("loaded invalid keyring data")
 	}
-	if err := SaveToken(&StoredToken{AccessToken: "new", Username: "octo", UserID: 1}); err != nil {
-		t.Fatalf("SaveToken over an old entry: %v", err)
+	token := &StoredToken{AccessToken: "new", Username: "octo", UserID: 1}
+	if err := SaveToken(token); err == nil {
+		t.Fatal("overwrote invalid keyring data")
 	}
-	if got, err := LoadToken(); err != nil || got.AccessToken != "new" {
-		t.Fatalf("LoadToken = %#v, %v", got, err)
+	if err := ResetCredentials(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveToken(token); err != nil {
+		t.Fatal(err)
 	}
 }
 
-// A sign-in that fails changes neither the accounts nor the one in use.
 func TestAFailedSignInChangesNothing(t *testing.T) {
 	stubBackend(t)
 	work := &StoredToken{AccessToken: "w", Username: "work", UserID: 1}
@@ -320,4 +324,13 @@ func writeFile(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestBridgeLogoutRequiresAnExplicitAccount(t *testing.T) {
+	previous := winbridge.InWSL
+	t.Cleanup(func() { winbridge.InWSL = previous })
+	winbridge.InWSL = func() bool { return true }
+	if err := DeleteAccount(""); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("unqualified bridge logout: %v", err)
+	}
 }

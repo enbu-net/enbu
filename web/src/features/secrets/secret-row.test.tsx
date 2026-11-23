@@ -8,6 +8,7 @@ import {
   queryInput,
   root,
   setupDom,
+  typeInto,
 } from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
@@ -47,12 +48,12 @@ describe("SecretRow", () => {
     expect(queryInput("super-secret")?.type).toBe("password");
   });
 
-  it("toggles to text type on eye button click", () => {
+  it("opens the text editor on eye button click", () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     act(() => {
       queryButton("Show value")?.click();
     });
-    expect(queryInput("super-secret")?.type).toBe("text");
+    expect(container.querySelector("textarea")?.value).toBe("super-secret");
     expect(queryButton("Hide value")).toBeTruthy();
   });
 
@@ -85,21 +86,149 @@ describe("SecretRow", () => {
 
   it("copies the secret key and value independently", async () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
     await act(async () => {
-      queryButton("Copy key")?.click();
+      queryButton("API_KEY")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("API_KEY");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Key copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
 
     await act(async () => {
       queryButton("Copy value")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("super-secret");
+    expect(
+      queryButton("Copy value")?.parentElement?.querySelector('input[aria-label="Value: API_KEY"]'),
+    ).toBeTruthy();
     // The buttons keep their names; the status message says what was copied.
     expect(queryButton("Copy value")).toBeTruthy();
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Value copied");
+    expect(container.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe("Value copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
+  });
+
+  it("saves an edited value with an explicit button", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+    expect(onEdit).not.toHaveBeenCalled();
+    await act(async () => {
+      queryButton("Save")?.click();
+      await Promise.resolve();
+    });
+    expect(onEdit).toHaveBeenCalledWith("new-secret");
+  });
+
+  it("does not submit when an IME candidate is confirmed", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    const input = queryInput("super-secret")!;
+    typeInto(input, "変換");
+    for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+      const enter = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        ...composition,
+      });
+      await act(async () => {
+        input.dispatchEvent(enter);
+      });
+      expect(enter.defaultPrevented).toBe(true);
+    }
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it.each(["\n", "\r\n", "\r"])("preserves %j separators on blur and edit", async (separator) => {
+    const onEdit = vi.fn(async () => {});
+    const value = ["header", "body", "footer"].join(separator);
+    renderSecretRow({ secretKey: "PEM", secretValue: value, onEdit });
+    expect(container.querySelector('input[aria-label="Value: PEM"]')).toHaveProperty(
+      "readOnly",
+      true,
+    );
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    expect(editor.value).toBe("header\nbody\nfooter");
+    act(() => {
+      editor.focus();
+      editor.blur();
+    });
+    expect(onEdit).not.toHaveBeenCalled();
+    const changed = "header\nnew body\nfooter";
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    act(() => {
+      setValue.call(editor, changed);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
+  });
+
+  it.each([
+    ["inserts a blank line after CR", "header\rbody", "header\n\nbody", 8, "header\r\r\nbody"],
+    ["deletes the selected CRLF before LF", "header\r\n\nbody", "header\nbody", 6, "header\nbody"],
+  ])("%s", async (_case, original, changed, caret, saved) => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: original, onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(editor, changed);
+      editor.setSelectionRange(caret, caret);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(editor.value).toBe(changed);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(saved);
+  });
+
+  it("undoes and redoes deletion without mixing CRLF and LF bytes", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: "header\r\n\nbody", onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    async function input(value: string, inputType: string, caret: number) {
+      await act(async () => {
+        setValue.call(editor, value);
+        editor.setSelectionRange(caret, caret);
+        editor.dispatchEvent(new InputEvent("input", { inputType, bubbles: true }));
+      });
+    }
+
+    await input("header\nbody", "deleteContentForward", 7);
+    expect(queryButton("Save")).toBeTruthy();
+    await input("header\n\nbody", "historyUndo", 7);
+    expect(queryButton("Save")).toBeNull();
+    await input("header\nbody", "historyRedo", 7);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("header\r\nbody");
+  });
+
+  it("pauses editing in both value controls while saving", async () => {
+    let finishSave!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const onEdit = vi.fn(() => promise);
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("new-secret");
+    expect(queryInput("new-secret")?.disabled).toBe(true);
+    act(() => queryButton("Show value")?.click());
+    expect(container.querySelector("textarea")?.disabled).toBe(true);
+
+    await act(async () => finishSave());
+    expect(container.querySelector("textarea")?.disabled).toBe(false);
   });
 
   it("renders the secret key as a monospace label", () => {

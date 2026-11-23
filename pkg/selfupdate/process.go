@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -35,8 +36,20 @@ func Here(goos, version string) Installation {
 	}
 }
 
-// writable tries what an update does: create a file in dir and remove it.
+// writable checks whether this user can open the install directory for
+// locking and create the staging directory and lock file.
 func writable(dir string) bool {
+	if runtime.GOOS != "windows" {
+		directory, err := os.Open(dir)
+		if err != nil {
+			return false
+		}
+		_ = directory.Close()
+	}
+	staging, err := os.MkdirTemp(dir, ".enbu-update-check-*")
+	if err != nil || os.Remove(staging) != nil {
+		return false
+	}
 	f, err := os.CreateTemp(dir, ".enbu-update-check-*")
 	if err != nil {
 		return false

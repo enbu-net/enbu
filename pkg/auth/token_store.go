@@ -1,12 +1,10 @@
 package auth
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,43 +13,8 @@ import (
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/fsutil"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/winbridge"
 )
-
-const (
-	tokenKeyringService = "enbu"
-	tokenKeyringAccount = "github-oauth"
-)
-
-// tokenBackend holds the tokens in the OS keyring. A missing or locked keyring
-// is an error; there is no plaintext file to fall back to. Inside WSL it is
-// the Windows keyring, through enbu.exe, so Windows and every distribution
-// share one sign-in.
-var tokenBackend = newTokenBackend()
-
-func newTokenBackend() keystore.Backend {
-	if winbridge.InWSL() {
-		return winbridge.Shared().Keyring()
-	}
-	return keystore.New()
-}
-
-// TokenKeyringEntry is the OS keyring entry of the GitHub token, which the
-// Windows enbu.exe shares with WSL.
-func TokenKeyringEntry() (service, key string) { return tokenKeyringService, tokenKeyringAccount }
-
-// keyringError tells the person what to fix instead of showing an internal
-// error: a locked OS keyring gets its own code, a missing one is unavailable.
-func keyringError(op string, err error) error {
-	switch {
-	case errors.Is(err, keystore.ErrLocked):
-		return apperr.Wrap(apperr.CodeKeyringLocked, op+": "+err.Error(), err, nil)
-	case errors.Is(err, keystore.ErrNoKeyring):
-		return apperr.Wrap(apperr.CodeUnavailable, op+": "+err.Error(), err, nil)
-	}
-	return fmt.Errorf("%s: %w", op, err)
-}
 
 type StoredToken struct {
 	AccessToken string `json:"access_token"`
@@ -59,13 +22,15 @@ type StoredToken struct {
 	UserID      int64  `json:"user_id"`
 }
 
-// storedAccounts is the keyring entry: every GitHub account this OS user
+// storedAccounts contains every GitHub account this OS user
 // signed in with, the most recent sign-in last. Which one is in use is not
 // kept here but in the data directory (activeAccount), so two data
 // directories, such as two people trying a workspace on one computer, can use
-// two accounts from one keyring.
+// two accounts from one credential store.
 type storedAccounts struct {
-	Accounts []StoredToken `json:"accounts"`
+	Accounts     []StoredToken `json:"accounts"`
+	Migration    string        `json:"migration,omitempty"`
+	LegacyDigest string        `json:"legacy_digest,omitempty"`
 }
 
 // activeAccount names the account in use by its GitHub user ID, which stays
@@ -77,31 +42,33 @@ type activeAccount struct {
 // activePath is where this data directory records the account in use.
 var activePath = func() string { return filepath.Join(config.DataDir(), "github-account.json") }
 
-// SaveToken adds the account, or replaces its token when it is already signed
-// in, and makes it the account in use. The choice is written first, and put
-// back if the keyring then fails, so a failed sign-in changes nothing.
-//
-// Two sign-ins at the same moment, such as the CLI and the desktop app, may
-// keep only one of the two accounts; signing in again adds the other.
+// SaveToken adds or replaces an account and makes it the account in use.
 func SaveToken(token *StoredToken) error {
 	if err := validateStoredToken(token); err != nil {
 		return err
 	}
-	accounts, err := loadAccounts()
-	if err != nil {
+	if TokenFromEnvironment() != nil {
+		return nil
+	}
+	if winbridge.InWSL() {
+		return saveWithSelection(token.UserID, func() error {
+			_, err := accountOperation("save", accountRequest{Token: token})
+			return err
+		})
+	}
+	s := localStores()
+	return s.withLock(func() error {
+		_, err := s.execute("save", accountRequest{Token: token, selectLocally: true})
 		return err
-	}
-	kept := accounts[:0]
-	for _, a := range accounts {
-		if a.UserID != token.UserID {
-			kept = append(kept, a)
-		}
-	}
+	})
+}
+
+func saveWithSelection(userID int64, save func() error) error {
 	previous := loadActive()
-	if err := setActive(token.UserID); err != nil {
+	if err := setActive(userID); err != nil {
 		return err
 	}
-	if err := storeAccounts(append(kept, *token)); err != nil {
+	if err := save(); err != nil {
 		if restoreErr := setActive(previous); restoreErr != nil {
 			slog.Warn("could not restore the GitHub account in use", "err", restoreErr)
 		}
@@ -110,97 +77,207 @@ func SaveToken(token *StoredToken) error {
 	return nil
 }
 
-// LoadToken returns GITHUB_TOKEN when it is set, otherwise the account in use.
-func LoadToken() (*StoredToken, error) {
-	if tokenEnv := os.Getenv("GITHUB_TOKEN"); tokenEnv != "" {
-		actor := os.Getenv("GITHUB_ACTOR")
-		if actor == "" {
-			actor = "github-actions"
-		}
-		return &StoredToken{AccessToken: tokenEnv, Username: actor}, nil
-	}
-	accounts, err := loadAccounts()
-	if err != nil {
-		return nil, err
-	}
-	current := currentIndex(accounts)
-	if current < 0 {
-		return nil, notLoggedInError()
-	}
-	token := accounts[current]
-	return &token, nil
-}
-
-// Accounts lists the signed-in GitHub logins, the most recent sign-in last,
-// and the one in use, "" when there is none. GITHUB_TOKEN is not an account.
-func Accounts() (logins []string, current string, err error) {
-	accounts, err := loadAccounts()
-	if err != nil {
-		return nil, "", err
-	}
-	for _, a := range accounts {
-		logins = append(logins, a.Username)
-	}
-	if i := currentIndex(accounts); i >= 0 {
-		current = accounts[i].Username
-	}
-	return logins, current, nil
-}
-
-// SwitchAccount makes the signed-in account login the one in use in this data
-// directory. The login is matched without regard to case, as GitHub does.
-func SwitchAccount(login string) (*StoredToken, error) {
-	accounts, err := loadAccounts()
-	if err != nil {
-		return nil, err
-	}
-	i := indexOf(accounts, login)
-	if i < 0 {
-		return nil, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("not signed in as %q: run 'enbu auth login' to add the account", login), nil)
-	}
-	if err := setActive(accounts[i].UserID); err != nil {
-		return nil, err
-	}
-	token := accounts[i]
-	return &token, nil
-}
-
-// UseLatestAccount makes the most recent sign-in the account in use. Inside
-// WSL the Windows enbu.exe signs in, so this data directory follows it here.
-func UseLatestAccount() error {
-	accounts, err := loadAccounts()
-	if err != nil {
-		return err
-	}
-	if len(accounts) == 0 {
-		return notLoggedInError()
-	}
-	return setActive(accounts[len(accounts)-1].UserID)
-}
-
-// DeleteToken signs out of the account in use. The most recent remaining
-// sign-in is used next.
-func DeleteToken() error {
-	return DeleteAccount("")
-}
-
-// DeleteAccount signs out of the account login, or of the one in use when
-// login is "". Signing out of no account is not an error.
-func DeleteAccount(login string) error {
-	accounts, err := loadAccounts()
-	if err != nil {
-		return err
-	}
-	i := currentIndex(accounts)
-	if login != "" {
-		if i = indexOf(accounts, login); i < 0 {
-			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("not signed in as %q", login), nil)
-		}
-	}
-	if i < 0 {
+// TokenFromEnvironment returns the ephemeral GitHub credential, if supplied.
+func TokenFromEnvironment() *StoredToken {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
 		return nil
 	}
-	return storeAccounts(append(accounts[:i:i], accounts[i+1:]...))
+	actor := os.Getenv("GITHUB_ACTOR")
+	if actor == "" {
+		actor = "github-actions"
+	}
+	return &StoredToken{AccessToken: token, Username: actor}
+}
+
+// LoadToken returns GITHUB_TOKEN when it is set, otherwise the account in use.
+func LoadToken() (*StoredToken, error) {
+	if token := TokenFromEnvironment(); token != nil {
+		return token, nil
+	}
+	result, err := readAccountOperation("load", "")
+	return result.Token, err
+}
+
+// Accounts lists saved accounts, the most recent sign-in last, and the one in use.
+func Accounts() (logins []string, current string, err error) {
+	result, err := readAccountOperation("list", "")
+	return result.Logins, result.Current, err
+}
+
+// SwitchAccount makes a signed-in account the active account in this data directory.
+func SwitchAccount(login string) (*StoredToken, error) {
+	request := accountRequest{Login: login}
+	if winbridge.InWSL() {
+		result, err := accountOperation("switch", request)
+		return selectAccount(result, err)
+	}
+	s := localStores()
+	var token *StoredToken
+	err := s.withLock(func() error {
+		result, err := s.execute("switch", request)
+		token, err = selectAccount(result, err)
+		return err
+	})
+	return token, err
+}
+
+func selectAccount(result accountResult, err error) (*StoredToken, error) {
+	if err != nil {
+		return nil, err
+	}
+	if result.Token == nil {
+		return nil, notLoggedInError()
+	}
+	if err := setActive(result.Token.UserID); err != nil {
+		return nil, err
+	}
+	return result.Token, nil
+}
+
+// DeleteAccount signs out of the matching account. Local stores also allow the
+// account in use, since their result is not subject to bridge timeouts.
+func DeleteAccount(login string) error {
+	if winbridge.InWSL() {
+		if strings.TrimSpace(login) == "" {
+			return apperr.New(apperr.CodeInvalidArgument, "on WSL, use enbu auth logout --user LOGIN", nil)
+		}
+		_, err := accountOperation("delete", accountRequest{Login: login, Active: loadActive()})
+		return err
+	}
+	s := localStores()
+	return s.withLock(func() error {
+		_, err := s.execute("delete", accountRequest{Login: login, Active: loadActive()})
+		return err
+	})
+}
+
+func readAccountOperation(operation, login string) (accountResult, error) {
+	return accountOperation(operation, accountRequest{Login: login, Active: loadActive()})
+}
+
+func accountOperation(operation string, request accountRequest) (accountResult, error) {
+	var result accountResult
+	if winbridge.InWSL() {
+		err := winbridge.Shared().GitHubAuth(operation, request, &result)
+		return result, bridgeAuthError(err)
+	}
+	return localStores().execute(operation, request)
+}
+
+type accountRequest struct {
+	Token  *StoredToken `json:"token,omitempty"`
+	Active int64        `json:"active,omitempty"`
+	Login  string       `json:"login,omitempty"`
+
+	selectLocally bool
+}
+
+type accountResult struct {
+	Token   *StoredToken `json:"token,omitempty"`
+	Logins  []string     `json:"logins,omitempty"`
+	Current string       `json:"current,omitempty"`
+}
+
+func (s credentialStores) withLock(fn func() error) error {
+	f, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return fn()
+}
+
+// ServeGitHubAuth serves only GitHub credential operations on the Windows
+// side of the bridge. Active-account IDs come from the caller's WSL data dir.
+func ServeGitHubAuth(_ context.Context, operation string, raw json.RawMessage) (any, error) {
+	s := localStores()
+	switch operation {
+	case "diagnose":
+		return s.diagnose(), nil
+	case "open_device_browser":
+		return struct{}{}, openBrowser(deviceVerificationURL)
+	case "migrate", "reset":
+		return struct{}{}, s.maintain(operation)
+	case "save", "delete", "load", "list", "switch":
+		var request accountRequest
+		if err := decodeStrict(raw, &request); err != nil {
+			return nil, err
+		}
+		if operation == "save" || operation == "delete" {
+			var result accountResult
+			err := s.withLock(func() error {
+				var err error
+				result, err = s.execute(operation, request)
+				return err
+			})
+			return result, err
+		}
+		return s.execute(operation, request)
+	default:
+		return nil, errors.New("unknown GitHub credential operation")
+	}
+}
+
+func (s credentialStores) execute(operation string, request accountRequest) (accountResult, error) {
+	var result accountResult
+	store, _, err := s.choose(false)
+	if err != nil {
+		return result, err
+	}
+	stored, err := store.load()
+	if err != nil {
+		return result, authStoreError(err)
+	}
+	accounts := stored.Accounts
+	i := currentIndex(accounts, request.Active)
+	switch operation {
+	case "save":
+		if err := validateStoredToken(request.Token); err != nil {
+			return result, err
+		}
+		kept := accounts[:0]
+		for _, account := range accounts {
+			if account.UserID != request.Token.UserID {
+				kept = append(kept, account)
+			}
+		}
+		stored.Accounts = append(kept, *request.Token)
+		save := func() error { return authStoreError(store.save(stored)) }
+		if request.selectLocally {
+			return result, saveWithSelection(request.Token.UserID, save)
+		}
+		return result, save()
+	case "delete", "switch":
+		if operation == "switch" || request.Login != "" {
+			if i = indexOf(accounts, request.Login); i < 0 {
+				return result, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("not signed in as %q: run 'enbu auth login' to add the account", request.Login), nil)
+			}
+		}
+		if operation == "delete" {
+			if i < 0 {
+				return result, nil
+			}
+			stored.Accounts = append(accounts[:i:i], accounts[i+1:]...)
+			return result, authStoreError(store.save(stored))
+		}
+	case "list":
+		for _, account := range accounts {
+			result.Logins = append(result.Logins, account.Username)
+		}
+		if i >= 0 {
+			result.Current = accounts[i].Username
+		}
+		return result, nil
+	case "load":
+	default:
+		return result, errors.New("unknown GitHub credential operation")
+	}
+	if i < 0 {
+		return result, notLoggedInError()
+	}
+	result.Token = &accounts[i]
+	return result, nil
 }
 
 func indexOf(accounts []StoredToken, login string) int {
@@ -212,76 +289,39 @@ func indexOf(accounts []StoredToken, login string) int {
 	return -1
 }
 
-// currentIndex is the account this data directory chose, or the most recent
-// sign-in when it chose none or signed out of the one it chose.
-func currentIndex(accounts []StoredToken) int {
-	if id := loadActive(); id != 0 {
-		for i, a := range accounts {
-			if a.UserID == id {
-				return i
-			}
+func currentIndex(accounts []StoredToken, id int64) int {
+	for i, a := range accounts {
+		if a.UserID == id {
+			return i
 		}
 	}
 	return len(accounts) - 1
 }
 
-func loadAccounts() ([]StoredToken, error) {
-	data, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, keyringError("loading token", err)
-	}
-	accounts, err := parseAccounts(data)
-	if err != nil {
-		// An entry an earlier version saved, or a damaged one, holds no
-		// account this version can use: the person signs in again, which
-		// replaces it.
-		slog.Warn("ignoring the stored GitHub sign-in; run 'enbu auth login'", "err", err)
-		return nil, nil
-	}
-	return accounts, nil
-}
-
 func parseAccounts(data []byte) ([]StoredToken, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var stored storedAccounts
-	if err := decoder.Decode(&stored); err != nil {
-		return nil, fmt.Errorf("parsing token: %w", err)
+	var stored struct {
+		Accounts json.RawMessage `json:"accounts"`
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return nil, errors.New("parsing token: invalid trailing data")
+	if err := decodeStrict(data, &stored); err != nil {
+		return nil, err
 	}
-	for i := range stored.Accounts {
-		if err := validateStoredToken(&stored.Accounts[i]); err != nil {
-			return nil, fmt.Errorf("parsing token: %w", err)
-		}
+	var accounts []StoredToken
+	if err := decodeStrict(stored.Accounts, &accounts); err != nil {
+		return nil, err
 	}
-	return stored.Accounts, nil
+	return accounts, validateAccounts(accounts)
 }
 
-func storeAccounts(accounts []StoredToken) error {
-	if len(accounts) == 0 {
-		if err := tokenBackend.Delete(tokenKeyringService, tokenKeyringAccount); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return keyringError("removing token", err)
+func validateAccounts(accounts []StoredToken) error {
+	seen := make(map[int64]bool, len(accounts))
+	for i := range accounts {
+		if err := validateStoredToken(&accounts[i]); err != nil {
+			return err
 		}
-		return nil
-	}
-	data, err := json.Marshal(storedAccounts{Accounts: accounts})
-	if err != nil {
-		return err
-	}
-	if err := tokenBackend.Store(tokenKeyringService, tokenKeyringAccount, data); err != nil {
-		return keyringError("saving token", err)
-	}
-	stored, err := tokenBackend.Load(tokenKeyringService, tokenKeyringAccount)
-	if err != nil {
-		return keyringError("verifying saved token", err)
-	}
-	if !bytes.Equal(stored, data) {
-		return errors.New("verifying saved token failed")
+		if seen[accounts[i].UserID] {
+			return errors.New("duplicate GitHub account")
+		}
+		seen[accounts[i].UserID] = true
 	}
 	return nil
 }

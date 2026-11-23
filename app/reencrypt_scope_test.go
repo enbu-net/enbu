@@ -225,6 +225,13 @@ func TestScopeDiscoveryIsBounded(t *testing.T) {
 	if got := mustSecrets(t, bob, "default"); got["KEY"] != "v1" {
 		t.Fatalf("the listed environment was not re-encrypted: %v", got)
 	}
+	if err := alice.RemoveMember(bg, mustMember(t, alice, bob).DeviceID); !apperr.Is(err, apperr.CodeReencryptIncomplete) {
+		t.Fatalf("removal with unexamined scopes: %v", err)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("unexamined scopes blocked revocation: %v, %v", members, err)
+	}
 }
 
 // A revision signed by someone the current Control does not list, built on the

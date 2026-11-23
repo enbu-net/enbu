@@ -184,6 +184,38 @@ export class EnvironmentDeletion {
     }
 }
 
+/**
+ * EnvironmentTarget identifies an environment lineage in a workspace.
+ */
+export class EnvironmentTarget {
+    "workspace_id": string;
+    "environment": string;
+    "incarnation": string;
+
+    /** Creates a new EnvironmentTarget instance. */
+    constructor($$source: Partial<EnvironmentTarget> = {}) {
+        if (!("workspace_id" in $$source)) {
+            this["workspace_id"] = "";
+        }
+        if (!("environment" in $$source)) {
+            this["environment"] = "";
+        }
+        if (!("incarnation" in $$source)) {
+            this["incarnation"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new EnvironmentTarget instance from a string or object.
+     */
+    static createFrom($$source: any = {}): EnvironmentTarget {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new EnvironmentTarget($$parsedSource as Partial<EnvironmentTarget>);
+    }
+}
+
 export class HistoryEntry {
     "index": number;
     "timestamp": string;
@@ -471,6 +503,43 @@ export class ProgressStep {
     }
 }
 
+export class RemovalReview {
+    "diff": Diff;
+    "baseline": string;
+    "kept": string[];
+
+    /** Creates a new RemovalReview instance. */
+    constructor($$source: Partial<RemovalReview> = {}) {
+        if (!("diff" in $$source)) {
+            this["diff"] = (new Diff());
+        }
+        if (!("baseline" in $$source)) {
+            this["baseline"] = "";
+        }
+        if (!("kept" in $$source)) {
+            this["kept"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new RemovalReview instance from a string or object.
+     */
+    static createFrom($$source: any = {}): RemovalReview {
+        const $$createField0_0 = $$createType3;
+        const $$createField2_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("diff" in $$parsedSource) {
+            $$parsedSource["diff"] = $$createField0_0($$parsedSource["diff"]);
+        }
+        if ("kept" in $$parsedSource) {
+            $$parsedSource["kept"] = $$createField2_0($$parsedSource["kept"]);
+        }
+        return new RemovalReview($$parsedSource as Partial<RemovalReview>);
+    }
+}
+
 /**
  * SecretChoice settles one conflicted key with a value, or by deleting it.
  */
@@ -527,7 +596,7 @@ export class SecretConflict {
      * Creates a new SecretConflict instance from a string or object.
      */
     static createFrom($$source: any = {}): SecretConflict {
-        const $$createField1_0 = $$createType4;
+        const $$createField1_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("candidates" in $$parsedSource) {
             $$parsedSource["candidates"] = $$createField1_0($$parsedSource["candidates"]);
@@ -600,5 +669,6 @@ export class WrittenFile {
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = SecretConflict.createFrom;
 const $$createType2 = $Create.Array($$createType1);
-const $$createType3 = ConflictCandidate.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType3 = Diff.createFrom;
+const $$createType4 = ConflictCandidate.createFrom;
+const $$createType5 = $Create.Array($$createType4);

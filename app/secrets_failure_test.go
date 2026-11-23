@@ -154,11 +154,15 @@ func TestSecretWritesRejectUntrustedControl(t *testing.T) {
 func TestPullSecretsToFilePreservesExistingFileOnFailure(t *testing.T) {
 	for _, failure := range []string{"decryption", "invalid dotenv key", "missing output directory"} {
 		t.Run(failure, func(t *testing.T) {
-			secrets := map[string]string{"KEY": "new"}
+			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), map[string]string{"KEY": "new"})
 			if failure == "invalid dotenv key" {
-				secrets = map[string]string{"BAD\nKEY": "value"}
+				if err := a.changeSecret(context.Background(), "default", "legacy", func(secrets map[string]string) error {
+					secrets["BAD\nKEY"] = "value"
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
 			}
-			a := newTestApp(t, "owner", "repo", "default", mustKeyPair(t), secrets)
 			output := filepath.Join(a.RepositoryDir, ".env")
 			if err := os.WriteFile(output, []byte("original"), 0o600); err != nil {
 				t.Fatal(err)

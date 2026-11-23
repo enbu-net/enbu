@@ -2,14 +2,18 @@ package app
 
 import (
 	"context"
+	"io"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/enbu-net/enbu/app/apptest"
 	"github.com/enbu-net/enbu/pkg/age"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/storage/storagetest"
+	"github.com/opencontainers/go-digest"
 )
 
 const testWorkspaceID = "11111111-1111-4111-8111-111111111111"
@@ -72,6 +76,112 @@ func mustKeyPair(t *testing.T) *age.KeyPair {
 
 // --- tests ---
 
+func TestReadWorkspaceKeepsEnvironmentAndSecretsOnOneConfig(t *testing.T) {
+	a := newAlice(t)
+	if err := a.EditSecret(bg, "default", "KEY", "original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateEnvironment("replacement"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(bg, "replacement", "KEY", "replacement"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := cfg.Environments["default"].Incarnation
+	replacement := cfg.Environments["replacement"]
+	cfg.Environments["default"] = replacement
+	delete(cfg.Environments, "replacement")
+
+	changed := false
+	a.Storage = storagetest.Wrap(a.Storage, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !changed {
+				changed = true
+				if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	before, err := a.ReadWorkspace(bg)
+	if err != nil || !changed || before.Environments[0].Incarnation != original || before.Secrets["KEY"] != "original" {
+		t.Fatalf("initial snapshot: %+v %v", before, err)
+	}
+	after, err := a.ReadWorkspace(bg)
+	if err != nil || after.Environments[0].Incarnation != replacement.Incarnation || after.Secrets["KEY"] != "replacement" {
+		t.Fatalf("next snapshot: %+v %v", after, err)
+	}
+}
+
+func TestReadWorkspaceOffersAnExplicitSwitchForAnInvalidDefault(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.AddSecret(bg, "staging", "STAGE", "value"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg.Environments, "default")
+	cfg.DefaultEnv = "staging "
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.saveLocalState(cfg.WorkspaceID, &config.LocalConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := a.ReadWorkspace(bg)
+	if err != nil || snapshot.Environment != "" || len(snapshot.Secrets) != 0 ||
+		len(snapshot.Environments) != 1 || snapshot.Environments[0].Name != "staging" || snapshot.Environments[0].IsCurrent {
+		t.Fatalf("invalid explicit default hid available environments: %+v %v", snapshot, err)
+	}
+	if err := a.SwitchEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := a.ReadWorkspace(bg)
+	if err != nil || selected.Environment != "staging" || selected.Secrets["STAGE"] != "value" {
+		t.Fatalf("explicit switch did not persist: %+v %v", selected, err)
+	}
+}
+
+func TestReadWorkspaceCanSelectTheImplicitDefault(t *testing.T) {
+	a := newAlice(t)
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments = nil
+	cfg.DefaultEnv = "invalid "
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.saveLocalState(cfg.WorkspaceID, &config.LocalConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := a.ReadWorkspace(bg)
+	if err != nil || empty.Environment != "" || len(empty.Environments) != 1 || empty.Environments[0].Name != "default" {
+		t.Fatalf("snapshot did not offer implicit default: %+v %v", empty, err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := a.ReadWorkspace(bg)
+	if err != nil || selected.Environment != "default" {
+		t.Fatalf("implicit default was not selected: %+v %v", selected, err)
+	}
+}
+
 func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	kp := mustKeyPair(t)
 	a := newTestApp(t, "owner", "repo", "default", kp, map[string]string{"FOO": "bar", "BAZ": "qux"})
@@ -82,6 +192,30 @@ func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 	}
 	if secrets["FOO"] != "bar" || secrets["BAZ"] != "qux" {
 		t.Fatalf("unexpected secrets: %v", secrets)
+	}
+}
+
+func TestSecretNamesSupportUnicodeLetters(t *testing.T) {
+	alice := newAlice(t)
+	for _, name := range []string{"", "BAD-NAME", "1START", "BAD\nKEY"} {
+		if err := alice.AddSecret(context.Background(), "default", name, "value"); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+			t.Errorf("AddSecret(%q) = %v", name, err)
+		} else if payload := apperr.PayloadOf(err); payload.Params["key"] != strconv.QuoteToASCII(name) || !strings.Contains(payload.Message, payload.Params["key"]) {
+			t.Errorf("AddSecret(%q) payload = %+v", name, payload)
+		}
+	}
+	if err := alice.AddSecret(context.Background(), "default", "こんにちは", "Hello"); err != nil {
+		t.Fatalf("AddSecret(Japanese) = %v", err)
+	}
+	if err := alice.EditSecret(context.Background(), "default", "こんにちは", "こんにちは"); err != nil {
+		t.Fatalf("EditSecret(Japanese) = %v", err)
+	}
+	if _, err := alice.ImportSecrets(context.Background(), "default", map[string]string{"GOOD": "value", "日本語_2": "value"}, false); err != nil {
+		t.Fatalf("ImportSecrets(Japanese) = %v", err)
+	}
+	secrets, err := alice.ListSecrets(context.Background(), "default")
+	if err != nil || len(secrets) != 4 || secrets["KEY"] != "v1" || secrets["こんにちは"] != "こんにちは" || secrets["日本語_2"] != "value" {
+		t.Fatalf("unicode names did not persist: %v, %v", secrets, err)
 	}
 }
 

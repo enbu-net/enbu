@@ -14,6 +14,31 @@ type SecretsResponse struct {
 	Secrets     []SecretItem `json:"secrets"`
 }
 
+type WorkspaceResponse struct {
+	WorkspaceID  string           `json:"workspace_id"`
+	Environments []app.EnvInfo    `json:"environments"`
+	Secrets      SecretsResponse  `json:"secrets"`
+	Conflicts    *app.ConflictSet `json:"conflicts"`
+}
+
+func (s *Service) GetWorkspace(repoPath string) (WorkspaceResponse, error) {
+	return withRepoResult(s, func() (WorkspaceResponse, error) {
+		if !s.matchesSelectedRepository(repoPath) {
+			return WorkspaceResponse{}, apperr.New(apperr.CodeConflict, "the selected repository changed", nil)
+		}
+		snapshot, err := s.app.ReadWorkspace(s.context())
+		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		return WorkspaceResponse{
+			WorkspaceID:  snapshot.WorkspaceID,
+			Environments: snapshot.Environments,
+			Secrets:      SecretsResponse{Environment: snapshot.Environment, Secrets: secretItems(snapshot.Secrets)},
+			Conflicts:    snapshot.Conflicts,
+		}, nil
+	})
+}
+
 type SecretItem struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -49,8 +74,8 @@ func (s *Service) ReadConfig() (string, error) {
 	})
 }
 
-func (s *Service) WriteConfig(content string) error {
-	return s.withRepo(func() error { return s.app.WriteConfig(content) })
+func (s *Service) WriteConfig(content, previous string) error {
+	return s.withRepo(func() error { return s.app.WriteConfig(content, previous) })
 }
 
 // ChangeStorage migrates verified history before updating the shared configuration.
@@ -66,14 +91,14 @@ func (s *Service) SuggestStorage() (string, error) {
 
 // Initialize sets this device up in the selected repository, as `enbu init`
 // does. It founds a workspace in storage, or in SuggestStorage's when
-// storage.URL is empty; with an enbu.toml that names a storage it joins that
+// storage.URL is empty; with an enbu.toml anchored to an existing Control it joins that
 // workspace, and storage.URL must be empty. acceptNewGenesis is
 // `--accept-new-genesis`.
 func (s *Service) Initialize(storage config.StorageConfig, acceptNewGenesis bool) (app.InitResult, error) {
 	return withRepoResult(s, func() (app.InitResult, error) {
 		opts := app.InitOptions{AcceptNewGenesis: acceptNewGenesis}
 		if storage.URL != "" {
-			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
+			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.ControlGenesis != "" {
 				return app.InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
 			}
 			opts.Storage = &storage
@@ -132,17 +157,21 @@ func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
 		if env == "" {
 			env = currentEnv
 		}
-		keys := make([]string, 0, len(secrets))
-		for key := range secrets {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		items := make([]SecretItem, 0, len(keys))
-		for _, key := range keys {
-			items = append(items, SecretItem{Key: key, Value: secrets[key]})
-		}
-		return SecretsResponse{Environment: env, Secrets: items}, nil
+		return SecretsResponse{Environment: env, Secrets: secretItems(secrets)}, nil
 	})
+}
+
+func secretItems(secrets map[string]string) []SecretItem {
+	keys := make([]string, 0, len(secrets))
+	for key := range secrets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]SecretItem, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, SecretItem{Key: key, Value: secrets[key]})
+	}
+	return items
 }
 
 func (s *Service) AddSecret(env, key, value string) error {
@@ -205,6 +234,21 @@ func (s *Service) DiffHistory(env string, from, to int) (app.Diff, error) {
 	})
 }
 
-func (s *Service) RestoreHistory(env string, index int) error {
-	return s.withRepo(func() error { return s.app.RestoreHistory(s.context(), env, index) })
+func (s *Service) RestoreHistory(repoPath string, target app.EnvironmentTarget, tag string) error {
+	return s.withRepo(func() error {
+		if !s.matchesSelectedRepository(repoPath) {
+			return apperr.New(apperr.CodeConflict, "the selected repository changed", nil)
+		}
+		return s.app.RestoreHistoryRevision(s.context(), target, tag)
+	})
+}
+
+func (s *Service) ReviewRemovedRevision(resource, revision, baseline string) (app.RemovalReview, error) {
+	return withRepoResult(s, func() (app.RemovalReview, error) {
+		review, err := s.app.ReviewRemovedRevision(s.context(), resource, revision, baseline)
+		if err != nil {
+			return app.RemovalReview{}, err
+		}
+		return *review, nil
+	})
 }

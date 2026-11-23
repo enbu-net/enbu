@@ -67,7 +67,7 @@ func TestFormat(t *testing.T) {
 
 func TestRoundTripPreservesValues(t *testing.T) {
 	t.Parallel()
-	want := map[string]string{"EMPTY": "", "UNICODE": "e\u0301 日本語", "QUOTES": "'\"\\", "LINES": "\r\n\t", "LITERAL": "${HOME} $(touch /tmp/never) `never` # text", "SPACES": "  abc  "}
+	want := map[string]string{"EMPTY": "", "UNICODE": "e\u0301 日本語", "こんにちは": "Hello", "e\u0301_name": "combined", "QUOTES": "'\"\\", "LINES": "\r\n\t", "LITERAL": "${HOME} $(touch /tmp/never) `never` # text", "SPACES": "  abc  "}
 	encoded, err := Format(want)
 	if err != nil {
 		t.Fatal(err)

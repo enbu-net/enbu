@@ -44,7 +44,7 @@ func TestWorkspaceInNonASCIIPaths(t *testing.T) {
 	for _, u := range units {
 		text = append(text, byte(u), byte(u>>8))
 	}
-	if _, err := a.ImportDotenv(bg, "default", text, false); err != nil {
+	if _, err := a.ImportDotenv(bg, importTestTarget(t, a), text, false); err != nil {
 		t.Fatal(err)
 	}
 	written, err := a.PullSecretsToFileWith(bg, "default", false)
@@ -56,7 +56,7 @@ func TestWorkspaceInNonASCIIPaths(t *testing.T) {
 		t.Fatalf("output = %q, %v", got, err)
 	}
 	ignore, err := os.ReadFile(filepath.Join(a.RepositoryDir, ".gitignore"))
-	if err != nil || !strings.Contains(string(ignore), "\n"+output+"\n") {
+	if err != nil || !strings.Contains(string(ignore), "\n/"+output+"\n") {
 		t.Fatalf(".gitignore = %q, %v", ignore, err)
 	}
 }
@@ -77,7 +77,8 @@ func TestRepositoryKeyJoinsSpellingsOfOneRepository(t *testing.T) {
 	if want == "" {
 		t.Fatal("no key")
 	}
-	spellings := []string{filepath.Join(dir, "サブ"), filepath.ToSlash(dir) + "/", filepath.Join(dir, "サブ", "..")}
+	t.Chdir(filepath.Join(dir, "サブ"))
+	spellings := []string{"", filepath.ToSlash(dir) + "/", filepath.Join(dir, "サブ", "..")}
 	if link := filepath.Join(base, "リンク"); os.Symlink(dir, link) == nil {
 		spellings = append(spellings, link)
 	}

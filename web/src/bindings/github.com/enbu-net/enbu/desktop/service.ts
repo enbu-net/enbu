@@ -140,26 +140,32 @@ export function GetRepoStatus(): $CancellablePromise<$models.RepoInfo> {
     });
 }
 
-/**
- * ImportSecrets adds every variable of a dotenv file's content to env, as
- * `enbu import` does. The frontend reads the file the person chose.
- */
-export function ImportSecrets(env: string, content: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ImportSecrets", env, content, overwrite).then(($result: any) => {
+export function GetWorkspace(repoPath: string): $CancellablePromise<$models.WorkspaceResponse> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.GetWorkspace", repoPath).then(($result: any) => {
         return $$createType8($result);
+    });
+}
+
+/**
+ * ImportSecrets saves to the workspace and environment that the frontend
+ * showed when the person selected the file.
+ */
+export function ImportSecrets(repoPath: string, target: app$0.EnvironmentTarget, content: string, overwrite: boolean): $CancellablePromise<app$0.ImportResult> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ImportSecrets", repoPath, target, content, overwrite).then(($result: any) => {
+        return $$createType9($result);
     });
 }
 
 /**
  * Initialize sets this device up in the selected repository, as `enbu init`
  * does. It founds a workspace in storage, or in SuggestStorage's when
- * storage.URL is empty; with an enbu.toml that names a storage it joins that
+ * storage.URL is empty; with an enbu.toml anchored to an existing Control it joins that
  * workspace, and storage.URL must be empty. acceptNewGenesis is
  * `--accept-new-genesis`.
  */
 export function Initialize(storage: config$0.StorageConfig, acceptNewGenesis: boolean): $CancellablePromise<app$0.InitResult> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.Initialize", storage, acceptNewGenesis).then(($result: any) => {
-        return $$createType9($result);
+        return $$createType10($result);
     });
 }
 
@@ -176,50 +182,50 @@ export function InstallUpdate(): $CancellablePromise<$models.UpdateStatus> {
 
 export function ListConflicts(env: string): $CancellablePromise<app$0.ConflictSet> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListConflicts", env).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType11($result);
     });
 }
 
 export function ListEnvironments(): $CancellablePromise<app$0.EnvInfo[]> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListEnvironments").then(($result: any) => {
-        return $$createType12($result);
+        return $$createType13($result);
     });
 }
 
 export function ListHistory(env: string): $CancellablePromise<app$0.HistoryEntry[]> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListHistory", env).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType15($result);
     });
 }
 
 export function ListJoinRequests(): $CancellablePromise<app$0.JoinRequestInfo[]> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListJoinRequests").then(($result: any) => {
-        return $$createType16($result);
+        return $$createType17($result);
     });
 }
 
 export function ListMembers(): $CancellablePromise<app$0.MemberInfo[]> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListMembers").then(($result: any) => {
-        return $$createType18($result);
+        return $$createType19($result);
     });
 }
 
 export function ListRepositories(): $CancellablePromise<$models.RepoInfo[]> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListRepositories").then(($result: any) => {
-        return $$createType19($result);
+        return $$createType20($result);
     });
 }
 
 export function ListSecrets(env: string): $CancellablePromise<$models.SecretsResponse> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ListSecrets", env).then(($result: any) => {
-        return $$createType20($result);
+        return $$createType21($result);
     });
 }
 
 /**
- * Logout signs out of the GitHub account login, or of the one in use when
- * login is "". Signing out of the one in use moves to the most recent
- * remaining sign-in.
+ * Logout signs out of the GitHub account named by login. WSL requires the
+ * name so a retry after an interrupted bridge call cannot delete another
+ * account. Other platforms accept an empty login for the account in use.
  */
 export function Logout(login: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.Logout", login);
@@ -232,7 +238,7 @@ export function Logout(login: string): $CancellablePromise<void> {
  */
 export function PullSecrets(env: string, replace: boolean): $CancellablePromise<app$0.WrittenFile> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.PullSecrets", env, replace).then(($result: any) => {
-        return $$createType21($result);
+        return $$createType22($result);
     });
 }
 
@@ -276,8 +282,14 @@ export function RestartApp(): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestartApp");
 }
 
-export function RestoreHistory(env: string, index: number): $CancellablePromise<void> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", env, index);
+export function RestoreHistory(repoPath: string, target: app$0.EnvironmentTarget, tag: string): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.RestoreHistory", repoPath, target, tag);
+}
+
+export function ReviewRemovedRevision(resource: string, revision: string, baseline: string): $CancellablePromise<app$0.RemovalReview> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.ReviewRemovedRevision", resource, revision, baseline).then(($result: any) => {
+        return $$createType23($result);
+    });
 }
 
 export function SelectRepository(path: string): $CancellablePromise<$models.RepoInfo> {
@@ -296,7 +308,7 @@ export function SetAdmin(deviceID: string, admin: boolean): $CancellablePromise<
 
 export function StartOAuthLogin(): $CancellablePromise<$models.OAuthStart> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.StartOAuthLogin").then(($result: any) => {
-        return $$createType22($result);
+        return $$createType24($result);
     });
 }
 
@@ -323,8 +335,8 @@ export function SyncSecrets(env: string): $CancellablePromise<void> {
     return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.SyncSecrets", env);
 }
 
-export function WriteConfig(content: string): $CancellablePromise<void> {
-    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content);
+export function WriteConfig(content: string, previous: string): $CancellablePromise<void> {
+    return $Call.ByName("github.com/enbu-net/enbu/desktop.Service.WriteConfig", content, previous);
 }
 
 // Private type creation functions
@@ -336,18 +348,20 @@ const $$createType4 = app$0.Diff.createFrom;
 const $$createType5 = $models.AuthStatus.createFrom;
 const $$createType6 = identity$0.PublicInfo.createFrom;
 const $$createType7 = $models.OAuthStatus.createFrom;
-const $$createType8 = app$0.ImportResult.createFrom;
-const $$createType9 = app$0.InitResult.createFrom;
-const $$createType10 = app$0.ConflictSet.createFrom;
-const $$createType11 = app$0.EnvInfo.createFrom;
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = app$0.HistoryEntry.createFrom;
-const $$createType14 = $Create.Array($$createType13);
-const $$createType15 = app$0.JoinRequestInfo.createFrom;
-const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = app$0.MemberInfo.createFrom;
-const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = $Create.Array($$createType0);
-const $$createType20 = $models.SecretsResponse.createFrom;
-const $$createType21 = app$0.WrittenFile.createFrom;
-const $$createType22 = $models.OAuthStart.createFrom;
+const $$createType8 = $models.WorkspaceResponse.createFrom;
+const $$createType9 = app$0.ImportResult.createFrom;
+const $$createType10 = app$0.InitResult.createFrom;
+const $$createType11 = app$0.ConflictSet.createFrom;
+const $$createType12 = app$0.EnvInfo.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = app$0.HistoryEntry.createFrom;
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = app$0.JoinRequestInfo.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = app$0.MemberInfo.createFrom;
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = $Create.Array($$createType0);
+const $$createType21 = $models.SecretsResponse.createFrom;
+const $$createType22 = app$0.WrittenFile.createFrom;
+const $$createType23 = app$0.RemovalReview.createFrom;
+const $$createType24 = $models.OAuthStart.createFrom;

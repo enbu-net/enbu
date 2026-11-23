@@ -19,6 +19,12 @@ vi.mock("../../lib/backend", async () => ({
 setupDom();
 
 const mocked = vi.mocked(backend);
+const repoPath = "/repo-a";
+const target = (environment: string) => ({
+  workspace_id: "workspace-a",
+  environment,
+  incarnation: "lineage-a",
+});
 
 async function choose(content: string | Uint8Array<ArrayBuffer>) {
   const input = container.querySelector<HTMLInputElement>('[data-testid="import-file"]')!;
@@ -39,7 +45,14 @@ function utf16(text: string, bigEndian: boolean): Uint8Array<ArrayBuffer> {
 describe("ImportButton", () => {
   it("imports Japanese values from UTF-8 and from UTF-16 files", async () => {
     const onImported = vi.fn();
-    await renderAndSettle(<ImportButton env="default" onImported={onImported} onError={vi.fn()} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("default")}
+        onImported={onImported}
+        onError={vi.fn()}
+      />,
+    );
     for (const content of [
       "GREETING=こんにちは\n",
       utf16("GREETING=こんにちは\n", false),
@@ -47,7 +60,8 @@ describe("ImportButton", () => {
     ]) {
       await choose(content);
       expect(mocked.ImportSecrets).toHaveBeenLastCalledWith(
-        "default",
+        repoPath,
+        target("default"),
         "GREETING=こんにちは\n",
         false,
       );
@@ -57,7 +71,14 @@ describe("ImportButton", () => {
   it("refuses a file that is not UTF-8 instead of importing garbled values", async () => {
     const onError = vi.fn();
     mocked.ImportSecrets.mockClear();
-    await renderAndSettle(<ImportButton env="default" onImported={vi.fn()} onError={onError} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("default")}
+        onImported={vi.fn()}
+        onError={onError}
+      />,
+    );
     // こんにちは in Shift_JIS.
     await choose(
       new Uint8Array([0x41, 0x3d, 0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd]),
@@ -68,10 +89,17 @@ describe("ImportButton", () => {
 
   it("imports the chosen file into the environment", async () => {
     const onImported = vi.fn();
-    await renderAndSettle(<ImportButton env="staging" onImported={onImported} onError={vi.fn()} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("staging")}
+        onImported={onImported}
+        onError={vi.fn()}
+      />,
+    );
     await choose("A=1\n");
 
-    expect(mocked.ImportSecrets).toHaveBeenCalledWith("staging", "A=1\n", false);
+    expect(mocked.ImportSecrets).toHaveBeenCalledWith(repoPath, target("staging"), "A=1\n", false);
     expect(onImported).toHaveBeenCalled();
   });
 
@@ -80,7 +108,14 @@ describe("ImportButton", () => {
       createAppError("import_conflict", { count: "2", keys: "A, B" }),
     );
     const onImported = vi.fn();
-    await renderAndSettle(<ImportButton env="default" onImported={onImported} onError={vi.fn()} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("default")}
+        onImported={onImported}
+        onError={vi.fn()}
+      />,
+    );
     await choose("A=2\nB=3\n");
 
     const dialog = openDialog()!;
@@ -88,7 +123,12 @@ describe("ImportButton", () => {
     await act(async () => queryButton("Replace", dialog)?.click());
     await settle();
 
-    expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("default", "A=2\nB=3\n", true);
+    expect(mocked.ImportSecrets).toHaveBeenLastCalledWith(
+      repoPath,
+      target("default"),
+      "A=2\nB=3\n",
+      true,
+    );
     expect(onImported).toHaveBeenCalled();
     expect(openDialog()).toBeNull();
   });
@@ -96,7 +136,14 @@ describe("ImportButton", () => {
   it("reports other failures", async () => {
     mocked.ImportSecrets.mockRejectedValueOnce(createAppError("invalid_argument"));
     const onError = vi.fn();
-    await renderAndSettle(<ImportButton env="default" onImported={vi.fn()} onError={onError} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("default")}
+        onImported={vi.fn()}
+        onError={onError}
+      />,
+    );
     await choose("not dotenv");
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "invalid_argument" }));
@@ -104,7 +151,14 @@ describe("ImportButton", () => {
 
   it("reports a file it cannot read", async () => {
     const onError = vi.fn();
-    await renderAndSettle(<ImportButton env="default" onImported={vi.fn()} onError={onError} />);
+    await renderAndSettle(
+      <ImportButton
+        repoPath={repoPath}
+        target={target("default")}
+        onImported={vi.fn()}
+        onError={onError}
+      />,
+    );
     const input = container.querySelector<HTMLInputElement>('[data-testid="import-file"]')!;
     const file = new File([""], ".env");
     file.arrayBuffer = () => Promise.reject(new Error("gone"));
@@ -116,18 +170,30 @@ describe("ImportButton", () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "internal" }));
   });
 
-  it("overwrites in the environment the conflict was found in", async () => {
-    mocked.ImportSecrets.mockRejectedValueOnce(
-      createAppError("secret_already_exists", { key: "A" }),
-    );
+  it("discards a file read that completed after switching repositories", async () => {
     const props = { onImported: vi.fn(), onError: vi.fn() };
-    await renderAndSettle(<ImportButton env="staging" {...props} />);
-    await choose("A=2\n");
-    await renderAndSettle(<ImportButton env="production" {...props} />);
+    await renderAndSettle(
+      <ImportButton repoPath={repoPath} target={target("default")} {...props} />,
+    );
+    const input = container.querySelector<HTMLInputElement>('[data-testid="import-file"]')!;
+    const file = new File([""], ".env");
+    let finishRead!: (data: ArrayBuffer) => void;
+    file.arrayBuffer = () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finishRead = resolve;
+      });
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
 
-    const dialog = openDialog()!;
-    await act(async () => queryButton("Replace", dialog)?.click());
+    await renderAndSettle(
+      <ImportButton
+        repoPath="/repo-b"
+        target={{ ...target("default"), workspace_id: "workspace-b" }}
+        {...props}
+      />,
+    );
+    await act(async () => finishRead(new TextEncoder().encode("A=2\n").buffer));
     await settle();
-    expect(mocked.ImportSecrets).toHaveBeenLastCalledWith("staging", "A=2\n", true);
+    expect(mocked.ImportSecrets).not.toHaveBeenCalled();
   });
 });

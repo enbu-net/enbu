@@ -10,15 +10,18 @@ export type {
   RepoInfo,
   SecretItem,
   SecretsResponse,
+  WorkspaceResponse,
 } from "../bindings/github.com/enbu-net/enbu/desktop/models";
 export type {
   ConflictCandidate,
   ConflictSet,
   Diff,
+  RemovalReview,
   EnvInfo,
   EnvironmentDeletion,
   HistoryEntry,
   ImportResult,
+  EnvironmentTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,

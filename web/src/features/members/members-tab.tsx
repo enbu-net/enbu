@@ -1,9 +1,12 @@
+import { Notice } from "../../components/notice";
+import { m } from "../../paraglide/messages";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import type { JoinRequestInfo, MemberInfo } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import { DevicePanel } from "./device-panel";
+import { RemovalRecovery } from "./removal-recovery";
 import { MembersPanel } from "./members-panel";
 
 /** The members and pending join requests of the selected repository. */
@@ -45,20 +48,39 @@ export function MembersTab({
   repoPath,
   environment,
   transfer,
+  recoveryTargets,
+  rememberRecovery,
+  clearRecovery,
 }: {
   repoPath: string;
   /** The environment a sync re-encrypts and merges. */
   environment: string;
   transfer: RunTransfer;
+  recoveryTargets: string;
+  rememberRecovery: (targets: string) => void;
+  clearRecovery: (target: string) => void;
 }) {
   const { members, requests, loading, error, setError, refresh } = useMembers(repoPath);
+  const [recoveryApplied, setRecoveryApplied] = useState(false);
   return (
     <>
+      {recoveryTargets ? (
+        <RemovalRecovery
+          targets={recoveryTargets}
+          onApplied={(target) => {
+            clearRecovery(target);
+            setRecoveryApplied(true);
+          }}
+        />
+      ) : recoveryApplied ? (
+        <Notice onDismiss={() => setRecoveryApplied(false)}>{m.members_recoveryComplete()}</Notice>
+      ) : null}
       <MembersPanel
         members={members}
         requests={requests}
         loading={loading}
         error={error}
+        hasRecoveryTargets={Boolean(recoveryTargets)}
         onSync={async () => {
           try {
             await transfer("sync", async () => {
@@ -74,8 +96,17 @@ export function MembersTab({
           await refresh();
         }}
         onRemove={async (deviceID) => {
-          await backend.RemoveMember(deviceID);
-          await refresh();
+          try {
+            await backend.RemoveMember(deviceID);
+          } catch (err) {
+            const error = toDisplayError(err);
+            if (error.code === "removal_write_race" && error.params.targets) {
+              rememberRecovery(error.params.targets);
+            }
+            throw err;
+          } finally {
+            await refresh();
+          }
         }}
         onSetAdmin={async (deviceID, admin) => {
           await backend.SetAdmin(deviceID, admin);

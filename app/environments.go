@@ -26,10 +26,13 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 		return nil, err
 	}
 
-	current := cfg.CurrentEnvironment()
+	return environmentInfos(cfg, cfg.CurrentEnvironment()), nil
+}
+
+func environmentInfos(cfg *config.ProjectConfig, current string) []EnvInfo {
 	names := cfg.EnvironmentNames()
 
-	envs = make([]EnvInfo, len(names))
+	envs := make([]EnvInfo, len(names))
 	for i, name := range names {
 		envs[i] = EnvInfo{
 			Name:        name,
@@ -37,7 +40,7 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 			Incarnation: cfg.Environments[name].Incarnation,
 		}
 	}
-	return envs, nil
+	return envs
 }
 
 func (a *App) CurrentEnvironment() (name string, err error) {
@@ -56,13 +59,23 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 	if !config.ValidEnvironmentName(name) {
 		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
-
 	cfg, err := a.loadProject()
 	if err != nil {
 		return err
 	}
+	if _, err := uuid.Parse(cfg.WorkspaceID); err != nil {
+		lock, err := a.lockProject(context.Background())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = lock.Close() }()
+		cfg, err = a.loadProject()
+		if err != nil {
+			return err
+		}
+	}
 
-	if !cfg.HasEnvironment(name) {
+	if !cfg.HasEnvironment(name) && (len(cfg.Environments) != 0 || name != "default") {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist (use create to add it)", name), apperr.Params{"name": name})
 	}
 
@@ -109,6 +122,11 @@ func (a *App) CreateEnvironment(name string) (err error) {
 	if !config.ValidEnvironmentName(name) {
 		return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("invalid environment name %q", name), apperr.Params{"name": name})
 	}
+	lock, err := a.lockProject(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 
 	cfg, err := a.loadProject()
 	if err != nil {
@@ -149,6 +167,14 @@ type EnvironmentDeletion struct {
 // enbu.toml until they are gone so a failure halfway can simply be repeated.
 func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (deletion EnvironmentDeletion, err error) {
 	defer apperr.NormalizeInto(&err)
+	lock, err := a.lockProject(ctx)
+	if err != nil {
+		return deletion, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := ctx.Err(); err != nil {
+		return deletion, err
+	}
 
 	cfg, err := a.loadProject()
 	if err != nil {
@@ -163,7 +189,18 @@ func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (d
 			return deletion, err
 		}
 		defer s.Close()
-		if deletion.Purged, err = s.purgeResource(ctx, cfg.Resource(name)); err != nil {
+		if err := checkDeletable(s.cfg, name); err != nil {
+			return deletion, err
+		}
+		resource := s.cfg.Resource(name)
+		if resource != cfg.Resource(name) || s.cfg.WorkspaceID != cfg.WorkspaceID || s.cfg.Storage != cfg.Storage {
+			return deletion, apperr.New(apperr.CodeConflict, "environment configuration changed during deletion", nil)
+		}
+		if err := checkPurgeResource(s.cfg, resource, name); err != nil {
+			return deletion, err
+		}
+		cfg = s.cfg
+		if deletion.Purged, err = s.purgeResource(ctx, resource); err != nil {
 			return deletion, err
 		}
 	} else {
@@ -193,6 +230,11 @@ func checkDeletable(cfg *config.ProjectConfig, name string) error {
 
 func (a *App) RenameEnvironment(oldName, newName string) (err error) {
 	defer apperr.NormalizeInto(&err)
+	lock, err := a.lockProject(context.Background())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 
 	cfg, err := a.loadProject()
 	if err != nil {
@@ -234,21 +276,40 @@ func (a *App) PurgeIncarnation(ctx context.Context, incarnation string) (deleted
 	if _, perr := uuid.Parse(incarnation); perr != nil {
 		return 0, apperr.New(apperr.CodeInvalidArgument, "an incarnation is a UUID", nil)
 	}
+	lock, err := a.lockProject(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = lock.Close() }()
 	cfg, err := a.loadProject()
 	if err != nil {
 		return 0, err
 	}
-	for name, env := range cfg.Environments {
-		if env.Incarnation == incarnation {
-			return 0, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("environment %q still uses this incarnation; delete it with --purge instead", name), apperr.Params{"name": name})
-		}
+	resource := "secrets/" + incarnation
+	if err := checkPurgeResource(cfg, resource, ""); err != nil {
+		return 0, err
 	}
 	s, err := a.openPurgeSession(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer s.Close()
-	return s.purgeResource(ctx, "secrets/"+incarnation)
+	if s.cfg.WorkspaceID != cfg.WorkspaceID || s.cfg.Storage != cfg.Storage {
+		return 0, apperr.New(apperr.CodeConflict, "workspace configuration changed during purge", nil)
+	}
+	if err := checkPurgeResource(s.cfg, resource, ""); err != nil {
+		return 0, err
+	}
+	return s.purgeResource(ctx, resource)
+}
+
+func checkPurgeResource(cfg *config.ProjectConfig, resource, except string) error {
+	for _, name := range cfg.EnvironmentNames() {
+		if name != except && cfg.Resource(name) == resource {
+			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("environment %q still uses this storage resource", name), apperr.Params{"name": name})
+		}
+	}
+	return nil
 }
 
 // openPurgeSession opens a session and checks that this device may delete

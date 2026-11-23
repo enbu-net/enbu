@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/signing"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/enbu-net/enbu/pkg/wsp"
+	"github.com/opencontainers/go-digest"
 )
 
 // reencryptAll re-signs and re-encrypts every environment for the recipient set
 // of the current Control: the ones enbu.toml names and any other storage holds,
 // so an environment another member created, whose enbu.toml this device has not
 // pulled, does not stay encrypted for the old members.
-func (a *App) reencryptAll(ctx context.Context) error {
+func (a *App) reencryptAll(ctx context.Context, removal *memberRemoval) error {
 	s, err := a.openSession(ctx)
 	if err != nil {
 		return err
@@ -34,7 +37,13 @@ func (a *App) reencryptAll(ctx context.Context) error {
 	for _, t := range targets {
 		s, err := a.openSession(ctx)
 		if err == nil {
-			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+			var check func(*session, *wsp.StateView) error
+			if removal != nil {
+				check = func(s *session, view *wsp.StateView) error {
+					return s.checkRemovalRace(t, view, removal)
+				}
+			}
+			err = a.changeResource(ctx, s, a.openSession, t.resource, "sync", nil, nil, check, func(map[string]string) error { return nil })
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))
@@ -44,6 +53,44 @@ func (a *App) reencryptAll(ctx context.Context) error {
 		return errors.Join(errs...)
 	}
 	return nil
+}
+
+type memberRemoval struct {
+	device   signing.DeviceID
+	observed map[string][]digest.Digest
+}
+
+type removalWriteRace struct {
+	resource string
+	revision digest.Digest
+}
+
+func (e *removalWriteRace) Error() string {
+	return fmt.Sprintf("unaccepted revision %s in %s", e.revision, e.resource)
+}
+
+// checkRemovalRace handles revisions observed after the Control publish. A
+// removed member's old-epoch signature cannot establish whether a revision
+// appeared before or after revocation. Preserve evidence and stop the
+// automatic rewrite instead of using an ancestor or accepting the new head.
+func (s *session) checkRemovalRace(target environmentResource, view *wsp.StateView, removal *memberRemoval) error {
+	if err := checkRemovalMetadata(view); err != nil {
+		return err
+	}
+	accepted, err := s.cps.Accepted(target.resource)
+	if err != nil {
+		return err
+	}
+	var races []error
+	for _, head := range view.Heads {
+		if head.Author == removal.device &&
+			!slices.Contains(removal.observed[target.resource], head.Digest) &&
+			!slices.Contains(accepted.Heads, head.Digest) &&
+			view.Compacted.AboveFloors(view.Graph, head.Digest) {
+			races = append(races, &removalWriteRace{resource: target.resource, revision: head.Digest})
+		}
+	}
+	return errors.Join(races...)
 }
 
 // maxExaminedScopes bounds how many scopes missing from enbu.toml are examined

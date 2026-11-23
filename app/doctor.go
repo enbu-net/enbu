@@ -10,6 +10,7 @@ import (
 	"uuid"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	enbuauth "github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/identity"
@@ -31,8 +32,9 @@ type DiagnosticCheck struct {
 
 type DoctorReport struct {
 	identity.Diagnosis
-	Healthy bool              `json:"healthy"`
-	Checks  []DiagnosticCheck `json:"checks"`
+	GitHubCredentials enbuauth.CredentialDiagnosis `json:"github_credentials"`
+	Healthy           bool                         `json:"healthy"`
+	Checks            []DiagnosticCheck            `json:"checks"`
 }
 
 func (r *DoctorReport) add(name, env, status, message string, err error) {
@@ -99,7 +101,7 @@ func (a *App) Diagnose(ctx context.Context) DoctorReport {
 }
 
 func (a *App) diagnose(ctx context.Context, validateToken func(context.Context, string) error) DoctorReport {
-	r := DoctorReport{Healthy: true, Checks: []DiagnosticCheck{}}
+	r := DoctorReport{Healthy: true, Checks: []DiagnosticCheck{}, GitHubCredentials: enbuauth.DiagnoseCredentials()}
 	if a.Identities != nil {
 		r.Diagnosis = a.DiagnoseIdentity(ctx)
 		r.addIdentityBackend()
@@ -199,10 +201,10 @@ func (a *App) diagnoseAuth(ctx context.Context, cfg *config.ProjectConfig, r *Do
 	authCtx, cancel := clock.WithTimeout(ctx, a.clock(), 10*time.Second)
 	defer cancel()
 	if err := validate(authCtx, token); err != nil {
-		r.add("github_auth", "", "fail", "GitHub could not validate the saved token; check connectivity or sign in again.", err)
+		r.add("github_auth", "", "fail", "GitHub could not validate the token; check connectivity or sign in again.", err)
 		return
 	}
-	r.add("github_auth", "", "ok", "GitHub accepted the saved token.", nil)
+	r.add("github_auth", "", "ok", "GitHub accepted the token.", nil)
 }
 
 func (a *App) diagnoseDevice(s *session, r *DoctorReport) {

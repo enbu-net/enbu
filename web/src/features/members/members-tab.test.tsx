@@ -28,7 +28,14 @@ function renderTab(repoPath: string, transfer = runTransfer) {
   act(() => {
     root.render(
       <>
-        <MembersTab repoPath={repoPath} environment="default" transfer={transfer} />
+        <MembersTab
+          repoPath={repoPath}
+          environment="default"
+          transfer={transfer}
+          recoveryTargets=""
+          rememberRecovery={vi.fn()}
+          clearRecovery={vi.fn()}
+        />
       </>,
     );
   });

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { History, KeyRound, Layers3, SlidersHorizontal, Users } from "lucide-react";
 import { SiGithub } from "@icons-pack/react-simple-icons";
 import { Box, Flex, styled } from "styled-system/jsx";
@@ -17,7 +17,14 @@ import { m } from "../../paraglide/messages";
 import { useTransfer, type RunTransfer } from "./use-transfer";
 import { useWorkspace, type Workspace } from "./use-workspace";
 
-type TabContext = { repo: RepoInfo; workspace: Workspace; transfer: RunTransfer };
+type TabContext = {
+  repo: RepoInfo;
+  workspace: Workspace;
+  transfer: RunTransfer;
+  recoveryTargets: string;
+  rememberRecovery: (targets: string) => void;
+  clearRecovery: (target: string) => void;
+};
 
 /** A dashboard tab. A new tab is one more entry in tabs. */
 type DashboardTabDefinition = {
@@ -32,7 +39,9 @@ const tabs: DashboardTabDefinition[] = [
     value: "secrets",
     label: m.dashboard_secrets,
     icon: <KeyRound size={16} />,
-    render: ({ workspace, transfer }) => <SecretsTab workspace={workspace} transfer={transfer} />,
+    render: ({ repo, workspace, transfer }) => (
+      <SecretsTab repo={repo} workspace={workspace} transfer={transfer} />
+    ),
   },
   {
     value: "environments",
@@ -44,17 +53,22 @@ const tabs: DashboardTabDefinition[] = [
     value: "history",
     label: m.history_title,
     icon: <History size={16} />,
-    render: ({ workspace }) => <HistoryTab workspace={workspace} />,
+    render: ({ repo, workspace }) => (
+      <HistoryTab repoPath={repo.path ?? ""} workspace={workspace} />
+    ),
   },
   {
     value: "members",
     label: m.members_title,
     icon: <Users size={16} />,
-    render: ({ repo, workspace, transfer }) => (
+    render: ({ repo, workspace, transfer, recoveryTargets, rememberRecovery, clearRecovery }) => (
       <MembersTab
         repoPath={repo.path ?? ""}
         environment={workspace.currentEnvironment}
         transfer={transfer}
+        recoveryTargets={recoveryTargets}
+        rememberRecovery={rememberRecovery}
+        clearRecovery={clearRecovery}
       />
     ),
   },
@@ -70,7 +84,16 @@ const tabs: DashboardTabDefinition[] = [
 export function Dashboard({ repo }: { repo: RepoInfo }) {
   const workspace = useWorkspace(repo.path ?? "");
   const transfer = useTransfer();
-  const context: TabContext = { repo, workspace, transfer: transfer.run };
+  const [recovery, setRecovery] = useState<string[]>([]);
+  const context: TabContext = {
+    repo,
+    workspace,
+    transfer: transfer.run,
+    recoveryTargets: recovery.join("\n"),
+    rememberRecovery: (targets) =>
+      setRecovery((prior) => [...new Set([...prior, ...targets.split("\n")])]),
+    clearRecovery: (target) => setRecovery((prior) => prior.filter((item) => item !== target)),
+  };
 
   return (
     <Box

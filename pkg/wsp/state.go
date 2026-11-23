@@ -92,9 +92,8 @@ func SignState(s State, signer signing.Signer) ([]byte, error) {
 // the Control it names. The author must be a principal of that Control and the
 // signature must verify under the key it lists; a member removed since still
 // signed it validly. A State naming a Control the verified DAG does not hold
-// cannot be checked, so it is invalid like any other unverifiable object:
-// anyone able to write to storage can name an arbitrary Control, and treating
-// it as a rollback would let one unsigned object block a resource. A hidden
+// cannot be checked. It returns ErrUnknownStateControl because anyone with
+// storage write access can name an arbitrary Control. A hidden
 // Control is detected by the Control checkpoint, a hidden State by the State checkpoint.
 //
 // It makes no claim about freshness or about whether the author is a member
@@ -119,7 +118,7 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 	}
 	written, ok := view.Get(s.Control)
 	if !ok {
-		return nil, invalid("state names control %s that is not part of the verified control", s.Control)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownStateControl, s.Control)
 	}
 	author, ok := written.Principal(s.Author)
 	if !ok {
@@ -147,10 +146,11 @@ func AuthorIsCurrent(view *ControlView, head *Verified, st *VerifiedState) error
 
 // StateView is the verified revision DAG of one resource as storage shows it.
 type StateView struct {
-	Graph   *Graph
-	States  map[digest.Digest]*VerifiedState
-	Heads   []*VerifiedState // sorted by digest
-	Skipped int              // listed revisions that failed to fetch or verify
+	Graph       *Graph
+	States      map[digest.Digest]*VerifiedState
+	Heads       []*VerifiedState // sorted by digest
+	Skipped     int              // listed revisions that failed to fetch or verify
+	Unavailable []digest.Digest  // revisions whose metadata storage could not produce
 	// Compacted is what verified compaction records say about the view. The
 	// caller fills it in when the view lacks something (see LoadCompactions).
 	Compacted Compacted
@@ -239,6 +239,7 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 			f := fetched[rev]
 			switch {
 			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
+				sv.Unavailable = append(sv.Unavailable, rev)
 				sv.Skipped++
 				continue
 			}
@@ -272,6 +273,11 @@ func (sv *StateView) With(st *VerifiedState) *StateView {
 		for d, v := range sv.States {
 			out.States[d] = v
 			out.Graph.Add(d, v.Parents)
+		}
+		for _, d := range sv.Unavailable {
+			if d != st.Digest {
+				out.Unavailable = append(out.Unavailable, d)
+			}
 		}
 		out.Skipped = sv.Skipped
 		out.Compacted = sv.Compacted

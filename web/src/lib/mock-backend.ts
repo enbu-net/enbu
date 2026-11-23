@@ -5,11 +5,13 @@ import type {
   AuthStatus,
   ConflictSet,
   Diff,
+  RemovalReview,
   EnvInfo,
   EnvironmentDeletion,
   HistoryEntry,
   IdentityDiagnosis,
   ImportResult,
+  EnvironmentTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,
@@ -19,6 +21,7 @@ import type {
   RepoInfo,
   SecretChoice,
   SecretsResponse,
+  WorkspaceResponse,
   StorageConfig,
   WrittenFile,
 } from "./types";
@@ -27,6 +30,11 @@ import { createAppError } from "./app-error";
 import type { Backend } from "./backend";
 
 const previewUsername = "yashikota";
+
+/** The names the real backend accepts (config.ValidEnvironmentName). */
+export function validEnvironmentName(name: string): boolean {
+  return name.length <= 100 && /^[A-Za-z0-9_.-]+$/.test(name) && !name.endsWith(".");
+}
 
 let mockEnvs: EnvInfo[] = [
   { name: "development", current: true },
@@ -128,6 +136,7 @@ let mockJoinRequests: JoinRequestInfo[] = [
 const mockRepoHistory: RepoInfo[] = [
   {
     path: "/demo/enbu",
+    workspace_id: "3f2b8c1e-9a4d-4e6b-8c2f-1a5d7e9b0c3d",
     owner: "enbu-net",
     repo: "enbu",
     initialized: true,
@@ -151,6 +160,10 @@ function secretsForEnv(env: string): { key: string; value: string }[] {
 // Two signed-in accounts, so the preview shows switching and signing out.
 let mockAccounts = ["octocat", previewUsername];
 let mockCurrentAccount = previewUsername;
+// A sign-in the preview pretends to complete after two polls, adding this account.
+const mockSignInAccount = "mona";
+let mockSignIn: { session: string; polls: number } | null = null;
+let mockSignInCount = 0;
 
 export const mockBackend: Backend = {
   async GetAuthStatus(): Promise<AuthStatus> {
@@ -163,15 +176,30 @@ export const mockBackend: Backend = {
   },
 
   async StartOAuthLogin(): Promise<OAuthStart> {
-    throw new Error("Mock mode: auth is pre-configured");
+    mockSignIn = { session: `mock-sign-in-${++mockSignInCount}`, polls: 0 };
+    return {
+      session_id: mockSignIn.session,
+      expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      // Nothing to enter anywhere: the preview completes the sign-in itself,
+      // and its "open in browser" link points back at the preview.
+      user_code: "PREVIEW",
+      verification_uri: globalThis.location?.href ?? "",
+    };
   },
 
-  async GetOAuthLoginStatus(_sessionID: string): Promise<OAuthStatus> {
-    throw new Error("Mock mode: auth is pre-configured");
+  async GetOAuthLoginStatus(sessionID: string): Promise<OAuthStatus> {
+    if (mockSignIn?.session !== sessionID) {
+      throw createAppError("authentication_expired");
+    }
+    if (++mockSignIn.polls < 2) return { state: "pending" };
+    mockSignIn = null;
+    if (!mockAccounts.includes(mockSignInAccount)) mockAccounts.push(mockSignInAccount);
+    mockCurrentAccount = mockSignInAccount;
+    return { state: "success", username: mockSignInAccount };
   },
 
-  async CancelOAuthLogin(_sessionID: string): Promise<void> {
-    // no-op
+  async CancelOAuthLogin(sessionID: string): Promise<void> {
+    if (mockSignIn?.session === sessionID) mockSignIn = null;
   },
 
   async Logout(login: string): Promise<void> {
@@ -222,15 +250,33 @@ export const mockBackend: Backend = {
     return "oci://ghcr.io/enbu-net/enbu-enbu";
   },
 
+  async GetWorkspace(repoPath: string): Promise<WorkspaceResponse> {
+    const repo = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
+    if (!repo || repo.path !== repoPath) throw createAppError("conflict");
+    const environment = currentEnvName();
+    const conflicts = Object.hasOwn(mockConflictsByEnv, environment)
+      ? mockConflictsByEnv[environment]
+      : null;
+    const secrets = conflicts ? [] : [...secretsForEnv(environment)];
+    return {
+      workspace_id: repo.workspace_id ?? "",
+      environments: [...mockEnvs],
+      secrets: { environment, secrets },
+      conflicts,
+    };
+  },
+
   async ListEnvironments(): Promise<EnvInfo[]> {
     return [...mockEnvs];
   },
 
   async CreateEnvironment(name: string): Promise<void> {
-    if (!mockEnvs.find((e) => e.name === name)) {
-      mockEnvs.push({ name, current: false });
-      mockSecretsByEnv[name] = [];
+    if (!validEnvironmentName(name)) throw createAppError("invalid_argument", { name });
+    if (mockEnvs.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+      throw createAppError("environment_already_exists", { name });
     }
+    mockEnvs.push({ name, current: false });
+    mockSecretsByEnv[name] = [];
   },
 
   async SwitchEnvironment(name: string): Promise<void> {
@@ -238,6 +284,13 @@ export const mockBackend: Backend = {
   },
 
   async RenameEnvironment(name: string, newName: string): Promise<void> {
+    if (!validEnvironmentName(newName)) throw createAppError("invalid_argument", { name: newName });
+    // Names are unique ignoring case (ProjectConfig.RenameEnvironment).
+    // A case-only change of the same environment is allowed.
+    const taken = (e: EnvInfo) => e.name !== name && e.name.toLowerCase() === newName.toLowerCase();
+    if (name === newName || mockEnvs.some(taken)) {
+      throw createAppError("environment_already_exists", { name: newName });
+    }
     mockEnvs = mockEnvs.map((e) => (e.name === name ? { name: newName, current: e.current } : e));
     if (mockSecretsByEnv[name]) {
       mockSecretsByEnv[newName] = mockSecretsByEnv[name];
@@ -330,18 +383,42 @@ export const mockBackend: Backend = {
     };
     return diffSecrets(at(from), at(to));
   },
-  async RestoreHistory(env: string, index: number): Promise<void> {
-    const name = env || currentEnvName();
-    const history = (mockHistoryByEnv[name] ??= []);
-    const entry = history[index - 1];
-    if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+  async ReviewRemovedRevision(): Promise<RemovalReview> {
+    throw createAppError("conflict");
+  },
+  async RestoreHistory(repoPath: string, target: EnvironmentTarget, tag: string): Promise<void> {
+    const repo = mockRepoHistory.find((entry) => entry.path === mockSelectedRepoPath);
+    const name = target.environment;
+    const env = mockEnvs.find((entry) => entry.name === name);
+    if (
+      repo?.path !== repoPath ||
+      repo.workspace_id !== target.workspace_id ||
+      !env ||
+      (env.incarnation ?? "") !== target.incarnation
+    ) {
+      throw createAppError("conflict");
+    }
+    const history = mockHistoryByEnv[name] ?? [];
+    const entry = history.find((_, index) => `mock-revision-${index + 1}` === tag);
+    if (!entry) throw createAppError("conflict");
     history.push({ timestamp: new Date().toISOString(), secrets: { ...entry.secrets } });
     mockSecretsByEnv[name] = Object.entries(entry.secrets)
       .map(([key, value]) => ({ key, value }))
       .sort((a, b) => a.key.localeCompare(b.key));
   },
-  async ImportSecrets(env: string, dotenv: string, overwrite: boolean): Promise<ImportResult> {
-    const name = env || currentEnvName();
+  async ImportSecrets(
+    repoPath: string,
+    target: EnvironmentTarget,
+    dotenv: string,
+    overwrite: boolean,
+  ): Promise<ImportResult> {
+    if (
+      repoPath !== mockSelectedRepoPath ||
+      target.workspace_id !== mockRepoHistory[0]?.workspace_id
+    ) {
+      throw createAppError("conflict");
+    }
+    const name = target.environment;
     const secrets = secretsForEnv(name);
     const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
     const incoming = dotenv
@@ -439,7 +516,8 @@ export const mockBackend: Backend = {
     config.storage = { ...settings };
     mockConfig = stringifyToml(config);
   },
-  async WriteConfig(content: string): Promise<void> {
+  async WriteConfig(content: string, previous: string): Promise<void> {
+    if (mockConfig !== previous) throw createAppError("config_changed");
     mockConfig = content;
   },
   async GetAppVersion(): Promise<string> {

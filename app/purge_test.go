@@ -2,12 +2,116 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
 	"github.com/enbu-net/enbu/pkg/storage"
 	"github.com/opencontainers/go-digest"
 )
+
+func TestPurgeRefusesAliasedResource(t *testing.T) {
+	alice := newAlice(t)
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, inc := range []string{cfg.Environments["default"].Incarnation, "default"} {
+		cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env", Incarnation: inc}
+		if inc == "default" {
+			cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env"}
+			delete(cfg.Environments, "scratch")
+			if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := alice.AddSecret(bg, "default", "LEGACY", "keep"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cfg.Environments["scratch"] = config.EnvironmentConfig{Output: "scratch.env", Incarnation: inc}
+		content, err := config.MarshalProject(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous, err := alice.ReadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			t.Fatalf("saving aliased configuration: %v", err)
+		}
+		// An older enbu or a text editor could already have written the file.
+		if err := os.WriteFile(filepath.Join(alice.RepositoryDir, "enbu.toml"), content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := alice.DeleteEnvironment(bg, "scratch", true); err == nil || result.Purged != 0 {
+			t.Fatalf("purging aliased revisions: %+v %v", result, err)
+		}
+		scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
+		if left, err := alice.Storage.Discover(bg, storage.KindState, scope); err != nil || len(left) == 0 {
+			t.Fatalf("original revisions missing for %s: %v %v", scope, left, err)
+		}
+	}
+}
+
+func TestRepairAliasedConfigRequiresAnExistingDefault(t *testing.T) {
+	a := newAlice(t)
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DefaultEnv = "scratch"
+	cfg.Environments["scratch"] = config.EnvironmentConfig{
+		Output: "scratch.env", Incarnation: cfg.Environments["default"].Incarnation,
+	}
+	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(cfg.Environments, "scratch")
+	content, err := config.MarshalProject(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+		t.Fatalf("repair with a missing default: %v", err)
+	}
+	cfg.DefaultEnv = "default"
+	content, err = config.MarshalProject(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(string(content), previous); err != nil {
+		t.Fatalf("repair with an existing default: %v", err)
+	}
+}
+
+func TestPurgeIncarnationRefusesLiveLegacyName(t *testing.T) {
+	alice := newAlice(t)
+	const name = "7b26d19e-bb13-4e98-9300-9cbc96403aea"
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Environments[name] = config.EnvironmentConfig{Output: config.DefaultOutput(name)}
+	if err := config.SaveProjectTo(alice.RepositoryDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.AddSecret(bg, name, "LEGACY", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.PurgeIncarnation(bg, name); !apperr.Is(err, apperr.CodeInvalidArgument) {
+		t.Fatalf("purging a live legacy history: %v", err)
+	}
+	if got := mustSecrets(t, alice, name)["LEGACY"]; got != "keep" {
+		t.Fatalf("legacy history changed: %q", got)
+	}
+}
 
 // noDelete is a backend that cannot delete, like a registry without a provider API.
 type noDelete struct{ storage.Store }

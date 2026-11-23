@@ -104,7 +104,7 @@ func wspError(err error) error {
 		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; it is resolved when an admin of both changes opens enbu", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
 		return apperr.Wrap(apperr.CodeRollback, "storage shows less than this device already accepted", err, nil)
-	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrCorrupt):
+	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, wsp.ErrUnknownStateControl), errors.Is(err, storage.ErrCorrupt):
 		return apperr.Wrap(apperr.CodeUntrusted, "stored data failed verification", err, nil)
 	default:
 		return storageError(err)
@@ -186,7 +186,7 @@ func (a *App) resolveFork(ctx context.Context, s *session) (bool, error) {
 	// encrypted for, so it re-encrypts exactly as a removal does. A failure
 	// fails the operation that joined, even a read: the join is published and
 	// is not retried, so this is the only moment that tells the admin to sync.
-	if err := a.reencryptAll(ctx); err != nil {
+	if err := a.reencryptAll(ctx, nil); err != nil {
 		return false, apperr.Wrap(apperr.CodeReencryptIncomplete, "member changes were joined but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}
 	return true, nil
@@ -301,6 +301,12 @@ func (a *App) openEnvironment(ctx context.Context, env string) (*session, *Resol
 		return nil, nil, err
 	}
 	return s, resolved, nil
+}
+
+// matchesEnvironment checks a caller's captured target against the session's config.
+func (s *session) matchesEnvironment(target EnvironmentTarget) bool {
+	return target.WorkspaceID == s.workspace && target.Environment != "" &&
+		target.Incarnation == s.cfg.Environments[target.Environment].Incarnation
 }
 
 func (a *App) openSessionWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {

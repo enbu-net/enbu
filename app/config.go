@@ -1,24 +1,133 @@
 package app
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
+
+func (a *App) projectPath() string {
+	if path, err := config.ProjectConfigPathFrom(a.RepositoryDir); err == nil {
+		return path
+	}
+	return filepath.Join(a.RepositoryDir, "enbu.toml")
+}
+
+func (a *App) lockProject(ctx context.Context) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(a.projectPath()))
+	if err != nil {
+		return nil, fmt.Errorf("resolving project directory: %w", err)
+	}
+	info, err := os.Lstat(a.projectPath())
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("checking project configuration: %w", err)
+	}
+	if err == nil && !info.Mode().IsRegular() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml must be a regular file to change it", nil)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
+	lockDir, err := openProjectLockDir(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = lockDir.Close() }()
+
+	info, err = lockDir.Lstat("project.lock")
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	if info != nil && !info.Mode().IsRegular() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "project lock must be a regular file", nil)
+	}
+	return fsutil.LockFileContext(ctx, a.clock(), lockDir, "project.lock")
+}
+
+func openProjectLockDir(root *os.Root) (*os.Root, error) {
+	const ignoreName = ".gitignore"
+	const ignoreRule = "*\n"
+	name := config.ProjectLockDir
+	info, err := root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Publish the directory with its ignore rule already in place.
+		// A concurrent caller may have installed the same directory.
+		temp, createErr := os.MkdirTemp(root.Name(), name+"-")
+		if createErr != nil {
+			return nil, createErr
+		}
+		defer func() { _ = os.RemoveAll(temp) }()
+		if err := os.WriteFile(filepath.Join(temp, ignoreName), []byte(ignoreRule), 0o644); err != nil {
+			return nil, err
+		}
+		renameErr := root.Rename(filepath.Base(temp), name)
+		info, err = root.Lstat(name)
+		if err != nil && renameErr != nil {
+			return nil, renameErr
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "project lock path must be a directory", nil)
+	}
+	lockDir, err := root.OpenRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkProjectLockIgnore(lockDir, ignoreName, ignoreRule); err != nil {
+		_ = lockDir.Close()
+		return nil, err
+	}
+	return lockDir, nil
+}
+
+func checkProjectLockIgnore(dir *os.Root, name, rule string) error {
+	invalid := apperr.New(apperr.CodeInvalidArgument, "project lock directory has an unexpected Git exclusion file", nil)
+	info, err := dir.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return invalid
+	}
+	if err != nil {
+		return fmt.Errorf("checking project lock exclusion: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() != int64(len(rule)) {
+		return invalid
+	}
+	file, err := dir.Open(name)
+	if err != nil {
+		return fmt.Errorf("opening project lock exclusion: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	data, err := io.ReadAll(io.LimitReader(file, int64(len(rule)+1)))
+	if err != nil {
+		return fmt.Errorf("reading project lock exclusion: %w", err)
+	}
+	if !bytes.Equal(data, []byte(rule)) {
+		return invalid
+	}
+	return nil
+}
 
 func (a *App) ReadConfig() (content string, err error) {
 	defer apperr.NormalizeInto(&err)
 
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
-	if err != nil {
-		return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
-	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(a.projectPath())
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
@@ -28,41 +137,52 @@ func (a *App) ReadConfig() (content string, err error) {
 	return string(data), nil
 }
 
-func (a *App) WriteConfig(content string) (err error) {
+func (a *App) WriteConfig(content, previous string) (err error) {
 	defer apperr.NormalizeInto(&err)
 
 	cfg, err := config.ParseProject(content)
 	if err != nil {
+		if apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			return err
+		}
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	lock, err := a.lockProject(context.Background())
 	if err != nil {
-		path = filepath.Join(a.RepositoryDir, "enbu.toml")
+		return err
 	}
+	defer func() { _ = lock.Close() }()
+	path := a.projectPath()
 	// Fail closed: a current file that cannot be read may hold values to protect.
 	existing, err := os.ReadFile(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("reading enbu.toml: %w", err)
-	default:
+	}
+	if string(existing) != previous {
+		return apperr.New(apperr.CodeConfigChanged, "enbu.toml changed since it was opened; reload it before saving", nil)
+	}
+	if err == nil {
 		current, err := config.DecodeProject(string(existing))
 		if err != nil {
 			return apperr.Wrap(apperr.CodeInvalidArgument, "the current enbu.toml cannot be read, so this edit cannot be checked; fix it in a text editor", err, nil)
+		}
+		if apperr.Is(config.ValidateProjectOutputs(current), apperr.CodeConfigResourceCollision) {
+			if _, err := cfg.Environment(cfg.CurrentEnvironment()); err != nil {
+				return err
+			}
 		}
 		if err := checkProtectedConfig(current, cfg); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return err
-	}
-	// The saved config is valid on its own. An output file Git does not ignore
-	// could still be committed, so a failed update is reported, not skipped.
+	// Protect the new outputs before enabling them. If Git exclusions cannot
+	// be written, the previous configuration is still the comparison base.
 	if err := a.ensureGitignore(cfg); err != nil {
-		return fmt.Errorf("enbu.toml was saved, but updating .gitignore failed: %w", err)
+		return fmt.Errorf("updating .gitignore: %w", err)
 	}
-	return nil
+	// Keep the added exclusions up to the next successful save even if
+	// replacing enbu.toml fails.
+	return config.WriteProjectFile(path, []byte(content))
 }
 
 // checkProtectedConfig refuses an edit of enbu.toml that changes what the

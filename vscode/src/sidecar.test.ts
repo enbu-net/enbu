@@ -50,10 +50,11 @@ process.stderr.write("fake enbu started\\n");
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const msg = JSON.parse(line);
   const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }) + "\\n");
-  if (msg.method === "initialize") reply({ protocol_version: protocol ?? 1, app_version: "9.9.9", methods: ["GetAppVersion"], events: [] });
+  if (msg.method === "initialize") reply({ protocol_version: protocol ?? 3, app_version: "9.9.9", methods: ["GetAppVersion"], events: [] });
   if (msg.method === "GetAppVersion") reply("9.9.9");
   if (msg.method === "Exit") process.exit(3);
   if (msg.method === "Echo") reply(msg.params);
+  if (msg.method === "BadFrame") process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "message too large" } }) + "\\n");
 });
 `;
 
@@ -104,6 +105,24 @@ describe.skipIf(process.platform === "win32")("startSidecar", () => {
       }
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  it("reports sidecar exit after an unidentified protocol error", async () => {
+    const onExit = vi.fn();
+    const options = { binary, cwd: dir, handlers, log: () => {}, onExit };
+    const sidecar = await startSidecar(options);
+    try {
+      await expect(sidecar.client.request("BadFrame")).rejects.toThrow("enbu protocol error");
+      await vi.waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+    } finally {
+      sidecar.dispose();
+    }
+    const replacement = await startSidecar(options);
+    try {
+      await expect(replacement.client.request("GetAppVersion")).resolves.toBe("9.9.9");
+    } finally {
+      replacement.dispose();
     }
   });
 

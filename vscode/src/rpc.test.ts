@@ -26,10 +26,36 @@ function setup(handlers: Partial<ClientHandlers> = {}) {
     await vi.waitFor(() => expect(sent.length).toBeGreaterThan(0));
     return sent.shift() as Record<string, unknown>;
   };
-  return { client, send, next, fromServer };
+  return { client, send, next, fromServer, toServer };
 }
 
 describe("RpcClient", () => {
+  it("rejects an oversized encoded import without disturbing other requests", async () => {
+    const { client, send, next } = setup();
+    await expect(
+      client.request("ImportSecrets", ["default", "\\".repeat(8 << 20), false]),
+    ).rejects.toMatchObject({ data: { code: "invalid_argument" } });
+    const version = client.request("GetAppVersion");
+    expect(await next()).toMatchObject({ id: 2, method: "GetAppVersion" });
+    send({ jsonrpc: "2.0", id: 2, result: "1.2.3" });
+    await expect(version).resolves.toBe("1.2.3");
+  });
+
+  it("settles every pending call after an error without a request ID", async () => {
+    const { client, send, next, toServer } = setup();
+    const results = Promise.allSettled([
+      client.request("ImportSecrets"),
+      client.request("GetAppVersion"),
+    ]);
+    await next();
+    await next();
+    send({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "message too large" } });
+    expect(await results).toMatchObject([
+      { status: "rejected", reason: { code: -32600 } },
+      { status: "rejected", reason: { code: -32600 } },
+    ]);
+    expect(toServer.writableEnded).toBe(true);
+  });
   it("sends positional params and resolves each call with its own result", async () => {
     const { client, send, next } = setup();
     const first = client.request("ListSecrets", ["dev"]);
@@ -146,7 +172,7 @@ describe("initialize", () => {
     const result = initialize(client);
     expect(await next()).toMatchObject({ method: "initialize" });
     const info = {
-      protocol_version: 1,
+      protocol_version: 3,
       app_version: "1.0.0",
       methods: ["GetAppVersion"],
       events: [],

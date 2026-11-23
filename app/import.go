@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,15 +20,24 @@ type ImportResult struct {
 	Unchanged   []string `json:"unchanged"`
 }
 
-// ImportDotenv adds every variable of a dotenv file's content to env, as
-// ImportSecrets does.
-func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, overwrite bool) (result *ImportResult, err error) {
+// EnvironmentTarget identifies an environment lineage in a workspace.
+type EnvironmentTarget struct {
+	WorkspaceID string `json:"workspace_id"`
+	Environment string `json:"environment"`
+	Incarnation string `json:"incarnation"`
+}
+
+// ImportDotenv adds every variable of a dotenv file to the captured target.
+func (a *App) ImportDotenv(ctx context.Context, target EnvironmentTarget, content []byte, overwrite bool) (result *ImportResult, err error) {
 	defer apperr.NormalizeInto(&err)
+	if target.WorkspaceID == "" || target.Environment == "" {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "an import target is required", nil)
+	}
 	secrets, err := dotenv.Parse(content)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.CodeInvalidArgument, "not a valid dotenv file (save it as UTF-8)", err, nil)
 	}
-	return a.ImportSecrets(ctx, env, secrets, overwrite)
+	return a.importSecrets(ctx, target.Environment, secrets, overwrite, &target)
 }
 
 // ImportSecrets adds every key of secrets to env in one signed state. A key
@@ -35,15 +46,33 @@ func (a *App) ImportDotenv(ctx context.Context, env string, content []byte, over
 // secret nobody meant to change.
 func (a *App) ImportSecrets(ctx context.Context, env string, secrets map[string]string, overwrite bool) (result *ImportResult, err error) {
 	defer apperr.NormalizeInto(&err)
+	return a.importSecrets(ctx, env, secrets, overwrite, nil)
+}
+
+func (a *App) importSecrets(ctx context.Context, env string, secrets map[string]string, overwrite bool, expected *EnvironmentTarget) (*ImportResult, error) {
 	if len(secrets) == 0 {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "nothing to import", nil)
 	}
-	resolved, err := a.resolveEnvironment(env)
+	for _, key := range slices.Sorted(maps.Keys(secrets)) {
+		if err := validateSecretName(key); err != nil {
+			return nil, err
+		}
+	}
+	s, resolved, err := a.openEnvironment(ctx, env)
 	if err != nil {
 		return nil, err
 	}
-	result = &ImportResult{Environment: resolved.Name, Added: []string{}, Updated: []string{}, Unchanged: []string{}}
-	err = a.changeSecret(ctx, env, "import", func(current map[string]string) error {
+	if expected != nil && (!s.matchesEnvironment(*expected)) {
+		s.Close()
+		return nil, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
+	}
+	result := &ImportResult{Environment: resolved.Name, Added: []string{}, Updated: []string{}, Unchanged: []string{}}
+	reopen := a.openSession
+	if expected != nil {
+		cfg := s.cfg
+		reopen = func(ctx context.Context) (*session, error) { return a.openSessionWith(ctx, cfg) }
+	}
+	err = a.changeResource(ctx, s, reopen, s.resource(resolved.Name), "import", nil, nil, nil, func(current map[string]string) error {
 		result.Added, result.Updated, result.Unchanged = result.Added[:0], result.Updated[:0], result.Unchanged[:0]
 		var conflicts []string
 		for key, value := range secrets {

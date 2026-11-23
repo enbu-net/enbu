@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,12 +42,12 @@ func TestEnsureGitignoreCreatesNewFile(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignoreAppendsToExisting(t *testing.T) {
+func TestEnsureGitignoreKeepsExistingRulesAfterDefaults(t *testing.T) {
 	dir := t.TempDir()
 	existing := "node_modules/\n*.log\n"
 	writeGitignore(t, dir, existing)
 	content := ensureGitignoreIn(t, dir, nil)
-	if !strings.HasPrefix(content, existing) {
+	if !strings.HasSuffix(content, existing) {
 		t.Error("existing content was overwritten")
 	}
 	for _, entry := range baseGitignoreEntries {
@@ -58,7 +59,7 @@ func TestEnsureGitignoreAppendsToExisting(t *testing.T) {
 
 func TestEnsureGitignoreNoDuplicates(t *testing.T) {
 	dir := t.TempDir()
-	existing := ".env\n.env.*\n!.env.example\n"
+	existing := "/.enbu.toml.lock\n.env\n.env.*\n!.env.example\n"
 	writeGitignore(t, dir, existing)
 	if content := ensureGitignoreIn(t, dir, nil); content != existing {
 		t.Errorf("file was modified when all entries already exist:\ngot: %q\nwant: %q", content, existing)
@@ -77,11 +78,11 @@ func TestEnsureGitignorePartialExisting(t *testing.T) {
 	}
 }
 
-func TestEnsureGitignoreNoTrailingNewline(t *testing.T) {
+func TestEnsureGitignorePreservesExistingRuleWithoutTrailingNewline(t *testing.T) {
 	dir := t.TempDir()
 	writeGitignore(t, dir, "node_modules/")
-	if content := ensureGitignoreIn(t, dir, nil); !strings.HasPrefix(content, "node_modules/\n") {
-		t.Error("newline not added after existing content without trailing newline")
+	if content := ensureGitignoreIn(t, dir, nil); !strings.HasSuffix(content, "\nnode_modules/") {
+		t.Error("existing rule was not preserved on its own line")
 	}
 }
 
@@ -93,7 +94,7 @@ func TestEnsureGitignoreCustomOutputs(t *testing.T) {
 		"d": {Output: "/abs/path.env"},
 	}}
 	content := ensureGitignoreIn(t, t.TempDir(), cfg)
-	for _, want := range []string{"secrets.json", "config/dev.env", `\!literal.env`} {
+	for _, want := range []string{"secrets.json", "config/dev.env", "!literal.env"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("missing custom output %q in .gitignore", want)
 		}
@@ -132,6 +133,90 @@ func TestGitignoreLiteralMatchesOnlyThePath(t *testing.T) {
 		err := exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", path).Run()
 		if (err == nil) != ignored {
 			t.Errorf("git check-ignore %q: ignored = %v, want %v", path, err == nil, ignored)
+		}
+	}
+}
+
+func TestGitignoreMatchesNormalizedOutput(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	writeGitignore(t, dir, "/secrets.env\n!/*.env\n")
+	cfg := &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+		"default": {Output: "./secrets.env"},
+	}}
+	updated := ensureGitignoreIn(t, dir, cfg)
+	if got := ensureGitignoreIn(t, dir, cfg); got != updated {
+		t.Fatal("repeated save changed .gitignore")
+	}
+	if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", "secrets.env").CombinedOutput(); err != nil {
+		t.Fatalf("git check-ignore: %v %s", err, out)
+	}
+	err = exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "subdir/secrets.env").Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("expected the nested file to be unignored, git returned %v", err)
+	}
+}
+
+func TestGitignoreKeepsConfiguredExampleOutputSecret(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	writeGitignore(t, dir, "/.env.example\n!.env.example\n")
+	cfg := &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+		"default": {Output: ".env.example"},
+	}}
+	first := ensureGitignoreIn(t, dir, cfg)
+	if got := ensureGitignoreIn(t, dir, cfg); got != first {
+		t.Fatal("repeated save changed .gitignore")
+	}
+	cfg.Environments["staging"] = config.EnvironmentConfig{Output: "staging/.env.example"}
+	ensureGitignoreIn(t, dir, cfg)
+	cfg.Environments["default"] = config.EnvironmentConfig{Output: ".env"}
+	ensureGitignoreIn(t, dir, cfg)
+	for _, output := range []string{".env.example", "staging/.env.example"} {
+		if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", output).CombinedOutput(); err != nil {
+			t.Fatalf("git check-ignore %s: %v %s", output, err, out)
+		}
+	}
+	err = exec.Command(git, "-C", dir, "check-ignore", "-q", "--no-index", "docs/.env.example").Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("unrelated template should be unignored, git returned %v", err)
+	}
+}
+
+func TestGitignorePreservesFirstRuleAndHistoricalExampleExclusion(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	dir := t.TempDir()
+	if out, err := exec.Command(git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v %s", err, out)
+	}
+	writeGitignore(t, dir, "\uFEFF/keep.out\n /secret.out\n/.env.example\n")
+	cfg := &config.ProjectConfig{Environments: map[string]config.EnvironmentConfig{
+		"default": {Output: "secret.out"},
+	}}
+	content := ensureGitignoreIn(t, dir, cfg)
+	if !strings.HasPrefix(content, "\uFEFF") {
+		t.Fatal("UTF-8 BOM moved or disappeared")
+	}
+	for _, name := range []string{"keep.out", "secret.out", ".env.example"} {
+		if out, err := exec.Command(git, "-C", dir, "check-ignore", "--no-index", name).CombinedOutput(); err != nil {
+			t.Fatalf("git check-ignore %s: %v %s", name, err, out)
 		}
 	}
 }

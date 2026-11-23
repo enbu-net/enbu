@@ -7,7 +7,13 @@ import { Create as $Create } from "@wailsio/runtime";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as app$0 from "../app/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as apperr$0 from "../pkg/apperr/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as config$0 from "../pkg/config/models.js";
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as selfupdate$0 from "../pkg/selfupdate/models.js";
@@ -196,12 +202,15 @@ export class OAuthStatus {
 }
 
 export class RepoInfo {
+    "config_error"?: apperr$0.Payload | null;
     "path"?: string;
+    "workspace_id"?: string;
     "owner"?: string;
     "repo"?: string;
     "initialized": boolean;
     "has_remote": boolean;
     "storage_configured": boolean;
+    "storage_draft"?: config$0.StorageConfig | null;
 
     /** Creates a new RepoInfo instance. */
     constructor($$source: Partial<RepoInfo> = {}) {
@@ -222,7 +231,15 @@ export class RepoInfo {
      * Creates a new RepoInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): RepoInfo {
+        const $$createField0_0 = $$createType4;
+        const $$createField8_0 = $$createType6;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("config_error" in $$parsedSource) {
+            $$parsedSource["config_error"] = $$createField0_0($$parsedSource["config_error"]);
+        }
+        if ("storage_draft" in $$parsedSource) {
+            $$parsedSource["storage_draft"] = $$createField8_0($$parsedSource["storage_draft"]);
+        }
         return new RepoInfo($$parsedSource as Partial<RepoInfo>);
     }
 }
@@ -272,7 +289,7 @@ export class SecretsResponse {
      * Creates a new SecretsResponse instance from a string or object.
      */
     static createFrom($$source: any = {}): SecretsResponse {
-        const $$createField1_0 = $$createType6;
+        const $$createField1_0 = $$createType8;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("secrets" in $$parsedSource) {
             $$parsedSource["secrets"] = $$createField1_0($$parsedSource["secrets"]);
@@ -291,11 +308,63 @@ export const UpdateStatus = selfupdate$0.Status;
  */
 export type UpdateStatus = selfupdate$0.Status;
 
+export class WorkspaceResponse {
+    "workspace_id": string;
+    "environments": app$0.EnvInfo[];
+    "secrets": SecretsResponse;
+    "conflicts": app$0.ConflictSet | null;
+
+    /** Creates a new WorkspaceResponse instance. */
+    constructor($$source: Partial<WorkspaceResponse> = {}) {
+        if (!("workspace_id" in $$source)) {
+            this["workspace_id"] = "";
+        }
+        if (!("environments" in $$source)) {
+            this["environments"] = [];
+        }
+        if (!("secrets" in $$source)) {
+            this["secrets"] = (new SecretsResponse());
+        }
+        if (!("conflicts" in $$source)) {
+            this["conflicts"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new WorkspaceResponse instance from a string or object.
+     */
+    static createFrom($$source: any = {}): WorkspaceResponse {
+        const $$createField1_0 = $$createType10;
+        const $$createField2_0 = $$createType11;
+        const $$createField3_0 = $$createType13;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("environments" in $$parsedSource) {
+            $$parsedSource["environments"] = $$createField1_0($$parsedSource["environments"]);
+        }
+        if ("secrets" in $$parsedSource) {
+            $$parsedSource["secrets"] = $$createField2_0($$parsedSource["secrets"]);
+        }
+        if ("conflicts" in $$parsedSource) {
+            $$parsedSource["conflicts"] = $$createField3_0($$parsedSource["conflicts"]);
+        }
+        return new WorkspaceResponse($$parsedSource as Partial<WorkspaceResponse>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
 const $$createType1 = RepoInfo.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
 const $$createType3 = apperr$0.Payload.createFrom;
 const $$createType4 = $Create.Nullable($$createType3);
-const $$createType5 = SecretItem.createFrom;
-const $$createType6 = $Create.Array($$createType5);
+const $$createType5 = config$0.StorageConfig.createFrom;
+const $$createType6 = $Create.Nullable($$createType5);
+const $$createType7 = SecretItem.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = app$0.EnvInfo.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = SecretsResponse.createFrom;
+const $$createType12 = app$0.ConflictSet.createFrom;
+const $$createType13 = $Create.Nullable($$createType12);

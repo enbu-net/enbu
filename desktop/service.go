@@ -69,7 +69,7 @@ func NewService(a *app.App) *Service {
 		openURL:  auth.OpenBrowser,
 		git:      a.Git,
 		sessions: make(map[string]*oauthSession),
-		accounts: keyringAccounts{},
+		accounts: savedAccounts{},
 	}
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock
@@ -164,6 +164,11 @@ func withRepoPathResult[T any](s *Service, path string, fn func() (T, error)) (T
 	}
 	s.app.SetRepositoryDir(path)
 	return fn()
+}
+
+// matchesSelectedRepository is called inside withRepoResult's lock.
+func (s *Service) matchesSelectedRepository(path string) bool {
+	return path != "" && s.repoPath == path && s.app.RepositoryDir == path
 }
 
 func (s *Service) context() context.Context {

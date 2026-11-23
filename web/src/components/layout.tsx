@@ -17,7 +17,8 @@ export function SectionHeader({
       mb="6"
       flexWrap="wrap"
     >
-      <Heading size="lg" fontWeight="bold">
+      {/* minW 0 lets a long environment name shrink instead of widening the page. */}
+      <Heading size="lg" fontWeight="bold" minW="0" maxW="full">
         {title}
       </Heading>
       {children}
