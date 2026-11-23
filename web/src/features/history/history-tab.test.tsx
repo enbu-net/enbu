@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
 import { createAppError } from "../../lib/app-error";
-import { container, queryButton, renderAndSettle, settle, setupDom } from "../../test/dom";
+import { container, queryButton, renderAndSettle, root, settle, setupDom } from "../../test/dom";
 import { testWorkspace } from "../../test/workspace";
 import { HistoryTab } from "./history-tab";
 
@@ -41,7 +41,9 @@ describe("HistoryTab", () => {
 
   it("renders a single revision without restore or comparison controls", async () => {
     mocked.ListHistory.mockResolvedValue(entries.slice(0, 1));
-    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
 
     expect(container.querySelectorAll('[data-testid="history-revision"]')).toHaveLength(1);
     expect(container.querySelectorAll("select")).toHaveLength(1); // Environment selector only.
@@ -101,7 +103,9 @@ describe("HistoryTab", () => {
   });
 
   it("drops compacted history after a restore conflict", async () => {
-    mocked.ListHistory.mockResolvedValueOnce(entries).mockResolvedValueOnce([entries[2]]);
+    mocked.ListHistory.mockResolvedValueOnce(entries).mockResolvedValueOnce([
+      { ...entries[2], index: 1 },
+    ]);
     mocked.RestoreHistory.mockRejectedValueOnce(createAppError("conflict"));
     await renderAndSettle(
       <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
@@ -111,8 +115,31 @@ describe("HistoryTab", () => {
     await settle();
     expect(mocked.ListHistory).toHaveBeenLastCalledWith("default");
     expect(queryButton("Restore: Revision 1")).toBeNull();
-    expect(container.textContent).toContain("Revision 3");
+    expect(container.textContent).toContain("Revision 1");
+    expect(container.textContent).toContain("Latest");
+    expect(container.textContent).not.toContain("Revision 3");
     expect(container.textContent).toContain("Secrets changed remotely");
+  });
+
+  it("refreshes the target before restoring history in a recreated environment", async () => {
+    const initial = testWorkspace([{ name: "default", current: true, incarnation: "old" }]);
+    const recreated = testWorkspace([{ name: "default", current: true, incarnation: "new" }]);
+    mocked.ListHistory.mockResolvedValue(entries);
+    mocked.RestoreHistory.mockRejectedValueOnce(createAppError("conflict"));
+    initial.refresh = vi.fn(async () => {
+      root.render(<HistoryTab repoPath="/workspace" workspace={recreated} />);
+    });
+    await renderAndSettle(<HistoryTab repoPath="/workspace" workspace={initial} />);
+    await act(async () => queryButton("Restore: Revision 1")?.click());
+    await settle();
+    expect(initial.refresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => queryButton("Restore: Revision 1")?.click());
+    expect(mocked.RestoreHistory).toHaveBeenLastCalledWith(
+      "/workspace",
+      { workspace_id: recreated.workspaceID, environment: "default", incarnation: "new" },
+      "tag-1",
+    );
   });
 
   it("drops the previous environment's revisions while the next one loads", async () => {

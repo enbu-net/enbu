@@ -185,7 +185,8 @@ function HistoryContent({
                             await backend.RestoreHistory(repoPath, target, entry.tag);
                           } catch (err) {
                             if (mounted.current && toDisplayError(err).code === "conflict") {
-                              await load(env);
+                              await refresh();
+                              if (mounted.current) await load(env);
                             }
                             throw err;
                           }
