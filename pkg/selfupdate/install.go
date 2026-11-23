@@ -61,12 +61,16 @@ func installBinary(target string, extract func(io.Writer) error, moveAside bool)
 		return err
 	}
 	defer func() { _ = lock.Close() }()
-	f, err := os.CreateTemp(filepath.Dir(target), stagingPrefix(target)+"*")
+	staging, err := prepareStaging(target)
 	if err != nil {
 		return err
 	}
-	next := f.Name()
-	defer func() { _ = os.Remove(next) }()
+	defer func() { _ = os.RemoveAll(staging) }()
+	next := filepath.Join(staging, filepath.Base(target))
+	f, err := os.OpenFile(next, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+	if err != nil {
+		return err
+	}
 	if err := f.Chmod(0o755); err != nil {
 		_ = f.Close()
 		return err
@@ -119,14 +123,26 @@ func lockTarget(target string) (string, *os.File, error) {
 	return target, lock, nil
 }
 
-func stagingPrefix(target string) string { return "." + filepath.Base(target) + ".update-" }
+func stagingDir(target string) string {
+	return filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".update-stage")
+}
 
-// CleanUp removes what an earlier update left beside target: the old
-// Windows binary, which could not be deleted while it ran. Each installer
-// cleans its own unique staging path.
+// prepareStaging must run under the installation lock. Reusing one reserved
+// directory also recovers a download interrupted before its deferred cleanup.
+func prepareStaging(target string) (string, error) {
+	staging := stagingDir(target)
+	if err := os.RemoveAll(staging); err != nil {
+		return "", err
+	}
+	return staging, os.Mkdir(staging, 0o700)
+}
+
+// CleanUp removes abandoned staging and a Windows backup once it has stopped
+// running. The installation lock also protects an update currently staging.
 func CleanUp(target string) {
-	info, err := os.Lstat(target + ".old")
-	if err != nil || !info.Mode().IsRegular() {
+	_, stageErr := os.Lstat(stagingDir(target))
+	_, oldErr := os.Lstat(target + ".old")
+	if os.IsNotExist(stageErr) && os.IsNotExist(oldErr) {
 		return
 	}
 	target, lock, err := lockTarget(target)
@@ -134,6 +150,10 @@ func CleanUp(target string) {
 		return
 	}
 	defer func() { _ = lock.Close() }()
+	_ = os.RemoveAll(stagingDir(target))
+	if info, err := os.Lstat(target + ".old"); err != nil || !info.Mode().IsRegular() {
+		return
+	}
 	if _, err := os.Stat(target); err == nil {
 		_ = os.Remove(target + ".old")
 	}
@@ -218,7 +238,7 @@ func installApp(ctx context.Context, dmg, target string) error {
 	if err != nil || len(apps) != 1 {
 		return fmt.Errorf("the update holds %d app bundles, want 1", len(apps))
 	}
-	staging, err := os.MkdirTemp(filepath.Dir(target), stagingPrefix(target)+"*")
+	staging, err := prepareStaging(target)
 	if err != nil {
 		return err
 	}

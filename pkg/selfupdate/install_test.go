@@ -99,8 +99,8 @@ func TestInstallLinuxReplacesTheBinary(t *testing.T) {
 	if err != nil || info.Mode().Perm()&0o100 == 0 {
 		t.Errorf("target is not executable: %v %v", info, err)
 	}
-	if paths, err := filepath.Glob(filepath.Join(filepath.Dir(target), stagingPrefix(target)+"*")); err != nil || len(paths) != 0 {
-		t.Fatalf("staging paths left behind: %v, %v", paths, err)
+	if _, err := os.Lstat(stagingDir(target)); !os.IsNotExist(err) {
+		t.Fatalf("staging still exists: %v", err)
 	}
 }
 
@@ -119,8 +119,8 @@ func TestInstallKeepsTheAppWhenTheArchiveLacksTheBinary(t *testing.T) {
 	if got := readFile(t, target); got != "old" {
 		t.Errorf("target = %q, want old", got)
 	}
-	if paths, err := filepath.Glob(filepath.Join(filepath.Dir(target), stagingPrefix(target)+"*")); err != nil || len(paths) != 0 {
-		t.Fatalf("staging paths left behind: %v, %v", paths, err)
+	if _, err := os.Lstat(stagingDir(target)); !os.IsNotExist(err) {
+		t.Fatalf("staging still exists: %v", err)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestCleanupLeavesUnrelatedSiblings(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sibling := filepath.Join(dir, stagingPrefix(target)+"notes")
+	sibling := stagingDir(target) + "-notes"
 	if err := os.Mkdir(sibling, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -268,5 +268,38 @@ func TestCleanupLeavesUnrelatedSiblings(t *testing.T) {
 	CleanUp(target)
 	if got := readFile(t, note); got != "keep" {
 		t.Fatalf("unrelated sibling changed: %q", got)
+	}
+}
+
+func TestAbandonedStagingIsRemoved(t *testing.T) {
+	for _, operation := range []string{"cleanup", "install"} {
+		t.Run(operation, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "enbu-desktop")
+			staging := stagingDir(target)
+			bundle := filepath.Join(staging, "unfinished.app", "Contents")
+			if err := os.MkdirAll(bundle, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(bundle, "partial"), []byte("partial"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if operation == "cleanup" {
+				CleanUp(target)
+			} else {
+				err := installBinary(target, func(w io.Writer) error {
+					if _, err := os.Stat(bundle); !os.IsNotExist(err) {
+						t.Fatalf("retry saw abandoned staging: %v", err)
+					}
+					_, err := io.WriteString(w, "complete")
+					return err
+				}, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := os.Lstat(staging); !os.IsNotExist(err) {
+				t.Fatalf("staging still exists: %v", err)
+			}
+		})
 	}
 }
