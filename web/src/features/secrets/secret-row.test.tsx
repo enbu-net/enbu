@@ -123,7 +123,7 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith("new-secret");
   });
 
-  it("does not submit when an IME candidate is confirmed", () => {
+  it("does not submit when an IME candidate is confirmed", async () => {
     const onEdit = vi.fn(async () => {});
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
     const input = queryInput("super-secret")!;
@@ -135,7 +135,9 @@ describe("SecretRow", () => {
         cancelable: true,
         ...composition,
       });
-      act(() => input.dispatchEvent(enter));
+      await act(async () => {
+        input.dispatchEvent(enter);
+      });
       expect(enter.defaultPrevented).toBe(true);
     }
     expect(onEdit).not.toHaveBeenCalled();
