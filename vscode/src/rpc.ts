@@ -50,6 +50,9 @@ type Pending = { resolve: (value: unknown) => void; reject: (reason: unknown) =>
 
 const codeMethodNotFound = -32601;
 const codeApplication = -32000;
+const codeInvalidRequest = -32600;
+// Matches desktop/rpc.maxMessageSize, including the terminating newline.
+const maxMessageSize = 16 << 20;
 
 export class RpcClient {
   readonly #output: Writable;
@@ -64,6 +67,8 @@ export class RpcClient {
     const lines = createInterface({ input, crlfDelay: Infinity });
     lines.on("line", (line) => this.#receive(line));
     lines.on("close", () => this.dispose());
+    lines.on("error", () => this.dispose());
+    output.on("error", () => this.dispose());
   }
 
   /** Calls a server method with positional params. */
@@ -71,17 +76,32 @@ export class RpcClient {
     if (this.#closed) return Promise.reject(new RpcError(codeApplication, "enbu is not running"));
     const id = ++this.#nextID;
     return new Promise((resolve, reject) => {
+      const line = `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`;
+      if (Buffer.byteLength(line) > maxMessageSize) {
+        reject(
+          new RpcError(codeInvalidRequest, "message too large", {
+            code: "invalid_argument",
+            message: "message too large",
+            params: {},
+          }),
+        );
+        return;
+      }
       this.#pending.set(id, { resolve, reject });
-      this.#send({ jsonrpc: "2.0", id, method, params });
+      this.#output.write(line);
     });
   }
 
   /** Rejects the calls in flight; later calls fail at once. */
   dispose(): void {
+    this.#fail(new RpcError(codeApplication, "enbu exited"));
+  }
+
+  #fail(error: RpcError): void {
     if (this.#closed) return;
     this.#closed = true;
     for (const pending of this.#pending.values()) {
-      pending.reject(new RpcError(codeApplication, "enbu exited"));
+      pending.reject(error);
     }
     this.#pending.clear();
   }
@@ -92,7 +112,7 @@ export class RpcClient {
   }
 
   #receive(line: string): void {
-    if (line.trim() === "") return;
+    if (this.#closed || line.trim() === "") return;
     let message: Message;
     try {
       message = JSON.parse(line) as Message;
@@ -102,6 +122,12 @@ export class RpcClient {
     if (!message || typeof message !== "object") return;
     if (typeof message.method === "string") {
       this.#serve(message.id, message.method, message.params);
+      return;
+    }
+    if (message.jsonrpc === "2.0" && message.id === null && message.error) {
+      // No request ID means we cannot know which result will never arrive.
+      this.#fail(new RpcError(message.error.code, "enbu protocol error"));
+      this.#output.end();
       return;
     }
     if (typeof message.id !== "number") return;
