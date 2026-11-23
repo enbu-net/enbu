@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -88,26 +89,34 @@ func TestPullWritesAFreshFileWithTheMarker(t *testing.T) {
 }
 
 func TestPullExplainsLegacyInvalidSecretNameWithoutChangingOutput(t *testing.T) {
-	alice := newAlice(t)
-	path := writeOutput(t, alice, "LOCAL_ONLY=keep\n")
-	if err := alice.changeSecret(bg, "default", "legacy", func(secrets map[string]string) error {
-		secrets["BAD\nKEY"] = "Hello"
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_, err := alice.PullSecretsToFileWith(bg, "default", false)
-	if !apperr.Is(err, apperr.CodeSecretNameInvalid) {
-		t.Fatalf("PullSecretsToFileWith = %v", err)
-	}
-	if got, _ := os.ReadFile(path); string(got) != "LOCAL_ONLY=keep\n" {
-		t.Fatalf("output changed on failed pull: %q", got)
-	}
-	if err := alice.DeleteSecret(bg, "default", "BAD\nKEY"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
-		t.Fatalf("pull after deleting invalid name: %v", err)
+	for _, name := range []string{"", "BAD\nKEY"} {
+		t.Run(strconv.QuoteToASCII(name), func(t *testing.T) {
+			alice := newAlice(t)
+			path := writeOutput(t, alice, "LOCAL_ONLY=keep\n")
+			if err := alice.changeSecret(bg, "default", "legacy", func(secrets map[string]string) error {
+				secrets[name] = "Hello"
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := alice.PullSecretsToFileWith(bg, "default", false)
+			if !apperr.Is(err, apperr.CodeSecretNameInvalid) {
+				t.Fatalf("PullSecretsToFileWith = %v", err)
+			}
+			payload := apperr.PayloadOf(err)
+			if payload.Params["key"] != strconv.QuoteToASCII(name) || strings.Contains(payload.Message, "\n") {
+				t.Fatalf("unsafe diagnostic: %+v", payload)
+			}
+			if got, _ := os.ReadFile(path); string(got) != "LOCAL_ONLY=keep\n" {
+				t.Fatalf("output changed on failed pull: %q", got)
+			}
+			if err := alice.DeleteSecret(bg, "default", name); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := alice.PullSecretsToFileWith(bg, "default", false); err != nil {
+				t.Fatalf("pull after deleting invalid name: %v", err)
+			}
+		})
 	}
 }
 

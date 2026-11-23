@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/dotenv"
@@ -58,11 +59,8 @@ func (a *App) EditSecret(ctx context.Context, env, key, value string) (err error
 }
 
 func validateSecretName(key string) error {
-	if key == "" {
-		return apperr.New(apperr.CodeInvalidArgument, "secret name is empty", nil)
-	}
 	if !dotenv.ValidName(key) {
-		return apperr.New(apperr.CodeSecretNameInvalid, "secret name is not a dotenv variable name", apperr.Params{"key": key})
+		return apperr.New(apperr.CodeSecretNameInvalid, "secret name is not a dotenv variable name", apperr.Params{"key": strconv.QuoteToASCII(key)})
 	}
 	return nil
 }
