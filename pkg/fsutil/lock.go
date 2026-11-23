@@ -23,18 +23,22 @@ func LockFile(path string, wait bool) (*os.File, error) {
 	return f, nil
 }
 
-// LockFileContext waits for an exclusive lock without trapping a cancelled
-// operation inside an OS lock call.
-func LockFileContext(ctx context.Context, c clock.Clock, path string) (*os.File, error) {
-	if ctx.Done() == nil {
-		return LockFile(path, true)
-	}
+// LockDirectory waits for an exclusive lock on a checkout. On Windows the
+// handle to the sidecar denies deletion for the lifetime of the lock.
+func LockDirectory(ctx context.Context, c clock.Clock, dir, sidecar string) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := openDirectoryLock(dir, sidecar)
 	if err != nil {
 		return nil, err
+	}
+	if ctx.Done() == nil {
+		if err := lockFile(f, true); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+		return f, nil
 	}
 	for ctx.Err() == nil {
 		err = lockFile(f, false)

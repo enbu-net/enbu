@@ -25,8 +25,14 @@ func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving project directory: %w", err)
 	}
-	// The lock must accompany the file, including when only the checkout is mounted.
-	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(dir, config.ProjectLockName))
+	info, err := os.Lstat(a.projectPath())
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("checking project configuration: %w", err)
+	}
+	if err == nil && !info.Mode().IsRegular() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml must be a regular file to change it", nil)
+	}
+	return fsutil.LockDirectory(ctx, a.clock(), dir, config.ProjectLockName)
 }
 
 func (a *App) ReadConfig() (content string, err error) {
@@ -80,15 +86,12 @@ func (a *App) WriteConfig(content, previous string) (err error) {
 			return err
 		}
 	}
-	if err := config.WriteProjectFile(path, []byte(content)); err != nil {
-		return err
-	}
-	// The saved config is valid on its own. An output file Git does not ignore
-	// could still be committed, so a failed update is reported, not skipped.
+	// Protect the new outputs before enabling them. If Git exclusions cannot
+	// be written, the previous configuration is still the comparison base.
 	if err := a.ensureGitignore(cfg); err != nil {
-		return fmt.Errorf("enbu.toml was saved, but updating .gitignore failed: %w", err)
+		return fmt.Errorf("updating .gitignore: %w", err)
 	}
-	return nil
+	return config.WriteProjectFile(path, []byte(content))
 }
 
 // checkProtectedConfig refuses an edit of enbu.toml that changes what the
