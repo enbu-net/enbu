@@ -74,8 +74,17 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 		})
 		return uuid.NewV4().String()
 	}
+	release := sync.OnceFunc(func() { close(resume) })
 	first := make(chan error, 1)
-	go func() { first <- a.CreateEnvironment("staging") }()
+	firstDone := make(chan struct{})
+	go func() {
+		defer close(firstDone)
+		first <- a.CreateEnvironment("staging")
+	}()
+	defer func() {
+		release()
+		<-firstDone
+	}()
 	select {
 	case <-started:
 	case err := <-first:
@@ -85,7 +94,7 @@ func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
 	requireProjectLockBusy(t, &b)
 	second := make(chan error, 1)
 	go func() { second <- b.CreateEnvironment("production") }()
-	close(resume)
+	release()
 	for _, result := range []chan error{first, second} {
 		if err := <-result; err != nil {
 			t.Fatal(err)
