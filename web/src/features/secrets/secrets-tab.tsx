@@ -182,7 +182,7 @@ export function SecretsTab({
         >
           {secrets?.secrets.map((secret) => (
             <SecretRow
-              key={secret.key}
+              key={JSON.stringify([env, secret.key])}
               secretKey={secret.key}
               secretValue={secret.value}
               onEdit={async (value) => {

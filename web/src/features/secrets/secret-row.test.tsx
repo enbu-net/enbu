@@ -8,6 +8,7 @@ import {
   queryInput,
   root,
   setupDom,
+  typeInto,
 } from "../../test/dom";
 import { SecretRow } from "./secret-row";
 
@@ -85,21 +86,78 @@ describe("SecretRow", () => {
 
   it("copies the secret key and value independently", async () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
+    const status = container.querySelector('[role="status"]');
+    expect(status?.textContent).toBe("");
     await act(async () => {
-      queryButton("Copy key")?.click();
+      queryButton("API_KEY")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("API_KEY");
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Key copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
 
     await act(async () => {
       queryButton("Copy value")?.click();
       await Promise.resolve();
     });
     expect(clipboardWrite).toHaveBeenCalledWith("super-secret");
+    expect(
+      queryButton("Copy value")?.parentElement?.querySelector('input[aria-label="Value: API_KEY"]'),
+    ).toBeTruthy();
     // The buttons keep their names; the status message says what was copied.
     expect(queryButton("Copy value")).toBeTruthy();
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Value copied");
+    expect(container.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe("Value copied");
+    expect(container.querySelector("[data-toast]")).toBeTruthy();
+  });
+
+  it("saves an edited value with an explicit button", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+    expect(onEdit).not.toHaveBeenCalled();
+    await act(async () => {
+      queryButton("Save")?.click();
+      await Promise.resolve();
+    });
+    expect(onEdit).toHaveBeenCalledWith("new-secret");
+  });
+
+  it("does not submit when an IME candidate is confirmed", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    const input = queryInput("super-secret")!;
+    typeInto(input, "変換");
+    for (const composition of [{ isComposing: true }, { keyCode: 229 }]) {
+      const enter = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+        ...composition,
+      });
+      await act(async () => {
+        input.dispatchEvent(enter);
+      });
+      expect(enter.defaultPrevented).toBe(true);
+    }
+    expect(onEdit).not.toHaveBeenCalled();
+  });
+
+  it("pauses editing until the submitted value has saved", async () => {
+    let finishSave!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    const onEdit = vi.fn(() => promise);
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("new-secret");
+    expect(queryInput("new-secret")?.disabled).toBe(true);
+
+    await act(async () => finishSave());
+    expect(queryInput("new-secret")?.disabled).toBe(false);
   });
 
   it("renders the secret key as a monospace label", () => {
