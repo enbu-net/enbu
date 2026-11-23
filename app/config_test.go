@@ -593,3 +593,18 @@ func TestProjectLockRejectsSymlinks(t *testing.T) {
 		})
 	}
 }
+
+func TestProjectLockPreservesUnreadableIgnoreError(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires Unix permission enforcement")
+	}
+	a := newAlice(t)
+	ignore := filepath.Join(a.RepositoryDir, config.ProjectLockDir, ".gitignore")
+	if err := os.Chmod(ignore, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(ignore, 0o644) }()
+	if err := a.CreateEnvironment("staging"); !errors.Is(err, os.ErrPermission) || !apperr.Is(err, apperr.CodeInternal) {
+		t.Fatalf("unreadable lock exclusion: %v", err)
+	}
+}
