@@ -34,7 +34,7 @@ func TestCIConfiguresViteBeforeParallelFrontendTests(t *testing.T) {
 	configured := false
 	pending := map[string]bool{"task gui/test": true, "task vscode/test": true}
 	for _, step := range steps.Content {
-		if uses := field(step, "uses"); uses != nil && uses.Value == "$/.github/actions/setup-frontend" {
+		if uses := field(step, "uses"); uses != nil && uses.Value == "$/.github/actions/setup-frontend" && field(step, "if") == nil {
 			configured = true
 		}
 		parallel := field(step, "parallel")
@@ -46,10 +46,13 @@ func TestCIConfiguresViteBeforeParallelFrontendTests(t *testing.T) {
 			if run == nil {
 				continue
 			}
-			command, _, _ := strings.Cut(strings.TrimSpace(run.Value), "\n")
-			if pending[command] {
+			for line := range strings.SplitSeq(run.Value, "\n") {
+				command := strings.TrimSpace(line)
+				if !pending[command] {
+					continue
+				}
 				if !configured {
-					t.Fatalf("%s runs before frontend setup", command)
+					t.Fatalf("%s runs without preceding unconditional frontend setup", command)
 				}
 				delete(pending, command)
 			}
