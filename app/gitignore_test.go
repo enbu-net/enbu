@@ -59,7 +59,7 @@ func TestEnsureGitignoreKeepsExistingRulesAfterDefaults(t *testing.T) {
 
 func TestEnsureGitignoreNoDuplicates(t *testing.T) {
 	dir := t.TempDir()
-	existing := ".env\n.env.*\n!.env.example\n"
+	existing := "/.enbu.toml.lock\n.env\n.env.*\n!.env.example\n"
 	writeGitignore(t, dir, existing)
 	if content := ensureGitignoreIn(t, dir, nil); content != existing {
 		t.Errorf("file was modified when all entries already exist:\ngot: %q\nwant: %q", content, existing)

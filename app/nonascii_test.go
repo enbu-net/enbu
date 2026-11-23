@@ -77,7 +77,8 @@ func TestRepositoryKeyJoinsSpellingsOfOneRepository(t *testing.T) {
 	if want == "" {
 		t.Fatal("no key")
 	}
-	spellings := []string{filepath.Join(dir, "サブ"), filepath.ToSlash(dir) + "/", filepath.Join(dir, "サブ", "..")}
+	t.Chdir(filepath.Join(dir, "サブ"))
+	spellings := []string{"", filepath.ToSlash(dir) + "/", filepath.Join(dir, "サブ", "..")}
 	if link := filepath.Join(base, "リンク"); os.Symlink(dir, link) == nil {
 		spellings = append(spellings, link)
 	}

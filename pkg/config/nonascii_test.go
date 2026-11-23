@@ -44,11 +44,12 @@ func TestProjectAndGUIConfigInNonASCIIPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A command run in a subfolder finds the enbu.toml above it.
-	path, err := ProjectConfigPathFrom(sub)
+	t.Chdir(sub)
+	path, err := ProjectConfigPathFrom("")
 	if err != nil || path != filepath.Join(repo, "enbu.toml") {
 		t.Fatalf("ProjectConfigPathFrom = %q, %v", path, err)
 	}
-	loaded, err := LoadProjectFrom(sub)
+	loaded, err := LoadProjectFrom("")
 	if err != nil || loaded.WorkspaceID != cfg.WorkspaceID {
 		t.Fatalf("LoadProjectFrom = %+v, %v", loaded, err)
 	}

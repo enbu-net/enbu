@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -9,16 +10,29 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
 )
+
+func (a *App) projectPath() string {
+	if path, err := config.ProjectConfigPathFrom(a.RepositoryDir); err == nil {
+		return path
+	}
+	return filepath.Join(a.RepositoryDir, "enbu.toml")
+}
+
+func (a *App) lockProject(ctx context.Context) (*os.File, error) {
+	dir, err := filepath.EvalSymlinks(filepath.Dir(a.projectPath()))
+	if err != nil {
+		return nil, fmt.Errorf("resolving project directory: %w", err)
+	}
+	// The lock must accompany the file, including when only the checkout is mounted.
+	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(dir, config.ProjectLockName))
+}
 
 func (a *App) ReadConfig() (content string, err error) {
 	defer apperr.NormalizeInto(&err)
 
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
-	if err != nil {
-		return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
-	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(a.projectPath())
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", apperr.Wrap(apperr.CodeConfigNotFound, "enbu.toml not found", err, nil)
@@ -28,7 +42,7 @@ func (a *App) ReadConfig() (content string, err error) {
 	return string(data), nil
 }
 
-func (a *App) WriteConfig(content string) (err error) {
+func (a *App) WriteConfig(content, previous string) (err error) {
 	defer apperr.NormalizeInto(&err)
 
 	cfg, err := config.ParseProject(content)
@@ -38,17 +52,21 @@ func (a *App) WriteConfig(content string) (err error) {
 		}
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
-	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
+	lock, err := a.lockProject(context.Background())
 	if err != nil {
-		path = filepath.Join(a.RepositoryDir, "enbu.toml")
+		return err
 	}
+	defer func() { _ = lock.Close() }()
+	path := a.projectPath()
 	// Fail closed: a current file that cannot be read may hold values to protect.
 	existing, err := os.ReadFile(path)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-	case err != nil:
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("reading enbu.toml: %w", err)
-	default:
+	}
+	if string(existing) != previous {
+		return apperr.New(apperr.CodeConfigChanged, "enbu.toml changed since it was opened; reload it before saving", nil)
+	}
+	if err == nil {
 		current, err := config.DecodeProject(string(existing))
 		if err != nil {
 			return apperr.Wrap(apperr.CodeInvalidArgument, "the current enbu.toml cannot be read, so this edit cannot be checked; fix it in a text editor", err, nil)
@@ -62,7 +80,7 @@ func (a *App) WriteConfig(content string) (err error) {
 			return err
 		}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := config.WriteProjectFile(path, []byte(content)); err != nil {
 		return err
 	}
 	// The saved config is valid on its own. An output file Git does not ignore

@@ -192,6 +192,11 @@ func (a *App) migrateStorage(ctx context.Context, s *session, target storage.Sto
 	if !slices.Equal(refs, after) {
 		return apperr.New(apperr.CodeInvalidArgument, "source changed during migration; pause team writes and retry", nil)
 	}
+	lock, err := a.lockProject(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = lock.Close() }()
 	current, err := a.loadProject()
 	if err != nil {
 		return err

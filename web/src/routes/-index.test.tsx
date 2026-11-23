@@ -137,7 +137,7 @@ incarnation = "22222222-2222-4222-8222-222222222222"
     await act(async () => queryButton("Save TOML")?.click());
     await settle();
 
-    expect(backend.WriteConfig).toHaveBeenCalledWith(repaired);
+    expect(backend.WriteConfig).toHaveBeenCalledWith(repaired, repaired + alias);
     expect(refresh).toHaveBeenCalledWith({ force: true, invalidate: true });
     expect(reloadRepo).toHaveBeenCalled();
     expect(container.querySelector("#init-storage")).toHaveProperty("value", storage.url);

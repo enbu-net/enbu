@@ -79,7 +79,7 @@ func (a *App) saveProject(cfg *config.ProjectConfig) error {
 	if err := config.ValidateProjectOutputs(cfg); err != nil {
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
-	return config.SaveProjectTo(a.RepositoryDir, cfg)
+	return config.SaveProjectTo(filepath.Dir(a.projectPath()), cfg)
 }
 
 func (a *App) loadLocal() (*config.LocalConfig, error) {

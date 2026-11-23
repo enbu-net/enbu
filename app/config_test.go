@@ -1,14 +1,195 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+	"uuid"
 
 	"github.com/enbu-net/enbu/pkg/apperr"
+	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/fsutil"
+	"github.com/jonboulle/clockwork"
 )
+
+func TestExplicitNestedCheckoutDoesNotEditParent(t *testing.T) {
+	parent := newAlice(t)
+	nested := filepath.Join(parent.RepositoryDir, "nested")
+	if err := os.Mkdir(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	child := &App{RepositoryDir: nested}
+	before, err := parent.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.CreateEnvironment("child"); err != nil {
+		t.Fatal(err)
+	}
+	after, err := parent.ReadConfig()
+	if err != nil || before != after {
+		t.Fatalf("parent configuration changed: %v", err)
+	}
+	cfg, err := child.loadProject()
+	if err != nil || !cfg.HasEnvironment("child") {
+		t.Fatalf("child configuration was not written: %v", err)
+	}
+}
+
+func TestCanceledEnvironmentDeleteKeepsConfig(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := a.DeleteEnvironment(ctx, "staging", false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled delete: %v", err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil || !cfg.HasEnvironment("staging") {
+		t.Fatalf("canceled delete removed staging: %v", err)
+	}
+}
+
+func TestConcurrentEnvironmentCreationPreservesBothChanges(t *testing.T) {
+	a := newAlice(t)
+	b := *a
+	a.Runtime = &Runtime{}
+	started, resume := make(chan struct{}), make(chan struct{})
+	var pause sync.Once
+	a.Runtime.NewID = func() string {
+		pause.Do(func() {
+			close(started)
+			<-resume
+		})
+		return uuid.NewV4().String()
+	}
+	first := make(chan error, 1)
+	go func() { first <- a.CreateEnvironment("staging") }()
+	select {
+	case <-started:
+	case err := <-first:
+		t.Fatalf("first create failed before allocating an incarnation: %v", err)
+	}
+	// The first call is between reading and writing enbu.toml.
+	lock, err := fsutil.LockFile(filepath.Join(a.RepositoryDir, config.ProjectLockName), false)
+	if err == nil {
+		_ = lock.Close()
+		t.Error("config lock was not held between reading and writing")
+	}
+	second := make(chan error, 1)
+	go func() { second <- b.CreateEnvironment("production") }()
+	close(resume)
+	for _, result := range []chan error{first, second} {
+		if err := <-result; err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HasEnvironment("production") || !cfg.HasEnvironment("staging") {
+		t.Fatalf("lost a successful update: %+v", cfg.Environments)
+	}
+}
+
+func TestPersonalSwitchDoesNotOpenProjectLock(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(a.RepositoryDir, config.ProjectLockName)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchEnvironment("default"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := a.CurrentEnvironment()
+	if err != nil || current != "default" {
+		t.Fatalf("personal selection = %q, %v", current, err)
+	}
+}
+
+func TestProjectLockUsesSameFileForSymlinkedCheckout(t *testing.T) {
+	a := newAlice(t)
+	alias := filepath.Join(t.TempDir(), "checkout")
+	if err := os.Symlink(a.RepositoryDir, alias); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	aliasApp := *a
+	aliasApp.RepositoryDir = alias
+	first, err := aliasApp.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Close() }()
+	canonical, err := filepath.EvalSymlinks(a.RepositoryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(canonical, config.ProjectLockName)
+	if first.Name() != path {
+		t.Fatalf("aliased lock path = %q, want %q", first.Name(), path)
+	}
+	second, err := fsutil.LockFile(path, false)
+	if err == nil {
+		_ = second.Close()
+		t.Fatal("symlink path acquired the existing lock")
+	}
+}
+
+func TestConfigReservesOnlyTheNewProjectLockPath(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("enbu-lock"); err != nil {
+		t.Fatal(err)
+	}
+	original, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{config.ProjectLockName, config.ProjectLockName + "/vars.env"} {
+		content := strings.Replace(original, `".env.enbu-lock"`, `"`+path+`"`, 1)
+		if original == content {
+			t.Fatal("fixture did not contain the default output")
+		}
+		if err := a.WriteConfig(content, original); !apperr.Is(err, apperr.CodeInvalidArgument) {
+			t.Fatalf("using the lock path as output: %v", err)
+		}
+	}
+}
+
+func TestConfigSaveRejectsAnOlderDraft(t *testing.T) {
+	a := newAlice(t)
+	original, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.WriteConfig(original+"\n# edited draft\n", original); !apperr.Is(err, apperr.CodeConfigChanged) {
+		t.Fatalf("saving stale configuration: %v", err)
+	}
+	cfg, err := a.loadProject()
+	if err != nil || !cfg.HasEnvironment("staging") {
+		t.Fatalf("successful creation lost: %v %v", cfg, err)
+	}
+}
 
 func TestReadWriteConfig(t *testing.T) {
 	dir := t.TempDir()
@@ -29,7 +210,7 @@ func TestReadWriteConfig(t *testing.T) {
 	}
 
 	newContent := "version = \"v1alpha2\"\ndefault_env = \"production\"\n"
-	if err := a.WriteConfig(newContent); err != nil {
+	if err := a.WriteConfig(newContent, got); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
 
@@ -51,7 +232,7 @@ func TestWriteConfigRejectsOutputOutsideRepository(t *testing.T) {
 	}
 
 	a := &App{RepositoryDir: dir}
-	err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"../secrets.local\"\n")
+	err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"../secrets.local\"\n", original)
 	if err == nil {
 		t.Fatal("WriteConfig succeeded for output outside repository")
 	}
@@ -101,7 +282,7 @@ output = ".env.legacy"
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := a.WriteConfig(strings.Replace(current, c.from, c.to, 1))
+			err := a.WriteConfig(strings.Replace(current, c.from, c.to, 1), current)
 			var appErr *apperr.Error
 			if !apperr.Is(err, apperr.CodeConfigProtected) || !errors.As(err, &appErr) || appErr.Params()["key"] != c.key {
 				t.Fatalf("WriteConfig = %v, want config_protected for %s", err, c.key)
@@ -117,12 +298,12 @@ output = ".env.legacy"
 	edited := strings.Replace(current, `default_env = "dev"`, `default_env = "legacy"`, 1)
 	edited = strings.Replace(edited, "output = \".env.dev\"", "output = \"config/dev.env\"", 1)
 	edited += "\n[env.new]\noutput = \".env.new\"\n"
-	if err := a.WriteConfig(edited); err != nil {
+	if err := a.WriteConfig(edited, current); err != nil {
 		t.Fatalf("ordinary edit: %v", err)
 	}
 	withoutLegacy := strings.Replace(edited, "[env.legacy]\noutput = \".env.legacy\"\n", "", 1)
 	withoutLegacy = strings.Replace(withoutLegacy, `default_env = "legacy"`, `default_env = "dev"`, 1)
-	if err := a.WriteConfig(withoutLegacy); err != nil {
+	if err := a.WriteConfig(withoutLegacy, edited); err != nil {
 		t.Fatalf("removing an environment: %v", err)
 	}
 }
@@ -136,7 +317,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &App{RepositoryDir: dir}
-	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeInvalidArgument) {
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n", broken); !apperr.Is(err, apperr.CodeInvalidArgument) {
 		t.Fatalf("WriteConfig over an unreadable file = %v", err)
 	}
 	if data, _ := os.ReadFile(filepath.Join(dir, "enbu.toml")); string(data) != broken {
@@ -147,7 +328,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "enbu.toml"), []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n"); !apperr.Is(err, apperr.CodeConfigProtected) {
+	if err := a.WriteConfig("version = \"v1alpha2\"\ncontrol_genesis = \"sha256:bbbb\"\n", old); !apperr.Is(err, apperr.CodeConfigProtected) {
 		t.Fatalf("WriteConfig over an old version = %v", err)
 	}
 }
@@ -155,7 +336,7 @@ func TestWriteConfigFailsClosedOnAnUnreadableCurrentFile(t *testing.T) {
 func TestWriteConfigIgnoresACustomOutput(t *testing.T) {
 	dir := t.TempDir()
 	a := &App{RepositoryDir: dir}
-	if err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"config/dev.env\"\n"); err != nil {
+	if err := a.WriteConfig("version = \"v1alpha2\"\n[env.dev]\noutput = \"config/dev.env\"\n", ""); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
@@ -172,11 +353,130 @@ func TestWriteConfigSavesBeforeReportingAGitignoreFailure(t *testing.T) {
 	}
 	a := &App{RepositoryDir: dir}
 	content := "version = \"v1alpha2\"\n[env.dev]\noutput = \"dev.env\"\n"
-	if err := a.WriteConfig(content); err == nil {
+	if err := a.WriteConfig(content, ""); err == nil {
 		t.Fatal("a .gitignore that could not be updated was not reported")
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "enbu.toml"))
 	if err != nil || string(data) != content {
 		t.Fatalf("enbu.toml = %q, %v", data, err)
+	}
+}
+
+func TestCanceledDeleteReturnsWhileProjectLockIsHeld(t *testing.T) {
+	a := newAlice(t)
+	if err := a.CreateEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	fake := clockwork.NewFakeClock()
+	a.Runtime = &Runtime{Clock: fake}
+	lock, err := a.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := a.DeleteEnvironment(ctx, "staging", true)
+		result <- err
+	}()
+	wait, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	if err := fake.BlockUntilContext(wait, 1); err != nil {
+		t.Fatalf("delete did not reach the lock retry timer: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("waiting delete: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delete waited for the project lock after cancellation")
+	}
+}
+
+func TestProjectLockSurvivesGitCleanAndRetries(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	dir := t.TempDir()
+	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", out, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("/"+config.ProjectLockName+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := clockwork.NewFakeClock()
+	a := &App{RepositoryDir: dir, Runtime: &Runtime{Clock: fake}}
+	lock, err := a.lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = lock.Close() }()
+	if out, err := exec.CommandContext(t.Context(), git, "-C", dir, "clean", "-fd").CombinedOutput(); err != nil {
+		t.Fatalf("git clean: %s: %v", out, err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		next, err := a.lockProject(ctx)
+		if next != nil {
+			_ = next.Close()
+		}
+		result <- err
+	}()
+	if err := fake.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("second lock did not wait after git clean: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fake.Advance(time.Second)
+	if err := <-result; err != nil {
+		t.Fatalf("second lock did not retry successfully: %v", err)
+	}
+}
+
+func TestProjectLockDoesNotDependOnGitMetadata(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+	metadata := t.TempDir()
+	if err := os.WriteFile(filepath.Join(metadata, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{first, second} {
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+metadata+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	lock, err := (&App{RepositoryDir: first}).lockProject(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if lock.Name() != filepath.Join(fsutil.Canonical(first), config.ProjectLockName) {
+		t.Fatalf("lock outside checkout: %s", lock.Name())
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	alsoLocked, err := (&App{RepositoryDir: second}).lockProject(ctx)
+	if err != nil {
+		t.Fatalf("another checkout could not lock independently: %v", err)
+	}
+	_ = alsoLocked.Close()
+
+	// The same checkout must still contend when the external metadata is hidden.
+	if err := os.Remove(filepath.Join(first, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if other, err := fsutil.LockFile(filepath.Join(first, config.ProjectLockName), false); err == nil {
+		_ = other.Close()
+		t.Fatal("lost the project lock when the Git metadata became unavailable")
 	}
 }

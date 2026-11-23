@@ -35,7 +35,11 @@ func TestPurgeRefusesAliasedResource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := alice.WriteConfig(string(content)); !apperr.Is(err, apperr.CodeConfigResourceCollision) {
+		previous, err := alice.ReadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := alice.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeConfigResourceCollision) {
 			t.Fatalf("saving aliased configuration: %v", err)
 		}
 		// An older enbu or a text editor could already have written the file.
@@ -65,12 +69,16 @@ func TestRepairAliasedConfigRequiresAnExistingDefault(t *testing.T) {
 	if err := config.SaveProjectTo(a.RepositoryDir, cfg); err != nil {
 		t.Fatal(err)
 	}
+	previous, err := a.ReadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	delete(cfg.Environments, "scratch")
 	content, err := config.MarshalProject(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig(string(content)); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
+	if err := a.WriteConfig(string(content), previous); !apperr.Is(err, apperr.CodeEnvironmentMissing) {
 		t.Fatalf("repair with a missing default: %v", err)
 	}
 	cfg.DefaultEnv = "default"
@@ -78,7 +86,7 @@ func TestRepairAliasedConfigRequiresAnExistingDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.WriteConfig(string(content)); err != nil {
+	if err := a.WriteConfig(string(content), previous); err != nil {
 		t.Fatalf("repair with an existing default: %v", err)
 	}
 }

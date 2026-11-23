@@ -58,7 +58,7 @@ export function ConfigPanel({
     setSaving(true);
     setSaveError(null);
     try {
-      await backend.WriteConfig(draft);
+      await backend.WriteConfig(draft, content);
       setContent(draft);
       await onSaved?.();
     } catch (err) {

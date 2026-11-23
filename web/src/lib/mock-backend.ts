@@ -512,7 +512,8 @@ export const mockBackend: Backend = {
     config.storage = { ...settings };
     mockConfig = stringifyToml(config);
   },
-  async WriteConfig(content: string): Promise<void> {
+  async WriteConfig(content: string, previous: string): Promise<void> {
+    if (mockConfig !== previous) throw createAppError("config_changed");
     mockConfig = content;
   },
   async GetAppVersion(): Promise<string> {
