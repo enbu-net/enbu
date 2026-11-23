@@ -26,3 +26,39 @@ func TestFrontendSetupPreventsParallelViteConfigWrites(t *testing.T) {
 		t.Fatal("tasks must skip Vite+ config writes after frontend setup")
 	}
 }
+
+func TestCIConfiguresViteBeforeParallelFrontendTests(t *testing.T) {
+	workflow := readYAML(t, "../../.github/workflows/ci.yaml")
+	job := field(field(workflow, "jobs"), "test")
+	steps := field(job, "steps")
+	configured := false
+	pending := map[string]bool{"task gui/test": true, "task vscode/test": true}
+	for _, step := range steps.Content {
+		if uses := field(step, "uses"); uses != nil && uses.Value == "$/.github/actions/setup-frontend" && field(step, "if") == nil {
+			configured = true
+		}
+		parallel := field(step, "parallel")
+		if parallel == nil {
+			continue
+		}
+		for _, child := range parallel.Content {
+			run := field(child, "run")
+			if run == nil {
+				continue
+			}
+			for line := range strings.SplitSeq(run.Value, "\n") {
+				command := strings.TrimSpace(line)
+				if !pending[command] {
+					continue
+				}
+				if !configured {
+					t.Fatalf("%s runs without preceding unconditional frontend setup", command)
+				}
+				delete(pending, command)
+			}
+		}
+	}
+	if len(pending) != 0 {
+		t.Fatalf("expected frontend tests in CI parallel group: %v", pending)
+	}
+}
