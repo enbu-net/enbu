@@ -756,3 +756,94 @@ func TestCanceledDialDiscardsLateConnection(t *testing.T) {
 		t.Fatal("late connection leaked")
 	}
 }
+
+func TestCanceledStartupDoesNotOverlapRetries(t *testing.T) {
+	attempts := make(chan struct{}, 8)
+	release := make(chan struct{})
+	client := &Client{Dial: func(ctx context.Context) (*Conn, error) {
+		attempts <- struct{}{}
+		<-release
+		return nil, ctx.Err()
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	first := make(chan error, 1)
+	go func() { first <- client.CheckProtocol(ctx) }()
+	select {
+	case <-attempts:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not begin")
+	}
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first request: %v", err)
+	}
+	pending := client.dialing
+	for range 3 {
+		retry, stop := context.WithTimeout(t.Context(), time.Second)
+		err := client.CheckProtocol(retry)
+		stop()
+		if !errors.Is(err, identity.ErrUnavailable) || errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("retry while startup is blocked: %v", err)
+		}
+	}
+	select {
+	case <-attempts:
+		t.Fatal("a retry started another worker")
+	default:
+	}
+	close(release)
+	select {
+	case <-pending:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup worker did not exit")
+	}
+	client.Dial = func(context.Context) (*Conn, error) {
+		attempts <- struct{}{}
+		return nil, errors.New("test startup failed")
+	}
+	if err := client.CheckProtocol(t.Context()); !errors.Is(err, identity.ErrUnavailable) {
+		t.Fatalf("retry after startup finished: %v", err)
+	}
+	select {
+	case <-attempts:
+	default:
+		t.Fatal("startup could not be retried")
+	}
+}
+
+func TestOpenClassifiesStartupDeadline(t *testing.T) {
+	fake := clockwork.NewFakeClock()
+	started := make(chan struct{})
+	client := &Client{Clock: fake, Dial: func(ctx context.Context) (*Conn, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Info("ws")
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup did not begin")
+	}
+	fake.Advance(rpcTimeout)
+	select {
+	case err := <-done:
+		if !errors.Is(err, identity.ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("startup deadline: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("request stayed blocked")
+	}
+}

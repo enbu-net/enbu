@@ -45,6 +45,7 @@ type Client struct {
 	gen     uint64 // counts connections; a handle is valid only on its own
 	exe     string
 	version string
+	dialing <-chan struct{} // guarded by mu, closed after the startup worker exits
 
 	closeMu  sync.Mutex
 	activeMu sync.Mutex
@@ -158,14 +159,24 @@ func waitOrKill(cmd *exec.Cmd, c clock.Clock, grace time.Duration) error {
 // dial leaves the stream lock promptly even if process startup is blocked in
 // the OS. A connection that eventually opens after cancellation is discarded.
 func (c *Client) dial(ctx context.Context) (*Conn, string, error) {
+	if c.dialing != nil {
+		select {
+		case <-c.dialing:
+		default:
+			return nil, "", errors.New("the previous Windows bridge startup is still finishing")
+		}
+	}
 	type result struct {
 		conn *Conn
 		path string
 		err  error
 	}
 	done := make(chan result)
+	finished := make(chan struct{})
+	c.dialing = finished
 	start := c.Dial
 	go func() {
+		defer close(finished)
 		var r result
 		if start != nil {
 			r.conn, r.err = start(ctx)
@@ -193,6 +204,7 @@ func (c *Client) dial(ctx context.Context) (*Conn, string, error) {
 	case <-ctx.Done():
 		return nil, "", ctx.Err()
 	case r := <-done:
+		<-finished
 		return r.conn, r.path, r.err
 	}
 }
@@ -295,6 +307,9 @@ func (c *Client) open(method string, params, result any) (uint64, error) {
 	}
 	defer done()
 	if err := c.connect(ctx); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return 0, unavailable(err)
+		}
 		return 0, err
 	}
 	return c.gen, c.send(ctx, method, params, result)
