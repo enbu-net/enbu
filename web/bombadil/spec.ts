@@ -38,13 +38,15 @@ export const loadingFinishes = always(
 );
 
 const secretKeys = extract((state) =>
-  [...state.document.querySelectorAll("input[aria-label]")].flatMap((input) => {
-    const label = input.getAttribute("aria-label") ?? "";
-    const prefix = locales
-      .map((messages) => `${messages.dashboard_value}: `)
-      .find((p) => label.startsWith(p));
-    return prefix ? [label.slice(prefix.length)] : [];
-  }),
+  [...state.document.querySelectorAll("input[aria-label], textarea[aria-label]")].flatMap(
+    (input) => {
+      const label = input.getAttribute("aria-label") ?? "";
+      const prefix = locales
+        .map((messages) => `${messages.dashboard_value}: `)
+        .find((p) => label.startsWith(p));
+      return prefix ? [label.slice(prefix.length)] : [];
+    },
+  ),
 );
 
 // An environment lists each secret once, however saves, deletes, imports and
@@ -59,3 +61,13 @@ const overflow = extract(
 
 // Nothing the user types widens the page past the window.
 export const noHorizontalOverflow = always(() => overflow.current <= 0);
+
+export {
+  historyOrdersRevisionsAndProtectsLatest,
+  historyRestores,
+  environmentNamesAndDeletionControlsAreConsistent,
+  restoredRevisionMatchesItsSource,
+  secretMaskMatchesControl,
+  secretRoundTrips,
+  secretWritesStayInTheirEnvironment,
+} from "./workspace.ts";

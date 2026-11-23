@@ -57,6 +57,14 @@ describe("mockBackend environment names", () => {
     expect(validEnvironmentName("a b")).toBe(false);
   });
 
+  it.each(["production", "Production"])("rejects creating a duplicate named %s", async (name) => {
+    const before = await mockBackend.ListEnvironments();
+    await expect(mockBackend.CreateEnvironment(name)).rejects.toMatchObject({
+      payload: { code: "environment_already_exists" },
+    });
+    expect(await mockBackend.ListEnvironments()).toEqual(before);
+  });
+
   it("rejects an invalid name instead of creating or renaming to it", async () => {
     await expect(mockBackend.CreateEnvironment("a b")).rejects.toMatchObject({
       payload: { code: "invalid_argument" },
