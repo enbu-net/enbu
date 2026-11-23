@@ -33,6 +33,9 @@ func (a *App) WriteConfig(content string) (err error) {
 
 	cfg, err := config.ParseProject(content)
 	if err != nil {
+		if apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			return err
+		}
 		return apperr.Wrap(apperr.CodeInvalidArgument, "invalid project configuration", err, nil)
 	}
 	path, err := config.ProjectConfigPathFrom(a.RepositoryDir)
@@ -49,6 +52,11 @@ func (a *App) WriteConfig(content string) (err error) {
 		current, err := config.DecodeProject(string(existing))
 		if err != nil {
 			return apperr.Wrap(apperr.CodeInvalidArgument, "the current enbu.toml cannot be read, so this edit cannot be checked; fix it in a text editor", err, nil)
+		}
+		if apperr.Is(config.ValidateProjectOutputs(current), apperr.CodeConfigResourceCollision) {
+			if _, err := cfg.Environment(cfg.CurrentEnvironment()); err != nil {
+				return err
+			}
 		}
 		if err := checkProtectedConfig(current, cfg); err != nil {
 			return err

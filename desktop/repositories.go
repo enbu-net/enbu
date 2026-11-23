@@ -11,12 +11,14 @@ import (
 )
 
 type RepoInfo struct {
-	Path              string `json:"path,omitempty"`
-	Owner             string `json:"owner,omitempty"`
-	Repo              string `json:"repo,omitempty"`
-	Initialized       bool   `json:"initialized"`
-	HasRemote         bool   `json:"has_remote"`
-	StorageConfigured bool   `json:"storage_configured"`
+	ConfigError       *apperr.Payload       `json:"config_error,omitempty"`
+	Path              string                `json:"path,omitempty"`
+	Owner             string                `json:"owner,omitempty"`
+	Repo              string                `json:"repo,omitempty"`
+	Initialized       bool                  `json:"initialized"`
+	HasRemote         bool                  `json:"has_remote"`
+	StorageConfigured bool                  `json:"storage_configured"`
+	StorageDraft      *config.StorageConfig `json:"storage_draft,omitempty"`
 }
 
 func (s *Service) BrowseRepository() (_ RepoInfo, err error) {
@@ -186,9 +188,15 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
-			info.StorageConfigured = cfg.Storage.URL != ""
+			info.StorageConfigured = cfg.Storage.URL != "" && cfg.ControlGenesis != ""
+			if !info.StorageConfigured && cfg.Storage.URL != "" {
+				info.StorageDraft = &cfg.Storage
+			}
 			_, identityErr := s.app.IdentityInfo()
-			info.Initialized = identityErr == nil
+			info.Initialized = info.StorageConfigured && identityErr == nil
+		} else if apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			payload := apperr.PayloadOf(err)
+			info.ConfigError = &payload
 		}
 		return info, nil
 	})

@@ -28,11 +28,22 @@ describe("HistoryTab", () => {
     await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
 
     expect(mocked.ListHistory).toHaveBeenCalledWith("default");
+    expect(container.querySelectorAll('[data-testid="history-revision"]')).toHaveLength(3);
     const text = container.textContent ?? "";
     expect(text.indexOf("Revision 3")).toBeLessThan(text.indexOf("Revision 1"));
     // The latest revision is what the environment holds; only older ones restore.
     expect(queryButton("Restore: Revision 3")).toBeNull();
     expect(queryButton("Restore: Revision 1")).not.toBeNull();
+  });
+
+  it("renders a single revision without restore or comparison controls", async () => {
+    mocked.ListHistory.mockResolvedValue(entries.slice(0, 1));
+    await renderAndSettle(<HistoryTab workspace={testWorkspace(environments)} />);
+
+    expect(container.querySelectorAll('[data-testid="history-revision"]')).toHaveLength(1);
+    expect(container.querySelectorAll("select")).toHaveLength(1); // Environment selector only.
+    expect(queryButton("Restore: Revision 1")).toBeNull();
+    expect(queryButton("Compare")).toBeNull();
   });
 
   it("compares the two latest revisions by default", async () => {
