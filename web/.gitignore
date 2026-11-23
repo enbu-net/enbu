@@ -12,6 +12,7 @@ dist
 dist-ssr
 dist-preview
 dist-vscode
+bombadil-trace.bin
 *.local
 
 # Editor directories and files
