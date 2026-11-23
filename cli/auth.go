@@ -9,6 +9,7 @@ import (
 	"github.com/enbu-net/enbu/pkg/auth"
 	"github.com/enbu-net/enbu/pkg/clock"
 	"github.com/enbu-net/enbu/pkg/config"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/spf13/cobra"
 )
 
@@ -91,7 +92,12 @@ switch back with 'enbu auth switch'.`,
 }
 
 func newAuthLogoutCommand() *cobra.Command {
-	return newAuthLogoutCommandWithDelete(auth.DeleteAccount)
+	cmd := newAuthLogoutCommandWithDelete(auth.DeleteAccount)
+	if winbridge.InWSL() {
+		cmd.Short = "Sign out of the GitHub account named by --user"
+		cmd.Flags().Lookup("user").Usage = "GitHub login to sign out of (required on WSL)"
+	}
+	return cmd
 }
 
 func newAuthLogoutCommandWithDelete(deleteAccount func(login string) error) *cobra.Command {

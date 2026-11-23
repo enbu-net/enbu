@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/assets"
@@ -215,7 +216,12 @@ func run() error {
 		Linux: application.LinuxOptions{
 			ApplicationID: desktopID,
 		},
-		OnShutdown: cancel,
+		OnShutdown: func() {
+			cancel()
+			if winbridge.InWSL() {
+				_ = winbridge.Shared().Close()
+			}
+		},
 	})
 
 	desktop.Attach(ctx, core, desktop.Host{

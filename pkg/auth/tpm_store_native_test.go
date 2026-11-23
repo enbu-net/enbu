@@ -25,7 +25,7 @@ func TestTPMNativeCredentialLifecycle(t *testing.T) {
 	if got, err := LoadToken(); err != nil || *got != *want {
 		t.Fatalf("could not reload the native TPM account: %v", err)
 	}
-	if err := DeleteToken(); err != nil {
+	if err := DeleteAccount(""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadToken(); !apperr.Is(err, apperr.CodeNotAuthenticated) {

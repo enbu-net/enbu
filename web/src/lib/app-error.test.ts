@@ -40,12 +40,15 @@ describe("display errors", () => {
   });
 
   it("explains a secret name that cannot be pulled into .env", () => {
-    const error = toDisplayError(
-      new AppError({ code: "secret_name_invalid", params: { key: "BAD-NAME" } }),
-    );
+    const key = String.raw`"BAD\nKEY"`;
+    const error = toDisplayError(new AppError({ code: "secret_name_invalid", params: { key } }));
 
-    expect(formatDisplayError(error, "ja")).toContain("BAD-NAME");
-    expect(formatDisplayError(error, "ja")).toContain(".env に書き出せません");
+    expect(formatDisplayError(error, "ja")).toContain(
+      `シークレット名 ${key} は .env に書き出せません`,
+    );
+    expect(formatDisplayError(error, "en")).toContain(
+      `Secret name ${key} cannot be written to .env`,
+    );
   });
 
   it("preserves replacement-token characters in params", () => {
