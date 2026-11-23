@@ -170,6 +170,25 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
   });
 
+  it.each([
+    ["inserts a blank line after CR", "header\rbody", "header\n\nbody", 8, "header\r\r\nbody"],
+    ["deletes the selected CRLF before LF", "header\r\n\nbody", "header\nbody", 6, "header\nbody"],
+  ])("%s", async (_case, original, changed, caret, saved) => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: original, onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(editor, changed);
+      editor.setSelectionRange(caret, caret);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(editor.value).toBe(changed);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(saved);
+  });
+
   it("pauses editing in both value controls while saving", async () => {
     let finishSave!: () => void;
     const promise = new Promise<void>((resolve) => {

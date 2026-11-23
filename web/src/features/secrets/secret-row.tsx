@@ -1,28 +1,41 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, Eye, EyeOff, Save, Trash2 } from "lucide-react";
 import { Box, HStack, styled } from "styled-system/jsx";
-import { Button, Input } from "../../components/ui";
+import { Button, Input, Textarea } from "../../components/ui";
 import { ConfirmDeleteDialog } from "../../components/confirm-delete-dialog";
 import { copySecret } from "../../lib/clipboard";
 import { m } from "../../paraglide/messages";
 
-function applyTextareaEdit(previous: string, next: string): string {
+function applyTextareaEdit(previous: string, next: string, caret: number): string {
   if (!previous.includes("\r")) return next;
-  // Textareas expose CRLF and CR as LF. Keep the original bytes on both
-  // sides of the edited span and take the new text only for that span.
+  // Textarea offsets refer to LF regardless of the stored newline style.
   const original = previous.match(/\r\n|[^]/g) ?? [];
   const normalized = previous.replace(/\r\n?/g, "\n");
+  if (next === normalized) return previous;
+
+  // Native edits leave the caret immediately before the unchanged suffix.
+  // Anchor there when possible so adjacent LF and CRLF spellings stay distinct.
+  const suffix = next.slice(caret);
+  const anchored = suffix.length > 0 && normalized.endsWith(suffix);
+  let end = anchored ? normalized.length - suffix.length : normalized.length;
+  let nextEnd = anchored ? caret : next.length;
   let start = 0;
-  while (start < next.length && normalized[start] === next[start]) start++;
-  let end = normalized.length;
-  let nextEnd = next.length;
-  while (end > start && nextEnd > start && normalized[end - 1] === next[nextEnd - 1]) {
-    end--;
-    nextEnd--;
+  while (start < Math.min(end, nextEnd) && normalized[start] === next[start]) start++;
+  if (!anchored) {
+    while (end > start && nextEnd > start && normalized[end - 1] === next[nextEnd - 1]) {
+      end--;
+      nextEnd--;
+    }
   }
-  return (
-    original.slice(0, start).join("") + next.slice(start, nextEnd) + original.slice(end).join("")
-  );
+
+  const before = original.slice(0, start).join("");
+  const after = original.slice(end).join("");
+  const edit = next.slice(start, nextEnd);
+  // A lone CR and a following LF would combine into one visible newline.
+  if (before.endsWith("\r") && (edit + after).startsWith("\n")) {
+    return before + "\r" + edit + after;
+  }
+  return before + edit + after;
 }
 
 export function SecretRow({
@@ -134,9 +147,9 @@ export function SecretRow({
         gridRow={{ base: "2", lg: "auto" }}
       >
         {visible ? (
-          <styled.textarea
+          <Textarea
             aria-label={valueLabel}
-            value={editValue}
+            value={editValue.replace(/\r\n?/g, "\n")}
             disabled={saving}
             rows={multiline ? 4 : 1}
             w="full"
@@ -148,9 +161,12 @@ export function SecretRow({
             fontSize="sm"
             bg="bg.surface"
             borderWidth="1px"
-            borderColor="border.default"
             borderRadius="md"
-            onChange={(event) => setEditValue(applyTextareaEdit(editValue, event.target.value))}
+            onChange={(event) =>
+              setEditValue(
+                applyTextareaEdit(editValue, event.target.value, event.target.selectionStart),
+              )
+            }
           />
         ) : (
           <Input
@@ -162,7 +178,6 @@ export function SecretRow({
             h="auto"
             minH="38px"
             pr="10"
-            borderColor="border.default"
             borderRadius="md"
             onChange={(event) => setEditValue(event.target.value)}
             onKeyDown={(e) => {

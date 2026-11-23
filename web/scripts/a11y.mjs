@@ -117,6 +117,19 @@ try {
         await page.waitForTimeout(300);
         violations.push(...(await audit(page, `${run}: ${name}`)));
         audits++;
+        const messages = require(`../messages/${locale}.json`);
+        const showValue = page
+          .getByRole("button", { name: messages.dashboard_showValue, exact: true })
+          .first();
+        if (await showValue.isVisible()) {
+          await showValue.click();
+          violations.push(...(await audit(page, `${run}: ${name} > revealed editor`)));
+          audits++;
+          await page
+            .getByRole("button", { name: messages.dashboard_hideValue, exact: true })
+            .first()
+            .click();
+        }
         // Popovers and dialogs the tab opens, each checked open and then closed,
         // once per page for a control every tab shares.
         for (const selector of openers) {
