@@ -29,12 +29,12 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 	if err != nil {
 		return err
 	}
-	return a.changeResource(ctx, s, s.resource(resolved.Name), op, choices, seen, nil, change)
+	return a.changeResource(ctx, s, a.openSession, s.resource(resolved.Name), op, choices, seen, nil, change)
 }
 
 // changeResource is changeSecretWith for one storage resource. It takes over s
 // and closes it.
-func (a *App) changeResource(ctx context.Context, s *session, resource, op string, choices map[string]merge.Choice, seen []string, check func(*session, *wsp.StateView) error, change func(map[string]string) error) error {
+func (a *App) changeResource(ctx context.Context, s *session, reopen func(context.Context) (*session, error), resource, op string, choices map[string]merge.Choice, seen []string, check func(*session, *wsp.StateView) error, change func(map[string]string) error) error {
 	defer func() { // s is replaced when the member list changes
 		if s != nil {
 			s.Close()
@@ -123,7 +123,7 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 			// list so removed members are not encrypted for; a revision already
 			// published stays and is merged by the next read.
 			s.Close()
-			if s, err = a.openSession(ctx); err != nil {
+			if s, err = reopen(ctx); err != nil {
 				return err
 			}
 			if attempt == attempts-1 {

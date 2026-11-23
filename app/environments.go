@@ -26,10 +26,13 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 		return nil, err
 	}
 
-	current := cfg.CurrentEnvironment()
+	return environmentInfos(cfg, cfg.CurrentEnvironment()), nil
+}
+
+func environmentInfos(cfg *config.ProjectConfig, current string) []EnvInfo {
 	names := cfg.EnvironmentNames()
 
-	envs = make([]EnvInfo, len(names))
+	envs := make([]EnvInfo, len(names))
 	for i, name := range names {
 		envs[i] = EnvInfo{
 			Name:        name,
@@ -37,7 +40,7 @@ func (a *App) ListEnvironments() (envs []EnvInfo, err error) {
 			Incarnation: cfg.Environments[name].Incarnation,
 		}
 	}
-	return envs, nil
+	return envs
 }
 
 func (a *App) CurrentEnvironment() (name string, err error) {
@@ -72,7 +75,7 @@ func (a *App) SwitchEnvironment(name string) (err error) {
 		}
 	}
 
-	if !cfg.HasEnvironment(name) {
+	if !cfg.HasEnvironment(name) && (len(cfg.Environments) != 0 || name != "default") {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist (use create to add it)", name), apperr.Params{"name": name})
 	}
 

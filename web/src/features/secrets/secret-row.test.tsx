@@ -170,6 +170,48 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
   });
 
+  it.each([
+    ["inserts a blank line after CR", "header\rbody", "header\n\nbody", 8, "header\r\r\nbody"],
+    ["deletes the selected CRLF before LF", "header\r\n\nbody", "header\nbody", 6, "header\nbody"],
+  ])("%s", async (_case, original, changed, caret, saved) => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: original, onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(editor, changed);
+      editor.setSelectionRange(caret, caret);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(editor.value).toBe(changed);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith(saved);
+  });
+
+  it("undoes and redoes deletion without mixing CRLF and LF bytes", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: "header\r\n\nbody", onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    async function input(value: string, inputType: string, caret: number) {
+      await act(async () => {
+        setValue.call(editor, value);
+        editor.setSelectionRange(caret, caret);
+        editor.dispatchEvent(new InputEvent("input", { inputType, bubbles: true }));
+      });
+    }
+
+    await input("header\nbody", "deleteContentForward", 7);
+    expect(queryButton("Save")).toBeTruthy();
+    await input("header\n\nbody", "historyUndo", 7);
+    expect(queryButton("Save")).toBeNull();
+    await input("header\nbody", "historyRedo", 7);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("header\r\nbody");
+  });
+
   it("pauses editing in both value controls while saving", async () => {
     let finishSave!: () => void;
     const promise = new Promise<void>((resolve) => {

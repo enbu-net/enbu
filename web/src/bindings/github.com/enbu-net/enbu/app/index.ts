@@ -7,6 +7,7 @@ export {
     Diff,
     EnvInfo,
     EnvironmentDeletion,
+    EnvironmentTarget,
     HistoryEntry,
     ImportResult,
     InitResult,

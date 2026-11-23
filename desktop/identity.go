@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/enbu-net/enbu/app"
+	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/identity"
 )
 
@@ -42,11 +43,14 @@ func (s *Service) DiagnoseIdentity() IdentityDiagnosis {
 	}
 }
 
-// ImportSecrets adds every variable of a dotenv file's content to env, as
-// `enbu import` does. The frontend reads the file the person chose.
-func (s *Service) ImportSecrets(env, content string, overwrite bool) (app.ImportResult, error) {
+// ImportSecrets saves to the workspace and environment that the frontend
+// showed when the person selected the file.
+func (s *Service) ImportSecrets(repoPath string, target app.EnvironmentTarget, content string, overwrite bool) (app.ImportResult, error) {
 	return withRepoResult(s, func() (app.ImportResult, error) {
-		result, err := s.app.ImportDotenv(s.context(), env, []byte(content), overwrite)
+		if !s.matchesSelectedRepository(repoPath) {
+			return app.ImportResult{}, apperr.New(apperr.CodeConflict, "the import target changed; select the file again", nil)
+		}
+		result, err := s.app.ImportDotenv(s.context(), target, []byte(content), overwrite)
 		if err != nil {
 			return app.ImportResult{}, err
 		}

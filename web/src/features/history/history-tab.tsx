@@ -7,7 +7,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { Diff, HistoryEntry } from "../../lib/types";
+import type { Diff, EnvironmentTarget, HistoryEntry } from "../../lib/types";
 import type { Workspace } from "../dashboard/use-workspace";
 import { m } from "../../paraglide/messages";
 import { getLocale } from "../../paraglide/runtime";
@@ -16,13 +16,61 @@ import { getLocale } from "../../paraglide/runtime";
  * The revisions that changed an environment's secrets, with the comparison
  * and restore of `enbu history diff` and `enbu history restore`.
  */
-export function HistoryTab({ workspace }: { workspace: Workspace }) {
+export function HistoryTab({ repoPath, workspace }: { repoPath: string; workspace: Workspace }) {
   const envId = useId();
+  const [picked, setPicked] = useState("");
+  const selected = workspace.environments.find(({ name }) => name === picked);
+  const env =
+    selected?.name ?? (workspace.currentEnvironment || workspace.environments[0]?.name || "");
+  const incarnation = workspace.environments.find(({ name }) => name === env)?.incarnation ?? "";
+  return (
+    <>
+      <SectionHeader title={m.history_title()}>
+        <HStack gap="2" minW="0" maxW="full">
+          <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
+            {m.history_environment()}
+          </styled.label>
+          <styled.select
+            id={envId}
+            value={env}
+            title={env}
+            {...selectStyles}
+            onChange={(event) => {
+              setPicked(event.target.value);
+            }}
+          >
+            {workspace.environments.map((environment) => (
+              <option key={environment.name} value={environment.name}>
+                {environment.name}
+              </option>
+            ))}
+          </styled.select>
+        </HStack>
+      </SectionHeader>
+      {env && (
+        <HistoryContent
+          key={JSON.stringify([repoPath, workspace.workspaceID, env, incarnation])}
+          repoPath={repoPath}
+          target={{ workspace_id: workspace.workspaceID, environment: env, incarnation }}
+          refresh={workspace.refresh}
+        />
+      )}
+    </>
+  );
+}
+
+function HistoryContent({
+  repoPath,
+  target,
+  refresh,
+}: {
+  repoPath: string;
+  target: EnvironmentTarget;
+  refresh: Workspace["refresh"];
+}) {
+  const env = target.environment;
   const fromId = useId();
   const toId = useId();
-  // The environment picked here, or until then the current one.
-  const [picked, setPicked] = useState("");
-  const env = picked || workspace.currentEnvironment;
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [from, setFrom] = useState(0);
   const [to, setTo] = useState(0);
@@ -31,13 +79,14 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   const [restored, setRestored] = useState<number | null>(null);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
+  const mounted = useRef(false);
 
   const load = useCallback(async (name: string) => {
     // A newer load, for example after picking another environment, wins.
     const id = ++request.current;
     setError(null);
     setDiff(null);
-    // Drop the previous list, so its indexes cannot be restored in another environment.
+    // Drop the previous list, so its entries cannot be acted on in another environment.
     setEntries(null);
     try {
       const list = await backend.ListHistory(name);
@@ -51,7 +100,12 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
   }, []);
 
   useEffect(() => {
-    if (env) void load(env);
+    mounted.current = true;
+    void load(env);
+    return () => {
+      mounted.current = false;
+      request.current++;
+    };
   }, [env, load]);
 
   async function run(action: () => Promise<void>) {
@@ -71,29 +125,6 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
 
   return (
     <>
-      <SectionHeader title={m.history_title()}>
-        <HStack gap="2" minW="0" maxW="full">
-          <styled.label htmlFor={envId} fontSize="sm" color="fg.muted">
-            {m.history_environment()}
-          </styled.label>
-          <styled.select
-            id={envId}
-            value={env}
-            title={env}
-            {...selectStyles}
-            onChange={(event) => {
-              setRestored(null);
-              setPicked(event.target.value);
-            }}
-          >
-            {workspace.environments.map((environment) => (
-              <option key={environment.name} value={environment.name}>
-                {environment.name}
-              </option>
-            ))}
-          </styled.select>
-        </HStack>
-      </SectionHeader>
       {error && (
         <Box mb="4">
           <ErrorAlert error={error} onDismiss={() => setError(null)} />
@@ -150,9 +181,21 @@ export function HistoryTab({ workspace }: { workspace: Workspace }) {
                       aria-label={`${m.history_restore()}: ${m.history_revision({ index: String(entry.index) })}`}
                       onClick={() =>
                         void run(async () => {
-                          await backend.RestoreHistory(env, entry.index);
-                          setRestored(entry.index);
-                          await Promise.all([load(env), workspace.refresh()]);
+                          try {
+                            await backend.RestoreHistory(repoPath, target, entry.tag);
+                          } catch (err) {
+                            if (mounted.current && toDisplayError(err).code === "conflict") {
+                              await refresh();
+                              if (mounted.current) await load(env);
+                            }
+                            throw err;
+                          }
+                          if (mounted.current) {
+                            setRestored(entry.index);
+                            await Promise.all([load(env), refresh()]);
+                          } else {
+                            await refresh();
+                          }
                         })
                       }
                     >

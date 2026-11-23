@@ -107,6 +107,46 @@ func newHistoryTestApp(t *testing.T) (*App, []digest.Digest) {
 	return a, []digest.Digest{old, next}
 }
 
+func TestRestoreHistoryRevisionUsesDisplayedDigestAfterCompaction(t *testing.T) {
+	a := newAlice(t)
+	for _, value := range []string{"v2", "v3"} {
+		if err := a.EditSecret(bg, "default", "KEY", value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := a.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := EnvironmentTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default",
+		Incarnation: cfg.Environments["default"].Incarnation}
+	before, err := a.ListHistory(bg, "default")
+	if err != nil || len(before) != 3 {
+		t.Fatalf("original history: %v %v", before, err)
+	}
+	if _, err := a.CompactHistory(bg, "default", 2); err != nil {
+		t.Fatal(err)
+	}
+	after, err := a.ListHistory(bg, "default")
+	if err != nil || len(after) != 2 || after[0].Tag != before[1].Tag {
+		t.Fatalf("history after compaction: %v %v", after, err)
+	}
+	if err := a.RestoreHistoryRevision(bg, target, before[0].Tag); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("removed revision: %v", err)
+	}
+	wrong := target
+	wrong.Incarnation = "replaced"
+	if err := a.RestoreHistoryRevision(bg, wrong, before[1].Tag); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("replacement environment: %v", err)
+	}
+	if err := a.RestoreHistoryRevision(bg, target, before[1].Tag); err != nil {
+		t.Fatal(err)
+	}
+	if got := mustSecrets(t, a, "default")["KEY"]; got != "v2" {
+		t.Fatalf("restored value = %q", got)
+	}
+}
+
 func TestRestoreHistory(t *testing.T) {
 	a, _ := newHistoryTestApp(t)
 	if err := a.RestoreHistory(context.Background(), "default", 1); err != nil {

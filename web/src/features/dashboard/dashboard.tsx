@@ -39,7 +39,9 @@ const tabs: DashboardTabDefinition[] = [
     value: "secrets",
     label: m.dashboard_secrets,
     icon: <KeyRound size={16} />,
-    render: ({ workspace, transfer }) => <SecretsTab workspace={workspace} transfer={transfer} />,
+    render: ({ repo, workspace, transfer }) => (
+      <SecretsTab repo={repo} workspace={workspace} transfer={transfer} />
+    ),
   },
   {
     value: "environments",
@@ -51,7 +53,9 @@ const tabs: DashboardTabDefinition[] = [
     value: "history",
     label: m.history_title,
     icon: <History size={16} />,
-    render: ({ workspace }) => <HistoryTab workspace={workspace} />,
+    render: ({ repo, workspace }) => (
+      <HistoryTab repoPath={repo.path ?? ""} workspace={workspace} />
+    ),
   },
   {
     value: "members",

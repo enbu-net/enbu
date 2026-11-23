@@ -49,13 +49,16 @@ async function renderDashboard(info = repo()) {
   await settle();
 }
 
+const snapshot = {
+  workspace_id: "workspace-a",
+  environments: [{ name: "default", current: true }],
+  secrets: { environment: "default", secrets: [{ key: "KEY", value: "value" }] },
+  conflicts: null,
+};
+
 describe("Dashboard", () => {
   beforeEach(() => {
-    mocked.ListEnvironments.mockResolvedValue([{ name: "default", current: true }]);
-    mocked.ListSecrets.mockResolvedValue({
-      environment: "default",
-      secrets: [{ key: "KEY", value: "value" }],
-    });
+    mocked.GetWorkspace.mockResolvedValue(snapshot);
   });
 
   it("opens the GitHub repository from its title", async () => {
@@ -67,13 +70,16 @@ describe("Dashboard", () => {
 
   it("hides a revealed value when switching to another environment with the same key", async () => {
     let current = "development";
-    mocked.ListEnvironments.mockImplementation(async () => [
-      { name: "development", current: current === "development" },
-      { name: "staging", current: current === "staging" },
-    ]);
-    mocked.ListSecrets.mockImplementation(async (env) => ({
-      environment: env,
-      secrets: [{ key: "KEY", value: `${env}-value` }],
+    mocked.GetWorkspace.mockImplementation(async () => ({
+      ...snapshot,
+      environments: [
+        { name: "development", current: current === "development" },
+        { name: "staging", current: current === "staging" },
+      ],
+      secrets: {
+        environment: current,
+        secrets: [{ key: "KEY", value: `${current}-value` }],
+      },
     }));
     mocked.SwitchEnvironment.mockImplementation(async (env) => {
       current = env;
@@ -129,7 +135,10 @@ describe("Dashboard", () => {
   });
 
   it("marks an empty secret list with the environment that finished loading", async () => {
-    mocked.ListSecrets.mockResolvedValueOnce({ environment: "default", secrets: [] });
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      secrets: { environment: "default", secrets: [] },
+    });
     await renderDashboard();
 
     const list = container.querySelector('[data-testid="secret-list"]');
@@ -200,7 +209,7 @@ describe("Dashboard", () => {
   });
 
   it("shows a workspace that cannot load as a display error", async () => {
-    mocked.ListEnvironments.mockRejectedValueOnce(new Error("token=secret"));
+    mocked.GetWorkspace.mockRejectedValueOnce(new Error("token=secret"));
     await renderDashboard();
     expect(container.textContent).toContain("An unexpected error occurred");
     expect(container.textContent).not.toContain("token=secret");
@@ -218,9 +227,6 @@ describe("Dashboard", () => {
   });
 
   it("asks for a value when concurrent edits conflict, then shows the resolved secrets", async () => {
-    mocked.ListSecrets.mockRejectedValueOnce(
-      new AppError({ code: "secret_conflict", params: { keys: "KEY" } }),
-    );
     const set = {
       environment: "default",
       id: "c1",
@@ -235,7 +241,11 @@ describe("Dashboard", () => {
         },
       ],
     };
-    mocked.ListConflicts.mockResolvedValueOnce(set);
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      secrets: { environment: "default", secrets: [] },
+      conflicts: set,
+    });
     mocked.ResolveConflicts.mockResolvedValueOnce(undefined);
     await renderDashboard();
 
@@ -285,18 +295,86 @@ describe("Dashboard", () => {
     expect(container.textContent).toContain("Kept local variables enbu does not store: LOCAL");
   });
 
+  it("lets the user choose an environment before offering secret actions", async () => {
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      environments: [{ name: "staging", current: false }],
+      secrets: { environment: "", secrets: [] },
+    });
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      environments: [{ name: "staging", current: true }],
+      secrets: { ...snapshot.secrets, environment: "staging" },
+    });
+    await renderDashboard();
+    expect(labelledInput("Key")).toBeNull();
+    expect(queryButton("Pull")).toHaveProperty("disabled", true);
+
+    const selector = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Current environment"]',
+    );
+    expect(selector).not.toBeNull();
+    await act(async () => selector?.click());
+    const staging = queryButton("staging");
+    expect(staging).not.toBeNull();
+    await act(async () => staging?.click());
+    await settle();
+
+    expect(mocked.SwitchEnvironment).toHaveBeenLastCalledWith("staging");
+    expect(labelledInput("Key")).not.toBeNull();
+    expect(queryButton("Pull")).toHaveProperty("disabled", false);
+  });
+
   it("keeps the secret rows mounted while a refresh runs", async () => {
     await renderDashboard();
     const row = container.querySelector('input[aria-label="Value: KEY"]');
     expect(row).not.toBeNull();
 
     mocked.PullSecrets.mockResolvedValueOnce({ output: ".env", count: 1, kept: [], removed: [] });
-    mocked.ListEnvironments.mockClear();
-    mocked.ListEnvironments.mockImplementationOnce(() => new Promise(() => {}));
+    mocked.GetWorkspace.mockClear();
+    mocked.GetWorkspace.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => queryButton("Pull")?.click());
     await settle();
-    expect(mocked.ListEnvironments).toHaveBeenCalledTimes(1);
+    expect(mocked.GetWorkspace).toHaveBeenCalledTimes(1);
 
     expect(container.querySelector('input[aria-label="Value: KEY"]')).toBe(row);
+  });
+
+  it("keeps secrets matched to the selected environment after an earlier pull completes", async () => {
+    let current = "default";
+    mocked.GetWorkspace.mockImplementation(async () => ({
+      ...snapshot,
+      environments: ["default", "staging"].map((name) => ({ name, current: name === current })),
+      secrets: {
+        environment: current,
+        secrets: [{ key: current === "staging" ? "STAGING_KEY" : "DEFAULT_KEY", value: "v" }],
+      },
+    }));
+    mocked.SwitchEnvironment.mockImplementation(async (environment) => {
+      current = environment;
+    });
+    let finishPull!: () => void;
+    mocked.PullSecrets.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        finishPull = resolve;
+      });
+      return { output: ".env", count: 1, kept: [], removed: [] };
+    });
+    await renderDashboard();
+    await act(async () => queryButton("Pull")?.click());
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label^="Current environment"]')
+        ?.click(),
+    );
+    await act(async () => queryButton("staging")?.click());
+    await settle();
+    expect(container.textContent).toContain("STAGING_KEY");
+    expect(finishPull).toBeTypeOf("function");
+    await act(async () => finishPull());
+    await settle();
+    expect(mocked.GetWorkspace).toHaveBeenLastCalledWith("/a");
+    expect(container.textContent).toContain("STAGING_KEY");
+    expect(container.textContent).not.toContain("DEFAULT_KEY");
   });
 });

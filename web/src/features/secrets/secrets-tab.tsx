@@ -8,7 +8,7 @@ import { Notice } from "../../components/notice";
 import { SectionHeader } from "../../components/layout";
 import { displayError, toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
-import type { ImportResult, WrittenFile } from "../../lib/types";
+import type { ImportResult, RepoInfo, WrittenFile } from "../../lib/types";
 import type { RunTransfer } from "../dashboard/use-transfer";
 import type { Workspace } from "../dashboard/use-workspace";
 import { EnvironmentNameModal, EnvironmentSelector } from "./environment-selector";
@@ -17,16 +17,16 @@ import { SecretRow } from "./secret-row";
 import { m } from "../../paraglide/messages";
 
 export function SecretsTab({
+  repo,
   workspace,
   transfer,
 }: {
+  repo: RepoInfo;
   workspace: Workspace;
   transfer: RunTransfer;
 }) {
   const { currentEnvironment: env, secrets, conflicts, refresh, setError } = workspace;
-  // An import can finish after another environment was picked; reload that one.
-  const latestEnv = useRef(env);
-  latestEnv.current = env;
+  const incarnation = workspace.environments.find(({ name }) => env === name)?.incarnation ?? "";
   const [pullLoading, setPullLoading] = useState(false);
   const [pullNotice, setPullNotice] = useState<WrittenFile | null>(null);
   const [imported, setImported] = useState<ImportResult | null>(null);
@@ -47,7 +47,7 @@ export function SecretsTab({
       await transfer("pull", async () => {
         const result = await backend.PullSecrets(env, replace);
         setPullNotice(result.kept.length > 0 || result.removed.length > 0 ? result : null);
-        await refresh(env);
+        await refresh();
       });
       setReplaceFile(null);
     } catch (err) {
@@ -71,7 +71,7 @@ export function SecretsTab({
     try {
       await backend.CreateEnvironment(created);
       await backend.SwitchEnvironment(created);
-      await refresh(created);
+      await refresh();
       setEnvironmentModalOpen(false);
       setNewEnv("");
     } catch (err) {
@@ -93,7 +93,7 @@ export function SecretsTab({
               if (environment === env) return;
               try {
                 await backend.SwitchEnvironment(environment);
-                await refresh(environment);
+                await refresh();
               } catch (err) {
                 report(err);
               }
@@ -104,17 +104,19 @@ export function SecretsTab({
       >
         <HStack gap="2">
           <ImportButton
-            env={env}
+            repoPath={repo.path ?? ""}
+            target={{ workspace_id: workspace.workspaceID, environment: env, incarnation }}
             onError={setError}
             onImported={async (result) => {
               setImported(result);
-              await refresh(latestEnv.current);
+              await refresh();
             }}
           />
           <Button
             size="sm"
             variant="outline"
             loading={pullLoading}
+            disabled={!env}
             title={m.dashboard_pullDescription()}
             onClick={() => void pull(false)}
           >
@@ -151,7 +153,7 @@ export function SecretsTab({
           <Spinner size="sm" aria-hidden="true" />
           <Text color="fg.muted">{m.common_loading()}</Text>
         </HStack>
-      ) : conflicts && conflicts.conflicts.length > 0 ? (
+      ) : !env ? null : conflicts && conflicts.conflicts.length > 0 ? (
         <ConflictPanel
           key={conflicts.heads.join()}
           set={conflicts}
@@ -167,7 +169,7 @@ export function SecretsTab({
               setResolveLoading(false);
             }
             // If someone wrote meanwhile, this shows the values they added.
-            await refresh(env);
+            await refresh();
             if (failure) setError(failure);
           }}
         />
@@ -182,13 +184,13 @@ export function SecretsTab({
         >
           {secrets?.secrets.map((secret) => (
             <SecretRow
-              key={JSON.stringify([env, secret.key])}
+              key={JSON.stringify([env, incarnation, secret.key])}
               secretKey={secret.key}
               secretValue={secret.value}
               onEdit={async (value) => {
                 try {
                   await backend.EditSecret(env, secret.key, value);
-                  await refresh(env);
+                  await refresh();
                 } catch (err) {
                   report(err);
                 }
@@ -197,7 +199,7 @@ export function SecretsTab({
                 try {
                   await transfer("delete", async () => {
                     await backend.DeleteSecret(env, secret.key);
-                    await refresh(env);
+                    await refresh();
                   });
                 } catch (err) {
                   report(err);
@@ -213,22 +215,25 @@ export function SecretsTab({
           )}
         </Box>
       )}
-      <AddSecretForm
-        existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
-        onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
-        onAdd={async (key, value) => {
-          try {
-            await transfer("add", async () => {
-              await backend.AddSecret(env, key, value);
-              await refresh(env);
-            });
-            return true;
-          } catch (err) {
-            report(err);
-            return false;
-          }
-        }}
-      />
+      {env && (
+        <AddSecretForm
+          key={JSON.stringify([env, incarnation])}
+          existingKeys={secrets?.secrets.map((secret) => secret.key) ?? []}
+          onDuplicate={(key) => setError(displayError("secret_already_exists", { key }))}
+          onAdd={async (key, value) => {
+            try {
+              await transfer("add", async () => {
+                await backend.AddSecret(env, key, value);
+                await refresh();
+              });
+              return true;
+            } catch (err) {
+              report(err);
+              return false;
+            }
+          }}
+        />
+      )}
       <EnvironmentNameModal
         open={environmentModalOpen}
         value={newEnv}

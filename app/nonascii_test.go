@@ -44,7 +44,7 @@ func TestWorkspaceInNonASCIIPaths(t *testing.T) {
 	for _, u := range units {
 		text = append(text, byte(u), byte(u>>8))
 	}
-	if _, err := a.ImportDotenv(bg, "default", text, false); err != nil {
+	if _, err := a.ImportDotenv(bg, importTestTarget(t, a), text, false); err != nil {
 		t.Fatal(err)
 	}
 	written, err := a.PullSecretsToFileWith(bg, "default", false)

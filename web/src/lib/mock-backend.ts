@@ -11,6 +11,7 @@ import type {
   HistoryEntry,
   IdentityDiagnosis,
   ImportResult,
+  EnvironmentTarget,
   InitResult,
   JoinRequestInfo,
   MemberInfo,
@@ -20,6 +21,7 @@ import type {
   RepoInfo,
   SecretChoice,
   SecretsResponse,
+  WorkspaceResponse,
   StorageConfig,
   WrittenFile,
 } from "./types";
@@ -134,6 +136,7 @@ let mockJoinRequests: JoinRequestInfo[] = [
 const mockRepoHistory: RepoInfo[] = [
   {
     path: "/demo/enbu",
+    workspace_id: "3f2b8c1e-9a4d-4e6b-8c2f-1a5d7e9b0c3d",
     owner: "enbu-net",
     repo: "enbu",
     initialized: true,
@@ -245,6 +248,22 @@ export const mockBackend: Backend = {
 
   async SuggestStorage(): Promise<string> {
     return "oci://ghcr.io/enbu-net/enbu-enbu";
+  },
+
+  async GetWorkspace(repoPath: string): Promise<WorkspaceResponse> {
+    const repo = mockRepoHistory.find((repo) => repo.path === mockSelectedRepoPath);
+    if (!repo || repo.path !== repoPath) throw createAppError("conflict");
+    const environment = currentEnvName();
+    const conflicts = Object.hasOwn(mockConflictsByEnv, environment)
+      ? mockConflictsByEnv[environment]
+      : null;
+    const secrets = conflicts ? [] : [...secretsForEnv(environment)];
+    return {
+      workspace_id: repo.workspace_id ?? "",
+      environments: [...mockEnvs],
+      secrets: { environment, secrets },
+      conflicts,
+    };
   },
 
   async ListEnvironments(): Promise<EnvInfo[]> {
@@ -367,18 +386,39 @@ export const mockBackend: Backend = {
   async ReviewRemovedRevision(): Promise<RemovalReview> {
     throw createAppError("conflict");
   },
-  async RestoreHistory(env: string, index: number): Promise<void> {
-    const name = env || currentEnvName();
-    const history = (mockHistoryByEnv[name] ??= []);
-    const entry = history[index - 1];
-    if (!entry) throw createAppError("invalid_argument", { index: String(index) });
+  async RestoreHistory(repoPath: string, target: EnvironmentTarget, tag: string): Promise<void> {
+    const repo = mockRepoHistory.find((entry) => entry.path === mockSelectedRepoPath);
+    const name = target.environment;
+    const env = mockEnvs.find((entry) => entry.name === name);
+    if (
+      repo?.path !== repoPath ||
+      repo.workspace_id !== target.workspace_id ||
+      !env ||
+      (env.incarnation ?? "") !== target.incarnation
+    ) {
+      throw createAppError("conflict");
+    }
+    const history = mockHistoryByEnv[name] ?? [];
+    const entry = history.find((_, index) => `mock-revision-${index + 1}` === tag);
+    if (!entry) throw createAppError("conflict");
     history.push({ timestamp: new Date().toISOString(), secrets: { ...entry.secrets } });
     mockSecretsByEnv[name] = Object.entries(entry.secrets)
       .map(([key, value]) => ({ key, value }))
       .sort((a, b) => a.key.localeCompare(b.key));
   },
-  async ImportSecrets(env: string, dotenv: string, overwrite: boolean): Promise<ImportResult> {
-    const name = env || currentEnvName();
+  async ImportSecrets(
+    repoPath: string,
+    target: EnvironmentTarget,
+    dotenv: string,
+    overwrite: boolean,
+  ): Promise<ImportResult> {
+    if (
+      repoPath !== mockSelectedRepoPath ||
+      target.workspace_id !== mockRepoHistory[0]?.workspace_id
+    ) {
+      throw createAppError("conflict");
+    }
+    const name = target.environment;
     const secrets = secretsForEnv(name);
     const result: ImportResult = { environment: name, added: [], updated: [], unchanged: [] };
     const incoming = dotenv

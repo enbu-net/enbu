@@ -13,6 +13,7 @@ import (
 type RepoInfo struct {
 	ConfigError       *apperr.Payload       `json:"config_error,omitempty"`
 	Path              string                `json:"path,omitempty"`
+	WorkspaceID       string                `json:"workspace_id,omitempty"`
 	Owner             string                `json:"owner,omitempty"`
 	Repo              string                `json:"repo,omitempty"`
 	Initialized       bool                  `json:"initialized"`
@@ -188,6 +189,7 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 	}
 	return withRepoPathResult(s, repo.Path, func() (RepoInfo, error) {
 		if cfg, err := config.LoadProjectFrom(repo.Path); err == nil {
+			info.WorkspaceID = cfg.WorkspaceID
 			info.StorageConfigured = cfg.Storage.URL != "" && cfg.ControlGenesis != ""
 			if !info.StorageConfigured && cfg.Storage.URL != "" {
 				info.StorageDraft = &cfg.Storage

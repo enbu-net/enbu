@@ -303,6 +303,12 @@ func (a *App) openEnvironment(ctx context.Context, env string) (*session, *Resol
 	return s, resolved, nil
 }
 
+// matchesEnvironment checks a caller's captured target against the session's config.
+func (s *session) matchesEnvironment(target EnvironmentTarget) bool {
+	return target.WorkspaceID == s.workspace && target.Environment != "" &&
+		target.Incarnation == s.cfg.Environments[target.Environment].Incarnation
+}
+
 func (a *App) openSessionWith(ctx context.Context, cfg *config.ProjectConfig) (*session, error) {
 	s, err := a.openControlWith(ctx, cfg)
 	if err != nil {

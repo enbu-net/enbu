@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toDisplayError, type DisplayError } from "../../lib/app-error";
 import { backend } from "../../lib/backend";
 import type { ConflictSet, EnvInfo, SecretsResponse } from "../../lib/types";
@@ -13,6 +13,7 @@ export function resolveWorkspaceEnvironment(requested: string, environments: Env
 }
 
 export type Workspace = {
+  workspaceID: string;
   environments: EnvInfo[];
   currentEnvironment: string;
   secrets: SecretsResponse | null;
@@ -21,66 +22,55 @@ export type Workspace = {
   loading: boolean;
   error: DisplayError | null;
   setError: (error: DisplayError | null) => void;
-  /** Reloads the environments and the secrets of env, or of the current one. */
-  refresh: (env?: string) => Promise<void>;
+  /** Reloads the selected environment and its secrets from the same snapshot. */
+  refresh: () => Promise<void>;
 };
 
 /** The environments and secrets of the selected repository. */
 export function useWorkspace(repoPath: string): Workspace {
-  const [environments, setEnvironments] = useState<EnvInfo[]>([]);
-  const [secrets, setSecrets] = useState<SecretsResponse | null>(null);
-  const [conflicts, setConflicts] = useState<ConflictSet | null>(null);
+  const [data, setData] = useState<
+    Pick<Workspace, "workspaceID" | "environments" | "currentEnvironment" | "secrets" | "conflicts">
+  >({ workspaceID: "", environments: [], currentEnvironment: "", secrets: null, conflicts: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<DisplayError | null>(null);
   const request = useRef(0);
+  const active = useRef(false);
 
-  const currentEnvironment = useMemo(
-    () => environments.find((env) => env.current)?.name ?? secrets?.environment ?? "",
-    [environments, secrets?.environment],
-  );
-  const currentRef = useRef(currentEnvironment);
-  useEffect(() => {
-    currentRef.current = currentEnvironment;
-  }, [currentEnvironment]);
-
-  const refresh = useCallback(async (env?: string) => {
+  const refresh = useCallback(async () => {
+    if (!active.current) return;
     // A newer refresh, for example after switching repositories, wins.
     const id = ++request.current;
     setLoading(true);
     setError(null);
     try {
-      const envs = await backend.ListEnvironments();
-      const nextEnv = resolveWorkspaceEnvironment(env ?? currentRef.current, envs);
-      let nextSecrets: SecretsResponse;
-      let nextConflicts: ConflictSet | null = null;
-      try {
-        nextSecrets = await backend.ListSecrets(nextEnv);
-      } catch (err) {
-        if (toDisplayError(err).code !== "secret_conflict") throw err;
-        nextSecrets = { environment: nextEnv, secrets: [] };
-        nextConflicts = await backend.ListConflicts(nextEnv);
-      }
+      const snapshot = await backend.GetWorkspace(repoPath);
       if (id !== request.current) return;
-      setEnvironments([...envs].sort((a, b) => a.name.localeCompare(b.name)));
-      setSecrets(nextSecrets);
-      setConflicts(nextConflicts);
+      setData({
+        workspaceID: snapshot.workspace_id,
+        environments: [...snapshot.environments].sort((a, b) => a.name.localeCompare(b.name)),
+        currentEnvironment: snapshot.secrets.environment,
+        secrets: snapshot.secrets,
+        conflicts: snapshot.conflicts,
+      });
     } catch (err) {
       if (id === request.current) setError(toDisplayError(err));
     } finally {
       if (id === request.current) setLoading(false);
     }
-  }, []);
+  }, [repoPath]);
 
   // The dashboard is keyed by the repository, so a new repository starts empty.
   useEffect(() => {
-    if (repoPath) void refresh("");
+    active.current = true;
+    if (repoPath) void refresh();
+    return () => {
+      active.current = false;
+      request.current++;
+    };
   }, [repoPath, refresh]);
 
   return {
-    environments,
-    currentEnvironment,
-    secrets,
-    conflicts,
+    ...data,
     loading,
     error,
     setError,

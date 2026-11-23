@@ -212,8 +212,17 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if !reflect.DeepEqual(diff.Modified, []string{"BASE"}) {
 			return fmt.Errorf("wrong diff: %+v", diff)
 		}
-		if e := a.RestoreHistory(ctx, "default", 1); e != nil {
+		snapshot, e := a.ReadWorkspace(ctx)
+		if e != nil {
 			return e
+		}
+		for _, env := range snapshot.Environments {
+			if env.Name == "default" {
+				target := app.EnvironmentTarget{WorkspaceID: snapshot.WorkspaceID, Environment: env.Name, Incarnation: env.Incarnation}
+				if e := a.RestoreHistoryRevision(ctx, target, history[0].Tag); e != nil {
+					return e
+				}
+			}
 		}
 		w.Model["default"] = before
 		if e := w.Check(ctx, "default"); e != nil {
@@ -546,10 +555,11 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		if _, e := a.ImportSecrets(ctx, "default", map[string]string{"BASE": "overwrite"}, false); requireCode(e, apperr.CodeSecretExists) != nil {
 			return fmt.Errorf("import conflict: %v", e)
 		}
-		if _, e := a.ImportDotenv(ctx, "default", []byte("not a dotenv line"), false); requireCode(e, apperr.CodeInvalidArgument) != nil {
+		target := app.EnvironmentTarget{WorkspaceID: cfg.WorkspaceID, Environment: "default", Incarnation: cfg.Environments["default"].Incarnation}
+		if _, e := a.ImportDotenv(ctx, target, []byte("not a dotenv line"), false); requireCode(e, apperr.CodeInvalidArgument) != nil {
 			return fmt.Errorf("invalid dotenv import: %v", e)
 		}
-		if _, e := a.ImportDotenv(ctx, "default", []byte("BASE=overwrite\n"), false); requireCode(e, apperr.CodeSecretExists) != nil {
+		if _, e := a.ImportDotenv(ctx, target, []byte("BASE=overwrite\n"), false); requireCode(e, apperr.CodeSecretExists) != nil {
 			return fmt.Errorf("dotenv import conflict: %v", e)
 		}
 		return w.Check(ctx, "default")
@@ -737,6 +747,13 @@ func (w *World) Scenario(ctx context.Context, name string) error {
 		}
 		if e := a.ApproveMember(ctx, w.Devices[1].ID); e != nil {
 			return e
+		}
+		snapshot, e := a.ReadWorkspace(ctx)
+		if e != nil {
+			return e
+		}
+		if snapshot.Environment != "alpha" || snapshot.Secrets["ALPHA"] != "a" || len(snapshot.Environments) != 3 {
+			return fmt.Errorf("workspace snapshot mixed the active environment and its secrets")
 		}
 		w.Model["alpha"] = map[string]string{"ALPHA": "a"}
 		w.Model["beta"] = map[string]string{"BETA": "b"}

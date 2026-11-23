@@ -275,7 +275,7 @@ incarnation = "22222222-2222-4222-8222-222222222222"
       status: { authenticated: false, workspace_configured: true },
       repo: repoInfo({ has_remote: false }),
     });
-    expect(backend.ListSecrets).toHaveBeenCalled();
+    expect(backend.GetWorkspace).toHaveBeenCalled();
     expect(container.textContent).not.toContain("Connect with GitHub");
     expect(container.textContent).not.toContain("This folder has no enbu.toml yet");
   });

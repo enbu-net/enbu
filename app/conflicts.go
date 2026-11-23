@@ -52,8 +52,12 @@ func (a *App) ListConflicts(ctx context.Context, env string) (set *ConflictSet, 
 	if err != nil {
 		return nil, err
 	}
-	heads := headNames(read.parents())
-	return &ConflictSet{Environment: resolved.Name, ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(read.conflicts)}, nil
+	return read.conflictSet(resolved.Name), nil
+}
+
+func (r *resourceRead) conflictSet(env string) *ConflictSet {
+	heads := headNames(r.parents())
+	return &ConflictSet{Environment: env, ID: conflictID(heads), Heads: heads, Conflicts: toSecretConflicts(r.conflicts)}
 }
 
 func conflictID(heads []string) string {

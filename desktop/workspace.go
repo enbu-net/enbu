@@ -14,6 +14,31 @@ type SecretsResponse struct {
 	Secrets     []SecretItem `json:"secrets"`
 }
 
+type WorkspaceResponse struct {
+	WorkspaceID  string           `json:"workspace_id"`
+	Environments []app.EnvInfo    `json:"environments"`
+	Secrets      SecretsResponse  `json:"secrets"`
+	Conflicts    *app.ConflictSet `json:"conflicts"`
+}
+
+func (s *Service) GetWorkspace(repoPath string) (WorkspaceResponse, error) {
+	return withRepoResult(s, func() (WorkspaceResponse, error) {
+		if !s.matchesSelectedRepository(repoPath) {
+			return WorkspaceResponse{}, apperr.New(apperr.CodeConflict, "the selected repository changed", nil)
+		}
+		snapshot, err := s.app.ReadWorkspace(s.context())
+		if err != nil {
+			return WorkspaceResponse{}, err
+		}
+		return WorkspaceResponse{
+			WorkspaceID:  snapshot.WorkspaceID,
+			Environments: snapshot.Environments,
+			Secrets:      SecretsResponse{Environment: snapshot.Environment, Secrets: secretItems(snapshot.Secrets)},
+			Conflicts:    snapshot.Conflicts,
+		}, nil
+	})
+}
+
 type SecretItem struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
@@ -132,17 +157,21 @@ func (s *Service) ListSecrets(env string) (SecretsResponse, error) {
 		if env == "" {
 			env = currentEnv
 		}
-		keys := make([]string, 0, len(secrets))
-		for key := range secrets {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		items := make([]SecretItem, 0, len(keys))
-		for _, key := range keys {
-			items = append(items, SecretItem{Key: key, Value: secrets[key]})
-		}
-		return SecretsResponse{Environment: env, Secrets: items}, nil
+		return SecretsResponse{Environment: env, Secrets: secretItems(secrets)}, nil
 	})
+}
+
+func secretItems(secrets map[string]string) []SecretItem {
+	keys := make([]string, 0, len(secrets))
+	for key := range secrets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]SecretItem, 0, len(keys))
+	for _, key := range keys {
+		items = append(items, SecretItem{Key: key, Value: secrets[key]})
+	}
+	return items
 }
 
 func (s *Service) AddSecret(env, key, value string) error {
@@ -205,8 +234,13 @@ func (s *Service) DiffHistory(env string, from, to int) (app.Diff, error) {
 	})
 }
 
-func (s *Service) RestoreHistory(env string, index int) error {
-	return s.withRepo(func() error { return s.app.RestoreHistory(s.context(), env, index) })
+func (s *Service) RestoreHistory(repoPath string, target app.EnvironmentTarget, tag string) error {
+	return s.withRepo(func() error {
+		if !s.matchesSelectedRepository(repoPath) {
+			return apperr.New(apperr.CodeConflict, "the selected repository changed", nil)
+		}
+		return s.app.RestoreHistoryRevision(s.context(), target, tag)
+	})
 }
 
 func (s *Service) ReviewRemovedRevision(resource, revision, baseline string) (app.RemovalReview, error) {

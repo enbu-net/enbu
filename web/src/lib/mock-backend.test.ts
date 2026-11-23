@@ -104,3 +104,16 @@ describe("mockBackend sign-in", () => {
     });
   });
 });
+
+it("does not treat prototype properties as workspace conflicts", async () => {
+  const repo = await mockBackend.GetRepoStatus();
+  await mockBackend.CreateEnvironment("constructor");
+  await mockBackend.SwitchEnvironment("constructor");
+  try {
+    const workspace = await mockBackend.GetWorkspace(repo.path!);
+    expect(workspace.conflicts).toBeNull();
+  } finally {
+    await mockBackend.SwitchEnvironment("development");
+    await mockBackend.DeleteEnvironment("constructor", false);
+  }
+});
