@@ -11,6 +11,7 @@ import (
 )
 
 type RepoInfo struct {
+	ConfigError       *apperr.Payload       `json:"config_error,omitempty"`
 	Path              string                `json:"path,omitempty"`
 	Owner             string                `json:"owner,omitempty"`
 	Repo              string                `json:"repo,omitempty"`
@@ -193,6 +194,9 @@ func (s *Service) repoInfo(repo *SelectedRepo) (RepoInfo, error) {
 			}
 			_, identityErr := s.app.IdentityInfo()
 			info.Initialized = info.StorageConfigured && identityErr == nil
+		} else if apperr.Is(err, apperr.CodeConfigResourceCollision) {
+			payload := apperr.PayloadOf(err)
+			info.ConfigError = &payload
 		}
 		return info, nil
 	})
