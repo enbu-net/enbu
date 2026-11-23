@@ -627,11 +627,13 @@ tasks:
     cmds:
       - vp run build:preview
 
-  # vp env off rewrites one global Vite+ config file; gui/install and
-  # vscode/install run in parallel, so they share one run.
+  # setup-frontend already configures system-first mode in CI. Parallel
+  # Task invocations must not rewrite the same Vite+ config file.
   vp/env:
     internal: true
     run: once
+    status:
+      - test "${ENBU_VP_SYSTEM_FIRST:-}" = "1"
     cmds:
       - vp env off
 
