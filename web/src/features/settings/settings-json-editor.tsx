@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Flex } from "styled-system/jsx";
 import { Button, Spinner, Text } from "../../components/ui";
+import { loadMonaco } from "../../lib/monaco";
 import { m } from "../../paraglide/messages";
 
 /**
@@ -37,22 +38,9 @@ export function SettingsJsonEditor({
     let disposed = false;
     let cleanup = () => {};
 
-    void Promise.all([
-      import("monaco-editor"),
-      import("monaco-editor/editor/editor.worker?worker"),
-      import("monaco-editor/languages/features/json/json.worker?worker"),
-    ])
-      .then(([monaco, editorWorker, jsonWorker]) => {
+    void loadMonaco()
+      .then((monaco) => {
         if (disposed || !containerRef.current) return;
-        // The JSON language runs in its own worker, the rest in the editor worker.
-        (
-          globalThis as typeof globalThis & {
-            MonacoEnvironment: { getWorker: (id: string, label: string) => Worker };
-          }
-        ).MonacoEnvironment = {
-          getWorker: (_id, label) =>
-            label === "json" ? new jsonWorker.default() : new editorWorker.default(),
-        };
         const uri = monaco.Uri.parse("file:///enbu/settings.json");
         monaco.json.jsonDefaults.setDiagnosticsOptions({
           validate: true,

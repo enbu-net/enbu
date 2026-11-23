@@ -4,9 +4,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
+const deviceVerificationURL = "https://github.com/login/device"
+
 func OpenBrowser(url string) error {
+	if url == deviceVerificationURL && winbridge.InWSL() {
+		return bridgeAuthError(winbridge.Shared().GitHubAuth("open_device_browser", struct{}{}, nil))
+	}
+	return openBrowser(url)
+}
+
+func openBrowser(url string) error {
 	cmd := browserCommand(runtime.GOOS, url)
 	if err := cmd.Start(); err != nil {
 		return err

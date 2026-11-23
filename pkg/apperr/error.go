@@ -10,23 +10,24 @@ import (
 type Code string
 
 const (
-	CodeInternal           Code = "internal"
-	CodeInvalidArgument    Code = "invalid_argument"
-	CodeNotAuthenticated   Code = "not_authenticated"
-	CodeAccessDenied       Code = "access_denied"
-	CodeAuthExpired        Code = "authentication_expired"
-	CodeNotInitialized     Code = "not_initialized"
-	CodeConfigNotFound     Code = "config_not_found"
-	CodeConfigProtected    Code = "config_protected" // an edit would change the trust root or where secrets are stored
-	CodeEnvironmentMissing Code = "environment_not_found"
-	CodeEnvironmentExists  Code = "environment_already_exists"
-	CodeSecretMissing      Code = "secret_not_found"
-	CodeSecretExists       Code = "secret_already_exists"
-	CodeSecretNameInvalid  Code = "secret_name_invalid"
-	CodeImportConflict     Code = "import_conflict"
-	CodeArtifactNotFound   Code = "artifact_not_found"
-	CodeConflict           Code = "conflict"
-	CodeUnavailable        Code = "unavailable"
+	CodeInternal                Code = "internal"
+	CodeInvalidArgument         Code = "invalid_argument"
+	CodeNotAuthenticated        Code = "not_authenticated"
+	CodeAccessDenied            Code = "access_denied"
+	CodeAuthExpired             Code = "authentication_expired"
+	CodeNotInitialized          Code = "not_initialized"
+	CodeConfigNotFound          Code = "config_not_found"
+	CodeConfigResourceCollision Code = "config_resource_collision"
+	CodeConfigProtected         Code = "config_protected" // an edit would change the trust root or where secrets are stored
+	CodeEnvironmentMissing      Code = "environment_not_found"
+	CodeEnvironmentExists       Code = "environment_already_exists"
+	CodeSecretMissing           Code = "secret_not_found"
+	CodeSecretExists            Code = "secret_already_exists"
+	CodeSecretNameInvalid       Code = "secret_name_invalid"
+	CodeImportConflict          Code = "import_conflict"
+	CodeArtifactNotFound        Code = "artifact_not_found"
+	CodeConflict                Code = "conflict"
+	CodeUnavailable             Code = "unavailable"
 
 	// Workspace security protocol.
 	CodeNotMember           Code = "not_member"           // device is not (yet) in the verified Control
@@ -41,8 +42,11 @@ const (
 	// Local device.
 	CodeIdentityUnavailable Code = "identity_unavailable" // no hardware or keyring backend can hold a key here
 	CodeOutputUnreadable    Code = "output_unreadable"    // the output file is not dotenv; pulling again with replace overwrites it
-	CodeKeyringLocked       Code = "keyring_locked"       // the OS keyring exists but is locked; the person must unlock it
-	CodeUpdateUnverified    Code = "update_unverified"    // a downloaded update failed its signature or checksum and was not installed
+	CodeAuthTPMAccessDenied Code = "auth_tpm_access_denied"
+	CodeAuthTPMRecovery     Code = "auth_tpm_recovery"
+	CodeAuthBackendConflict Code = "auth_backend_conflict"
+	CodeKeyringLocked       Code = "keyring_locked"    // the OS keyring exists but is locked; the person must unlock it
+	CodeUpdateUnverified    Code = "update_unverified" // a downloaded update failed its signature or checksum and was not installed
 )
 
 type Params map[string]string

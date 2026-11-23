@@ -5,7 +5,6 @@ import (
 
 	"github.com/enbu-net/enbu/app"
 	"github.com/enbu-net/enbu/pkg/auth"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/winbridge"
 	"github.com/spf13/cobra"
 )
@@ -35,9 +34,7 @@ func newIdentityBridgeCommand(version string, a *app.App) *cobra.Command {
 			if !ok {
 				return errors.New("this identity store cannot serve the bridge")
 			}
-			service, key := auth.TokenKeyringEntry()
-			s := &winbridge.Server{Version: version, Identities: store, Keyring: keystore.New(),
-				Entries: []winbridge.KeyringEntry{{Service: service, Key: key}}}
+			s := &winbridge.Server{Version: version, Identities: store, GitHubAuth: auth.ServeGitHubAuth}
 			return s.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}

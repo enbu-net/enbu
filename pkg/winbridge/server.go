@@ -10,7 +10,6 @@ import (
 
 	"filippo.io/age"
 	"github.com/enbu-net/enbu/pkg/identity"
-	"github.com/enbu-net/enbu/pkg/keystore"
 	"github.com/enbu-net/enbu/pkg/signing"
 )
 
@@ -23,18 +22,13 @@ type Store interface {
 	Doctor(context.Context) identity.Diagnosis
 }
 
-// KeyringEntry is one OS keyring entry the bridge shares, such as the GitHub
-// token. Identity keys are never shared: they stay behind Store.
-type KeyringEntry struct{ Service, Key string }
-
 // Server answers one WSL enbu on r and w. Loaded identities and signers stay
 // open in this process until the WSL side closes them or the stream ends, so
 // a TPM connection is reused for one command.
 type Server struct {
 	Version    string
 	Identities Store
-	Keyring    keystore.Backend
-	Entries    []KeyringEntry
+	GitHubAuth func(context.Context, string, json.RawMessage) (any, error)
 
 	handles map[uint64]io.Closer
 	next    uint64
@@ -171,25 +165,13 @@ func (s *Server) dispatch(ctx context.Context, method string, raw json.RawMessag
 		return struct{}{}, c.Close()
 	case methodDoctor:
 		return s.Identities.Doctor(ctx), nil
-	case methodKeyringStore, methodKeyringLoad, methodKeyringDelete:
-		p, err := decode[keyringParams](raw)
+	case methodGitHubAuth:
+		p, err := decode[githubAuthParams](raw)
 		if err != nil {
-			return nil, err
+			return nil, errors.New("invalid GitHub credential request")
 		}
-		if !s.shared(p.Service, p.Key) {
-			return nil, errors.New(errKeyringEntryForbidden)
-		}
-		switch method {
-		case methodKeyringStore:
-			return struct{}{}, s.Keyring.Store(p.Service, p.Key, p.Secret)
-		case methodKeyringLoad:
-			secret, err := s.Keyring.Load(p.Service, p.Key)
-			if err != nil {
-				return nil, err
-			}
-			return keyringResult{Secret: secret}, nil
-		default:
-			return struct{}{}, s.Keyring.Delete(p.Service, p.Key)
+		if s.GitHubAuth != nil {
+			return s.GitHubAuth(ctx, p.Operation, p.Request)
 		}
 	}
 	return nil, fmt.Errorf("%s %q", errUnknownMethod, method)
@@ -204,18 +186,6 @@ func (s *Server) keep(c io.Closer) uint64 {
 	s.next++
 	s.handles[s.next] = c
 	return s.next
-}
-
-func (s *Server) shared(service, key string) bool {
-	if s.Keyring == nil {
-		return false
-	}
-	for _, e := range s.Entries {
-		if e.Service == service && e.Key == key {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Server) closeAll() {

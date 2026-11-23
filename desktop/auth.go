@@ -51,8 +51,10 @@ func (s *Service) GetAuthStatus() AuthStatus {
 			status.WorkspaceConfigured = cfg.Storage.URL != "" && !strings.HasPrefix(cfg.Storage.URL, "oci://ghcr.io/")
 		}
 	}
-	if logins, _, err := s.accounts.Accounts(); err == nil {
-		status.Accounts = logins
+	if auth.TokenFromEnvironment() == nil {
+		if logins, _, err := s.accounts.Accounts(); err == nil {
+			status.Accounts = logins
+		}
 	}
 	token, err := auth.LoadToken()
 	if err != nil {
@@ -201,17 +203,17 @@ type accountStore interface {
 	Delete(login string) error
 }
 
-// keyringAccounts is the accountStore of the OS keyring and the data directory.
-type keyringAccounts struct{}
+// savedAccounts uses the platform credential store and the local account selection.
+type savedAccounts struct{}
 
-func (keyringAccounts) Accounts() ([]string, string, error) { return auth.Accounts() }
+func (savedAccounts) Accounts() ([]string, string, error) { return auth.Accounts() }
 
-func (keyringAccounts) Switch(login string) error {
+func (savedAccounts) Switch(login string) error {
 	_, err := auth.SwitchAccount(login)
 	return err
 }
 
-func (keyringAccounts) Delete(login string) error { return auth.DeleteAccount(login) }
+func (savedAccounts) Delete(login string) error { return auth.DeleteAccount(login) }
 
 // SwitchAccount uses another signed-in GitHub account in this data directory.
 func (s *Service) SwitchAccount(login string) error {

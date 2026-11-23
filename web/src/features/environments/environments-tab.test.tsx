@@ -44,8 +44,12 @@ describe("EnvironmentsTab", () => {
 
   it("keeps the current environment from being deleted", async () => {
     await renderAndSettle(<EnvironmentsTab workspace={testWorkspace(environments)} />);
-    expect(queryButton("Delete: default")?.disabled).toBe(true);
-    expect(queryButton("Delete: staging")?.disabled).toBe(false);
+    const current = container.querySelector('[data-testid="environment-row"][aria-current="true"]');
+    const other = container.querySelector('[data-testid="environment-row"]:not([aria-current])');
+    expect(current?.getAttribute("data-environment")).toBe("default");
+    expect(other?.getAttribute("data-environment")).toBe("staging");
+    expect(queryButton("Delete: default", current!)?.disabled).toBe(true);
+    expect(queryButton("Delete: staging", other!)?.disabled).toBe(false);
   });
 
   it("deletes without purging and offers to purge the kept revisions", async () => {

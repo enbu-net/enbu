@@ -84,6 +84,17 @@ func newDoctorCommand(a *app.App) *cobra.Command {
 			if d.FallbackReason != "" {
 				cmd.Printf("Fallback: %s\n", d.FallbackReason)
 			}
+			auth := d.GitHubCredentials
+			cmd.Printf("GitHub credentials: %s (%s)\n", auth.Backend, auth.State)
+			if auth.TPM != "" {
+				cmd.Printf("GitHub credential TPM: %s\n", auth.TPM)
+			}
+			if auth.Environment {
+				cmd.Println("GitHub authentication: using GITHUB_TOKEN")
+			}
+			if auth.Migration != "" {
+				cmd.Printf("GitHub credential migration: %s\n", auth.Migration)
+			}
 			for _, check := range d.Checks {
 				name := check.Name
 				if check.Environment != "" {

@@ -316,6 +316,40 @@ func TestCompactionKeepsRevisionsItCannotJudge(t *testing.T) {
 	}
 }
 
+func TestCompactionKeepsRevisionsUnderNewControl(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	if err := alice.SetAdmin(bg, mustMember(t, alice, bob).DeviceID, true); err != nil {
+		t.Fatal(err)
+	}
+	carol := newDevice(t, bob)
+	request := requestJoin(t, carol)
+	editTimes(t, alice, 2)
+	listings := 0
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if kind == storage.KindState {
+				listings++
+				if listings == 2 {
+					if err := bob.ApproveMember(ctx, request.DeviceID); err != nil {
+						t.Fatal(err)
+					}
+					if err := bob.AddSecret(ctx, "default", "LATE", "new"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	if _, err := alice.CompactHistory(bg, "default", 1); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, bob)["LATE"]; got != "new" {
+		t.Fatalf("the successful update was lost: LATE = %q", got)
+	}
+}
+
 // A re-encryption is hidden while its parent is readable. Once compaction
 // removes that parent, warm and cold caches must both show the retained state.
 func TestCompactionMakesCachedRepeatVisible(t *testing.T) {

@@ -26,3 +26,7 @@ func TestCompactionLatePublicationAndCrashRecovery(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactionKeepsStateUnderNewControl(t *testing.T) {
+	exercise(t, 0, Plan{Devices: 3, CompactionRace: &CompactionRaceCase{Publication: "new-control"}})
+}

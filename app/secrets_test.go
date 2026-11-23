@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -88,13 +89,10 @@ func TestListSecrets_ReturnsStoredSecrets(t *testing.T) {
 
 func TestSecretNamesSupportUnicodeLetters(t *testing.T) {
 	alice := newAlice(t)
-	if err := alice.AddSecret(context.Background(), "default", "", "value"); !apperr.Is(err, apperr.CodeInvalidArgument) {
-		t.Errorf("AddSecret(empty) = %v", err)
-	}
-	for _, name := range []string{"BAD-NAME", "1START", "BAD\nKEY"} {
+	for _, name := range []string{"", "BAD-NAME", "1START", "BAD\nKEY"} {
 		if err := alice.AddSecret(context.Background(), "default", name, "value"); !apperr.Is(err, apperr.CodeSecretNameInvalid) {
 			t.Errorf("AddSecret(%q) = %v", name, err)
-		} else if payload := apperr.PayloadOf(err); payload.Params["key"] != name || !strings.Contains(payload.Message, name) {
+		} else if payload := apperr.PayloadOf(err); payload.Params["key"] != strconv.QuoteToASCII(name) || !strings.Contains(payload.Message, payload.Params["key"]) {
 			t.Errorf("AddSecret(%q) payload = %+v", name, payload)
 		}
 	}

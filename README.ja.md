@@ -70,7 +70,7 @@ GitHub でパッケージの設定を開き、リポジトリを接続して「I
 仕事用と個人用のように GitHub アカウントが複数あるときは、それぞれでサインインします。
 `enbu auth login` はアカウントを追加してそれを使い、`enbu auth switch LOGIN` で別のアカウントに戻し、
 `enbu auth status` で一覧を、`enbu auth logout --user LOGIN` で 1 つだけサインアウトします。
-トークンは OS keyring に置き、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
+保存済みアカウントは OS ユーザーで共有し、どのアカウントを使うかは enbu のデータディレクトリごとに覚えるので、
 別の `XDG_DATA_HOME` では別のアカウントを選べます。`GITHUB_TOKEN` があればどのアカウントよりも優先します。
 
 `enbu auth login` は GitHub Device Flow を使います。表示されたコードを github.com/login/device で入力するので、SSH 越しでも使えます。
@@ -298,7 +298,7 @@ macOSではSecure Enclave鍵をKeychainに保存しません。data-protection K
 version 1 metadataはenbuのローカルデータディレクトリの`identities/`へ保存します。
 `XDG_DATA_HOME`設定時は`$XDG_DATA_HOME/enbu/identities/`、未設定時はOSごとのアプリデータディレクトリです。
 旧Identityの移行・読込は行いません。平文Identity backendは廃止しました。
-GitHubのトークンもOS keyringに保存します。平文ファイルには保存しません。使えるkeyringがなければ`enbu auth login`は失敗します。CIでは`GITHUB_TOKEN`を使います。
+トークンの保存先と移行方法は [GitHub 認証情報](#github-認証情報) を参照してください。
 
 データディレクトリごとに別のデバイスになります。デスクトップアプリはデータディレクトリごとに1つ起動します。別の`XDG_DATA_HOME`で起動すると、そのディレクトリのIdentityで2つ目のウィンドウが開くので、1台のPCで2人のワークスペースを試せます。
 
@@ -311,13 +311,55 @@ TPM鍵の生成方法と、それを確かめるテストは[docs/identity.md](d
 Linux／Windowsの実TPMでは、`ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags=identitye2e -run '^TestNativeTPMCLI$' ./test/identitye2e`でCLI全体を検証できます。
 通常ビルドのCLI、一時リポジトリ、ホストの実TPM、ローカルHTTP fixtureを使い、init/add/pull/edit/sync/historyとCLIプロセス間のIdentity再ロードを確認します。
 
+### GitHub 認証情報
+
+| 環境 | 既定の保存先 | フォールバック |
+| --- | --- | --- |
+| Linux | `/dev/tpmrm0` 経由の TPM 2.0 | Secret Service |
+| Windows | TBS 経由の TPM 2.0 | Credential Manager |
+| macOS | Keychain | |
+| WSL | Windows 側の TPM 2.0 | Windows 側の Credential Manager |
+| ヘッドレス / CI | 利用可能な TPM 2.0 | 永続保存先がなければ `GITHUB_TOKEN` を供給 |
+
+`ENBU_AUTH_BACKEND` の既定値は `auto` です。
+TPM がない場合や必要な機能に対応していない場合に OS keyring を選びます。
+TPM の権限不足や保存済み TPM データの読み込み失敗時はエラーになります。
+`hardware` は TPM を必須にし、`keyring` は OS keyring を明示的に選びます。
+`ENBU_IDENTITY_BACKEND` は Workspace Identity を独立して制御します。
+`GITHUB_TOKEN` は保存済みアカウントより優先し、呼び出し元の環境変数から利用します。
+
+Linux サーバーでは TPM 2.0 を有効にし、実行ユーザーが `/dev/tpmrm0` を開けることを確認してください。
+`tss` グループでアクセスを管理している環境では、`sudo usermod -aG tss "$USER"` を実行して再ログインします。
+`enbu auth login` に表示されたコードは別の端末のブラウザでも入力できます。
+TPM に保存した GitHub 認証情報は GUI、D-Bus、Secret Service がない環境でも利用できます。
+
+以前の版で OS keyring に保存したアカウントがある場合は、keyring のロックを解除して `enbu auth migrate` を実行します。
+同じ GitHub User ID では TPM 側の内容を優先し、復号できることを確認してから旧エントリを削除します。
+削除に失敗したときは同じコマンドで再開できます。
+`enbu doctor` は Identity と GitHub 認証情報の保存先を個別に表示します。
+旧エントリの有無を調べていない状態は `legacy_unchecked` と表示します。
+
+TPM の初期化・交換や保存ファイルの紛失後は、元の TPM とファイルの復元を試してください。
+復元できない場合は `enbu auth reset --yes` で選択中の保存先にある GitHub アカウントをリセットし、再ログインします。
+TPM の保存先をリセットした後も、OS keyring に旧エントリが残る場合があります。
+TPM を撤去して OS keyring に切り替える場合は、`ENBU_AUTH_BACKEND=keyring enbu auth reset --yes` を実行してから再ログインします。
+保存形式は [GitHub 認証ストアの構成](docs/identity.md#github-credential-store) を参照してください。
+
 ### WSL
 
 WSL（1 / 2）の中では、enbu は Linux に鍵を置きません。コマンドごとに Windows の enbu.exe を 1 つ起動し（`enbu.exe identity bridge --stdio`）、鍵の作成、ファイル鍵の復号、署名、GitHub トークンの保管だけを任せます。秘密鍵と TPM は Windows の中に残るので、WSL でも Windows と同じ保護になり、Windows とすべてのディストリビューションが 1 台の端末として 1 回のサインインで済みます。ストレージ、git、`.env`、`enbu run` は WSL の中で動き、ファイルパスは渡しません。
 
-Windows にも同じ版の enbu を入れてください。enbu は、WSL が Windows から足す PATH 上の `enbu.exe`、または `ENBU_WINDOWS_EXE` を使います。見つからないときや interop が無効なとき（`/etc/wsl.conf` の `[interop] enabled=false`）は、どちらかを示して `identity_unavailable` で止まり、Linux の keyring には落ちません。`enbu auth login` は Windows で動き、ブラウザも Windows で開きます（enbu.exe がなければ同じく `identity_unavailable` で止まります）。そのとき `enbu auth status` は、`GITHUB_TOKEN` がなければ未サインインと表示します。`enbu doctor` は Windows の enbu.exe の場所と版、Windows 側の TPM と keyring の状態を表示します。VS Code 拡張も WSL のウィンドウで同じように使えます。
+Windows と WSL には同じ版の enbu を入れてください。
+WSL から見える PATH 上の `enbu.exe` または `ENBU_WINDOWS_EXE` を使います。
+interop が無効か exe が見つからない場合は `identity_unavailable` になります。
+Device Flow は WSL で進め、ブラウザの起動と認証情報の保存、移行、リセットは Windows 側で実行します。
+`enbu doctor` は Windows 側の enbu.exe と各保存先の状態を表示します。
+VS Code 拡張も WSL のウィンドウから利用できます。
 
-Windows 側は WSL ではなく Windows の環境変数を読みます。`ENBU_IDENTITY_BACKEND` などを WSL から効かせるには `WSLENV` で渡します。ディストリビューションの中のどの Linux ユーザーも、ほかの Windows のプログラムと同じく、同じ Windows ユーザーとして enbu.exe を起動できます。
+`ENBU_AUTH_BACKEND` と `ENBU_IDENTITY_BACKEND` は Windows 側で設定します。
+WSL 側から上書きする場合は `WSLENV` に変数名を含めます。
+WSL の呼び出し元に `GITHUB_TOKEN` があれば、認証はそのトークンを使います。
+ディストリビューションの中のどの Linux ユーザーも、ほかの Windows のプログラムと同じく、同じ Windows ユーザーとして enbu.exe を起動できます。
 
 ## JSON出力
 
