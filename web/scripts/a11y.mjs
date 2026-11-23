@@ -55,6 +55,30 @@ const violations = [];
 // Script errors on the page, reported with the violations after every run.
 const pageErrors = [];
 let audits = 0;
+
+async function checkSecretEditorKeyboard(page) {
+  const input = page.locator('input[type="password"][aria-label^="Value:"]').first();
+  await input.waitFor();
+  const original = await input.inputValue();
+  const updated = original + "-keyboard-check";
+  await input.fill(updated);
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  await save.waitFor();
+  await input.press("Enter");
+  await save.waitFor({ state: "hidden" });
+  const label = (await input.getAttribute("aria-label")) ?? "";
+  const row = input.locator("../..");
+  await row.getByRole("button", { name: "Show value" }).click();
+  const editor = page.getByRole("textbox", { name: label, exact: true });
+  await editor.press("End");
+  await editor.press("Enter");
+  if ((await editor.inputValue()) !== updated + "\n") {
+    throw new Error("Enter did not insert a newline in the revealed editor");
+  }
+  await save.waitFor();
+  await page.reload();
+}
+
 try {
   for (const { theme, locale, width } of runs) {
     {
@@ -78,6 +102,10 @@ try {
       await page.goto(url);
       const tabs = page.getByRole("tab");
       await tabs.first().waitFor();
+      if (theme === "light" && locale === "en" && width === 1280) {
+        await checkSecretEditorKeyboard(page);
+        await tabs.first().waitFor();
+      }
       const count = await tabs.count();
       const opened = new Set();
       for (let i = 0; i < count; i++) {

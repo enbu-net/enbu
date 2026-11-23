@@ -87,9 +87,9 @@ describe("Dashboard", () => {
     await renderDashboard();
 
     act(() => queryButton("Show value")?.click());
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Value: KEY"]')?.type).toBe(
-      "text",
-    );
+    expect(
+      container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Value: KEY"]')?.value,
+    ).toBe("development-value");
 
     await act(async () => {
       document

@@ -48,12 +48,12 @@ describe("SecretRow", () => {
     expect(queryInput("super-secret")?.type).toBe("password");
   });
 
-  it("toggles to text type on eye button click", () => {
+  it("opens the text editor on eye button click", () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     act(() => {
       queryButton("Show value")?.click();
     });
-    expect(queryInput("super-secret")?.type).toBe("text");
+    expect(container.querySelector("textarea")?.value).toBe("super-secret");
     expect(queryButton("Hide value")).toBeTruthy();
   });
 
@@ -143,7 +143,34 @@ describe("SecretRow", () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
-  it("pauses editing until the submitted value has saved", async () => {
+  it.each(["\n", "\r\n", "\r"])("preserves %j separators on blur and edit", async (separator) => {
+    const onEdit = vi.fn(async () => {});
+    const value = ["header", "body", "footer"].join(separator);
+    renderSecretRow({ secretKey: "PEM", secretValue: value, onEdit });
+    expect(container.querySelector('input[aria-label="Value: PEM"]')).toHaveProperty(
+      "readOnly",
+      true,
+    );
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    expect(editor.value).toBe("header\nbody\nfooter");
+    act(() => {
+      editor.focus();
+      editor.blur();
+    });
+    expect(onEdit).not.toHaveBeenCalled();
+    const changed = "header\nnew body\nfooter";
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    act(() => {
+      setValue.call(editor, changed);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledOnce();
+    expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
+  });
+
+  it("pauses editing in both value controls while saving", async () => {
     let finishSave!: () => void;
     const promise = new Promise<void>((resolve) => {
       finishSave = resolve;
@@ -155,9 +182,11 @@ describe("SecretRow", () => {
     await act(async () => queryButton("Save")?.click());
     expect(onEdit).toHaveBeenCalledExactlyOnceWith("new-secret");
     expect(queryInput("new-secret")?.disabled).toBe(true);
+    act(() => queryButton("Show value")?.click());
+    expect(container.querySelector("textarea")?.disabled).toBe(true);
 
     await act(async () => finishSave());
-    expect(queryInput("new-secret")?.disabled).toBe(false);
+    expect(container.querySelector("textarea")?.disabled).toBe(false);
   });
 
   it("renders the secret key as a monospace label", () => {
