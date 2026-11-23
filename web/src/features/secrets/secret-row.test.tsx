@@ -189,6 +189,29 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledExactlyOnceWith(saved);
   });
 
+  it("undoes and redoes deletion without mixing CRLF and LF bytes", async () => {
+    const onEdit = vi.fn(async () => {});
+    renderSecretRow({ secretKey: "PEM", secretValue: "header\r\n\nbody", onEdit });
+    act(() => queryButton("Show value")?.click());
+    const editor = container.querySelector("textarea")!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    async function input(value: string, inputType: string, caret: number) {
+      await act(async () => {
+        setValue.call(editor, value);
+        editor.setSelectionRange(caret, caret);
+        editor.dispatchEvent(new InputEvent("input", { inputType, bubbles: true }));
+      });
+    }
+
+    await input("header\nbody", "deleteContentForward", 7);
+    expect(queryButton("Save")).toBeTruthy();
+    await input("header\n\nbody", "historyUndo", 7);
+    expect(queryButton("Save")).toBeNull();
+    await input("header\nbody", "historyRedo", 7);
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("header\r\nbody");
+  });
+
   it("pauses editing in both value controls while saving", async () => {
     let finishSave!: () => void;
     const promise = new Promise<void>((resolve) => {
