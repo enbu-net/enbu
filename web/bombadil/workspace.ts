@@ -1,4 +1,4 @@
-import { always } from "@antithesishq/bombadil";
+import { always, eventually } from "@antithesishq/bombadil";
 import { actions, extract, registerCustomAction } from "@antithesishq/bombadil/browser";
 import en from "../messages/en.json" with { type: "json" };
 import ja from "../messages/ja.json" with { type: "json" };
@@ -166,7 +166,15 @@ function pick(select: HTMLSelectElement, value: string) {
 
 const secretOutcome = "data-bombadil-secret-round-trip";
 const secretCounter = "data-bombadil-secret-counter";
+const initialIsolation = "data-bombadil-initial-isolation";
 const historyOutcome = "data-bombadil-history-restore";
+export const initialIsolationDone = extract(({ document }) =>
+  document.documentElement.hasAttribute(initialIsolation),
+);
+export const initialIsolationCompletes = eventually(() => initialIsolationDone.current).within(
+  8,
+  "seconds",
+);
 const secretResult = extract(({ document }) =>
   document.documentElement.getAttribute(secretOutcome),
 );
@@ -185,7 +193,7 @@ export const restoredRevisionMatchesItsSource = always(
 
 const secretRoundTrip = registerCustomAction(
   "enbu.secretRoundTrip",
-  async (document, window, slot: number, value: string) => {
+  async (document, window, slot: number, value: string, initial: boolean) => {
     const source = currentEnvironment(panel(document));
     const file = panel(document)?.querySelector<HTMLInputElement>('[data-testid="import-file"]');
     if (!source || !file || document.querySelector("dialog[open]")) return;
@@ -248,6 +256,7 @@ const secretRoundTrip = registerCustomAction(
         );
       if (alternatives.length === 0) {
         picker.click();
+        if (initial) throw new Error("initial isolation needs a readable alternate environment");
         return sourceOnly;
       }
       let checkedIsolation = false;
@@ -266,7 +275,11 @@ const secretRoundTrip = registerCustomAction(
       }
       await choose(await openPicker(), source);
       checkImported();
-      if (!checkedIsolation) return sourceOnly;
+      if (!checkedIsolation) {
+        if (initial) throw new Error("initial isolation needs a readable alternate environment");
+        return sourceOnly;
+      }
+      if (initial) document.documentElement.setAttribute(initialIsolation, "");
     });
   },
 );
@@ -284,12 +297,19 @@ const importReady = extract(({ document }) => {
     Number(document.documentElement.getAttribute(secretCounter) ?? "0") < 8,
   );
 });
+
+// Run isolation against the fresh preview before exploration can remove environments.
+export const initialSecretIsolation = actions(() => {
+  if (initialIsolationDone.current) return [];
+  return importReady.current ? [secretRoundTrip(1, " 日本語の値 🧪 ", true)] : ["Wait"];
+});
+
 export const secretRoundTrips = actions(() =>
   importReady.current
     ? [
-        secretRoundTrip(0, "value=with=equals"),
-        secretRoundTrip(1, " 日本語の値 🧪 "),
-        secretRoundTrip(2, "literal # comment"),
+        secretRoundTrip(0, "value=with=equals", false),
+        secretRoundTrip(1, " 日本語の値 🧪 ", false),
+        secretRoundTrip(2, "literal # comment", false),
       ]
     : [],
 );
