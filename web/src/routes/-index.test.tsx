@@ -126,7 +126,7 @@ incarnation = "22222222-2222-4222-8222-222222222222"
     const editor = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="Configuration TOML"]',
     );
-    expect(editor).not.toBeNull();
+    expect(editor).toHaveProperty("value", repaired + alias);
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(
         editor,
