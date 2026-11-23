@@ -106,3 +106,39 @@ through TBS on Windows. The keys one process loads (the identity and the
 signing key) share one TPM connection and one primary. The last key to close
 flushes the primary and closes the connection. `TestTPMKeysShareOneConnection`
 checks that loading a device opens the TPM and creates the primary once.
+
+## GitHub credential store
+
+`pkg/auth` chooses the backend for all saved GitHub accounts for the OS user.
+The CLI, desktop and Windows WSL bridge share the same account operations.
+Active account selection remains in `github-account.json` in the current
+enbu data directory. The store and its lock live under
+`config.DefaultDataDir()/github-auth`, independent of `XDG_DATA_HOME`. The TPM
+store uses `~/.local/share/enbu/github-auth` on Linux and the user's local
+application data directory under `%LOCALAPPDATA%\enbu` on Windows. Unix uses
+mode 0700 for the directory and 0600 for files. Windows inherits the user
+profile ACL. Files used by the store must be regular files.
+
+The TPM generates a separate P-256 ECDH key with the attributes and policy
+described above. The key's storage primary Name is checked before use, and
+the ECDH response travels under parameter encryption. A transient object
+performs ECDH using its own public point as the peer. HKDF-SHA256 derives a
+32-byte key with the GitHub credential domain `enbu GitHub account seal v1`.
+AES-256-GCM uses a fresh random nonce per write. The ciphertext authenticates
+the format version, purpose, primary Name and key blobs as associated data.
+The complete encrypted account set and reloadable blobs are replaced
+atomically. The TPM NV area holds neither the tokens nor a permanent handle.
+
+The OS releases the writer lock on process exit. Migration commits its
+encrypted result with the digest of the old entry, reads and verifies it,
+and then deletes the keyring entry. Pending cleanup retries compare that
+digest without merging again. An empty TPM store remains a valid store, and
+a separate marker preserves its backend selection if the encrypted file
+disappears. Status and doctor do not create store state or look up the legacy
+entry when TPM is selected.
+
+The TPM protects copied files against offline decryption. Tokens are
+available in process memory during use, including the Windows bridge when
+servicing WSL. A privileged local attacker can access the running process or
+use an accessible TPM. An earlier complete snapshot can be replayed against
+the same TPM.

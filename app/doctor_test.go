@@ -283,6 +283,28 @@ func TestDoctorGHCRWithoutTokenProviderDoesNotPanic(t *testing.T) {
 	}
 }
 
+func TestDoctorReportsEnvironmentAuthenticationSeparatelyFromCredentialStorage(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-environment-credential")
+	t.Setenv("ENBU_AUTH_BACKEND", "invalid")
+	a := newAlice(t)
+	a.StorageURL = "oci://ghcr.io/owner/repo"
+	a.TokenProvider = &defaultTokenProvider{}
+	r := a.diagnose(bg, func(_ context.Context, token string) error {
+		if token != "test-environment-credential" {
+			t.Fatal("doctor did not use the environment token")
+		}
+		return nil
+	})
+	doctorCheck(t, r, "github_auth", "", "ok")
+	if !r.GitHubCredentials.Environment || r.GitHubCredentials.State != "invalid_configuration" {
+		t.Fatalf("credential diagnosis = %+v", r.GitHubCredentials)
+	}
+	encoded, err := json.Marshal(r)
+	if err != nil || strings.Contains(string(encoded), "test-environment-credential") {
+		t.Fatal("diagnosis exposed the credential")
+	}
+}
+
 func TestDoctorWithoutIdentityStoreDoesNotInventBackendFailure(t *testing.T) {
 	a := &App{RepositoryDir: t.TempDir()}
 	r := a.Diagnose(bg)

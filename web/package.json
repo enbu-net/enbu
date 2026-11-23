@@ -16,6 +16,7 @@
     "check": "vp check && vp test",
     "legacy-scan": "node scripts/legacy-scan.mjs",
     "a11y": "node scripts/a11y.mjs",
+    "bombadil": "node scripts/bombadil.mjs",
     "preview": "vp preview"
   },
   "dependencies": {
@@ -33,17 +34,18 @@
     "smol-toml": "^1.7.0"
   },
   "devDependencies": {
-    "@inlang/paraglide-js": "3.2.1",
+    "@antithesishq/bombadil": "0.8.0",
+    "@inlang/paraglide-js": "3.2.2",
     "@inlang/plugin-message-format": "4.6.0",
     "@pandacss/dev": "2.5.0",
     "@pandacss/preset-base": "2.5.0",
     "@park-ui/cli": "1.0.1",
-    "@tanstack/router-devtools": "1.167.3",
+    "@tanstack/router-devtools": "1.167.4",
     "@tanstack/router-plugin": "1.169.0",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "@vitejs/plugin-react": "6.2.1",
+    "@vitejs/plugin-react": "6.3.0",
     "@vitest/coverage-v8": "5.1.0",
     "axe-core": "4.14.0",
     "jsdom": "31.0.0",

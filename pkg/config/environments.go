@@ -15,6 +15,10 @@ func (cfg *ProjectConfig) CurrentEnvironment() string {
 	if cfg.Current != "" && (cfg.HasEnvironment(cfg.Current) || (len(cfg.Environments) == 0 && cfg.Current == "default")) {
 		return cfg.Current
 	}
+	return cfg.teamDefault()
+}
+
+func (cfg *ProjectConfig) teamDefault() string {
 	if cfg.DefaultEnv != "" {
 		return cfg.DefaultEnv
 	}
@@ -53,9 +57,16 @@ func (cfg *ProjectConfig) RemoveEnvironment(name string) error {
 	if _, exists := cfg.Environments[name]; !exists {
 		return apperr.New(apperr.CodeEnvironmentMissing, fmt.Sprintf("environment %q does not exist", name), apperr.Params{"name": name})
 	}
+	wasDefault := cfg.teamDefault() == name
 	delete(cfg.Environments, name)
-	if cfg.DefaultEnv == name {
+	if wasDefault {
 		cfg.DefaultEnv = ""
+		if len(cfg.Environments) != 0 {
+			cfg.DefaultEnv = "default"
+			if !cfg.HasEnvironment("default") {
+				cfg.DefaultEnv = cfg.EnvironmentNames()[0]
+			}
+		}
 	}
 	return nil
 }
@@ -71,6 +82,7 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 	if oldName == newName || cfg.hasEnvironmentFold(newName, oldName) {
 		return apperr.New(apperr.CodeEnvironmentExists, fmt.Sprintf("environment %q already exists", newName), apperr.Params{"name": newName})
 	}
+	wasDefault := cfg.teamDefault() == oldName
 	delete(cfg.Environments, oldName)
 	if env.Incarnation == "" {
 		// Stored under its old name: keep reading it from there.
@@ -80,7 +92,7 @@ func (cfg *ProjectConfig) RenameEnvironment(oldName, newName string) error {
 		env.Output = DefaultOutput(newName)
 	}
 	cfg.Environments[newName] = env
-	if cfg.DefaultEnv == oldName {
+	if wasDefault {
 		cfg.DefaultEnv = newName
 	}
 	return nil

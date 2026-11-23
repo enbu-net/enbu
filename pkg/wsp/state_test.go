@@ -131,12 +131,12 @@ func TestStateForOtherResourceOrWorkspaceRejected(t *testing.T) {
 // A State naming a Control the view does not hold cannot be verified. It used
 // to be reported as a rollback before its signature was checked, so one
 // unsigned object written by anyone with storage access blocked the resource.
-func TestStateNamingAnUnknownControlIsInvalidNotARollback(t *testing.T) {
+func TestStateNamingAnUnknownControlNeedsVerification(t *testing.T) {
 	f := newStateFixture(t)
 	s := f.state(f.bob)
 	s.Control = digest.FromString("a newer control")
 	blob, rev := signedState(t, s, f.bob)
-	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrInvalid) || errors.Is(err, ErrRollback) {
+	if _, err := VerifyRevision(f.view, testWorkspace, testResource, rev, blob); !errors.Is(err, ErrUnknownStateControl) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrRollback) {
 		t.Fatalf("state naming an unknown control: %v", err)
 	}
 }

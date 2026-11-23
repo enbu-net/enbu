@@ -18,6 +18,7 @@ import (
 
 	"github.com/enbu-net/enbu/pkg/apperr"
 	"github.com/enbu-net/enbu/pkg/clock"
+	"github.com/enbu-net/enbu/pkg/winbridge"
 )
 
 const (
@@ -88,6 +89,14 @@ type deviceTokenResponse struct {
 // Login shows prompt the code to enter, waits for the user to authorize it and
 // saves the token.
 func (c Client) Login(ctx context.Context, prompt DevicePrompter) (*StoredToken, error) {
+	if token := TokenFromEnvironment(); token != nil {
+		return token, nil
+	}
+	if winbridge.InWSL() {
+		if err := winbridge.Shared().CheckProtocol(ctx); err != nil {
+			return nil, bridgeAuthError(err)
+		}
+	}
 	if c.Clock == nil {
 		c.Clock = clock.New()
 	}
