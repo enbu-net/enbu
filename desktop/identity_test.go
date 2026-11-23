@@ -62,6 +62,35 @@ func TestGetWorkspaceRejectsAStaleRepository(t *testing.T) {
 	}
 }
 
+func TestRestoreHistoryRejectsAStaleCheckoutOfTheSameWorkspace(t *testing.T) {
+	f := newMembersFixture(t)
+	if err := f.alice.AddSecret("default", "KEY", "before"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.alice.EditSecret("default", "KEY", "after"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := f.alice.ListHistory("default")
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("listing revisions: %+v, %v", entries, err)
+	}
+	envs, err := f.alice.ListEnvironments()
+	if err != nil || len(envs) != 1 {
+		t.Fatalf("listing environments: %+v, %v", envs, err)
+	}
+	target := app.EnvironmentTarget{WorkspaceID: f.workspace, Environment: "default", Incarnation: envs[0].Incarnation}
+	if err := f.alice.RestoreHistory(f.bob.repoPath, target, entries[0].Tag); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("restore with a stale checkout: %v", err)
+	}
+	current, err := f.alice.ListSecrets("default")
+	if err != nil || len(current.Secrets) != 1 || current.Secrets[0].Value != "after" {
+		t.Fatalf("current value after stale restore: %+v, %v", current, err)
+	}
+	if err := f.alice.RestoreHistory(f.alice.repoPath, target, entries[0].Tag); err != nil {
+		t.Fatalf("restore with the selected checkout: %v", err)
+	}
+}
+
 func TestSetAdminGrantsAndRevokes(t *testing.T) {
 	f := newMembersFixture(t)
 	if err := f.alice.ApproveMember(f.bobDevice); err != nil {

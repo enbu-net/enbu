@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act } from "react-dom/test-utils";
 import { backend } from "../../lib/backend";
+import { createAppError } from "../../lib/app-error";
 import { container, queryButton, renderAndSettle, settle, setupDom } from "../../test/dom";
 import { testWorkspace } from "../../test/workspace";
 import { HistoryTab } from "./history-tab";
@@ -86,6 +87,21 @@ describe("HistoryTab", () => {
 
     expect(mocked.ListHistory).toHaveBeenLastCalledWith("staging");
     expect(container.textContent).toContain("No revisions changed this environment yet.");
+  });
+
+  it("drops compacted history after a restore conflict", async () => {
+    mocked.ListHistory.mockResolvedValueOnce(entries).mockResolvedValueOnce([entries[2]]);
+    mocked.RestoreHistory.mockRejectedValueOnce(createAppError("conflict"));
+    await renderAndSettle(
+      <HistoryTab repoPath="/workspace" workspace={testWorkspace(environments)} />,
+    );
+
+    await act(async () => queryButton("Restore: Revision 1")?.click());
+    await settle();
+    expect(mocked.ListHistory).toHaveBeenLastCalledWith("default");
+    expect(queryButton("Restore: Revision 1")).toBeNull();
+    expect(container.textContent).toContain("Revision 3");
+    expect(container.textContent).toContain("Secrets changed remotely");
   });
 
   it("drops the previous environment's revisions while the next one loads", async () => {

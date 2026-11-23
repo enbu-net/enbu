@@ -180,7 +180,14 @@ function HistoryContent({
                       aria-label={`${m.history_restore()}: ${m.history_revision({ index: String(entry.index) })}`}
                       onClick={() =>
                         void run(async () => {
-                          await backend.RestoreHistory(repoPath, target, entry.tag);
+                          try {
+                            await backend.RestoreHistory(repoPath, target, entry.tag);
+                          } catch (err) {
+                            if (mounted.current && toDisplayError(err).code === "conflict") {
+                              await load(env);
+                            }
+                            throw err;
+                          }
                           if (mounted.current) {
                             setRestored(entry.index);
                             await Promise.all([load(env), refresh()]);
