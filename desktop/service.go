@@ -69,7 +69,7 @@ func NewService(a *app.App) *Service {
 		openURL:  auth.OpenBrowser,
 		git:      a.Git,
 		sessions: make(map[string]*oauthSession),
-		accounts: keyringAccounts{},
+		accounts: savedAccounts{},
 	}
 	if a.Runtime != nil && a.Runtime.Clock != nil {
 		s.clock = a.Runtime.Clock

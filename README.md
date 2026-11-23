@@ -333,8 +333,7 @@ loaded; create the identity again.
 Version 1 metadata is stored under `identities/` in enbu's local data directory
 (`$XDG_DATA_HOME/enbu` when set; otherwise the platform's application data directory).
 Old identities are not migrated or loaded. Plaintext Identity storage is removed.
-The GitHub token is kept in the OS keyring too. There is no plaintext file for it:
-without a usable keyring, `enbu auth login` fails, and CI uses `GITHUB_TOKEN`.
+See [GitHub credentials](#github-credentials) for token storage and migration.
 
 Each data directory is its own device. The desktop app runs once per data directory:
 started with another `XDG_DATA_HOME`, it opens a second window beside the first, with
@@ -351,6 +350,44 @@ fixtures with `ENBU_TEST_NATIVE_IDENTITY=1 go test -v -count=1 -timeout=5m -tags
 This uses a production CLI build, temporary repository data and the host TPM,
 covering init/add/pull/edit/sync/history and Identity reload between CLI processes.
 
+### GitHub credentials
+
+| Environment | Default storage | Fallback |
+| --- | --- | --- |
+| Linux | TPM 2.0 through `/dev/tpmrm0` | Secret Service |
+| Windows | TPM 2.0 through TBS | Credential Manager |
+| macOS | Keychain | |
+| WSL | Windows TPM 2.0 | Windows Credential Manager |
+| Headless / CI | TPM 2.0, when available | Supply `GITHUB_TOKEN` if there is no usable persistent backend |
+
+`ENBU_AUTH_BACKEND=auto` is the default. It falls back to the OS keyring when
+the TPM is absent or lacks required features. Access errors and errors opening
+an existing TPM store stop the operation. `hardware` requires the TPM and
+`keyring` explicitly selects the OS keyring. These settings control GitHub
+credentials independently of `ENBU_IDENTITY_BACKEND`. `GITHUB_TOKEN` takes
+precedence over saved accounts and stays in the caller's environment.
+
+On a Linux server, enable TPM 2.0 and check that your user can open
+`/dev/tpmrm0`. On systems that grant access through the `tss` group, run
+`sudo usermod -aG tss "$USER"` and start a new login session. `enbu auth login`
+prints a device code you can enter from another machine's browser. TPM-backed
+GitHub credentials work without a graphical session, D-Bus, or Secret Service.
+
+If a previous version saved your accounts in the OS keyring, unlock it and run
+`enbu auth migrate`. The command merges accounts by GitHub User ID, keeps
+existing TPM entries for duplicates, and verifies the TPM copy before
+deleting the old entry. If cleanup fails, run the same command again.
+`enbu doctor` reports the GitHub store separately from Identity. It reports
+`legacy_unchecked` if the old keyring entry's presence is unknown.
+
+After a TPM clear, replacement, or loss of the credential file, try restoring
+the original TPM and files. If recovery is impossible, run
+`enbu auth reset --yes` and sign in again. This clears the GitHub accounts in the
+selected credential store. A legacy OS keyring entry can remain after a TPM reset.
+If the TPM has been removed and you want to use the OS keyring, choose it with
+`ENBU_AUTH_BACKEND=keyring enbu auth reset --yes` before signing in again.
+See [TPM credential architecture](docs/identity.md#github-credential-store).
+
 ### WSL
 
 Inside WSL (1 or 2), enbu keeps no keys in Linux. It starts the Windows enbu.exe
@@ -364,14 +401,14 @@ Install enbu on Windows too, the same version as in WSL. enbu finds `enbu.exe` o
 the PATH that WSL adds from Windows, or at `ENBU_WINDOWS_EXE`. Without it, or with
 interop turned off (`[interop] enabled=false` in `/etc/wsl.conf`), enbu stops with
 `identity_unavailable` and says which; it never falls back to a Linux keyring.
-`enbu auth login` runs in Windows, which opens the browser there (and stops with
-the same `identity_unavailable` without enbu.exe); `enbu auth status` then
-reports that you are not signed in, unless `GITHUB_TOKEN` is set.
-`enbu doctor` shows the Windows enbu.exe, its version, and the Windows side's
-TPM and keyring. The VS Code extension works in a WSL window the same way.
+The WSL process runs the device flow. Windows opens the browser and supplies
+the credential store, including migration and reset. `enbu doctor` shows the
+Windows bridge and the credential backend it selected. The VS Code extension
+works the same way in a WSL window.
 
-Windows reads its own environment, not WSL's: `ENBU_IDENTITY_BACKEND` and the like
-take effect in WSL only when passed through `WSLENV`. Any Linux user in the
+Set `ENBU_AUTH_BACKEND` and `ENBU_IDENTITY_BACKEND` on Windows. To forward an
+override from WSL, include its name in `WSLENV`. Set `GITHUB_TOKEN` in the WSL
+caller to bypass the Windows credential store for authentication. Any Linux user in the
 distribution can start enbu.exe as the same Windows user, as with any Windows
 program.
 

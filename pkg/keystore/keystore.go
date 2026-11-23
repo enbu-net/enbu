@@ -6,7 +6,5 @@ type Backend interface {
 	Delete(service, key string) error
 }
 
-// New returns the backend for the GitHub token: the OS keyring. There is no
-// plaintext file backend; a keyring that is missing or locked fails each
-// operation instead.
+// New returns the OS keyring backend.
 func New() Backend { return &KeyringBackend{} }

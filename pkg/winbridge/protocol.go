@@ -15,7 +15,7 @@ import (
 // Protocol is the bridge protocol version. Both sides must speak the same
 // one; there is no compatibility layer, so the person installs the same enbu
 // in Windows and in WSL.
-const Protocol = 2
+const Protocol = 3
 
 // The wire format is a stream of JSON objects in each direction: one request,
 // then its response. The WSL side sends "hello" first.
@@ -32,21 +32,18 @@ type response struct {
 }
 
 const (
-	methodHello              = "hello"
-	methodCreate             = "device.create"
-	methodLoad               = "device.load"
-	methodInfo               = "device.info"
-	methodUnwrap             = "identity.unwrap"
-	methodSign               = "signer.sign"
-	methodClose              = "close"
-	methodDoctor             = "doctor"
-	methodKeyringStore       = "keyring.store"
-	methodKeyringLoad        = "keyring.load"
-	methodKeyringDelete      = "keyring.delete"
-	errIncompatibleProtocol  = "incompatible bridge protocol"
-	errUnknownMethod         = "unknown bridge method"
-	errUnknownHandle         = "unknown bridge handle"
-	errKeyringEntryForbidden = "the bridge does not share this keyring entry"
+	methodHello             = "hello"
+	methodCreate            = "device.create"
+	methodLoad              = "device.load"
+	methodInfo              = "device.info"
+	methodUnwrap            = "identity.unwrap"
+	methodSign              = "signer.sign"
+	methodClose             = "close"
+	methodDoctor            = "doctor"
+	methodGitHubAuth        = "github.auth"
+	errIncompatibleProtocol = "incompatible bridge protocol"
+	errUnknownMethod        = "unknown bridge method"
+	errUnknownHandle        = "unknown bridge handle"
 )
 
 type helloParams struct {
@@ -102,14 +99,9 @@ type signResult struct {
 	Signature []byte `json:"signature"`
 }
 
-type keyringParams struct {
-	Service string `json:"service"`
-	Key     string `json:"key"`
-	Secret  []byte `json:"secret,omitempty"`
-}
-
-type keyringResult struct {
-	Secret []byte `json:"secret"`
+type githubAuthParams struct {
+	Operation string          `json:"operation"`
+	Request   json.RawMessage `json:"request"`
 }
 
 // wireError keeps what callers test with errors.Is and errors.As: a missing

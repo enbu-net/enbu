@@ -147,6 +147,22 @@ describe("SecretRow", () => {
     expect(onEdit).toHaveBeenCalledWith(["header", "new body", "footer"].join(separator));
   });
 
+  it("pauses editing in both value controls while saving", async () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    const onEdit = vi.fn(() => promise);
+    renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret", onEdit });
+    typeInto(queryInput("super-secret"), "new-secret");
+
+    await act(async () => queryButton("Save")?.click());
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith("new-secret");
+    expect(queryInput("new-secret")?.disabled).toBe(true);
+    act(() => queryButton("Show value")?.click());
+    expect(container.querySelector("textarea")?.disabled).toBe(true);
+
+    await act(async () => resolve());
+    expect(container.querySelector("textarea")?.disabled).toBe(false);
+  });
+
   it("renders the secret key as a monospace label", () => {
     renderSecretRow({ secretKey: "API_KEY", secretValue: "super-secret" });
     expect(container.textContent).toContain("API_KEY");

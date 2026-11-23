@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/enbu-net/enbu/pkg/auth"
-	"github.com/spf13/cobra"
 )
 
 func deviceLogin(t *testing.T) func(context.Context, auth.DevicePrompter) (*auth.StoredToken, error) {
@@ -100,21 +99,25 @@ func TestAuthLogoutUserSignsOutOfThatAccount(t *testing.T) {
 	}
 }
 
-// Inside WSL the Windows enbu.exe signs in; this data directory then uses
-// that account, and a failed Windows login changes nothing.
-func TestAuthLoginInWSLUsesTheNewAccount(t *testing.T) {
-	for _, windowsErr := range []error{nil, errors.New("windows login failed")} {
-		used := false
-		cmd := newAuthLoginCommandWithDeps(authLoginDeps{
-			windows:   func(context.Context, *cobra.Command, ...string) error { return windowsErr },
-			useLatest: func() error { used = true; return nil },
-		})
-		cmd.SetOut(&bytes.Buffer{})
-		cmd.SetErr(&bytes.Buffer{})
-		cmd.SetArgs(nil)
-		err := cmd.ExecuteContext(context.Background())
-		if (err != nil) != (windowsErr != nil) || used != (windowsErr == nil) {
-			t.Fatalf("windows error %v: login = %v, used latest = %v", windowsErr, err, used)
-		}
+func TestAuthLoginUsesEnvironmentWithoutDeviceFlow(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "ephemeral-test-token")
+	t.Setenv("GITHUB_ACTOR", "ci-test-user")
+	cmd := newAuthLoginCommandWithDeps(authLoginDeps{})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "ci-test-user") || strings.Contains(output.String(), "ephemeral-test-token") {
+		t.Fatalf("unexpected login output: %q", output.String())
+	}
+}
+
+func TestAuthResetRequiresConfirmation(t *testing.T) {
+	cmd := newAuthMaintenanceCommand(true)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("reset without confirmation = %v", err)
 	}
 }

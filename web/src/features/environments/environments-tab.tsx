@@ -81,6 +81,9 @@ export function EnvironmentsTab({ workspace }: { workspace: Workspace }) {
         {workspace.environments.map((environment) => (
           <HStack
             key={environment.name}
+            data-testid="environment-row"
+            data-environment={environment.name}
+            aria-current={environment.current ? "true" : undefined}
             justify="space-between"
             gap="3"
             px="4"

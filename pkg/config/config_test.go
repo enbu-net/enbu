@@ -505,3 +505,34 @@ func TestProjectWithoutControlGenesisOmitsTheKey(t *testing.T) {
 		t.Fatalf("empty genesis was written:\n%s", b)
 	}
 }
+func TestRemovingTeamDefaultKeepsFreshDevicesOnAnExistingEnvironment(t *testing.T) {
+	cfg := NewProjectWithEnvironment("dev")
+	if err := cfg.AddEnvironment("staging"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.AddEnvironment("production"); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Current = "staging"
+	if err := cfg.RemoveEnvironment("dev"); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadProjectFrom(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.CurrentEnvironment(); got != "production" || cfg.DefaultEnv != got {
+		t.Fatalf("fresh device chose %q, configured default %q", got, cfg.DefaultEnv)
+	}
+}
+
+func TestMissingDefaultDoesNotSelectAnotherEnvironment(t *testing.T) {
+	cfg := &ProjectConfig{Environments: map[string]EnvironmentConfig{"staging": {}}}
+	if _, err := cfg.Environment(""); err == nil {
+		t.Fatal("a missing default silently selected staging")
+	}
+}

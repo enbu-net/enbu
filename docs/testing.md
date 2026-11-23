@@ -100,3 +100,24 @@ rendering and before `os.Exit`, so error paths are included. Abrupt termination
 (e.g. SIGKILL) cannot flush a child report. Native hardware tests still require
 real devices and are skipped on ordinary hosted runners. The coverage report
 is Linux-specific; the existing native OS CI matrix remains separate.
+
+## GitHub credential storage
+
+`go test -race ./pkg/auth ./pkg/identity ./pkg/winbridge` exercises account
+selection, backend policy, interrupted migration, protocol version checks
+and the Windows credential RPC. On Linux with cgo it also uses the reference
+TPM simulator to verify encrypted persistence, tamper detection, TPM clear
+recovery and process exit during migration. No GitHub credentials or
+Secret Service are needed for these tests.
+
+Run the native credential lifecycle on a Linux or Windows TPM 2.0 device:
+
+```sh
+ENBU_TEST_NATIVE_AUTH=1 go test -v -count=1 -run '^TestTPMNativeCredentialLifecycle$' ./pkg/auth
+```
+
+In PowerShell, set `$env:ENBU_TEST_NATIVE_AUTH = "1"` before running the Go
+command. The test uses an isolated temporary data directory and synthetic
+accounts. On a headless Linux server, verify Device Flow and GHCR separately
+with `enbu auth login`, `enbu auth status`, `enbu doctor` in a configured GHCR workspace,
+and `enbu auth logout`, with `GITHUB_TOKEN` and the D-Bus session unset.

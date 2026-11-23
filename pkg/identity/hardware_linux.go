@@ -28,7 +28,7 @@ func platformHardware(c clock.Clock) HardwareBackend {
 
 // explainTPMOpenError says how to fix the usual reasons the TPM cannot be
 // opened. Distributions give /dev/tpmrm0 to the tss group (mode 0660), so a
-// user outside it falls back to the OS keyring until added.
+// user outside it must be added before enbu can use the TPM.
 func explainTPMOpenError(err error) error {
 	switch {
 	case err == nil:

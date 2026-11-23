@@ -18,6 +18,7 @@ export enum Code {
     CodeAuthExpired = "authentication_expired",
     CodeNotInitialized = "not_initialized",
     CodeConfigNotFound = "config_not_found",
+    CodeConfigResourceCollision = "config_resource_collision",
 
     /**
      * an edit would change the trust root or where secrets are stored
@@ -84,6 +85,9 @@ export enum Code {
      * the output file is not dotenv; pulling again with replace overwrites it
      */
     CodeOutputUnreadable = "output_unreadable",
+    CodeAuthTPMAccessDenied = "auth_tpm_access_denied",
+    CodeAuthTPMRecovery = "auth_tpm_recovery",
+    CodeAuthBackendConflict = "auth_backend_conflict",
 
     /**
      * the OS keyring exists but is locked; the person must unlock it

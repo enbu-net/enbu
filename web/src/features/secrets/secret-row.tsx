@@ -136,6 +136,7 @@ export function SecretRow({
           <styled.textarea
             aria-label={valueLabel}
             value={editValue}
+            disabled={saving}
             rows={multiline ? 4 : 1}
             w="full"
             minH="38px"
@@ -154,6 +155,7 @@ export function SecretRow({
           <Input
             aria-label={valueLabel}
             value={multiline ? "********" : editValue}
+            disabled={saving}
             type="password"
             readOnly={multiline}
             h="auto"
