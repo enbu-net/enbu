@@ -167,8 +167,11 @@ func (a *App) changeMembers(ctx context.Context, reencrypt bool, removal *member
 	// changed but some environments still encrypted for the old recipient set.
 	// Say so explicitly: retrying approve/remove would fail on the new state.
 	if err := a.reencryptAll(ctx, removal); err != nil {
-		if errors.Is(err, errRemovalWriteRace) {
-			return apperr.Wrap(apperr.CodeRemovalWriteRace, "member removed but a concurrent revision needs review before re-encryption", err, nil)
+		var race *removalWriteRace
+		if errors.As(err, &race) {
+			return apperr.Wrap(apperr.CodeRemovalWriteRace, "member removed but a concurrent revision needs review before re-encryption", err, apperr.Params{
+				"environment": race.environment, "revision": race.revision.String(),
+			})
 		}
 		return apperr.Wrap(apperr.CodeReencryptIncomplete, "membership changed but re-encryption is incomplete; run 'enbu sync' for each environment", err, nil)
 	}

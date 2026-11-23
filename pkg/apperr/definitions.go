@@ -28,7 +28,7 @@ var definitions = map[Code]definition{
 	CodeIncompatibleStorage: {message: "This storage was created without a workspace control. Use an empty location.", params: []string{}},
 	CodeSecretConflict:      {message: "Concurrent edits changed the same secret differently. Nothing was lost; choose a value to continue.", params: []string{}},
 	CodeControlForked:       {message: "Two admins changed the members at the same time. Nothing else can proceed until an admin of both changes opens enbu, which joins them.", params: []string{}},
-	CodeRemovalWriteRace:    {message: "The member was removed, but a concurrent revision needs review before re-encryption.", params: []string{}},
+	CodeRemovalWriteRace:    {message: "The member was removed. Review revision {revision} in {environment} with enbu history review before running enbu sync.", params: []string{"environment", "revision"}},
 	CodeReencryptIncomplete: {message: "Membership changed, but some secrets are not re-encrypted yet. Run sync to finish.", params: []string{}},
 	CodeTrustRootChanged:    {message: "enbu.toml names a different trust root (control_genesis) than this device trusts for this workspace. Do not continue unless an admin confirms out of band that they re-created the workspace; then accept the new root ('enbu init --accept-new-genesis').", params: []string{}},
 	CodeIdentityUnavailable: {message: "No usable identity backend on this device. Run 'enbu doctor' for details.", params: []string{}},

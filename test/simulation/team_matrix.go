@@ -100,7 +100,8 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 	if err != nil {
 		return err
 	}
-	if results[0] != nil {
+	removalRace := c.Control == "remove-writer" && apperr.Is(results[0], apperr.CodeRemovalWriteRace)
+	if results[0] != nil && !removalRace {
 		return fmt.Errorf("team control %+v: %w", c, results[0])
 	}
 	if results[1] != nil && (c.Control != "remove-writer" || ErrorCode(results[1]) != string(apperr.CodeNotMember)) {
@@ -129,6 +130,20 @@ func (w *World) TeamCase(ctx context.Context, c TeamCase) error {
 	if c.Control == "remove-writer" {
 		if !reflect.DeepEqual(got, before) && !reflect.DeepEqual(got, after) {
 			return fmt.Errorf("revocation lost unrelated state: got %v", got)
+		}
+		if removalRace && results[1] == nil && !reflect.DeepEqual(got, after) {
+			params := apperr.PayloadOf(results[0]).Params
+			if _, err := a.ReviewRemovedRevision(ctx, "default", params["revision"], true); err != nil {
+				return fmt.Errorf("acknowledged change could not be accepted: %w", err)
+			}
+			if err := a.SyncSecrets(ctx, "default"); err != nil {
+				return fmt.Errorf("re-encrypting reviewed change: %w", err)
+			}
+			recovered, err := a.ListSecrets(ctx, "default")
+			if err != nil || !reflect.DeepEqual(recovered, after) {
+				return fmt.Errorf("review failed to preserve acknowledged change: %v, %w", recovered, err)
+			}
+			got = recovered
 		}
 		want = clone(got)
 	} else if !reflect.DeepEqual(got, after) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -54,13 +55,33 @@ func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
 }
 
 func TestRemoveMemberDoesNotRepublishAncestorAfterConcurrentWrite(t *testing.T) {
+	t.Run("visible at first sync read", func(t *testing.T) { checkConcurrentRemovalWrite(t, false) })
+	t.Run("visible at final sync read", func(t *testing.T) { checkConcurrentRemovalWrite(t, true) })
+}
+
+func checkConcurrentRemovalWrite(t *testing.T, late bool) {
+	t.Helper()
 	alice := newAlice(t)
 	bob := approved(t, alice)
 	target := mustMember(t, alice, bob).DeviceID
 	var latest digest.Digest
 	var statePublishes int
+	listLatest := !late
 	base := alice.Storage
 	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revisions, err := next.Discover(ctx, kind, scope)
+			if kind == storage.KindState && !listLatest && latest != "" {
+				revisions = slices.DeleteFunc(slices.Clone(revisions), func(d digest.Digest) bool { return d == latest })
+			}
+			return revisions, err
+		},
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if kind == storage.KindState && latest != "" {
+				listLatest = true
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
 		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
 			switch object.Kind {
 			case storage.KindControl:
@@ -78,8 +99,12 @@ func TestRemoveMemberDoesNotRepublishAncestorAfterConcurrentWrite(t *testing.T) 
 			return next.Publish(ctx, object)
 		},
 	})
-	if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeRemovalWriteRace) {
+	err := alice.RemoveMember(bg, target)
+	if !apperr.Is(err, apperr.CodeRemovalWriteRace) {
 		t.Fatalf("removal result: %v", err)
+	}
+	if params := apperr.PayloadOf(err).Params; params["revision"] != latest.String() || params["environment"] != "default" {
+		t.Fatalf("recovery target: %+v", params)
 	}
 	if latest == "" || statePublishes != 0 {
 		t.Fatalf("concurrent revision = %v, re-encryption writes = %d", latest, statePublishes)
@@ -95,6 +120,52 @@ func TestRemoveMemberDoesNotRepublishAncestorAfterConcurrentWrite(t *testing.T) 
 	scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
 	if _, err := base.FetchHead(bg, storage.KindState, scope, latest); err != nil {
 		t.Fatalf("concurrent revision was lost: %v", err)
+	}
+	alice.Storage = base
+	if err := alice.AddSecret(bg, "default", "CONTINUING", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), false)
+	if err != nil || len(diff.Added) != 1 || diff.Added[0] != "LATEST" {
+		t.Fatalf("review: %+v, %v", diff, err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "" {
+		t.Fatalf("inspection accepted the revision: %q", got)
+	}
+	if _, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := alice.SyncSecrets(bg, "default"); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice); got["LATEST"] != "bob" || got["CONTINUING"] != "alice" {
+		t.Fatalf("acceptance lost a write: %+v", got)
+	}
+}
+
+func TestRemovalReadFailureReportsIncompleteReEncryption(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	var committed bool
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			err := next.Publish(ctx, object)
+			if err == nil && object.Kind == storage.KindControl {
+				committed = true
+			}
+			return err
+		},
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if committed && kind == storage.KindState {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.RemoveMember(bg, target)
+	if !committed || !apperr.Is(err, apperr.CodeReencryptIncomplete) || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("partial removal: committed=%t, error=%v", committed, err)
 	}
 }
 

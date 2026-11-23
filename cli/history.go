@@ -131,6 +131,41 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 		},
 	}
 
+	var acceptReview bool
+	reviewCmd := &cobra.Command{
+		Use:   "review <revision>",
+		Short: "Review a set-aside revision after a member was removed (admin only)",
+		Args:  appArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			diff, err := a.ReviewRemovedRevision(cmd.Context(), env, args[0], acceptReview)
+			if err != nil {
+				return err
+			}
+			if jsonEnabled(cmd) {
+				return writeJSON(cmd, map[string]any{
+					"accepted": acceptReview,
+					"added":    nonNilStrings(diff.Added),
+					"removed":  nonNilStrings(diff.Removed),
+					"modified": nonNilStrings(diff.Modified),
+				})
+			}
+			for _, k := range diff.Added {
+				cmd.Printf("+ %q\n", k)
+			}
+			for _, k := range diff.Removed {
+				cmd.Printf("- %q\n", k)
+			}
+			for _, k := range diff.Modified {
+				cmd.Printf("~ %q\n", k)
+			}
+			if acceptReview {
+				cmd.Println("Revision accepted. Run enbu sync for this environment to re-encrypt it.")
+			}
+			return nil
+		},
+	}
+	reviewCmd.Flags().BoolVar(&acceptReview, "accept", false, "Accept the reviewed revision for the next merge")
+
 	var keep int
 	compactCmd := &cobra.Command{
 		Use:   "compact --keep N",
@@ -161,7 +196,7 @@ func newHistoryCommand(a *app.App) *cobra.Command {
 	}
 	compactCmd.Flags().IntVar(&keep, "keep", 0, "How many of the latest revisions to keep")
 
-	for _, sub := range []*cobra.Command{listCmd, diffCmd, restoreCmd, compactCmd} {
+	for _, sub := range []*cobra.Command{listCmd, diffCmd, restoreCmd, reviewCmd, compactCmd} {
 		sub.Flags().StringVarP(&env, "env", "e", "", "Environment name")
 		cmd.AddCommand(sub)
 	}

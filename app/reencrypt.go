@@ -36,14 +36,14 @@ func (a *App) reencryptAll(ctx context.Context, removal *memberRemoval) error {
 	}
 	for _, t := range targets {
 		s, err := a.openSession(ctx)
-		if err == nil && removal != nil {
-			err = s.checkRemovalRace(ctx, t.resource, removal)
-			if err != nil {
-				s.Close()
-			}
-		}
 		if err == nil {
-			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, func(map[string]string) error { return nil })
+			var check func(*session, *wsp.StateView) error
+			if removal != nil {
+				check = func(s *session, view *wsp.StateView) error {
+					return s.checkRemovalRace(t, view, removal)
+				}
+			}
+			err = a.changeResource(ctx, s, t.resource, "sync", nil, nil, check, func(map[string]string) error { return nil })
 		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("re-encrypting %s: %w", t.name, err))
@@ -60,35 +60,33 @@ type memberRemoval struct {
 	observed map[string][]digest.Digest
 }
 
-var errRemovalWriteRace = errors.New("unaccepted revision by the removed device")
+type removalWriteRace struct {
+	environment string
+	revision    digest.Digest
+}
+
+func (e *removalWriteRace) Error() string {
+	return fmt.Sprintf("unaccepted revision %s in %s", e.revision, e.environment)
+}
 
 // checkRemovalRace handles revisions observed after the Control publish. A
 // removed member's old-epoch signature cannot establish whether a revision
 // appeared before or after revocation. Preserve evidence and stop the
 // automatic rewrite instead of using an ancestor or accepting the new head.
-func (s *session) checkRemovalRace(ctx context.Context, resource string, removal *memberRemoval) error {
-	view, err := s.loadResourceWith(ctx, resource, true)
-	if view != nil {
-		if err := checkRemovalMetadata(view); err != nil {
-			return errors.Join(errRemovalWriteRace, err)
-		}
+func (s *session) checkRemovalRace(target environmentResource, view *wsp.StateView, removal *memberRemoval) error {
+	if err := checkRemovalMetadata(view); err != nil {
+		return err
 	}
-	if IsNotFoundError(err) {
-		return nil
-	}
+	accepted, err := s.cps.Accepted(target.resource)
 	if err != nil {
-		return errors.Join(errRemovalWriteRace, err)
-	}
-	accepted, err := s.cps.Accepted(resource)
-	if err != nil {
-		return errors.Join(errRemovalWriteRace, err)
+		return err
 	}
 	for _, head := range view.Heads {
 		if head.Author == removal.device &&
-			!slices.Contains(removal.observed[resource], head.Digest) &&
+			!slices.Contains(removal.observed[target.resource], head.Digest) &&
 			!slices.Contains(accepted.Heads, head.Digest) &&
 			view.Compacted.AboveFloors(view.Graph, head.Digest) {
-			return fmt.Errorf("%w: %s", errRemovalWriteRace, head.Digest)
+			return &removalWriteRace{environment: target.name, revision: head.Digest}
 		}
 	}
 	return nil
