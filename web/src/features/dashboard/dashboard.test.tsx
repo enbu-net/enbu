@@ -74,7 +74,10 @@ describe("Dashboard", () => {
   });
 
   it("marks an empty secret list with the environment that finished loading", async () => {
-    mocked.ListSecrets.mockResolvedValueOnce({ environment: "default", secrets: [] });
+    mocked.GetWorkspace.mockResolvedValueOnce({
+      ...snapshot,
+      secrets: { environment: "default", secrets: [] },
+    });
     await renderDashboard();
 
     const list = container.querySelector('[data-testid="secret-list"]');
