@@ -22,7 +22,7 @@ type CompactionRaceCase struct {
 func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error {
 	ctx = wsp.WithSerialHeadReads(ctx)
 	switch c.Publication {
-	case "valid", "junk", "missing", "corrupt", "offline", "cancelled":
+	case "valid", "junk", "missing", "corrupt", "offline", "cancelled", "new-control":
 	default:
 		return fmt.Errorf("invalid compaction publication %q", c.Publication)
 	}
@@ -50,16 +50,24 @@ func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error 
 	}
 	w.Model["default"] = map[string]string{"K": "current"}
 	lateValues := map[string]string{"K": "current", "LATE": "retained"}
-	late, err := w.publishMergeNode(ctx, 1, lateValues, latest.Rev)
-	if err != nil {
-		return err
-	}
-	// Prepare signed bytes without exposing them to the compactor's read.
-	if err := w.Devices[1].Store.Delete(ctx, late.Kind, late.Scope, late.Rev); err != nil {
-		return err
-	}
-	if c.Publication == "junk" {
-		late = storagetest.Object(storage.KindState, latest.Scope, "invalid-signature", "junk")
+	var late storage.Object
+	// The new-control revision can only be signed once its Control is published.
+	if c.Publication == "new-control" {
+		if err := w.Devices[0].App.SetAdmin(ctx, w.Devices[1].ID, true); err != nil {
+			return err
+		}
+	} else {
+		late, err = w.publishMergeNode(ctx, 1, lateValues, latest.Rev)
+		if err != nil {
+			return err
+		}
+		// Prepare signed bytes without exposing them to the compactor's read.
+		if err := w.Devices[1].Store.Delete(ctx, late.Kind, late.Scope, late.Rev); err != nil {
+			return err
+		}
+		if c.Publication == "junk" {
+			late = storagetest.Object(storage.KindState, latest.Scope, "invalid-signature", "junk")
+		}
 	}
 	d := w.Devices[0]
 	real := d.Store.Store
@@ -67,10 +75,20 @@ func (w *World) CompactionRace(ctx context.Context, c CompactionRaceCase) error 
 	listings, fetches := 0, 0
 	d.Store.Store = storagetest.Wrap(real, storagetest.Hooks{
 		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
-			if kind == storage.KindState && scope == late.Scope {
+			if kind == storage.KindState && scope == latest.Scope {
 				listings++
 				if listings == 2 {
-					if err := next.Publish(ctx, late); err != nil {
+					if c.Publication == "new-control" {
+						// The compactor's store holds its lock while listing.
+						// Publish via the other device's independent store.
+						if err := w.Devices[1].App.SetAdmin(ctx, w.Devices[2].ID, true); err != nil {
+							return nil, err
+						}
+						late, err = w.publishMergeNode(ctx, 1, lateValues, latest.Rev)
+						if err != nil {
+							return nil, err
+						}
+					} else if err := next.Publish(ctx, late); err != nil {
 						return nil, err
 					}
 					if err := w.Tape.Observe("late-compaction-publication", c.Publication, late); err != nil {

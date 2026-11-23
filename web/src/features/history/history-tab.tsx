@@ -154,6 +154,7 @@ function HistoryContent({
               return (
                 <HStack
                   key={entry.tag}
+                  data-testid="history-revision"
                   justify="space-between"
                   gap="3"
                   px="4"

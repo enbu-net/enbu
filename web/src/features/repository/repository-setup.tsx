@@ -9,6 +9,7 @@ import { backend } from "../../lib/backend";
 import { useSession } from "../../lib/session";
 import type { InitResult, RepoInfo, StorageConfig } from "../../lib/types";
 import { m } from "../../paraglide/messages";
+import { AddAccount } from "../auth/add-account";
 
 /**
  * The step a selected folder still needs before enbu can manage it, if any:
@@ -89,23 +90,38 @@ const primaryButton = {
 } as const;
 
 /** Sets up enbu in a selected folder, as `enbu init` does. */
-export function RepositorySetup({ step }: { step: SetupStep }) {
-  const { reloadRepo } = useSession();
+export function RepositorySetup({
+  step,
+  storageDraft,
+}: {
+  step: SetupStep;
+  storageDraft?: StorageConfig;
+}) {
+  const { reloadRepo, refresh } = useSession();
   const action = useAction();
   const dismiss = () => action.setError(null);
   const [done, setDone] = useState<InitResult | null>(null);
 
-  if (done) return <InitDone result={done} onContinue={reloadRepo} />;
+  async function latestRepository() {
+    await refresh({ force: true, invalidate: true });
+    await reloadRepo();
+  }
+
+  if (done) return <InitDone result={done} onContinue={latestRepository} />;
 
   async function initialize(storage: StorageConfig, acceptNewGenesis: boolean) {
     const result = await backend.Initialize(storage, acceptNewGenesis);
     // Founding or waiting for approval leaves the person something to do first.
     if (result.founded || result.pending || result.replaced_genesis) setDone(result);
-    else await reloadRepo();
+    else await latestRepository();
   }
 
   return step === "found" ? (
-    <FoundWorkspace action={action} onFound={(storage) => initialize(storage, false)} />
+    <FoundWorkspace
+      action={action}
+      storageDraft={storageDraft}
+      onFound={(storage) => initialize(storage, false)}
+    />
   ) : (
     <SetupScreen
       title={m.init_title()}
@@ -145,13 +161,16 @@ export function RepositorySetup({ step }: { step: SetupStep }) {
 /** Founds a workspace in a storage the person may change from the suggested one. */
 function FoundWorkspace({
   action,
+  storageDraft,
   onFound,
 }: {
   action: ReturnType<typeof useAction>;
+  storageDraft?: StorageConfig;
   onFound: (storage: StorageConfig) => Promise<void>;
 }) {
-  const { reloadRepo } = useSession();
-  const [storage, setStorage] = useState<StorageConfig>(noStorage);
+  const { reloadRepo, status } = useSession();
+  const [storage, setStorage] = useState<StorageConfig>(storageDraft ?? noStorage);
+  const [signingIn, setSigningIn] = useState(false);
   // null while asking, "" when no signed-in account can supply a default.
   const [suggested, setSuggested] = useState<string | null>(null);
   const set = (change: Partial<StorageConfig>) =>
@@ -168,6 +187,18 @@ function FoundWorkspace({
   }, [suggest]);
 
   const url = storage.url.trim();
+  const needsGitHub =
+    status?.authenticated === false && url.toLowerCase().startsWith("oci://ghcr.io/");
+  if (signingIn) {
+    return (
+      <AddAccount
+        onDone={() => {
+          setSigningIn(false);
+          void suggest();
+        }}
+      />
+    );
+  }
   return (
     <SetupScreen
       title={m.init_title()}
@@ -230,20 +261,27 @@ function FoundWorkspace({
           onChange={(plain_http) => set({ plain_http })}
         />
       )}
-      {suggested === "" && (
+      {!url && suggested && (
+        <Button variant="outline" onClick={() => set({ url: suggested })}>
+          {suggested}
+        </Button>
+      )}
+      {suggested === "" && !url && (
         <VStack alignItems="stretch" gap="2">
           <Text fontSize="sm">{m.init_noSuggestion()}</Text>
           <Button
             variant="outline"
             loading={action.loading}
-            onClick={() =>
-              action.run(async () => {
-                await reloadRepo();
-                await suggest();
-              })
-            }
+            onClick={() => {
+              if (status?.authenticated === false) setSigningIn(true);
+              else
+                void action.run(async () => {
+                  await reloadRepo();
+                  await suggest();
+                });
+            }}
           >
-            {m.init_checkAgain()}
+            {status?.authenticated === false ? m.auth_connect() : m.init_checkAgain()}
           </Button>
         </VStack>
       )}
@@ -251,9 +289,12 @@ function FoundWorkspace({
         {...primaryButton}
         loading={action.loading}
         disabled={!url}
-        onClick={() => action.run(() => onFound({ ...storage, url }))}
+        onClick={() => {
+          if (needsGitHub) setSigningIn(true);
+          else void action.run(() => onFound({ ...storage, url }));
+        }}
       >
-        {m.init_found()}
+        {needsGitHub ? m.auth_connect() : m.init_found()}
       </Button>
     </SetupScreen>
   );

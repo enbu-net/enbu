@@ -104,7 +104,7 @@ func wspError(err error) error {
 		return apperr.Wrap(apperr.CodeControlForked, "two admins changed the members at the same time; it is resolved when an admin of both changes opens enbu", err, apperr.Params{"heads": fmt.Sprint(len(fork.Heads))})
 	case errors.Is(err, wsp.ErrRollback):
 		return apperr.Wrap(apperr.CodeRollback, "storage shows less than this device already accepted", err, nil)
-	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, storage.ErrCorrupt):
+	case errors.Is(err, wsp.ErrInvalid), errors.Is(err, wsp.ErrUnknownStateControl), errors.Is(err, storage.ErrCorrupt):
 		return apperr.Wrap(apperr.CodeUntrusted, "stored data failed verification", err, nil)
 	default:
 		return storageError(err)

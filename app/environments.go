@@ -166,7 +166,18 @@ func (a *App) DeleteEnvironment(ctx context.Context, name string, purge bool) (d
 			return deletion, err
 		}
 		defer s.Close()
-		if deletion.Purged, err = s.purgeResource(ctx, cfg.Resource(name)); err != nil {
+		if err := checkDeletable(s.cfg, name); err != nil {
+			return deletion, err
+		}
+		resource := s.cfg.Resource(name)
+		if resource != cfg.Resource(name) || s.cfg.WorkspaceID != cfg.WorkspaceID || s.cfg.Storage != cfg.Storage {
+			return deletion, apperr.New(apperr.CodeConflict, "environment configuration changed during deletion", nil)
+		}
+		if err := checkPurgeResource(s.cfg, resource, name); err != nil {
+			return deletion, err
+		}
+		cfg = s.cfg
+		if deletion.Purged, err = s.purgeResource(ctx, resource); err != nil {
 			return deletion, err
 		}
 	} else {
@@ -241,17 +252,31 @@ func (a *App) PurgeIncarnation(ctx context.Context, incarnation string) (deleted
 	if err != nil {
 		return 0, err
 	}
-	for name, env := range cfg.Environments {
-		if env.Incarnation == incarnation {
-			return 0, apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("environment %q still uses this incarnation; delete it with --purge instead", name), apperr.Params{"name": name})
-		}
+	resource := "secrets/" + incarnation
+	if err := checkPurgeResource(cfg, resource, ""); err != nil {
+		return 0, err
 	}
 	s, err := a.openPurgeSession(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer s.Close()
-	return s.purgeResource(ctx, "secrets/"+incarnation)
+	if s.cfg.WorkspaceID != cfg.WorkspaceID || s.cfg.Storage != cfg.Storage {
+		return 0, apperr.New(apperr.CodeConflict, "workspace configuration changed during purge", nil)
+	}
+	if err := checkPurgeResource(s.cfg, resource, ""); err != nil {
+		return 0, err
+	}
+	return s.purgeResource(ctx, resource)
+}
+
+func checkPurgeResource(cfg *config.ProjectConfig, resource, except string) error {
+	for _, name := range cfg.EnvironmentNames() {
+		if name != except && cfg.Resource(name) == resource {
+			return apperr.New(apperr.CodeInvalidArgument, fmt.Sprintf("environment %q still uses this storage resource", name), apperr.Params{"name": name})
+		}
+	}
+	return nil
 }
 
 // openPurgeSession opens a session and checks that this device may delete

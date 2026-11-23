@@ -224,7 +224,7 @@ def select(paths: list[str], full: bool = False) -> dict:
                 }
                 scenarios = True
                 files |= {SIM / (name + "_test.go") for name in DOMAINS[domain]}
-    if broad:
+    if broad or any(not path.is_file() for path in files):
         mutation = True
         files = set(SIM.glob("*_test.go"))
     tests = set().union(*(names(path) for path in files))
@@ -250,21 +250,20 @@ def select(paths: list[str], full: bool = False) -> dict:
 
 
 def changed(event: dict) -> list[str]:
-    before = event.get("before", "")
     head = event.get("after") or "HEAD"
-    if not before or set(before) == {"0"}:
-        branch = event["repository"]["default_branch"]
+    branch = event["repository"]["default_branch"]
+    try:
+        # A later push cancels the previous run. Include the earlier changes.
         before = subprocess.check_output(
-            ["git", "merge-base", "HEAD", "refs/remotes/origin/" + branch],
+            ["git", "merge-base", head, "refs/remotes/origin/" + branch],
             cwd=ROOT,
             text=True,
         ).strip()
-    try:
         data = subprocess.check_output(
-            ["git", "diff", "--name-only", "-z", before, head], cwd=ROOT
+            ["git", "diff", "--no-renames", "--name-only", "-z", before, head], cwd=ROOT
         )
     except subprocess.CalledProcessError:
-        # Unavailable old commits must broaden coverage, never silently skip it.
+        # An unavailable base or head must broaden coverage.
         return ["go.mod"]
     return [path for path in data.decode().split("\0") if path]
 

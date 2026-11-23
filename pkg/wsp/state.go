@@ -92,9 +92,8 @@ func SignState(s State, signer signing.Signer) ([]byte, error) {
 // the Control it names. The author must be a principal of that Control and the
 // signature must verify under the key it lists; a member removed since still
 // signed it validly. A State naming a Control the verified DAG does not hold
-// cannot be checked, so it is invalid like any other unverifiable object:
-// anyone able to write to storage can name an arbitrary Control, and treating
-// it as a rollback would let one unsigned object block a resource. A hidden
+// cannot be checked. It returns ErrUnknownStateControl because anyone with
+// storage write access can name an arbitrary Control. A hidden
 // Control is detected by the Control checkpoint, a hidden State by the State checkpoint.
 //
 // It makes no claim about freshness or about whether the author is a member
@@ -119,7 +118,7 @@ func VerifyRevision(view *ControlView, workspace, resource string, rev digest.Di
 	}
 	written, ok := view.Get(s.Control)
 	if !ok {
-		return nil, invalid("state names control %s that is not part of the verified control", s.Control)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownStateControl, s.Control)
 	}
 	author, ok := written.Principal(s.Author)
 	if !ok {

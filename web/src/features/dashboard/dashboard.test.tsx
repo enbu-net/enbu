@@ -73,6 +73,15 @@ describe("Dashboard", () => {
     expect(container.querySelector("h1")?.textContent).toBe("s3-team");
   });
 
+  it("marks an empty secret list with the environment that finished loading", async () => {
+    mocked.ListSecrets.mockResolvedValueOnce({ environment: "default", secrets: [] });
+    await renderDashboard();
+
+    const list = container.querySelector('[data-testid="secret-list"]');
+    expect(list?.getAttribute("data-environment")).toBe("default");
+    expect(list?.textContent).toContain("No secrets yet.");
+  });
+
   it("adds a secret on Enter and clears the form", async () => {
     await renderDashboard();
     const key = labelledInput("Key");
@@ -129,6 +138,7 @@ describe("Dashboard", () => {
     await renderDashboard();
 
     expect(container.textContent).toContain("Choose a value");
+    expect(container.querySelector('[data-testid="secret-list"]')).toBeNull();
     expect(container.textContent).not.toContain("Secrets changed");
     const bob = container.querySelectorAll<HTMLInputElement>('[data-conflict-key="KEY"] input')[1];
     act(() => bob?.click());
@@ -143,6 +153,9 @@ describe("Dashboard", () => {
       [{ key: "KEY", value: "bob", delete: false }],
     );
     expect(container.textContent).not.toContain("Choose a value");
+    expect(
+      container.querySelector('[data-testid="secret-list"][data-environment="default"]'),
+    ).not.toBeNull();
     expect(container.querySelector('input[aria-label="Value: KEY"]')).not.toBeNull();
   });
 

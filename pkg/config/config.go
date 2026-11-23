@@ -100,12 +100,18 @@ func ValidateProjectOutputs(cfg *ProjectConfig) error {
 	}
 	sort.Strings(names)
 	seen := make(map[string]bool, len(names))
+	resources := make(map[string]string, len(names))
 	outputs := make([]string, 0, len(names))
 	for _, name := range names {
 		if !ValidEnvironmentName(name) || seen[strings.ToLower(name)] {
 			return fmt.Errorf("invalid or ambiguous environment name %q", name)
 		}
 		seen[strings.ToLower(name)] = true
+		resource := cfg.Resource(name)
+		if other, exists := resources[resource]; exists {
+			return apperr.New(apperr.CodeConfigResourceCollision, "environments share a storage resource", apperr.Params{"first": other, "second": name})
+		}
+		resources[resource] = name
 		env := cfg.Environments[name]
 		output := strings.TrimSpace(env.Output)
 		// Shared configuration must mean the same relative path on every OS.
