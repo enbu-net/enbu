@@ -17,6 +17,9 @@ var (
 	// ErrInvalid marks an object that failed verification: bad signature, wrong
 	// author, malformed or non-canonical encoding.
 	ErrInvalid = errors.New("invalid workspace object")
+	// ErrUnknownStateControl marks a State that needs a Control absent from
+	// the verified view. The State cannot be used or conclusively rejected.
+	ErrUnknownStateControl = errors.New("state control is missing from the verified view")
 	// ErrRollback marks storage showing less than this client has already
 	// accepted, or hiding an object another object depends on. It may be a stale
 	// listing: retrying later can succeed.
