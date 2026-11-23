@@ -208,3 +208,13 @@ func (s *Service) DiffHistory(env string, from, to int) (app.Diff, error) {
 func (s *Service) RestoreHistory(env string, index int) error {
 	return s.withRepo(func() error { return s.app.RestoreHistory(s.context(), env, index) })
 }
+
+func (s *Service) ReviewRemovedRevision(resource, revision, baseline string) (app.RemovalReview, error) {
+	return withRepoResult(s, func() (app.RemovalReview, error) {
+		review, err := s.app.ReviewRemovedRevision(s.context(), resource, revision, baseline)
+		if err != nil {
+			return app.RemovalReview{}, err
+		}
+		return *review, nil
+	})
+}

@@ -29,12 +29,12 @@ func (a *App) changeSecretWith(ctx context.Context, env, op string, choices map[
 	if err != nil {
 		return err
 	}
-	return a.changeResource(ctx, s, s.resource(resolved.Name), op, choices, seen, change)
+	return a.changeResource(ctx, s, s.resource(resolved.Name), op, choices, seen, nil, change)
 }
 
 // changeResource is changeSecretWith for one storage resource. It takes over s
 // and closes it.
-func (a *App) changeResource(ctx context.Context, s *session, resource, op string, choices map[string]merge.Choice, seen []string, change func(map[string]string) error) error {
+func (a *App) changeResource(ctx context.Context, s *session, resource, op string, choices map[string]merge.Choice, seen []string, check func(*session, *wsp.StateView) error, change func(map[string]string) error) error {
 	defer func() { // s is replaced when the member list changes
 		if s != nil {
 			s.Close()
@@ -47,7 +47,11 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 	var published []digest.Digest // revisions this call made; a stale listing may not show them yet
 	for attempt := 0; attempt < attempts; attempt++ {
 		a.emitStepProgress(op, "pull_secrets", "start")
-		cur, err := s.readResource(ctx, resource, choices, true, published...)
+		var checkView func(*wsp.StateView) error
+		if check != nil {
+			checkView = func(view *wsp.StateView) error { return check(s, view) }
+		}
+		cur, err := s.readResourceChecked(ctx, resource, choices, true, checkView, published...)
 		var secrets map[string]string
 		var parents []digest.Digest
 		if err != nil {
@@ -90,7 +94,12 @@ func (a *App) changeResource(ctx context.Context, s *session, resource, op strin
 		// edit are merged now, in the same revision.
 		var latest *wsp.StateView
 		if cur != nil {
-			latest, err = s.loadResource(ctx, resource, published...)
+			latest, err = s.loadResourceWith(ctx, resource, checkView != nil, published...)
+			if latest != nil && checkView != nil {
+				if checkErr := checkView(latest); checkErr != nil {
+					return checkErr
+				}
+			}
 			if err != nil {
 				return err
 			}

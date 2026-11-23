@@ -13,6 +13,7 @@ export {
     JoinRequestInfo,
     MemberInfo,
     ProgressStep,
+    RemovalReview,
     SecretChoice,
     SecretConflict,
     WrittenFile

@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +18,376 @@ import (
 	"github.com/enbu-net/enbu/pkg/wsp"
 	"github.com/opencontainers/go-digest"
 )
+
+func TestRemoveMemberStopsWhenLatestValueCannotBeAccepted(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	base := alice.Storage
+	readErr := errors.New("temporary payload failure")
+	failed := false
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !failed {
+				failed = true
+				return nil, readErr
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, target); !errors.Is(err, readErr) {
+		t.Fatalf("removing a member after a failed read: %v", err)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 2 {
+		t.Fatalf("membership changed: %+v %v", members, err)
+	}
+	alice.Storage = base
+	if err := alice.RemoveMember(bg, target); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "bob" {
+		t.Fatalf("latest value = %q", got)
+	}
+}
+
+func TestRemoveMemberDoesNotRepublishAncestorAfterConcurrentWrite(t *testing.T) {
+	t.Run("visible at first sync read", func(t *testing.T) { checkConcurrentRemovalWrite(t, false) })
+	t.Run("visible at final sync read", func(t *testing.T) { checkConcurrentRemovalWrite(t, true) })
+}
+
+func checkConcurrentRemovalWrite(t *testing.T, late bool) {
+	t.Helper()
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	var latest digest.Digest
+	var statePublishes int
+	listLatest := !late
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			revisions, err := next.Discover(ctx, kind, scope)
+			if kind == storage.KindState && !listLatest && latest != "" {
+				revisions = slices.DeleteFunc(slices.Clone(revisions), func(d digest.Digest) bool { return d == latest })
+			}
+			return revisions, err
+		},
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if kind == storage.KindState && latest != "" {
+				listLatest = true
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			switch object.Kind {
+			case storage.KindControl:
+				if err := bob.AddSecret(ctx, "default", "LATEST", "bob"); err != nil {
+					return err
+				}
+				history, err := bob.ListHistory(ctx, "default")
+				if err != nil {
+					return err
+				}
+				latest = digest.NewDigestFromEncoded(digest.SHA256, history[len(history)-1].Tag)
+			case storage.KindState:
+				statePublishes++
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	err := alice.RemoveMember(bg, target)
+	if !apperr.Is(err, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", err)
+	}
+	if params := apperr.PayloadOf(err).Params; params["targets"] == "" || !strings.HasSuffix(params["targets"], " "+latest.String()) {
+		t.Fatalf("recovery target: %+v", params)
+	}
+	if latest == "" || statePublishes != 0 {
+		t.Fatalf("concurrent revision = %v, re-encryption writes = %d", latest, statePublishes)
+	}
+	members, err := alice.ListMembers(bg)
+	if err != nil || len(members) != 1 || !members[0].Self {
+		t.Fatalf("Control was not published: %+v %v", members, err)
+	}
+	cfg, err := alice.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := storage.StateScope(cfg.WorkspaceID, cfg.Resource("default"))
+	if _, err := base.FetchHead(bg, storage.KindState, scope, latest); err != nil {
+		t.Fatalf("concurrent revision was lost: %v", err)
+	}
+	alice.Storage = base
+	if err := alice.AddSecret(bg, "default", "CONTINUING", "alice"); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := alice.ReviewRemovedRevision(bg, "default", latest.String(), "")
+	if err != nil || len(preview.Diff.Added) != 1 || preview.Diff.Added[0] != "LATEST" {
+		t.Fatalf("review: %+v, %v", preview, err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "" {
+		t.Fatalf("inspection accepted the revision: %q", got)
+	}
+	if err := alice.AddSecret(bg, "default", "AFTER_PREVIEW", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); !apperr.Is(err, apperr.CodeRecoveryPreviewChanged) {
+		t.Fatalf("stale recovery preview: %v", err)
+	}
+	preview, err = alice.ReviewRemovedRevision(bg, "default", latest.String(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.ReviewRemovedRevision(bg, cfg.Resource("default"), latest.String(), preview.Baseline); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice); got["LATEST"] != "bob" || got["CONTINUING"] != "alice" || got["AFTER_PREVIEW"] != "keep" {
+		t.Fatalf("acceptance lost a write: %+v", got)
+	}
+}
+
+func TestReviewRemovedRevisionRefusesRecoveryIfAdministratorIsDemoted(t *testing.T) {
+	alice := newAlice(t)
+	carol := approved(t, alice)
+	bob := approved(t, alice)
+	if err := alice.SetAdmin(bg, mustMember(t, alice, carol).DeviceID, true); err != nil {
+		t.Fatal(err)
+	}
+	aliceID := mustMember(t, carol, alice).DeviceID
+	bobID := mustMember(t, alice, bob).DeviceID
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			if object.Kind == storage.KindControl {
+				if err := bob.AddSecret(ctx, "default", "LATEST", "bob"); err != nil {
+					return err
+				}
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	removal := alice.RemoveMember(bg, bobID)
+	if !apperr.Is(removal, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", removal)
+	}
+	resource, revision, _ := strings.Cut(apperr.PayloadOf(removal).Params["targets"], " ")
+
+	preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	demoted := false
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !demoted {
+				demoted = true
+				if err := carol.SetAdmin(ctx, aliceID, false); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeRecoveryPreviewChanged) || !errors.Is(err, errControlMoved) {
+		t.Fatalf("recovery after demotion: %v", err)
+	}
+	if !demoted || listOK(t, carol)["LATEST"] != "" {
+		t.Fatal("the demoted administrator published a recovery")
+	}
+	alice.Storage = base
+	if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); !apperr.Is(err, apperr.CodeAccessDenied) {
+		t.Fatalf("recovery by a member: %v", err)
+	}
+	preview, err = carol.ReviewRemovedRevision(bg, resource, revision, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := carol.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
+		t.Fatal(err)
+	}
+	if got := listOK(t, alice)["LATEST"]; got != "bob" {
+		t.Fatalf("recovery was not published to other devices: %q", got)
+	}
+}
+
+func TestReviewRemovedRevisionRecoversAllReportedResources(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	if err := bob.CreateEnvironment("qa"); err != nil {
+		t.Fatal(err)
+	}
+	if err := bob.AddSecret(bg, "qa", "BASE", "qa"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bob.loadProject()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobID := mustMember(t, alice, bob).DeviceID
+	base := alice.Storage
+	alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			if object.Kind == storage.KindControl {
+				for _, env := range []string{"default", "qa"} {
+					if err := bob.AddSecret(ctx, env, "LATEST", "bob"); err != nil {
+						return err
+					}
+				}
+			}
+			return next.Publish(ctx, object)
+		},
+	})
+	removal := alice.RemoveMember(bg, bobID)
+	if !apperr.Is(removal, apperr.CodeRemovalWriteRace) {
+		t.Fatalf("removal result: %v", removal)
+	}
+	lines := strings.Split(apperr.PayloadOf(removal).Params["targets"], "\n")
+	if len(lines) != 2 {
+		t.Fatalf("recovery targets: %v", lines)
+	}
+	alice.Storage = base
+	if err := alice.AddSecret(bg, "default", "LATEST", "different"); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range lines {
+		resource, revision, _ := strings.Cut(line, " ")
+		if resource == cfg.Resource("default") {
+			preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+			if err != nil || !slices.Equal(preview.Kept, []string{"LATEST"}) || len(preview.Diff.Added) != 0 {
+				t.Fatalf("conflicting revision preview: %+v, %v", preview, err)
+			}
+			if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
+				t.Fatal(err)
+			}
+			if got := listOK(t, alice)["LATEST"]; got != "different" {
+				t.Fatalf("preview changed the current value: %q", got)
+			}
+			continue
+		}
+		if resource != cfg.Resource("qa") {
+			t.Fatalf("unexpected resource: %q", resource)
+		}
+		preview, err := alice.ReviewRemovedRevision(bg, resource, revision, "")
+		if err != nil || !slices.Equal(preview.Diff.Added, []string{"LATEST"}) {
+			t.Fatalf("preview in unlisted environment: %+v, %v", preview, err)
+		}
+		if _, err := alice.ReviewRemovedRevision(bg, resource, revision, preview.Baseline); err != nil {
+			t.Fatalf("recovery in unlisted environment: %v", err)
+		}
+	}
+}
+
+func TestRemovalReadFailureReportsIncompleteReEncryption(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	var committed bool
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		Publish: func(ctx context.Context, next storage.Store, object storage.Object) error {
+			err := next.Publish(ctx, object)
+			if err == nil && object.Kind == storage.KindControl {
+				committed = true
+			}
+			return err
+		},
+		Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+			if committed && kind == storage.KindState {
+				return nil, io.ErrUnexpectedEOF
+			}
+			return next.Discover(ctx, kind, scope)
+		},
+	})
+	err := alice.RemoveMember(bg, target)
+	if !committed || !apperr.Is(err, apperr.CodeReencryptIncomplete) || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("partial removal: committed=%t, error=%v", committed, err)
+	}
+}
+
+func TestRemoveMemberRejectsUnavailableRevisionMetadata(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	target := mustMember(t, alice, bob).DeviceID
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := bob.openSession(bg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.loadResource(bg, s.resource("default"))
+	s.Close()
+	if err != nil || len(view.Heads) != 1 {
+		t.Fatalf("read Bob's head: %v", err)
+	}
+	base := alice.Storage
+	for _, failure := range []error{storage.ErrNotFound, storage.ErrCorrupt} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			latest := view.Heads[0].Digest
+			alice.Storage = storagetest.Wrap(base, storagetest.Hooks{
+				FetchHead: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) ([]byte, error) {
+					if kind == storage.KindState && rev == latest {
+						return nil, failure
+					}
+					return next.FetchHead(ctx, kind, scope, rev)
+				},
+			})
+			if err := alice.RemoveMember(bg, target); !apperr.Is(err, apperr.CodeUntrusted) {
+				t.Fatalf("removing a member after failing to fetch a listed revision: %v", err)
+			}
+			alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+				Discover: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string) ([]digest.Digest, error) {
+					if kind == storage.KindCompaction {
+						t.Error("ordinary secret read looked up compactions for unverified metadata")
+						return nil, errors.New("compaction lookup unavailable")
+					}
+					return next.Discover(ctx, kind, scope)
+				},
+			})
+			got, err := alice.ListSecrets(bg, "default")
+			if err != nil || got["KEY"] != "v1" {
+				t.Fatalf("ordinary read result = %v, %v", got, err)
+			}
+
+			_ = mustMember(t, alice, bob)
+		})
+	}
+}
+
+func TestRemoveMemberRechecksControlAfterAcceptingStates(t *testing.T) {
+	alice := newAlice(t)
+	bob := approved(t, alice)
+	aliceID := mustMember(t, alice, alice).DeviceID
+	bobID := mustMember(t, alice, bob).DeviceID
+	if err := alice.SetAdmin(bg, bobID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := bob.AddSecret(bg, "default", "LATEST", "bob"); err != nil {
+		t.Fatal(err)
+	}
+	demoted := false
+	alice.Storage = storagetest.Wrap(alice.Storage, storagetest.Hooks{
+		OpenPayload: func(ctx context.Context, next storage.Store, kind storage.Kind, scope string, rev digest.Digest) (io.ReadCloser, error) {
+			if !demoted {
+				demoted = true
+				if err := bob.SetAdmin(ctx, aliceID, false); err != nil {
+					return nil, err
+				}
+			}
+			return next.OpenPayload(ctx, kind, scope, rev)
+		},
+	})
+	if err := alice.RemoveMember(bg, bobID); !apperr.Is(err, apperr.CodeConflict) {
+		t.Fatalf("removal did not detect changed Control: %v", err)
+	}
+	if got := mustMember(t, alice, alice); got.Admin {
+		t.Fatalf("demotion did not remain the current Control: %+v", got)
+	}
+	_ = mustMember(t, alice, bob)
+}
 
 // approved returns a device that asked to join and has been approved by alice.
 func approved(t *testing.T, alice *App) *App {

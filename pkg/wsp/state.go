@@ -146,10 +146,11 @@ func AuthorIsCurrent(view *ControlView, head *Verified, st *VerifiedState) error
 
 // StateView is the verified revision DAG of one resource as storage shows it.
 type StateView struct {
-	Graph   *Graph
-	States  map[digest.Digest]*VerifiedState
-	Heads   []*VerifiedState // sorted by digest
-	Skipped int              // listed revisions that failed to fetch or verify
+	Graph       *Graph
+	States      map[digest.Digest]*VerifiedState
+	Heads       []*VerifiedState // sorted by digest
+	Skipped     int              // listed revisions that failed to fetch or verify
+	Unavailable []digest.Digest  // revisions whose metadata storage could not produce
 	// Compacted is what verified compaction records say about the view. The
 	// caller fills it in when the view lacks something (see LoadCompactions).
 	Compacted Compacted
@@ -238,6 +239,7 @@ func LoadStates(ctx context.Context, store storage.Store, view *ControlView, wor
 			f := fetched[rev]
 			switch {
 			case errors.Is(f.err, storage.ErrNotFound), errors.Is(f.err, storage.ErrCorrupt):
+				sv.Unavailable = append(sv.Unavailable, rev)
 				sv.Skipped++
 				continue
 			}
@@ -271,6 +273,11 @@ func (sv *StateView) With(st *VerifiedState) *StateView {
 		for d, v := range sv.States {
 			out.States[d] = v
 			out.Graph.Add(d, v.Parents)
+		}
+		for _, d := range sv.Unavailable {
+			if d != st.Digest {
+				out.Unavailable = append(out.Unavailable, d)
+			}
 		}
 		out.Skipped = sv.Skipped
 		out.Compacted = sv.Compacted

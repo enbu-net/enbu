@@ -11,8 +11,9 @@ import (
 
 // GeneratedTeamGroup preserves the workload's existing model. A continuing
 // developer writes while an admin removes the synchronizing third device.
-// Only that device's success or authorization rejection is schedule-dependent;
-// the continuing developer's acknowledged write is never optional.
+// The synchronizer may be rejected, or its in-flight revision may leave
+// removal committed with re-encryption stopped. The continuing developer's
+// acknowledged write is never optional.
 func (w *World) GeneratedTeamGroup(ctx context.Context, key, value string) error {
 	if len(w.Devices) < 3 {
 		return fmt.Errorf("team group requires three devices")
@@ -26,7 +27,7 @@ func (w *World) GeneratedTeamGroup(ctx context.Context, key, value string) error
 	if err != nil {
 		return err
 	}
-	if results[0] != nil || results[1] != nil {
+	if results[0] != nil && !apperr.Is(results[0], apperr.CodeRemovalWriteRace) || results[1] != nil {
 		return fmt.Errorf("continuing team operation failed: %v", results)
 	}
 	if results[2] != nil && ErrorCode(results[2]) != string(apperr.CodeNotMember) {
