@@ -32,13 +32,12 @@ func openLock(path string, flags int, wait bool) (*os.File, error) {
 	return f, nil
 }
 
-// LockDirectory waits for an exclusive lock on a checkout. On Windows the
-// handle to the sidecar denies deletion for the lifetime of the lock.
-func LockDirectory(ctx context.Context, c clock.Clock, dir, sidecar string) (*os.File, error) {
+// LockFileContext waits for an exclusive lock without blocking cancellation.
+func LockFileContext(ctx context.Context, c clock.Clock, path string) (*os.File, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	f, err := openDirectoryLock(dir, sidecar)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}

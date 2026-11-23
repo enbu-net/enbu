@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -32,7 +33,32 @@ func (a *App) lockProject(ctx context.Context) (*os.File, error) {
 	if err == nil && !info.Mode().IsRegular() {
 		return nil, apperr.New(apperr.CodeInvalidArgument, "enbu.toml must be a regular file to change it", nil)
 	}
-	return fsutil.LockDirectory(ctx, a.clock(), dir, config.ProjectLockName)
+	lockDir := filepath.Join(dir, config.ProjectLockDir)
+	if err := os.Mkdir(lockDir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
+		return nil, fmt.Errorf("creating project lock directory: %w", err)
+	}
+	lockInfo, err := os.Lstat(lockDir)
+	if err != nil {
+		return nil, err
+	}
+	if !lockInfo.IsDir() {
+		return nil, apperr.New(apperr.CodeInvalidArgument, "project lock path must be a directory", nil)
+	}
+
+	// The directory's own ignore rule protects the lock and the rule itself
+	// from git clean, including worktrees whose Git metadata is unavailable.
+	ignore := filepath.Join(lockDir, ".gitignore")
+	rule := []byte("*\n")
+	data, err := os.ReadFile(ignore)
+	if !bytes.Equal(data, rule) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if err := fsutil.WriteFileAtomic(ignore, rule, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return fsutil.LockFileContext(ctx, a.clock(), filepath.Join(lockDir, "project.lock"))
 }
 
 func (a *App) ReadConfig() (content string, err error) {
@@ -91,6 +117,8 @@ func (a *App) WriteConfig(content, previous string) (err error) {
 	if err := a.ensureGitignore(cfg); err != nil {
 		return fmt.Errorf("updating .gitignore: %w", err)
 	}
+	// Keep the added exclusions up to the next successful save even if
+	// replacing enbu.toml fails.
 	return config.WriteProjectFile(path, []byte(content))
 }
 

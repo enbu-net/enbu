@@ -12,5 +12,3 @@ func lockFile(*os.File, bool) error {
 }
 
 func lockBusy(error) bool { return false }
-
-func openDirectoryLock(dir, _ string) (*os.File, error) { return os.Open(dir) }
