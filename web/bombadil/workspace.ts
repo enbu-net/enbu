@@ -64,7 +64,8 @@ const consistentMaskControls = extract(({ document }) =>
     }
     const masked = field.type === "password";
     const expected = locales.map((m) => (masked ? m.dashboard_showValue : m.dashboard_hideValue));
-    return button(field.parentElement, expected) !== undefined;
+    const row = field.closest("[data-secret-value-row]") ?? field.parentElement;
+    return button(row, expected) !== undefined;
   }),
 );
 

@@ -53,8 +53,15 @@ export function SecretRow({
     }
   }
 
+  const copyStatus = copied === "key" ? m.dashboard_keyCopied() : m.dashboard_valueCopied();
+
   return (
-    <Box
+    <styled.form
+      data-secret-value-row=""
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveValue();
+      }}
       minH="62px"
       display="grid"
       gridTemplateColumns={{
@@ -117,9 +124,9 @@ export function SecretRow({
           borderRadius="md"
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+            // WebKit may report isComposing=false on the Enter that commits an IME candidate.
+            if (e.key === "Enter" && (e.nativeEvent.isComposing || e.keyCode === 229)) {
               e.preventDefault();
-              void saveValue();
             }
           }}
         />
@@ -157,8 +164,8 @@ export function SecretRow({
             color="accent.text"
             aria-label={m.dashboard_save()}
             title={m.dashboard_save()}
+            type="submit"
             loading={saving}
-            onClick={() => void saveValue()}
           >
             <Save size={16} />
           </Button>
@@ -189,10 +196,13 @@ export function SecretRow({
           <Trash2 size={15} />
         </Button>
       </HStack>
+      <styled.span srOnly role="status">
+        {copied ? copyStatus : ""}
+      </styled.span>
       {copied && (
         <styled.div
           data-toast=""
-          role="status"
+          aria-hidden="true"
           position="fixed"
           right="4"
           bottom="4"
@@ -207,7 +217,7 @@ export function SecretRow({
           boxShadow="dropdown"
           pointerEvents="none"
         >
-          {copied === "key" ? m.dashboard_keyCopied() : m.dashboard_valueCopied()}
+          {copyStatus}
         </styled.div>
       )}
       <ConfirmDeleteDialog
@@ -228,6 +238,6 @@ export function SecretRow({
           }
         }}
       />
-    </Box>
+    </styled.form>
   );
 }
