@@ -316,7 +316,7 @@ func TestRepositoryOperationsDoNotChangeWorkingDirectory(t *testing.T) {
 func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	repoDir := newGitRepo(t)
-	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoDir, "enbu.toml"), []byte("version = \"v1alpha2\"\nworkspace_id = \"11111111-1111-4111-8111-111111111111\"\ncontrol_genesis = \"sha256:example\"\n[storage]\nurl = \"s3://test/store\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	keyStore := &apptest.Identities{}
@@ -342,12 +342,33 @@ func TestRepoInfoRequiresPrivateKeyForInitialized(t *testing.T) {
 	}
 }
 
+func TestRepoInfoReturnsUnfoundedStorageSettings(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	dir := t.TempDir()
+	cfg := config.NewProjectWithEnvironment("default")
+	cfg.Storage = config.StorageConfig{
+		URL: "s3://bucket/team", Region: "test-region", Endpoint: "https://storage.example.test", PathStyle: true,
+	}
+	if err := config.SaveProjectTo(dir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	s := NewService(app.New(clock.New()))
+	info, err := s.SelectRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Initialized || info.StorageConfigured || info.StorageDraft == nil || *info.StorageDraft != cfg.Storage {
+		t.Fatalf("unfinished workspace: %+v", info)
+	}
+}
+
 func TestConfiguredStorageCanBeSelectedWithoutGitOrGitHub(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("GITHUB_TOKEN", "")
 	dir := t.TempDir()
 	cfg := config.NewProjectWithEnvironment("default")
 	cfg.Storage = config.StorageConfig{URL: "local:///tmp/enbu-desktop-test"}
+	cfg.ControlGenesis = "sha256:example"
 	if err := config.SaveProjectTo(dir, cfg); err != nil {
 		t.Fatal(err)
 	}

@@ -66,14 +66,14 @@ func (s *Service) SuggestStorage() (string, error) {
 
 // Initialize sets this device up in the selected repository, as `enbu init`
 // does. It founds a workspace in storage, or in SuggestStorage's when
-// storage.URL is empty; with an enbu.toml that names a storage it joins that
+// storage.URL is empty; with an enbu.toml anchored to an existing Control it joins that
 // workspace, and storage.URL must be empty. acceptNewGenesis is
 // `--accept-new-genesis`.
 func (s *Service) Initialize(storage config.StorageConfig, acceptNewGenesis bool) (app.InitResult, error) {
 	return withRepoResult(s, func() (app.InitResult, error) {
 		opts := app.InitOptions{AcceptNewGenesis: acceptNewGenesis}
 		if storage.URL != "" {
-			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.Storage.URL != "" {
+			if cfg, err := config.LoadProjectFrom(s.app.RepositoryDir); err == nil && cfg.ControlGenesis != "" {
 				return app.InitResult{}, apperr.New(apperr.CodeInvalidArgument, "enbu.toml already names the storage", nil)
 			}
 			opts.Storage = &storage

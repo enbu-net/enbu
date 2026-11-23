@@ -18,8 +18,8 @@ const (
 	CodeNotInitialized          Code = "not_initialized"
 	CodeConfigNotFound          Code = "config_not_found"
 	CodeConfigResourceCollision Code = "config_resource_collision"
-	CodeConfigChanged           Code = "config_changed"
 	CodeConfigProtected         Code = "config_protected" // an edit would change the trust root or where secrets are stored
+	CodeConfigChanged           Code = "config_changed"
 	CodeEnvironmentMissing      Code = "environment_not_found"
 	CodeEnvironmentExists       Code = "environment_already_exists"
 	CodeSecretMissing           Code = "secret_not_found"

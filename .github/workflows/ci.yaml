@@ -262,6 +262,36 @@ jobs:
             exit 1
           fi
 
+  # Bombadil explores the browser preview at random and checks the properties
+  # in web/bombadil/spec.ts: a minute on a pull request, longer every night.
+  # Each run picks its own random path, so a violation may surface on a pull
+  # request that did not cause it; it is still a real bug in the UI on that
+  # head, and the trace artifact shows how to reach it.
+  gui-properties:
+    name: GUI properties
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/setup-tools
+      - uses: $/.github/actions/setup-frontend
+      - name: Explore the GUI with Bombadil
+        env:
+          ENBU_BOMBADIL_TIME_LIMIT: ${{ github.event_name == 'schedule' && '10m' || '1m' }}
+        run: task gui/bombadil
+      - name: Upload the Bombadil trace
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: bombadil-trace
+          path: web/bombadil-trace.bin
+          if-no-files-found: ignore
+          retention-days: 7
+
   test:
     name: Unit and component tests
     needs: [frontend]
@@ -398,7 +428,7 @@ jobs:
   status-check:
     name: Check
     if: always() && github.event.action != 'closed'
-    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, test, desktop, scenario, renovate-config]
+    needs: [changes, frontend, core-native, identity-e2e, storage-e2e, lint, gui-properties, test, desktop, scenario, renovate-config]
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}

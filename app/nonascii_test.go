@@ -56,7 +56,7 @@ func TestWorkspaceInNonASCIIPaths(t *testing.T) {
 		t.Fatalf("output = %q, %v", got, err)
 	}
 	ignore, err := os.ReadFile(filepath.Join(a.RepositoryDir, ".gitignore"))
-	if err != nil || !strings.Contains(string(ignore), "\n"+output+"\n") {
+	if err != nil || !strings.Contains(string(ignore), "\n/"+output+"\n") {
 		t.Fatalf(".gitignore = %q, %v", ignore, err)
 	}
 }
